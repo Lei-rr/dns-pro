@@ -194,9 +194,15 @@ class SaasWorkflowService
         $cleaned = (int) ($result['cleaned'] ?? 0);
         $status = ($result['status'] ?? '') === 'skipped'
             ? 'skipped'
-            : ($cleaned > 0 ? 'completed' : (($result['reason'] ?? '') !== '' ? 'skipped' : 'completed'));
+            : ($cleaned > 0 ? 'completed' : 'skipped');
+        $message = (string) ($result['message'] ?? '');
+        if ($message === '') {
+            $message = $status === 'completed'
+                ? $defaultMessage
+                : (($result['reason'] ?? '') !== '' ? 'DNS 清理已跳过' : '未找到需要清理的 DNS 记录');
+        }
 
-        return SideEffectResult::operation($status, (string) ($result['message'] ?? $defaultMessage), $result);
+        return SideEffectResult::operation($status, $message, $result);
     }
 
     private function deriveSyncStatus(array $result): string

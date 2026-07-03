@@ -171,7 +171,7 @@ class SaasSyncService
 
         return [
             'hostname_fqdn' => $fqdn,
-            'records' => $this->collectRecords($hostname, $this->resolveEffectiveOrigin($providerId, $cfZoneName, $hostname), $dnspodProviderId, true, $dnspodZone),
+            'records' => $this->collectRecords($hostname, $this->resolveEffectiveOrigin($providerId, $cfZoneName, $hostname), $dnspodProviderId, true, $dnspodZone, true),
         ];
     }
 
@@ -351,7 +351,7 @@ class SaasSyncService
      *
      * @param bool $includeAll true 时强制包含所有权 TXT(不论状态),用于 hostname 删除前的全量收集
      */
-    private function collectRecords(array $hostname, string $effectiveOrigin, string $dnspodProviderId, bool $includeAll = false, string $dnspodZone = ''): array
+    private function collectRecords(array $hostname, string $effectiveOrigin, string $dnspodProviderId, bool $includeAll = false, string $dnspodZone = '', bool $forceOwnershipName = false): array
     {
         $records = [];
         $fqdn = (string) ($hostname['hostname'] ?? '');
@@ -407,6 +407,8 @@ class SaasSyncService
             $ownership = $hostname['ownership_verification'] ?? null;
             if (is_array($ownership) && ($ownership['name'] ?? '') !== '' && ($ownership['value'] ?? '') !== '') {
                 $records[] = $this->record('TXT', (string) $ownership['name'], (string) $ownership['value'], 'ownership_verification', $fqdn, $dnspodProviderId, self::DEFAULT_LINE, $dnspodZone);
+            } elseif ($forceOwnershipName && $fqdn !== '') {
+                $records[] = $this->record('TXT', '_cf-custom-hostname.' . $fqdn, '', 'ownership_verification', $fqdn, $dnspodProviderId, self::DEFAULT_LINE, $dnspodZone);
             }
         }
 

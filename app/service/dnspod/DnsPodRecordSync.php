@@ -108,10 +108,10 @@ class DnsPodRecordSync
         $subdomain = $this->subdomainFromFqdn($record['name'], $dnspodZone);
         $matches = $this->findMatching($dnspodProviderId, $dnspodZone, $subdomain, $record['type'], $record['line'] ?? '默认');
 
-        $expected = rtrim($record['value'], '.');
+        $expected = rtrim((string) ($record['value'] ?? ''), '.');
         $match = null;
         foreach ($matches as $candidate) {
-            if (rtrim((string) ($candidate['value'] ?? ''), '.') === $expected) {
+            if ($expected === '' || rtrim((string) ($candidate['value'] ?? ''), '.') === $expected) {
                 $match = $candidate;
                 break;
             }
