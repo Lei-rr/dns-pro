@@ -12,6 +12,7 @@ export default {
     pagination: Object,
     emptyText: { type: String, default: '暂无加速域名' },
     selectionResetKey: Number,
+    actionsDisabled: Boolean,
   },
   emits: ['edit', 'status', 'certificate', 'delete', 'selection-change', 'change'],
   data() {
@@ -174,11 +175,11 @@ export default {
         <template v-else-if="column.key === 'https'">
           <a-space size="small" class="nowrap-cell">
             <a-tag :color="httpsColor(record)">{{ httpsLabel(record) }}</a-tag>
-            <a-button type="link" size="small" style="padding: 0" @click="$emit('certificate', record)">配置</a-button>
+            <a-button type="link" size="small" style="padding: 0" :disabled="actionsDisabled" @click="$emit('certificate', record)">配置</a-button>
           </a-space>
         </template>
         <template v-else-if="column.key === 'actions'">
-          <TableActions :items="actionItems(record)" @edit="$emit('edit', record)" @select="action => selectAction(action, record)" />
+          <TableActions :items="actionItems(record)" :disabled="actionsDisabled" @edit="$emit('edit', record)" @select="action => selectAction(action, record)" />
         </template>
       </template>
     </a-table>

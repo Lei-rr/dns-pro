@@ -343,6 +343,7 @@ export default {
         :pagination="pagination"
         :selection-reset-key="selectionResetKey"
         :type-options="typeOptions"
+        :actions-disabled="saving || deleting"
         empty-text="暂无匹配的解析记录"
         @edit="edit"
         @delete="askRemove"

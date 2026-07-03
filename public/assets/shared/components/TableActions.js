@@ -1,18 +1,19 @@
 export default {
   props: {
     items: { type: Array, default: () => [] },
+    disabled: Boolean,
   },
   emits: ['edit', 'select'],
   methods: {
     select(item) {
-      if (!item.disabled) this.$emit('select', item.key)
+      if (!this.disabled && !item.disabled) this.$emit('select', item.key)
     },
   },
   template: `
     <a-space size="small">
-      <a-button type="link" size="small" @click="$emit('edit')">编辑</a-button>
+      <a-button type="link" size="small" :disabled="disabled" @click="$emit('edit')">编辑</a-button>
       <a-dropdown v-if="items.length">
-        <a-button type="link" size="small">更多</a-button>
+        <a-button type="link" size="small" :disabled="disabled">更多</a-button>
         <template #overlay>
           <a-menu>
             <a-menu-item

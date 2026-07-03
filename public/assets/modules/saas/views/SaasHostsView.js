@@ -473,10 +473,10 @@ export default {
     <section>
       <ListToolbar back-text="返回站点" :title="decodedZoneName" subtitle="Cloudflare for SaaS 自定义主机名列表" @back="$router.push(zonesPath)">
         <template #actions>
-          <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
-          <a-button :disabled="notFound" @click="openFallbackOrigin">默认回源</a-button>
-          <a-button v-if="dnspodLinked" @click="openPreferredManager">优选域名</a-button>
-          <a-button type="primary" :disabled="notFound" @click="openCreate">新增主机名</a-button>
+          <a-button :loading="loading" :disabled="creating || savingEdit || deleting" @click="handleRefresh">刷新</a-button>
+          <a-button :disabled="notFound || creating || savingEdit || deleting" @click="openFallbackOrigin">默认回源</a-button>
+          <a-button v-if="dnspodLinked" :disabled="creating || savingEdit || deleting" @click="openPreferredManager">优选域名</a-button>
+          <a-button type="primary" :disabled="notFound || creating || savingEdit || deleting" @click="openCreate">新增主机名</a-button>
         </template>
       </ListToolbar>
       <BatchToolbar :count="selectedHostnames.length" :deleting="deleting" delete-text="批量删除" @delete="askBatchDelete" @clear="clearSelection" />
@@ -522,9 +522,9 @@ export default {
           </template>
           <template v-else-if="column.key === 'actions'">
             <a-space size="small">
-              <a-button type="link" size="small" @click="openDetails(record)">详情</a-button>
+              <a-button type="link" size="small" :disabled="creating || savingEdit || deleting" @click="openDetails(record)">详情</a-button>
               <a-dropdown>
-                <a-button type="link" size="small">更多</a-button>
+                <a-button type="link" size="small" :disabled="creating || savingEdit || deleting">更多</a-button>
                 <template #overlay>
                     <a-menu>
                       <a-menu-item @click="openEdit(record)">编辑</a-menu-item>

@@ -47,6 +47,9 @@ export default {
         total: this.recordMeta.total || 0,
       })
     },
+    batchDeleteDisabled() {
+      return this.selectedRecords.some((record) => record.status !== 'offline')
+    },
   },
   async mounted() {
     await this.load()
@@ -354,12 +357,13 @@ export default {
         <template #extra><a-button type="primary" @click="$router.push(zonesPath)">返回 EdgeOne</a-button></template>
       </a-result>
       <template v-else>
-      <BatchToolbar :count="selectedRecords.length" :deleting="deleting || statusUpdating" delete-text="批量删除" :actions="[{ key: 'offline', label: '批量停用', loading: statusUpdating, disabled: selectedRecords.every(record => record.status === 'offline') }]" @delete="askBatchRemove" @action="key => { if (key === 'offline') askBatchDisable() }" @clear="clearSelection" />
+      <BatchToolbar :count="selectedRecords.length" :deleting="deleting || statusUpdating" delete-text="批量删除" :delete-disabled="batchDeleteDisabled" :actions="[{ key: 'offline', label: '批量停用', loading: statusUpdating, disabled: selectedRecords.every(record => record.status === 'offline') }]" @delete="askBatchRemove" @action="key => { if (key === 'offline') askBatchDisable() }" @clear="clearSelection" />
       <EdgeOneRecordTable
         :records="records"
         :loading="loading"
         :pagination="pagination"
         :selection-reset-key="selectionResetKey"
+        :actions-disabled="saving || deleting || statusUpdating"
         empty-text="暂无匹配的加速域名"
         @edit="edit"
         @status="askStatus"

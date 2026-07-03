@@ -15,6 +15,7 @@ export default {
     emptyText: { type: String, default: '暂无解析记录' },
     selectionResetKey: Number,
     typeOptions: { type: Array, default: () => [] },
+    actionsDisabled: Boolean,
   },
   emits: ['edit', 'delete', 'selection-change', 'change'],
   computed: {
@@ -146,7 +147,7 @@ export default {
           <a-typography-text type="secondary" :ellipsis="{ tooltip: record.remark }" class="table-remark">{{ record.remark || '-' }}</a-typography-text>
         </template>
         <template v-else-if="column.key === 'actions'">
-          <TableActions :items="actionItems(record)" @edit="$emit('edit', record)" @select="action => selectAction(action, record)" />
+          <TableActions :items="actionItems(record)" :disabled="actionsDisabled" @edit="$emit('edit', record)" @select="action => selectAction(action, record)" />
         </template>
       </template>
     </a-table>
