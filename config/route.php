@@ -21,7 +21,7 @@ return [
     // 去除斜杠
     'remove_slash'          => false,
     // 默认的路由变量规则
-    'default_route_pattern' => '[\w\.]+',
+    'default_route_pattern' => '[\w\.\-]+',
     // URL伪静态后缀
     'url_html_suffix'       => 'html',
     // 访问控制器层名称
@@ -53,3 +53,4 @@ return [
     // API版本header变量
     'api_version'           => 'Api-Version',
 ];
+
