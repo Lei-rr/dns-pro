@@ -91,6 +91,29 @@ vim data/config.json
 chmod -R 755 data runtime
 ```
 
+
+### 1Panel / OpenResty 部署补充
+
+如果使用 1Panel 的 PHP 运行环境部署，请确认站点运行目录指向 `public/`，并在 OpenResty / Nginx 配置中保留 ThinkPHP 的前端控制器转发规则，否则 `/api/session`、`/api/providers` 等接口会被当作静态路径处理并返回 404。
+
+推荐配置片段：
+
+```nginx
+location / {
+    try_files $uri $uri/ /index.php?s=$uri&$query_string;
+}
+
+location ~ \.php$ {
+    include fastcgi-php.conf;
+    include fastcgi_params;
+    fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    fastcgi_param PATH_INFO $fastcgi_path_info;
+    fastcgi_pass 127.0.0.1:9000;
+}
+```
+
+在 1Panel 中修改 PHP 版本、运行目录或保存站点配置后，面板可能会重新生成普通 PHP 站点模板。若登录时出现 `Request failed with status code 404`，请优先检查上述 `location /` 规则是否仍然存在。
+
 访问首页登录，进入控制台后在「服务商」里添加你的 DNSPod / Cloudflare / EdgeOne / Cloudflare Tunnel 凭据。
 
 ## 使用流程
@@ -190,3 +213,4 @@ runtime/             缓存 / session / 日志（已 ignore）
 ## 缓存
 
 provider / zone / record / 隧道列表统一走 ThinkPHP 缓存（默认 file 驱动），TTL 3 天，按 provider tag 失效。可在 `config/services.php` 调整 `cache_ttl`。隧道连接状态在详情页未连接时每 3 秒自动刷新，连接后停止；列表页与路由配置可手动刷新穿透缓存。
+
