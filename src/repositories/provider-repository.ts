@@ -9,7 +9,9 @@ interface ProvidersFile {
 const DEFAULT_PROVIDERS: ProvidersFile = { items: [] }
 
 export class ProviderRepository {
-  private readonly store = new JsonStore<ProvidersFile>('providers.json', DEFAULT_PROVIDERS)
+  constructor(
+    private readonly store: JsonStore<ProvidersFile> = new JsonStore<ProvidersFile>('providers.json', DEFAULT_PROVIDERS)
+  ) {}
 
   async all(): Promise<Provider[]> {
     const data = await this.store.read()

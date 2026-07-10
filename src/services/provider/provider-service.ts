@@ -37,13 +37,8 @@ export class ProviderService {
   }
 
   async find(id: string): Promise<PresentedProvider | null> {
-    const provider = await this.providers.find(id)
-    if (!provider) return null
-
-    const providers = await this.providers.all()
-    const dependencyMap = await this.dependencyMap(providers)
-
-    return { ...this.presenter.present(provider, providers), dependencies: dependencyMap[id] ?? [] }
+    const providers = await this.all()
+    return providers.find((provider) => provider.id === id) ?? null
   }
 
   async create(data: Record<string, unknown>): Promise<PresentedProvider> {

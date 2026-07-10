@@ -13,7 +13,12 @@ interface PreferredDomainsFile {
 const DEFAULT_PREFERRED_DOMAINS: PreferredDomainsFile = { items: [] }
 
 export class PreferredDomainRepository {
-  private readonly store = new JsonStore<PreferredDomainsFile>('saas/preferred-domains.json', DEFAULT_PREFERRED_DOMAINS)
+  constructor(
+    private readonly store: JsonStore<PreferredDomainsFile> = new JsonStore<PreferredDomainsFile>(
+      'saas/preferred-domains.json',
+      DEFAULT_PREFERRED_DOMAINS
+    )
+  ) {}
 
   async read(): Promise<PreferredDomainsFile> {
     return this.store.read()

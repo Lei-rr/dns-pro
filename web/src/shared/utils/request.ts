@@ -1,5 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, ListResponse } from '@/types'
 
 export type RequestError = Error & { code: string; details: unknown; status: number }
 
@@ -52,17 +52,17 @@ export function withRefresh(options: Record<string, unknown> = {}) {
   return { params: refresh ? { ...queryParams, refresh: 1 } : queryParams }
 }
 
+function isListResponse<T>(data: unknown): data is ListResponse<T> {
+  return typeof data === 'object' && data !== null && Array.isArray((data as ListResponse<T>).items)
+}
+
 export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
-  if (Array.isArray(response?.data)) {
-    return { ...response, data: response.data as T }
+  const data = response.data
+  if (Array.isArray(data)) {
+    return { ...response, data: data as T }
   }
-  const data = response?.data as Record<string, unknown> | undefined
-  if (Array.isArray(data?.items)) {
-    return {
-      ...response,
-      data: data.items as T,
-      meta: data.meta || data.pagination || data,
-    } as ApiResponse<T>
+  if (isListResponse<T>(data)) {
+    return { ...response, data: data.items as T, meta: data.meta ?? data.pagination ?? data }
   }
   return response as ApiResponse<T>
 }

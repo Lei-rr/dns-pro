@@ -44,6 +44,13 @@ export interface ApiErrorResponse {
 
 export type ApiResponse<T = unknown> = ApiSuccessResponse<T>
 
+export interface ListResponse<T> {
+  [key: string]: unknown
+  items: T[]
+  meta?: Record<string, unknown>
+  pagination?: Record<string, unknown>
+}
+
 export interface RouteEntry {
   type: string
   id: string

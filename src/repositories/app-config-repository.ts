@@ -1,20 +1,22 @@
 import { JsonStore } from '../support/json-store.js'
 
-export interface AppConfig {
+export interface AppConfigData {
   auth: {
     username: string
     password: string
   }
 }
 
-const DEFAULT_CONFIG: AppConfig = {
+const DEFAULT_CONFIG: AppConfigData = {
   auth: { username: 'admin', password: 'admin' },
 }
 
 export class AppConfigRepository {
-  private readonly store = new JsonStore<AppConfig>('config.json', DEFAULT_CONFIG)
+  constructor(
+    private readonly store: JsonStore<AppConfigData> = new JsonStore<AppConfigData>('config.json', DEFAULT_CONFIG)
+  ) {}
 
-  async read(): Promise<AppConfig> {
+  async read(): Promise<AppConfigData> {
     return this.store.read()
   }
 }

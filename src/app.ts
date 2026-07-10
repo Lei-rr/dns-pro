@@ -94,7 +94,11 @@ export function buildApp(config: AppConfig) {
   })
 
   app.setErrorHandler(async (err: FastifyError, request, reply) => {
-    request.log.error(err)
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      request.log.warn(err)
+    } else {
+      request.log.error(err)
+    }
 
     if (err instanceof ApiError) {
       return reply.status(err.statusCode).send(error(err.message, err.statusCode, err.code, err.details))

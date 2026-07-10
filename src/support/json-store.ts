@@ -16,16 +16,19 @@ export function getDataRoot(): string {
 
 export class JsonStore<T extends object = Record<string, unknown>> {
   private readonly relativePath: string
+  private readonly dataRoot: string | undefined
 
   constructor(
     relativePath: string,
-    private readonly defaultValue: T = {} as T
+    private readonly defaultValue: T = {} as T,
+    dataRoot?: string
   ) {
     this.relativePath = relativePath.replace(/^\/+/, '')
+    this.dataRoot = dataRoot
   }
 
   private absolutePath(): string {
-    return path.resolve(dataRoot, this.relativePath)
+    return path.resolve(this.dataRoot ?? getDataRoot(), this.relativePath)
   }
 
   async read(): Promise<T> {

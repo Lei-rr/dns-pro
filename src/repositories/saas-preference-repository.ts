@@ -7,7 +7,12 @@ interface SaasPreferencesFile {
 const DEFAULT_PREFERENCES: SaasPreferencesFile = { items: {} }
 
 export class SaasPreferenceRepository {
-  private readonly store = new JsonStore<SaasPreferencesFile>('saas/preferences.json', DEFAULT_PREFERENCES)
+  constructor(
+    private readonly store: JsonStore<SaasPreferencesFile> = new JsonStore<SaasPreferencesFile>(
+      'saas/preferences.json',
+      DEFAULT_PREFERENCES
+    )
+  ) {}
 
   async read(): Promise<SaasPreferencesFile> {
     return this.store.read()
