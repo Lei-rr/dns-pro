@@ -1,0 +1,11 @@
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+data/
+.git/
+.github/
+.idea/
+.vscode/
+*.log
+tmp/

@@ -1,0 +1,18 @@
+services:
+  dns-pro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dns-pro:local
+    container_name: dns-pro
+    restart: unless-stopped
+    ports:
+      - "2022:2022"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 2022
+      NODE_ENV: production
+      SESSION_SECRET: change-this-before-production
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
