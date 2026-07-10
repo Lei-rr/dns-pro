@@ -1,10 +1,10 @@
 import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
-import { type SideEffects } from '../../support/side-effect-result.js'
+import { fromDnsOperationResult, type SideEffects } from '../../support/side-effect-result.js'
 import { globalCache } from '../../support/cache-service.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
 import { CloudflareZoneService } from '../cloudflare/cloudflare-zone-service.js'
-import { CloudflareDnsRecordService } from '../cloudflare/cloudflare-dns-record-service.js'
+import { CloudflaredDnsService } from './cloudflared-dns-service.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -20,7 +20,7 @@ export class CloudflaredRouteService {
   constructor(
     private readonly providers: ProviderRepository = new ProviderRepository(),
     private readonly cfZones: CloudflareZoneService = new CloudflareZoneService(),
-    private readonly dns: CloudflareDnsRecordService = new CloudflareDnsRecordService()
+    private readonly dnsService: CloudflaredDnsService = new CloudflaredDnsService()
   ) {}
 
   async getConfig(providerId: string, tunnelId: string, refresh = false): Promise<{ routes: CloudflaredRoute[]; catch_all: string; version: number }> {
@@ -55,14 +55,14 @@ export class CloudflaredRouteService {
     await this.writeIngress(providerId, tunnelId, newRoutes)
 
     const cfProviderId = await this.cfProviderIdOf(providerId)
-    const dnsResult = await this.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
+    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
     globalCache.invalidateTags([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalized.hostname,
       service: normalized.service,
       path: normalized.path,
-      side_effects: this.dnsSideEffects({ sync: this.normalizeDnsOperation(dnsResult, '已执行 Cloudflare DNS 同步') }),
+      side_effects: this.dnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
     }
   }
 
@@ -97,18 +97,18 @@ export class CloudflaredRouteService {
     if (hostnameChanged) {
       const stillUsed = newRoutes.filter((r) => r.hostname === originalHostname.toLowerCase())
       if (stillUsed.length === 0) {
-        await this.removeCnameBestEffort(cfProviderId, originalHostname, tunnelId)
+        await this.dnsService.removeCnameBestEffort(cfProviderId, originalHostname, tunnelId)
       }
     }
 
-    const dnsResult = await this.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
+    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
     globalCache.invalidateTags([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalized.hostname,
       service: normalized.service,
       path: normalized.path,
-      side_effects: this.dnsSideEffects({ sync: this.normalizeDnsOperation(dnsResult, '已执行 Cloudflare DNS 同步') }),
+      side_effects: this.dnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
     }
   }
 
@@ -138,7 +138,7 @@ export class CloudflaredRouteService {
     if (stillUsed.length > 0) {
       dnsResult = { action: 'kept', reason: 'hostname_still_used' }
     } else {
-      dnsResult = await this.safeRemoveCname(cfProviderId, zoneId, normalizedHostname, tunnelId)
+      dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, zoneId, normalizedHostname, tunnelId)
     }
 
     globalCache.invalidateTags([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
@@ -146,7 +146,7 @@ export class CloudflaredRouteService {
     return {
       hostname: normalizedHostname,
       path,
-      side_effects: this.dnsSideEffects({ cleanup: this.normalizeDnsOperation(dnsResult, '已执行 Cloudflare DNS 清理') }),
+      side_effects: this.dnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult as never, '已执行 Cloudflare DNS 清理') }),
     }
   }
 
@@ -217,133 +217,6 @@ export class CloudflaredRouteService {
     return { routes, catch_all: catchAll, version: Number(config.version ?? 0) }
   }
 
-  private async safeEnsureCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<Record<string, unknown>> {
-    try {
-      return await this.ensureCname(cfProviderId, zoneId, hostname, tunnelId)
-    } catch (error) {
-      return { action: 'failed', error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-
-  private async safeRemoveCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<Record<string, unknown>> {
-    try {
-      const resolvedZoneId = zoneId !== '' ? zoneId : await this.resolveZoneId(cfProviderId, hostname)
-      if (resolvedZoneId === '') return { action: 'skipped', reason: 'zone_not_found' }
-      return await this.removeCname(cfProviderId, resolvedZoneId, hostname, tunnelId)
-    } catch (error) {
-      return { action: 'failed', error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-
-  private async ensureCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<Record<string, unknown>> {
-    const cnameTarget = `${tunnelId}.cfargotunnel.com`
-
-    for (const record of await this.exactCnameMatches(cfProviderId, zoneId, hostname)) {
-      if (String(record.name ?? '') !== hostname) continue
-      if (String(record.type ?? '') === 'CNAME' && String(record.content ?? '') === cnameTarget) {
-        return { action: 'unchanged', record_id: String(record.id ?? '') }
-      }
-      if (String(record.type ?? '') === 'CNAME') {
-        const updated = await this.dns.update(cfProviderId, zoneId, String(record.id), {
-          type: 'CNAME',
-          name: hostname,
-          content: cnameTarget,
-          proxied: true,
-          ttl: 1,
-        })
-        return { action: 'updated', record_id: String(updated.id ?? '') }
-      }
-    }
-
-    const created = await this.dns.create(cfProviderId, zoneId, {
-      type: 'CNAME',
-      name: hostname,
-      content: cnameTarget,
-      proxied: true,
-      ttl: 1,
-    })
-    return { action: 'created', record_id: String(created.id ?? '') }
-  }
-
-  private async removeCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<Record<string, unknown>> {
-    const cnameTarget = `${tunnelId}.cfargotunnel.com`
-
-    for (const record of await this.exactCnameMatches(cfProviderId, zoneId, hostname)) {
-      if (String(record.name ?? '') === hostname && String(record.content ?? '') === cnameTarget) {
-        await this.dns.delete(cfProviderId, zoneId, String(record.id))
-        return { action: 'deleted', record_id: String(record.id) }
-      }
-    }
-
-    return { action: 'not_found' }
-  }
-
-  private async removeCnameBestEffort(cfProviderId: string, hostname: string, tunnelId: string): Promise<void> {
-    const normalized = hostname.toLowerCase().trim()
-    const zoneId = await this.resolveZoneId(cfProviderId, normalized)
-    if (zoneId === '') return
-    try {
-      await this.removeCname(cfProviderId, zoneId, normalized, tunnelId)
-    } catch {
-      // ignore
-    }
-  }
-
-  private async exactCnameMatches(cfProviderId: string, zoneId: string, hostname: string): Promise<Array<Record<string, unknown>>> {
-    const matches: Array<Record<string, unknown>> = []
-    let page = 1
-    let totalPages = 1
-
-    do {
-      const result = await this.dns.list(cfProviderId, zoneId, { type: 'CNAME', search: hostname, page, per_page: 100 })
-      for (const record of result.items) {
-        if (String(record.name ?? '') === hostname) {
-          matches.push(record)
-        }
-      }
-      totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
-      page++
-    } while (page <= totalPages)
-
-    return matches
-  }
-
-  private async resolveZoneId(cfProviderId: string, fqdn: string): Promise<string> {
-    const normalized = fqdn.replace(/\.$/, '').trim().toLowerCase()
-    if (normalized === '') return ''
-
-    const zones = await this.allZones(cfProviderId)
-    let bestName = ''
-    let bestId = ''
-
-    for (const zone of zones) {
-      const name = String(zone.name ?? '').toLowerCase()
-      const id = String(zone.id ?? '')
-      if (name === '' || id === '') continue
-      if ((normalized === name || normalized.endsWith('.' + name)) && name.length > bestName.length) {
-        bestName = name
-        bestId = id
-      }
-    }
-
-    return bestId
-  }
-
-  private async allZones(cfProviderId: string): Promise<Array<Record<string, unknown>>> {
-    const items: Array<Record<string, unknown>> = []
-    let page = 1
-    let totalPages = 1
-
-    do {
-      const result = await this.cfZones.list(cfProviderId, page, 100, '', page === 1)
-      items.push(...result.items)
-      totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
-      page++
-    } while (page <= totalPages)
-
-    return items
-  }
-
   private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const cfProvider = await this.providers.requireType<CloudflareProvider>(cfProviderId, 'cloudflare', 'Cloudflare provider not found', 'cloudflare_provider_not_found')
@@ -366,12 +239,6 @@ export class CloudflaredRouteService {
       throw new ApiError('cloudflared_cloudflare_provider_missing', 'Cloudflare Tunnel provider is not linked to a Cloudflare provider', 422)
     }
     return cfProviderId
-  }
-
-  private normalizeDnsOperation(result: Record<string, unknown>, defaultMessage: string): Record<string, unknown> {
-    const action = String(result.action ?? 'unknown')
-    const status = action === 'failed' ? 'failed' : ['skipped', 'kept', 'not_found'].includes(action) ? 'skipped' : 'completed'
-    return { status, message: String(result.message ?? result.error ?? defaultMessage), details: [result] }
   }
 
   private dnsSideEffects(effects: { sync?: Record<string, unknown>; cleanup?: Record<string, unknown> }): SideEffects {

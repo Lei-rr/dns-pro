@@ -1,5 +1,5 @@
 import type { FastifyRequest } from 'fastify'
-import { AppConfig } from '../support/app-config.js'
+import { AuthConfig } from '../support/auth-config.js'
 import { ApiError } from '../support/api-error.js'
 import { signIn, signOut, isSignedIn, getUsername } from '../support/auth-session.js'
 
@@ -9,10 +9,10 @@ export interface SessionState {
 }
 
 export class SessionService {
-  constructor(private readonly config: AppConfig = new AppConfig()) {}
+  constructor(private readonly authConfig: AuthConfig = new AuthConfig()) {}
 
   async login(request: FastifyRequest, username: string, password: string): Promise<SessionState> {
-    const valid = await this.config.verifyCredentials(username, password)
+    const valid = await this.authConfig.verifyCredentials(username, password)
     if (!valid) {
       throw new ApiError('invalid_credentials', 'Invalid username or password', 401)
     }
