@@ -9,6 +9,10 @@ import {
   zoneCacheTag,
 } from '../../support/cache-helpers.js'
 import { DnsPodGateway } from '../../gateways/dnspod-gateway.js'
+import {
+  dnspodDomainInfoSchema,
+  dnspodDomainSchema,
+} from '../../schemas/dnspod-responses.js'
 import type { DnsPodProvider } from '../../types/provider.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -97,8 +101,11 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
     }
 
-    const domainList = ((response.DomainList ?? []) as Record<string, unknown>[]).map(presentZone)
-    const total = Number((response.DomainCountInfo as Record<string, unknown> | undefined)?.DomainTotal ?? 0)
+    const rawDomainList = Array.isArray(response.DomainList) ? response.DomainList : []
+    const domainList = rawDomainList.map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
+    const total = Number(
+      (response.DomainCountInfo as Record<string, unknown> | undefined)?.DomainTotal ?? 0
+    )
 
     const result: ZoneListResult = {
       items: domainList,
@@ -134,11 +141,11 @@ export class DnsPodZoneService {
 
     globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
-    const domainInfo = response.DomainInfo as Record<string, unknown> | undefined
+    const domainInfo = dnspodDomainInfoSchema.parse(response.DomainInfo ?? {})
     return {
-      id: Number(domainInfo?.Id ?? 0),
-      name: String(domainInfo?.Domain ?? domain),
-      name_servers: (domainInfo?.GradeNsList as string[] | undefined) ?? [],
+      id: domainInfo.Id ?? 0,
+      name: domainInfo.Domain ?? domain,
+      name_servers: domainInfo.GradeNsList ?? [],
       request_id: response.RequestId as string | undefined,
     }
   }
@@ -197,26 +204,21 @@ export class DnsPodZoneService {
   }
 }
 
-function presentZone(zone: Record<string, unknown>): ZoneListItem {
+function presentZone(zone: import('../../schemas/dnspod-responses.js').DnspodDomain): ZoneListItem {
   return {
-    id: Number(zone.DomainId ?? 0),
-    name: String(zone.Name ?? ''),
-    punycode: String(zone.Punycode ?? ''),
-    status: String(zone.Status ?? ''),
-    dns_status:
-      zone.DnsStatus !== undefined
-        ? String(zone.DnsStatus)
-        : zone.DNSStatus !== undefined
-          ? String(zone.DNSStatus)
-          : null,
-    grade: String(zone.Grade ?? ''),
-    grade_title: String(zone.GradeTitle ?? ''),
-    group_id: Number(zone.GroupId ?? 0),
-    record_count: Number(zone.RecordCount ?? 0),
-    ttl: Number(zone.TTL ?? 0),
-    remark: String(zone.Remark ?? ''),
-    effective_dns: (zone.EffectiveDNS as string[] | undefined) ?? [],
-    created_on: String(zone.CreatedOn ?? ''),
-    updated_on: String(zone.UpdatedOn ?? ''),
+    id: zone.DomainId ?? 0,
+    name: zone.Name ?? '',
+    punycode: zone.Punycode ?? '',
+    status: zone.Status ?? '',
+    dns_status: zone.DnsStatus ?? zone.DNSStatus ?? null,
+    grade: zone.Grade ?? '',
+    grade_title: zone.GradeTitle ?? '',
+    group_id: zone.GroupId ?? 0,
+    record_count: zone.RecordCount ?? 0,
+    ttl: zone.TTL ?? 0,
+    remark: zone.Remark ?? '',
+    effective_dns: zone.EffectiveDNS ?? [],
+    created_on: zone.CreatedOn ?? '',
+    updated_on: zone.UpdatedOn ?? '',
   }
 }

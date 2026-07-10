@@ -11,9 +11,10 @@ export class BaseGateway {
   protected readonly client: AxiosInstance
 
   constructor(options: GatewayOptions) {
+    const defaultTimeout = Number(process.env.HTTP_TIMEOUT_MS ?? 30000)
     this.client = axios.create({
       baseURL: options.baseURL,
-      timeout: options.timeout ?? 30000,
+      timeout: options.timeout ?? defaultTimeout,
       headers: options.headers,
     })
   }

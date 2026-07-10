@@ -2,6 +2,7 @@ import { ProviderRepository } from '../repositories/provider-repository.js'
 import { CloudflareGateway } from './cloudflare-gateway.js'
 import { globalCache } from '../support/cache-service.js'
 import { ApiError } from '../support/api-error.js'
+import { cloudflareCustomHostnameSchema } from '../schemas/cloudflare-responses.js'
 import type { CloudflareProvider } from '../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -216,24 +217,25 @@ export class CloudflareCustomHostnameGateway {
     return null
   }
 
-  private present(hostname: Record<string, unknown>): CloudflareCustomHostname {
-    const ssl = (hostname.ssl as Record<string, unknown>) ?? {}
+  private present(hostname: unknown): CloudflareCustomHostname {
+    const parsed = cloudflareCustomHostnameSchema.parse(hostname)
+    const ssl = parsed.ssl ?? {}
     const certificates = Array.isArray(ssl.certificates) ? ssl.certificates : []
     const firstCert = (certificates[0] as Record<string, unknown>) ?? {}
 
     return {
-      id: String(hostname.id ?? ''),
-      hostname: String(hostname.hostname ?? ''),
-      status: hostname.status as string | undefined,
-      custom_origin_server: hostname.custom_origin_server as string | null | undefined,
+      id: parsed.id ?? '',
+      hostname: parsed.hostname ?? '',
+      status: parsed.status,
+      custom_origin_server: parsed.custom_origin_server,
       ssl: {
         ...ssl,
         expires_on: firstCert.expires_on ?? ssl.expires_on,
         issuer: firstCert.issuer ?? ssl.issuer,
       },
-      ownership_verification: (hostname.ownership_verification as Record<string, unknown>) ?? {},
-      custom_metadata: (hostname.custom_metadata as Record<string, unknown> | null) ?? null,
-      ...hostname,
+      ownership_verification: parsed.ownership_verification ?? {},
+      custom_metadata: parsed.custom_metadata ?? null,
+      ...parsed,
     }
   }
 

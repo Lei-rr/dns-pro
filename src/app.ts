@@ -27,10 +27,16 @@ const NO_STORE_HEADERS = {
 }
 
 export function buildApp(config: AppConfig) {
+  const DEFAULT_SESSION_SECRET = 'dns-pro-secure-session'
+
   const app = Fastify({
     logger: config.logLevel ? { level: config.logLevel } : false,
     trustProxy: config.trustProxy,
   })
+
+  if (config.sessionSecret === DEFAULT_SESSION_SECRET) {
+    console.warn('[WARN] SESSION_SECRET is using the default value. Please set a strong secret in production.')
+  }
 
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)

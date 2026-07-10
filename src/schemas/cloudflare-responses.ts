@@ -50,3 +50,17 @@ export const cloudflareResultInfoSchema = z
   .passthrough()
 
 export type CloudflareResultInfo = z.infer<typeof cloudflareResultInfoSchema>
+
+export const cloudflareCustomHostnameSchema = z
+  .object({
+    id: z.string().optional(),
+    hostname: z.string().optional(),
+    status: z.string().optional(),
+    custom_origin_server: z.string().nullable().optional(),
+    ssl: z.record(z.string(), z.unknown()).optional(),
+    ownership_verification: z.record(z.string(), z.unknown()).optional(),
+    custom_metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  })
+  .passthrough()
+
+export type CloudflareCustomHostnameResponse = z.infer<typeof cloudflareCustomHostnameSchema>

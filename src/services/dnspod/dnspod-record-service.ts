@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { globalCache } from '../../support/cache-service.js'
 import { ApiError } from '../../support/api-error.js'
 import { DnsPodGateway } from '../../gateways/dnspod-gateway.js'
+import { dnspodRecordSchema } from '../../schemas/dnspod-responses.js'
 import type { DnsPodProvider } from '../../types/provider.js'
 import {
   providerCacheTag,
@@ -113,7 +114,8 @@ export class DnsPodRecordService {
       })
     }
 
-    const recordList = ((response.RecordList ?? []) as Record<string, unknown>[]).map(presentRecord)
+    const rawRecordList = Array.isArray(response.RecordList) ? response.RecordList : []
+    const recordList = rawRecordList.map((record) => presentRecord(dnspodRecordSchema.parse(record)))
     const countInfo = response.RecordCountInfo as Record<string, unknown> | undefined
 
     const result: RecordListResult = {
@@ -286,21 +288,21 @@ export class DnsPodRecordService {
   }
 }
 
-function presentRecord(record: Record<string, unknown>): RecordListItem {
+function presentRecord(record: import('../../schemas/dnspod-responses.js').DnspodRecord): RecordListItem {
   return {
-    id: Number(record.RecordId ?? 0),
-    name: String(record.Name ?? ''),
-    type: String(record.Type ?? ''),
-    value: String(record.Value ?? ''),
-    line: String(record.Line ?? ''),
-    line_id: String(record.LineId ?? ''),
-    status: String(record.Status ?? ''),
-    ttl: Number(record.TTL ?? 0),
-    mx: Number(record.MX ?? 0),
-    weight: Number(record.Weight ?? 0),
-    monitor_status: String(record.MonitorStatus ?? ''),
-    remark: String(record.Remark ?? ''),
+    id: record.RecordId ?? 0,
+    name: record.Name ?? '',
+    type: record.Type ?? '',
+    value: record.Value ?? '',
+    line: record.Line ?? '',
+    line_id: record.LineId ?? '',
+    status: record.Status ?? '',
+    ttl: record.TTL ?? 0,
+    mx: record.MX ?? 0,
+    weight: record.Weight ?? 0,
+    monitor_status: (record.MonitorStatus as string | undefined) ?? '',
+    remark: record.Remark ?? '',
     default_ns: Boolean(record.DefaultNS ?? false),
-    updated_on: String(record.UpdatedOn ?? ''),
+    updated_on: record.UpdatedOn ?? '',
   }
 }

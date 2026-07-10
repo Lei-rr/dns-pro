@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { EdgeOneGateway } from '../../gateways/edgeone-gateway.js'
+import { edgeOneAccelerationDomainSchema } from '../../schemas/edgeone-responses.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -54,7 +55,7 @@ export class EdgeOneDomainService {
       RequestId?: string
     }>('DescribeAccelerationDomains', { ZoneId: zoneId, Offset: offset, Limit: limit })
 
-    const items = (response.AccelerationDomains ?? []).map((domain) => this.presentDomain(domain, zoneId))
+    const items = (response.AccelerationDomains ?? []).map((domain) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
     const total = response.TotalCount ?? items.length
     const result = {
       items,
@@ -226,20 +227,23 @@ export class EdgeOneDomainService {
     return origin
   }
 
-  private presentDomain(domain: Record<string, unknown>, zoneId: string): EdgeOneAccelerationDomain {
+  private presentDomain(
+    domain: import('../../schemas/edgeone-responses.js').EdgeOneAccelerationDomain,
+    zoneId: string
+  ): EdgeOneAccelerationDomain {
     const origin = (domain.OriginDetail as Record<string, unknown>) ?? {}
     const certificate = (domain.Certificate as Record<string, unknown>) ?? {}
 
     return {
-      zone_id: String(domain.ZoneId ?? zoneId),
-      name: String(domain.DomainName ?? ''),
-      status: domain.DomainStatus as string | undefined,
-      cname: domain.Cname as string | undefined,
-      ipv6_status: domain.IPv6Status as string | undefined,
-      identification_status: domain.IdentificationStatus as string | undefined,
-      origin_protocol: domain.OriginProtocol as string | undefined,
-      http_origin_port: domain.HttpOriginPort as number | undefined,
-      https_origin_port: domain.HttpsOriginPort as number | undefined,
+      zone_id: domain.ZoneId ?? zoneId,
+      name: domain.DomainName ?? '',
+      status: domain.DomainStatus,
+      cname: domain.Cname,
+      ipv6_status: domain.IPv6Status,
+      identification_status: domain.IdentificationStatus,
+      origin_protocol: domain.OriginProtocol,
+      http_origin_port: domain.HttpOriginPort,
+      https_origin_port: domain.HttpsOriginPort,
       origin: {
         type: origin.OriginType,
         value: origin.Origin,
@@ -257,8 +261,8 @@ export class EdgeOneDomainService {
             }))
           : [],
       },
-      created_on: domain.CreatedOn as string | undefined,
-      modified_on: domain.ModifiedOn as string | undefined,
+      created_on: domain.CreatedOn,
+      modified_on: domain.ModifiedOn,
     }
   }
 }

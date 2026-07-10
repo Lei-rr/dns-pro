@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { EdgeOneGateway } from '../../gateways/edgeone-gateway.js'
+import { edgeOneZoneSchema } from '../../schemas/edgeone-responses.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -49,7 +50,7 @@ export class EdgeOneZoneService {
 
       requestId = response.RequestId
       const pageItems = (response.Zones ?? [])
-        .map((zone) => this.presentZone(zone))
+        .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
         .filter((zone) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
       items.push(...pageItems)
 
@@ -102,18 +103,18 @@ export class EdgeOneZoneService {
     return dnspodProvider
   }
 
-  private presentZone(zone: Record<string, unknown>): EdgeOneZone {
+  private presentZone(zone: import('../../schemas/edgeone-responses.js').EdgeOneZone): EdgeOneZone {
     return {
-      id: String(zone.ZoneId ?? ''),
-      name: String(zone.ZoneName ?? ''),
-      area: zone.Area as string | undefined,
-      type: zone.Type as string | undefined,
-      status: zone.Status as string | undefined,
-      active_status: zone.ActiveStatus as string | undefined,
-      lock_status: zone.LockStatus as string | undefined,
-      paused: zone.Paused as boolean | undefined,
-      created_on: zone.CreatedOn as string | undefined,
-      modified_on: zone.ModifiedOn as string | undefined,
+      id: zone.ZoneId ?? '',
+      name: zone.ZoneName ?? '',
+      area: zone.Area,
+      type: zone.Type,
+      status: zone.Status,
+      active_status: zone.ActiveStatus,
+      lock_status: zone.LockStatus,
+      paused: zone.Paused,
+      created_on: zone.CreatedOn,
+      modified_on: zone.ModifiedOn,
     }
   }
 }

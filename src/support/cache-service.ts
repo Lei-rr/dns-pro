@@ -66,6 +66,10 @@ export class CacheService {
     this.store.clear()
   }
 
+  stats(): { size: number; maxEntries: number } {
+    return { size: this.store.size, maxEntries: this.maxEntries }
+  }
+
   private sweepExpired(): void {
     const now = Date.now()
     for (const [key, entry] of this.store.entries()) {
