@@ -59,6 +59,12 @@ npm start
 npm run dev:server
 ```
 
+需要查看 Fastify 请求日志时使用调试模式：
+
+```bash
+npm run dev:server:debug
+```
+
 启动前端开发服务：
 
 ```bash

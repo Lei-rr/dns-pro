@@ -3,6 +3,8 @@ import path from 'node:path'
 import { ApiError } from './api-error.js'
 
 const DATA_ROOT = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), 'data'))
+const LOCK_TIMEOUT_MS = 5000
+const STALE_LOCK_MS = 30000
 
 export class JsonStore<T extends object = Record<string, unknown>> {
   private readonly absolutePath: string
@@ -41,21 +43,8 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   async transaction<U>(mutator: (current: T) => { next: T; result?: U }): Promise<U | undefined> {
     await this.ensureDirectory()
 
-    // 简单文件锁：用 .lock 文件做独占锁，适合本项目单实例部署
     const lockFile = this.absolutePath + '.lock'
-    const acquireLock = async (): Promise<void> => {
-      try {
-        await fs.writeFile(lockFile, String(process.pid), { flag: 'wx' })
-      } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'EEXIST') {
-          await new Promise((resolve) => setTimeout(resolve, 10))
-          return acquireLock()
-        }
-        throw error
-      }
-    }
-
-    await acquireLock()
+    await this.acquireLock(lockFile)
 
     try {
       const current = await this.read()
@@ -78,5 +67,39 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   private async ensureDirectory(): Promise<void> {
     const dir = path.dirname(this.absolutePath)
     await fs.mkdir(dir, { recursive: true })
+  }
+
+  private async acquireLock(lockFile: string): Promise<void> {
+    const startedAt = Date.now()
+
+    while (true) {
+      try {
+        await fs.writeFile(lockFile, JSON.stringify({ pid: process.pid, created_at: Date.now() }), { flag: 'wx' })
+        return
+      } catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+          throw error
+        }
+
+        await this.removeStaleLock(lockFile)
+
+        if (Date.now() - startedAt > LOCK_TIMEOUT_MS) {
+          throw new ApiError('server_error', `Timed out waiting for lock ${lockFile}`, 500)
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 25))
+      }
+    }
+  }
+
+  private async removeStaleLock(lockFile: string): Promise<void> {
+    try {
+      const stat = await fs.stat(lockFile)
+      if (Date.now() - stat.mtimeMs > STALE_LOCK_MS) {
+        await fs.unlink(lockFile)
+      }
+    } catch {
+      // Lock disappeared between retries.
+    }
   }
 }

@@ -8,7 +8,6 @@ export function isSignedIn(request: FastifyRequest): boolean {
 }
 
 export function signIn(request: FastifyRequest, username: string): void {
-  request.session.regenerate()
   request.session.set(SIGNED_IN_KEY, true)
   request.session.set(USERNAME_KEY, username)
 }

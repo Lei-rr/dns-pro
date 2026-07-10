@@ -1,14 +1,16 @@
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import Fastify, { type FastifyError, type FastifyReply } from 'fastify'
 import fastifyStatic from '@fastify/static'
 import fastifyCompress from '@fastify/compress'
 import fastifyCookie from '@fastify/cookie'
-import fastifySession from '@fastify/session'
-import type { ZodTypeAny } from 'zod'
+import fastifySecureSession from '@fastify/secure-session'
+import fastifyHelmet from '@fastify/helmet'
+import fastifyRateLimit from '@fastify/rate-limit'
+import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
 import { ApiError } from './support/api-error.js'
 import { error } from './support/api-response.js'
-import { FileSessionStore } from './support/file-session-store.js'
 import { systemRoutes } from './routes/system.js'
 import { authRoutes } from './routes/auth.js'
 import { providerRoutes } from './routes/provider.js'
@@ -27,38 +29,45 @@ const NO_STORE_HEADERS = {
   Pragma: 'no-cache',
 }
 
+const SESSION_KEY = crypto.createHash('sha256').update('dns-pro-secure-session').digest()
+
 export function buildApp() {
   const logLevel = process.env.LOG_LEVEL
   const app = Fastify({
     logger: logLevel && logLevel !== 'silent' ? { level: logLevel } : false,
   })
 
-  app.setValidatorCompiler(({ schema }) => {
-    const zodSchema = schema as ZodTypeAny
-    return (data: unknown) => {
-      const result = zodSchema.safeParse(data)
-      if (!result.success) {
-        return { error: result.error }
-      }
-      return { value: result.data }
-    }
+  app.setValidatorCompiler(validatorCompiler)
+  app.setSerializerCompiler(serializerCompiler)
+
+  app.register(fastifyHelmet, {
+    contentSecurityPolicy: false,
   })
 
   app.addHook('onSend', async (_request, reply: FastifyReply, _payload) => {
-    void reply.headers(NO_STORE_HEADERS)
+    if (_request.url.startsWith('/api/')) {
+      void reply.headers(NO_STORE_HEADERS)
+    }
   })
 
   app.register(fastifyCookie)
-  app.register(fastifySession, {
+  app.register(fastifySecureSession, {
     cookieName: 'dns_pro_session',
-    secret: process.env.SESSION_SECRET ?? 'dns-pro-default-secret-change-me',
+    key: SESSION_KEY,
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: false,
       httpOnly: true,
+      sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
-    store: new FileSessionStore(),
-    saveUninitialized: false,
+  })
+  app.register(fastifyRateLimit, {
+    max: 10,
+    timeWindow: '1 minute',
+    hook: 'preHandler',
+    keyGenerator: (request) => request.ip,
+    allowList: (request) => request.method !== 'POST' || request.url !== '/api/session',
+    errorResponseBuilder: () => error('登录过于频繁，请稍后再试', 429, 'rate_limited'),
   })
 
   app.register(fastifyCompress)
@@ -66,6 +75,13 @@ export function buildApp() {
     root: distDir,
     prefix: '/',
     wildcard: false,
+    maxAge: '1y',
+    immutable: true,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-store, must-revalidate')
+      }
+    },
   })
 
   app.register(systemRoutes, { prefix: '/api' })
@@ -91,7 +107,7 @@ export function buildApp() {
       return reply.status(err.statusCode).send(error(err.message, err.statusCode, err.code, err.details))
     }
 
-    if (err.validation) {
+    if (err.code === 'FST_ERR_VALIDATION' || err.statusCode === 400) {
       return reply.status(400).send(error(err.message, 400, 'validation_error'))
     }
 

@@ -1,5 +1,5 @@
-declare module 'fastify' {
-  interface Session {
+declare module '@fastify/secure-session' {
+  interface SessionData {
     'auth.signed_in'?: boolean
     'auth.username'?: string | null
   }
