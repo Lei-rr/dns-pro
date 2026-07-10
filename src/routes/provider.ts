@@ -1,5 +1,9 @@
 import type { FastifyInstance } from 'fastify'
-import { providerStoreSchema, providerUpdateSchema, providerSortSchema } from '../schemas/provider.js'
+import {
+  providerStoreSchema,
+  providerUpdateSchema,
+  providerSortSchema,
+} from '../schemas/provider.js'
 import {
   definitionsIndex,
   providerIndex,
@@ -11,11 +15,11 @@ import {
 } from '../controllers/provider/provider-controller.js'
 
 export async function providerRoutes(app: FastifyInstance) {
-  app.get('/providers/definitions', definitionsIndex)
-  app.get('/providers', providerIndex)
-  app.post('/providers', { schema: { body: providerStoreSchema } }, providerStore)
-  app.get('/providers/:id', providerShow)
-  app.put('/providers/:id', { schema: { body: providerUpdateSchema } }, providerUpdate)
-  app.delete('/providers/:id', providerDelete)
-  app.put('/providers/sort-order', { schema: { body: providerSortSchema } }, providerSort)
+  app.get('/definitions', definitionsIndex)
+  app.get('/', providerIndex)
+  app.post('/', { schema: { body: providerStoreSchema } }, providerStore)
+  app.get('/:id', providerShow)
+  app.put('/:id', { schema: { body: providerUpdateSchema } }, providerUpdate)
+  app.delete('/:id', providerDelete)
+  app.put('/sort-order', { schema: { body: providerSortSchema } }, providerSort)
 }

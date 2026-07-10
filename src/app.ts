@@ -8,7 +8,9 @@ import fastifyCookie from '@fastify/cookie'
 import fastifySecureSession from '@fastify/secure-session'
 import fastifyHelmet from '@fastify/helmet'
 import fastifyRateLimit from '@fastify/rate-limit'
+import fastifySensible from '@fastify/sensible'
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod'
+import type { AppConfig } from './config/app.js'
 import { ApiError } from './support/api-error.js'
 import { error } from './support/api-response.js'
 import { systemRoutes } from './routes/system.js'
@@ -24,14 +26,9 @@ const NO_STORE_HEADERS = {
   Pragma: 'no-cache',
 }
 
-const SESSION_COOKIE_NAME = 'dns_pro_session'
-const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
-const SESSION_KEY = crypto.createHash('sha256').update('dns-pro-secure-session').digest()
-
-export function buildApp() {
-  const logLevel = process.env.LOG_LEVEL
+export function buildApp(config: AppConfig) {
   const app = Fastify({
-    logger: logLevel && logLevel !== 'silent' ? { level: logLevel } : false,
+    logger: config.logLevel ? { level: config.logLevel } : false,
   })
 
   app.setValidatorCompiler(validatorCompiler)
@@ -49,21 +46,27 @@ export function buildApp() {
 
   app.register(fastifyCookie)
   app.register(fastifySecureSession, {
-    cookieName: SESSION_COOKIE_NAME,
-    key: SESSION_KEY,
+    cookieName: config.sessionCookieName,
+    key: crypto.createHash('sha256').update(config.sessionSecret).digest(),
     cookie: {
-      secure: false,
+      secure: config.cookieSecure,
       httpOnly: true,
-      sameSite: 'lax',
-      maxAge: SESSION_MAX_AGE_SECONDS,
+      sameSite: config.cookieSameSite,
+      maxAge: config.sessionMaxAgeSeconds,
     },
   })
+
   app.register(fastifyRateLimit, {
-    global: false,
-    timeWindow: '1 minute',
+    global: true,
+    max: config.rateLimitGlobalMax,
+    timeWindow: config.rateLimitTimeWindow,
     hook: 'preHandler',
-    errorResponseBuilder: () => error('登录过于频繁，请稍后再试', 429, 'rate_limited'),
+    keyGenerator: (request) => request.ip,
+    allowList: (request) => !request.url.startsWith('/api/'),
+    errorResponseBuilder: () => error('请求过于频繁，请稍后再试', 429, 'rate_limited'),
   })
+
+  app.register(fastifySensible)
 
   app.register(fastifyCompress)
   app.register(fastifyStatic, {
@@ -95,6 +98,10 @@ export function buildApp() {
 
     if (err instanceof ApiError) {
       return reply.status(err.statusCode).send(error(err.message, err.statusCode, err.code, err.details))
+    }
+
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.status(err.statusCode).send(error(err.message, err.statusCode, 'request_error'))
     }
 
     if (err.code === 'FST_ERR_VALIDATION' || err.statusCode === 400) {

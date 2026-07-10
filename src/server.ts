@@ -1,13 +1,15 @@
 import { buildApp } from './app.js'
+import { loadAppConfig } from './config/app.js'
+import { setDataRoot } from './support/json-store.js'
 
-const host = process.env.HOST ?? '0.0.0.0'
-const port = Number(process.env.PORT ?? 2022)
+const config = loadAppConfig()
+setDataRoot(config.dataDir)
 
-const app = buildApp()
+const app = buildApp(config)
 
 try {
-  await app.listen({ host, port })
-  app.log.info(`dns-pro server listening at http://${host}:${port}`)
+  await app.listen({ host: config.host, port: config.port })
+  app.log.info(`dns-pro server listening at http://${config.host}:${config.port}`)
 } catch (err) {
   app.log.error(err)
   process.exit(1)

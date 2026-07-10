@@ -62,7 +62,7 @@ export interface ZoneDeleteResult {
 }
 
 export class DnsPodZoneService {
-  private readonly providers = new ProviderRepository()
+  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
 
   async list(providerId: string, filters: ZoneListFilters = {}): Promise<ZoneListResult> {
     const offset = Math.max(0, filters.offset ?? 0)

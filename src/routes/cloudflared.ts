@@ -20,31 +20,15 @@ import {
 } from '../controllers/cloudflared/cloudflared-tunnel-controller.js'
 
 export async function cloudflaredRoutes(app: FastifyInstance) {
-  app.get('/cloudflared/providers/:providerId/zones', cloudflaredZonesIndex)
-  app.get('/cloudflared/providers/:providerId/tunnels', cloudflaredTunnelsIndex)
-  app.post(
-    '/cloudflared/providers/:providerId/tunnels',
-    { schema: { body: cloudflaredTunnelCreateSchema } },
-    cloudflaredTunnelsStore
-  )
-  app.get('/cloudflared/providers/:providerId/tunnels/:tunnelId', cloudflaredTunnelShow)
-  app.delete('/cloudflared/providers/:providerId/tunnels/:tunnelId', cloudflaredTunnelDelete)
-  app.get('/cloudflared/providers/:providerId/tunnels/:tunnelId/token', cloudflaredTunnelToken)
-  app.post('/cloudflared/providers/:providerId/tunnels/:tunnelId/token/rotate', cloudflaredTunnelTokenRotate)
-  app.get('/cloudflared/providers/:providerId/tunnels/:tunnelId/routes', cloudflaredTunnelConfigShow)
-  app.post(
-    '/cloudflared/providers/:providerId/tunnels/:tunnelId/routes',
-    { schema: { body: cloudflaredRouteSchema } },
-    cloudflaredTunnelRouteStore
-  )
-  app.put(
-    '/cloudflared/providers/:providerId/tunnels/:tunnelId/routes',
-    { schema: { body: cloudflaredRouteSchema, querystring: cloudflaredRouteUpdateQuerySchema } },
-    cloudflaredTunnelRouteUpdate
-  )
-  app.delete(
-    '/cloudflared/providers/:providerId/tunnels/:tunnelId/routes',
-    { schema: { querystring: cloudflaredRouteDeleteQuerySchema } },
-    cloudflaredTunnelRouteDelete
-  )
+  app.get('/zones', cloudflaredZonesIndex)
+  app.get('/tunnels', cloudflaredTunnelsIndex)
+  app.post('/tunnels', { schema: { body: cloudflaredTunnelCreateSchema } }, cloudflaredTunnelsStore)
+  app.get('/tunnels/:tunnelId', cloudflaredTunnelShow)
+  app.delete('/tunnels/:tunnelId', cloudflaredTunnelDelete)
+  app.get('/tunnels/:tunnelId/token', cloudflaredTunnelToken)
+  app.post('/tunnels/:tunnelId/token/rotate', cloudflaredTunnelTokenRotate)
+  app.get('/tunnels/:tunnelId/routes', cloudflaredTunnelConfigShow)
+  app.post('/tunnels/:tunnelId/routes', { schema: { body: cloudflaredRouteSchema } }, cloudflaredTunnelRouteStore)
+  app.put('/tunnels/:tunnelId/routes', { schema: { body: cloudflaredRouteSchema, querystring: cloudflaredRouteUpdateQuerySchema } }, cloudflaredTunnelRouteUpdate)
+  app.delete('/tunnels/:tunnelId/routes', { schema: { querystring: cloudflaredRouteDeleteQuerySchema } }, cloudflaredTunnelRouteDelete)
 }

@@ -70,7 +70,7 @@ export interface RecordMutationResult {
 }
 
 export class DnsPodRecordService {
-  private readonly providers = new ProviderRepository()
+  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
 
   async list(providerId: string, domain: string, filters: RecordListFilters = {}): Promise<RecordListResult> {
     const normalized = this.normalizeListFilters(filters)

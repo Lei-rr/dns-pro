@@ -10,10 +10,10 @@ import { cloudflaredRoutes } from './cloudflared.js'
 export async function protectedRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authRequired)
 
-  app.register(providerRoutes)
-  app.register(cloudflareRoutes)
-  app.register(dnspodRoutes)
+  app.register(providerRoutes, { prefix: '/providers' })
+  app.register(cloudflareRoutes, { prefix: '/cloudflare/providers/:providerId' })
+  app.register(dnspodRoutes, { prefix: '/dnspod/providers/:providerId' })
   app.register(saasRoutes)
-  app.register(edgeOneRoutes)
-  app.register(cloudflaredRoutes)
+  app.register(edgeOneRoutes, { prefix: '/edgeone/providers/:providerId' })
+  app.register(cloudflaredRoutes, { prefix: '/cloudflared/providers/:providerId' })
 }

@@ -2,23 +2,36 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ApiError } from './api-error.js'
 
-const DATA_ROOT = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), 'data'))
+let dataRoot = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), 'data'))
 const LOCK_TIMEOUT_MS = 5000
 const STALE_LOCK_MS = 30000
 
+export function setDataRoot(root: string): void {
+  dataRoot = path.resolve(root)
+}
+
+export function getDataRoot(): string {
+  return dataRoot
+}
+
 export class JsonStore<T extends object = Record<string, unknown>> {
-  private readonly absolutePath: string
+  private readonly relativePath: string
 
   constructor(
     relativePath: string,
     private readonly defaultValue: T = {} as T
   ) {
-    this.absolutePath = path.resolve(DATA_ROOT, relativePath.replace(/^\/+/, ''))
+    this.relativePath = relativePath.replace(/^\/+/, '')
+  }
+
+  private absolutePath(): string {
+    return path.resolve(dataRoot, this.relativePath)
   }
 
   async read(): Promise<T> {
+    const filePath = this.absolutePath()
     try {
-      const content = await fs.readFile(this.absolutePath, 'utf-8')
+      const content = await fs.readFile(filePath, 'utf-8')
       if (content.trim() === '') {
         return this.defaultValue
       }
@@ -28,22 +41,30 @@ export class JsonStore<T extends object = Record<string, unknown>> {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
         return this.defaultValue
       }
-      throw new ApiError('server_error', `Failed to read ${this.absolutePath}: ${error instanceof Error ? error.message : String(error)}`, 500)
+      throw new ApiError('server_error', `Failed to read ${filePath}: ${error instanceof Error ? error.message : String(error)}`, 500)
     }
   }
 
   async write(data: T): Promise<void> {
+    const filePath = this.absolutePath()
     await this.ensureDirectory()
-    const tmp = this.absolutePath + '.tmp'
+    const tmp = filePath + '.tmp'
     const encoded = JSON.stringify(data, null, 2) + '\n'
-    await fs.writeFile(tmp, encoded, 'utf-8')
-    await fs.rename(tmp, this.absolutePath)
+    const handle = await fs.open(tmp, 'w')
+    try {
+      await handle.writeFile(encoded, 'utf-8')
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await fs.rename(tmp, filePath)
   }
 
   async transaction<U>(mutator: (current: T) => { next: T; result?: U }): Promise<U | undefined> {
+    const filePath = this.absolutePath()
     await this.ensureDirectory()
 
-    const lockFile = this.absolutePath + '.lock'
+    const lockFile = filePath + '.lock'
     await this.acquireLock(lockFile)
 
     try {
@@ -61,11 +82,11 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   }
 
   getPath(): string {
-    return this.absolutePath
+    return this.absolutePath()
   }
 
   private async ensureDirectory(): Promise<void> {
-    const dir = path.dirname(this.absolutePath)
+    const dir = path.dirname(this.absolutePath())
     await fs.mkdir(dir, { recursive: true })
   }
 
