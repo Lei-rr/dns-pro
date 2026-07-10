@@ -7,14 +7,23 @@ export interface GatewayOptions {
   timeout?: number
 }
 
+let defaultHttpTimeoutMs = 30000
+
+export function setDefaultHttpTimeout(ms: number): void {
+  defaultHttpTimeoutMs = Math.max(1000, Math.min(300000, ms))
+}
+
+export function getDefaultHttpTimeout(): number {
+  return defaultHttpTimeoutMs
+}
+
 export class BaseGateway {
   protected readonly client: AxiosInstance
 
   constructor(options: GatewayOptions) {
-    const defaultTimeout = Number(process.env.HTTP_TIMEOUT_MS ?? 30000)
     this.client = axios.create({
       baseURL: options.baseURL,
-      timeout: options.timeout ?? defaultTimeout,
+      timeout: options.timeout ?? defaultHttpTimeoutMs,
       headers: options.headers,
     })
   }

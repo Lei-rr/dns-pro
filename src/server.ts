@@ -3,6 +3,7 @@ import { ZodError } from 'zod'
 import { buildApp } from './app.js'
 import { loadAppConfig } from './config/app.js'
 import { setDataRoot } from './support/json-store.js'
+import { setDefaultHttpTimeout } from './gateways/base-gateway.js'
 
 function printConfigError(err: unknown): never {
   if (err instanceof ZodError) {
@@ -42,7 +43,7 @@ const config = (() => {
   }
 })()
 setDataRoot(config.dataDir)
-process.env.HTTP_TIMEOUT_MS = String(config.httpTimeoutMs)
+setDefaultHttpTimeout(config.httpTimeoutMs)
 
 const app = buildApp(config)
 

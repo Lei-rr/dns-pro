@@ -32,7 +32,6 @@ export class TencentCloudGateway extends BaseGateway {
   ) {
     super({
       baseURL: `https://${options.endpoint}`,
-      timeout: 30000,
       headers: {
         'Content-Type': TENCENT_CONTENT_TYPE,
         Host: options.endpoint,
