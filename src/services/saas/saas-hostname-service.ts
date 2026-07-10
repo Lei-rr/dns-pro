@@ -1,10 +1,15 @@
 import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { CloudflareZoneService, type ZoneListResult } from '../cloudflare/cloudflare-zone-service.js'
-import { CloudflareCustomHostnameGateway } from '../../gateways/cloudflare-custom-hostname-gateway.js'
+import { CloudflareCustomHostnameGateway, type CloudflareCustomHostname } from '../../gateways/cloudflare-custom-hostname-gateway.js'
 import { PreferredDomainService } from './preferred-domain-service.js'
 import { SaasPreferenceService, type HostnamePreference } from './saas-preference-service.js'
 import type { SaasProvider } from '../../types/provider.js'
+
+interface HostnameListResult {
+  items: CloudflareCustomHostname[]
+  pagination: Record<string, unknown>
+}
 
 export class SaasHostnameService {
   constructor(
@@ -23,7 +28,7 @@ export class SaasHostnameService {
     return this.cloudflareProviderId(providerId)
   }
 
-  async hostnames(providerId: string, zoneName: string, page = 1, perPage = 20, refresh = false): Promise<Record<string, unknown>> {
+  async hostnames(providerId: string, zoneName: string, page = 1, perPage = 20, refresh = false): Promise<HostnameListResult> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
 
     const previousStatusMap = new Map<string, string>()
@@ -45,7 +50,7 @@ export class SaasHostnameService {
     const items = await Promise.all(
       result.items.map((hostname) => {
         const id = hostname.id
-        const enriched = refresh
+        const enriched: CloudflareCustomHostname = refresh
           ? { ...hostname, previous_status: previousStatusMap.get(id) ?? '' }
           : hostname
         return this.applyEffectiveSyncConfig(providerId, this.mergePreference(enriched, preferenceMap[id] ?? null))
@@ -55,13 +60,13 @@ export class SaasHostnameService {
     return { ...result, items }
   }
 
-  async showHostname(providerId: string, zoneName: string, hostnameFqdn: string, refresh = false): Promise<Record<string, unknown>> {
+  async showHostname(providerId: string, zoneName: string, hostnameFqdn: string, refresh = false): Promise<CloudflareCustomHostname> {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const hostname = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId, refresh)
     return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, hostnameId)
   }
 
-  async refreshHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<Record<string, unknown>> {
+  async refreshHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<CloudflareCustomHostname> {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
 
     let previousStatus = ''
@@ -77,7 +82,7 @@ export class SaasHostnameService {
     return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, hostnameId, previousStatus)
   }
 
-  async createHostname(providerId: string, zoneName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async createHostname(providerId: string, zoneName: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
     const preferred = await this.extractPreferredDomain(data)
 
@@ -108,7 +113,7 @@ export class SaasHostnameService {
     return this.withPreference(hostname, cfId, hostnameId)
   }
 
-  async updateHostname(providerId: string, zoneName: string, hostnameFqdn: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async updateHostname(providerId: string, zoneName: string, hostnameFqdn: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const preferred = 'preferred_domain' in data ? await this.extractPreferredDomain(data) : null
 
@@ -134,25 +139,25 @@ export class SaasHostnameService {
     return this.withPreference(hostname, cfId, hostnameId)
   }
 
-  async deleteHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<Record<string, unknown>> {
+  async deleteHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<{ id: string }> {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const result = await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
     await this.preferences.clear(cfId, hostnameId)
     return result
   }
 
-  async fallbackOriginInfo(providerId: string, zoneName: string, refresh = false): Promise<Record<string, unknown>> {
+  async fallbackOriginInfo(providerId: string, zoneName: string, refresh = false): Promise<{ origin?: string | null; status?: string | null; [key: string]: unknown }> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
     return this.cloudflareHostnames.fallbackOriginInfo(cfId, zoneId, refresh)
   }
 
-  async setFallbackOrigin(providerId: string, zoneName: string, origin: string): Promise<Record<string, unknown>> {
+  async setFallbackOrigin(providerId: string, zoneName: string, origin: string): Promise<{ origin?: string | null; status?: string | null }> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
     const normalized = this.normalizeFallbackOrigin(zoneName, origin)
     return this.cloudflareHostnames.setFallbackOrigin(cfId, zoneId, normalized)
   }
 
-  async deleteFallbackOrigin(providerId: string, zoneName: string): Promise<Record<string, unknown>> {
+  async deleteFallbackOrigin(providerId: string, zoneName: string): Promise<{ origin?: string | null; status?: string | null }> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
     return this.cloudflareHostnames.deleteFallbackOrigin(cfId, zoneId)
   }
@@ -256,8 +261,8 @@ export class SaasHostnameService {
     return preferred
   }
 
-  private mergePreference(hostname: Record<string, unknown>, preference: HostnamePreference | null): Record<string, unknown> {
-    const metadata = (hostname.custom_metadata as Record<string, unknown> | null) ?? {}
+  private mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): CloudflareCustomHostname {
+    const metadata = hostname.custom_metadata ?? {}
     const preferred = preference?.preferred_domain?.trim() ?? ''
     const syncTarget = preference?.sync_target?.trim() ?? ''
     const syncProviderId = preference?.sync_provider_id?.trim() ?? ''
@@ -280,16 +285,16 @@ export class SaasHostnameService {
     }
   }
 
-  private async withPreference(hostname: Record<string, unknown>, cfId: string, hostnameId: string): Promise<Record<string, unknown>> {
+  private async withPreference(hostname: CloudflareCustomHostname, cfId: string, hostnameId: string): Promise<CloudflareCustomHostname> {
     return this.mergePreference(hostname, hostnameId !== '' ? await this.preferences.get(cfId, hostnameId) : null)
   }
 
-  private async enrichDetailedHostname(providerId: string, hostname: Record<string, unknown>, cfId: string, zoneId: string, hostnameId: string, previousStatus = ''): Promise<Record<string, unknown>> {
-    const ssl = (hostname.ssl as Record<string, unknown>) ?? {}
+  private async enrichDetailedHostname(providerId: string, hostname: CloudflareCustomHostname, cfId: string, zoneId: string, hostnameId: string, previousStatus = ''): Promise<CloudflareCustomHostname> {
+    const ssl = hostname.ssl ?? {}
     const dcvUuid = String(ssl.dcv_delegation_uuid ?? '')
     const effectiveUuid = dcvUuid !== '' ? dcvUuid : await this.cloudflareZones.dcvDelegationUuid(cfId, zoneId)
 
-    const enriched: Record<string, unknown> = {
+    const enriched: CloudflareCustomHostname = {
       ...hostname,
       ssl: { ...ssl, dcv_delegation_uuid: effectiveUuid },
     }
@@ -301,7 +306,7 @@ export class SaasHostnameService {
     return this.applyEffectiveSyncConfig(providerId, await this.withPreference(enriched, cfId, hostnameId))
   }
 
-  private async applyEffectiveSyncConfig(providerId: string, hostname: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async applyEffectiveSyncConfig(providerId: string, hostname: CloudflareCustomHostname): Promise<CloudflareCustomHostname> {
     const effective = await this.effectiveSyncConfig(providerId, String(hostname.hostname ?? ''), '')
     return {
       ...hostname,

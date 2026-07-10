@@ -66,6 +66,8 @@ export class EdgeOneWorkflowService {
       name: fqdn,
       value: cname,
       line: '默认',
+      purpose: 'edgeone_cname',
+      provider_id: dnspodProviderId,
       remark: `EdgeOne 加速丨${fqdn}`,
     }
 
@@ -107,6 +109,8 @@ export class EdgeOneWorkflowService {
           name: fqdn,
           value: cname,
           line: '默认',
+          purpose: 'edgeone_cname',
+          provider_id: dnspodProviderId,
           remark: `EdgeOne 加速丨${fqdn}`,
         }
         const result = await this.support.delete(dnspodProviderId, dnspodZone, record)

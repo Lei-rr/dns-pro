@@ -1,11 +1,17 @@
 import { ProviderRepository } from '../../../repositories/provider-repository.js'
 import { ApiError } from '../../../support/api-error.js'
 import type { SaasProvider } from '../../../types/provider.js'
+import type { CloudflareCustomHostname } from '../../../gateways/cloudflare-custom-hostname-gateway.js'
 import { CloudflareDnsRecordService, type RecordPayload } from '../../cloudflare/cloudflare-dns-record-service.js'
 import { CloudflareZoneService } from '../../cloudflare/cloudflare-zone-service.js'
 import { SaasHostnameService } from '../saas-hostname-service.js'
 import { isHostnameActive } from '../utils/host-status.js'
-import type { SyncDriver } from './sync-driver.js'
+import type { SyncDriver, SyncRecord } from './sync-driver.js'
+
+export interface CloudflareDnsSyncRecord extends SyncRecord {
+  zone_name?: string
+  comment?: string
+}
 
 export class CloudflareDnsSyncDriver implements SyncDriver {
   private readonly purposeLabels: Record<string, string> = {
@@ -44,7 +50,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     providerId: string,
     cfZoneName: string,
     hostnameFqdn: string,
-    beforeRecords: Array<Record<string, unknown>>
+    beforeRecords: SyncRecord[]
   ): Promise<Record<string, unknown>> {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     const fqdn = this.requireFqdn(hostname)
@@ -65,7 +71,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     }
   }
 
-  async cleanup(providerId: string, hostnameFqdn: string, records: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
+  async cleanup(providerId: string, hostnameFqdn: string, records: SyncRecord[]): Promise<Record<string, unknown>> {
     if (records.length === 0 || hostnameFqdn === '') return { cleaned: 0, records: [] }
 
     let cloudflareProviderId = String(records[0]?.provider_id ?? '').trim()
@@ -80,7 +86,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
       return { cleaned: 0, records: [], reason: 'cloudflare_zone_not_found' }
     }
 
-      const results = await Promise.all(records.map((record) => this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record))))
+    const results = await Promise.all(records.map((record) => this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record))))
     return { cleaned: results.filter((r) => r.status === 'deleted').length, cloudflare_zone: zoneName, records: results }
   }
 
@@ -92,14 +98,14 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     if (fqdn === '') return { cleaned: 0, reason: 'fqdn_missing' }
 
     const [cloudflareProviderId, zoneId, zoneName] = await this.resolveTarget(providerId, fqdn)
-    const ownership = (hostname.ownership_verification as Record<string, unknown>) ?? {}
+    const ownership = hostname.ownership_verification ?? {}
     const record = this.record('TXT', `_cf-custom-hostname.${fqdn}`, String(ownership.value ?? ''), 'ownership_verification', fqdn, zoneName, cloudflareProviderId)
     const result = await this.deleteRecord(cloudflareProviderId, zoneId, record)
 
     return { cleaned: result.status === 'deleted' ? 1 : 0, cloudflare_zone: zoneName, records: [result] }
   }
 
-  async collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<Record<string, unknown>> {
+  async collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<{ hostname_fqdn: string; records: CloudflareDnsSyncRecord[] }> {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn)
     const sync = await this.hostnames.syncConfig(providerId, String(hostname.hostname ?? ''), cfZoneName)
     let cloudflareProviderId = String(sync.sync_provider_id ?? '').trim()
@@ -139,32 +145,32 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     throw new ApiError('saas_cloudflare_dns_provider_missing', 'SaaS provider is not linked to a Cloudflare DNS provider', 422)
   }
 
-  private requireFqdn(hostname: Record<string, unknown>): string {
+  private requireFqdn(hostname: CloudflareCustomHostname): string {
     const fqdn = String(hostname.hostname ?? '')
     if (fqdn === '') throw new ApiError('saas_fqdn_missing', 'SaaS hostname FQDN missing', 422)
     return fqdn
   }
 
-  private async resolveEffectiveOrigin(providerId: string, cfZoneName: string, hostname: Record<string, unknown>): Promise<string> {
+  private async resolveEffectiveOrigin(providerId: string, cfZoneName: string, hostname: CloudflareCustomHostname): Promise<string> {
     const custom = String(hostname.custom_origin_server ?? '').trim()
     if (custom !== '') return custom
     return (await this.hostnames.fallbackOrigin(providerId, cfZoneName)) ?? ''
   }
 
-  private requireBusinessTarget(hostname: Record<string, unknown>, effectiveOrigin: string): void {
+  private requireBusinessTarget(hostname: CloudflareCustomHostname, effectiveOrigin: string): void {
     const autoPreferred = Boolean(hostname.auto_preferred ?? false)
-    const metadata = (hostname.custom_metadata as Record<string, unknown> | null) ?? {}
+    const metadata = hostname.custom_metadata ?? {}
     const preferred = String(metadata.preferred_domain ?? '').trim()
     const businessTarget = autoPreferred && preferred !== '' ? preferred : effectiveOrigin
     if (businessTarget === '') throw new ApiError('saas_business_target_missing', 'No business CNAME target available', 422)
   }
 
-  private collectRecords(hostname: Record<string, unknown>, effectiveOrigin: string, zoneName: string, cloudflareProviderId: string, includeAll = false): Array<Record<string, unknown>> {
-    const records: Array<Record<string, unknown>> = []
+  private collectRecords(hostname: CloudflareCustomHostname, effectiveOrigin: string, zoneName: string, cloudflareProviderId: string, includeAll = false): CloudflareDnsSyncRecord[] {
+    const records: CloudflareDnsSyncRecord[] = []
     const fqdn = String(hostname.hostname ?? '')
     const shouldOutputOwnership = includeAll || !isHostnameActive(hostname)
     const autoPreferred = Boolean(hostname.auto_preferred ?? false)
-    const metadata = (hostname.custom_metadata as Record<string, unknown> | null) ?? {}
+    const metadata = hostname.custom_metadata ?? {}
     const preferred = String(metadata.preferred_domain ?? '').trim()
     const businessTarget = autoPreferred && preferred !== '' ? preferred : effectiveOrigin
 
@@ -172,13 +178,12 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
       records.push(this.record('CNAME', fqdn, businessTarget, 'origin_cname', fqdn, zoneName, cloudflareProviderId))
     }
 
-    const ssl = (hostname.ssl as Record<string, unknown>) ?? {}
-    const dcvRecords = Array.isArray(ssl.dcv_delegation_records) ? ssl.dcv_delegation_records : []
+    const ssl = hostname.ssl ?? {}
+    const dcvRecords = ssl.dcv_delegation_records ?? []
     let dcvAdded = false
     for (const rec of dcvRecords) {
-      if (typeof rec !== 'object' || rec === null) continue
-      const cname = String((rec as Record<string, unknown>).cname ?? '')
-      const target = String((rec as Record<string, unknown>).cname_target ?? '')
+      const cname = String(rec.cname ?? '')
+      const target = String(rec.cname_target ?? '')
       if (cname !== '' && target !== '') {
         records.push(this.record('CNAME', cname, target, 'dcv_delegation', fqdn, zoneName, cloudflareProviderId))
         dcvAdded = true
@@ -193,7 +198,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     }
 
     if (shouldOutputOwnership) {
-      const ownership = (hostname.ownership_verification as Record<string, unknown>) ?? null
+      const ownership = hostname.ownership_verification ?? null
       if (ownership && ownership.name && ownership.value) {
         records.push(this.record('TXT', String(ownership.name), String(ownership.value), 'ownership_verification', fqdn, zoneName, cloudflareProviderId))
       }
@@ -202,7 +207,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     return records
   }
 
-  private record(type: string, name: string, value: string, purpose: string, fqdn: string, zoneName: string, cloudflareProviderId: string): Record<string, unknown> {
+  private record(type: string, name: string, value: string, purpose: string, fqdn: string, zoneName: string, cloudflareProviderId: string): CloudflareDnsSyncRecord {
     return {
       type,
       name,
@@ -214,14 +219,14 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     }
   }
 
-  private async withPurpose(record: Record<string, unknown>, resultPromise: Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
+  private async withPurpose(record: SyncRecord, resultPromise: Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
     const result = await resultPromise
     return { purpose: record.purpose, ...result }
   }
 
-  private async syncRecord(cloudflareProviderId: string, zoneId: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async syncRecord(cloudflareProviderId: string, zoneId: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const base = { type: record.type, name: record.name, value: record.value }
-    const matches = await this.exactMatches(cloudflareProviderId, zoneId, String(record.name), String(record.type))
+    const matches = await this.exactMatches(cloudflareProviderId, zoneId, record.name, record.type)
     const expectedValue = String(record.value ?? '').replace(/\.$/, '')
     const expectedComment = String(record.comment ?? '')
 
@@ -249,12 +254,12 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     return { ...base, status: 'created', record_id: String(created.id ?? '') }
   }
 
-  private async deleteRecord(cloudflareProviderId: string, zoneId: string, record: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private async deleteRecord(cloudflareProviderId: string, zoneId: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const base = { type: record.type, name: record.name }
     const expectedValue = String(record.value ?? '').replace(/\.$/, '')
     const expectedComment = String(record.comment ?? '')
 
-    for (const match of await this.exactMatches(cloudflareProviderId, zoneId, String(record.name), String(record.type))) {
+    for (const match of await this.exactMatches(cloudflareProviderId, zoneId, record.name, record.type)) {
       const value = String(match.content ?? '').replace(/\.$/, '')
       if (value !== expectedValue) continue
       const comment = String(match.comment ?? '')
@@ -287,7 +292,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     return matches
   }
 
-  private recordPayload(record: Record<string, unknown>): RecordPayload {
+  private recordPayload(record: SyncRecord): RecordPayload {
     return {
       type: String(record.type),
       name: String(record.name),
@@ -301,11 +306,11 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
   private async deleteMissingRecords(
     cloudflareProviderId: string,
     zoneId: string,
-    beforeRecords: Array<Record<string, unknown>>,
-    afterRecords: Array<Record<string, unknown>>
-  ): Promise<Array<Record<string, unknown>>> {
+    beforeRecords: SyncRecord[],
+    afterRecords: CloudflareDnsSyncRecord[]
+  ): Promise<Record<string, unknown>[]> {
     const afterMap = new Set(afterRecords.map((record) => this.recordSignature(record)))
-    const deleted: Array<Record<string, unknown>> = []
+    const deleted: Record<string, unknown>[] = []
     const seen = new Set<string>()
 
     for (const record of beforeRecords) {
@@ -318,7 +323,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     return deleted
   }
 
-  private recordSignature(record: Record<string, unknown>): string {
+  private recordSignature(record: SyncRecord): string {
     const type = String(record.type ?? '').toUpperCase().trim()
     const name = String(record.name ?? '').toLowerCase().replace(/\.$/, '').trim()
     const value = String(record.value ?? '').toLowerCase().replace(/\.$/, '').trim()

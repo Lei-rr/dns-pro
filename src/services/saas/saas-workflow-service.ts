@@ -9,7 +9,8 @@ import { SaasPreferenceService } from './saas-preference-service.js'
 import { DnspodSyncDriver } from './sync-drivers/dnspod-sync-driver.js'
 import { CloudflareDnsSyncDriver } from './sync-drivers/cloudflare-dns-sync-driver.js'
 import { isHostnameActive } from './utils/host-status.js'
-import type { SyncDriver } from './sync-drivers/sync-driver.js'
+import type { SyncDriver, SyncRecord } from './sync-drivers/sync-driver.js'
+import type { CloudflareCustomHostname } from '../../gateways/cloudflare-custom-hostname-gateway.js'
 
 export class SaasWorkflowService {
   constructor(
@@ -21,13 +22,19 @@ export class SaasWorkflowService {
     private readonly cloudflareDns: CloudflareDnsRecordService = new CloudflareDnsRecordService()
   ) {}
 
-  async listHostnames(providerId: string, zoneName: string, page: number, perPage: number, refresh = false): Promise<Record<string, unknown>> {
+  async listHostnames(
+    providerId: string,
+    zoneName: string,
+    page: number,
+    perPage: number,
+    refresh = false
+  ): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown>; side_effects?: SideEffects }> {
     const result = await this.hostnames.hostnames(providerId, zoneName, page, perPage, refresh)
 
     if (!refresh) return result
 
     const cleanup: Record<string, unknown> = {}
-    for (const item of (result.items as Array<Record<string, unknown>>) ?? []) {
+    for (const item of result.items ?? []) {
       const fqdn = String(item.hostname ?? '').trim()
       const hostnameId = String(item.id ?? '').trim()
       delete item.previous_status
@@ -70,10 +77,10 @@ export class SaasWorkflowService {
   }
 
   async updateHostname(providerId: string, zoneName: string, hostnameFqdn: string, data: Record<string, unknown>, autoSync = false): Promise<Record<string, unknown>> {
-    let beforeRecords: Array<Record<string, unknown>> = []
+    let beforeRecords: SyncRecord[] = []
     if (autoSync) {
       const collected = await (await this.syncDriverForHostname(providerId, zoneName, hostnameFqdn)).collectRecordsFor(providerId, zoneName, hostnameFqdn)
-      beforeRecords = (collected.records as Array<Record<string, unknown>>) ?? []
+      beforeRecords = collected.records ?? []
     }
 
     const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data)
@@ -109,8 +116,8 @@ export class SaasWorkflowService {
     const collected = autoCleanup ? await driver.collectRecordsFor(providerId, zoneName, hostnameFqdn) : null
     const result = await this.hostnames.deleteHostname(providerId, zoneName, hostnameFqdn)
 
-    if (collected && (collected.records as Array<Record<string, unknown>>).length > 0 && String(collected.hostname_fqdn ?? '') !== '') {
-      const cleanup = await this.safeSync(() => driver.cleanup(providerId, String(collected.hostname_fqdn), collected.records as Array<Record<string, unknown>>))
+    if (collected && collected.records.length > 0 && String(collected.hostname_fqdn ?? '') !== '') {
+      const cleanup = await this.safeSync(() => driver.cleanup(providerId, String(collected.hostname_fqdn), collected.records))
       return { ...result, side_effects: this.dnsSideEffects({ cleanup: this.normalizeCleanupOperation(cleanup, '已执行 DNS 删除后清理') }) }
     }
 
@@ -137,7 +144,7 @@ export class SaasWorkflowService {
     return new CloudflareDnsSyncDriver(this.providers, this.hostnames, this.cloudflareZones, this.cloudflareDns)
   }
 
-  private async shouldCleanupOwnershipTxt(providerId: string, hostnameId: string, hostname: Record<string, unknown>): Promise<boolean> {
+  private async shouldCleanupOwnershipTxt(providerId: string, hostnameId: string, hostname: CloudflareCustomHostname): Promise<boolean> {
     if (!isHostnameActive(hostname) || hostnameId === '') return false
     return !(await this.preferences.ownershipTxtCleaned(await this.hostnames.cloudflareProviderIdFor(providerId), hostnameId))
   }

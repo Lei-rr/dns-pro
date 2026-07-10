@@ -3,6 +3,7 @@ import { ApiError } from '../../support/api-error.js'
 import { DnsPodZoneService } from '../dnspod/dnspod-zone-service.js'
 import { DnsPodRecordService, type RecordCreateInput } from '../dnspod/dnspod-record-service.js'
 import type { EdgeOneProvider, ProviderType, SaasProvider } from '../../types/provider.js'
+import type { SyncRecord } from '../saas/sync-drivers/sync-driver.js'
 
 export interface PrecleanedRecord {
   type: string
@@ -21,14 +22,11 @@ export interface DeletedRecord {
   error?: string
 }
 
-export interface DnsPodSyncRecord {
-  type: string
-  name: string
-  value: string
+export interface DnsPodSyncRecord extends SyncRecord {
   line?: string
   remark?: string
   ttl?: number
-  [key: string]: unknown
+  dnspod_zone?: string
 }
 
 export class DnsPodSyncSupport {
@@ -174,11 +172,11 @@ export class DnsPodSyncSupport {
     return results
   }
 
-  async sync(providerId: string, zone: string, record: DnsPodSyncRecord): Promise<Record<string, unknown>> {
+  async sync(providerId: string, zone: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const base = this.baseResult(record)
     try {
       const subdomain = this.subdomainFromFqdn(record.name, zone)
-      const line = record.line ?? '默认'
+      const line = String(record.line ?? '默认')
       const matches = await this.findMatching(providerId, zone, subdomain, record.type, line)
       const payload = this.buildPayload(record, subdomain, line)
 
@@ -187,7 +185,7 @@ export class DnsPodSyncSupport {
         return { ...base, status: 'created', record_id: String(created.id) }
       }
 
-      const expectedRemark = record.remark ?? ''
+      const expectedRemark = String(record.remark ?? '')
       for (const match of matches) {
         if (String(match.value ?? '') !== record.value) continue
         const currentRemark = String(match.remark ?? '')
@@ -217,17 +215,17 @@ export class DnsPodSyncSupport {
     }
   }
 
-  async check(providerId: string, zone: string, record: DnsPodSyncRecord): Promise<Record<string, unknown>> {
+  async check(providerId: string, zone: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const subdomain = this.subdomainFromFqdn(record.name, zone)
-    const matches = await this.findMatching(providerId, zone, subdomain, record.type, record.line ?? '默认')
+    const matches = await this.findMatching(providerId, zone, subdomain, record.type, String(record.line ?? '默认'))
     const expected = record.value.replace(/\.$/, '')
     const synced = matches.some((match) => String(match.value ?? '').replace(/\.$/, '') === expected)
     return { ...this.baseResult(record), synced }
   }
 
-  async delete(providerId: string, zone: string, record: DnsPodSyncRecord): Promise<Record<string, unknown>> {
+  async delete(providerId: string, zone: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const subdomain = this.subdomainFromFqdn(record.name, zone)
-    const matches = await this.findMatching(providerId, zone, subdomain, record.type, record.line ?? '默认')
+    const matches = await this.findMatching(providerId, zone, subdomain, record.type, String(record.line ?? '默认'))
     const expected = record.value.replace(/\.$/, '')
 
     const base = { type: record.type, name: record.name }
@@ -274,18 +272,18 @@ export class DnsPodSyncSupport {
     })
   }
 
-  private buildPayload(record: DnsPodSyncRecord, subdomain: string, line: string): RecordCreateInput {
+  private buildPayload(record: SyncRecord, subdomain: string, line: string): RecordCreateInput {
     return {
       record_type: record.type,
       record_line: line,
       value: record.value,
       subdomain,
-      ttl: record.ttl ?? 600,
-      remark: record.remark ?? '',
+      ttl: Number(record.ttl ?? 600),
+      remark: String(record.remark ?? ''),
     }
   }
 
-  private baseResult(record: DnsPodSyncRecord): Record<string, unknown> {
+  private baseResult(record: SyncRecord): Record<string, unknown> {
     return {
       type: record.type,
       name: record.name,

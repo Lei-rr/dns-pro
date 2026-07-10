@@ -14,14 +14,41 @@ import type { CloudflareProvider } from '../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
+export interface CloudflareCustomHostnameSslDcvDelegationRecord {
+  cname: string
+  cname_target: string
+  [key: string]: unknown
+}
+
+export interface CloudflareCustomHostnameSsl {
+  type?: string
+  method?: string
+  status?: string
+  dcv_delegation_uuid?: string
+  dcv_delegation_records?: CloudflareCustomHostnameSslDcvDelegationRecord[]
+  certificates?: Record<string, unknown>[]
+  expires_on?: string
+  issuer?: string
+  settings?: Record<string, unknown>
+  [key: string]: unknown
+}
+
+export interface CloudflareCustomHostnameOwnership {
+  type?: string
+  name?: string
+  value?: string
+  [key: string]: unknown
+}
+
 export interface CloudflareCustomHostname {
   id: string
   hostname: string
   status?: string
   custom_origin_server?: string | null
-  ssl?: Record<string, unknown>
-  ownership_verification?: Record<string, unknown>
+  ssl?: CloudflareCustomHostnameSsl
+  ownership_verification?: CloudflareCustomHostnameOwnership | null
   custom_metadata?: Record<string, unknown> | null
+  previous_status?: string
   [key: string]: unknown
 }
 
@@ -228,20 +255,22 @@ export class CloudflareCustomHostnameGateway {
 
   private present(hostname: unknown): CloudflareCustomHostname {
     const parsed = cloudflareCustomHostnameSchema.parse(hostname)
-    const ssl = parsed.ssl ?? {}
-    const certificates = Array.isArray(ssl.certificates) ? ssl.certificates : []
+    const sslInput = parsed.ssl ?? {}
+    const certificates = Array.isArray(sslInput.certificates) ? sslInput.certificates : []
     const firstCert = z.record(z.string(), z.unknown()).safeParse(certificates[0]).data ?? {}
+
+    const ssl: CloudflareCustomHostnameSsl = {
+      ...sslInput,
+      expires_on: (firstCert.expires_on ?? sslInput.expires_on) as string | undefined,
+      issuer: (firstCert.issuer ?? sslInput.issuer) as string | undefined,
+    }
 
     return {
       id: parsed.id ?? '',
       hostname: parsed.hostname ?? '',
       status: parsed.status,
       custom_origin_server: parsed.custom_origin_server,
-      ssl: {
-        ...ssl,
-        expires_on: firstCert.expires_on ?? ssl.expires_on,
-        issuer: firstCert.issuer ?? ssl.issuer,
-      },
+      ssl,
       ownership_verification: parsed.ownership_verification ?? {},
       custom_metadata: parsed.custom_metadata ?? null,
       ...parsed,

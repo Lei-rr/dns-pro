@@ -1,8 +1,9 @@
 import { ApiError } from '../../../support/api-error.js'
 import { DnsPodSyncSupport, type DnsPodSyncRecord } from '../../concerns/dns-pod-sync-support.js'
+import type { CloudflareCustomHostname } from '../../../gateways/cloudflare-custom-hostname-gateway.js'
 import { SaasHostnameService } from '../saas-hostname-service.js'
 import { isHostnameActive } from '../utils/host-status.js'
-import type { SyncDriver } from './sync-driver.js'
+import type { SyncDriver, SyncRecord } from './sync-driver.js'
 
 export class DnspodSyncDriver implements SyncDriver {
   private readonly purposeLabels: Record<string, string> = {
@@ -54,7 +55,7 @@ export class DnspodSyncDriver implements SyncDriver {
     providerId: string,
     cfZoneName: string,
     hostnameFqdn: string,
-    beforeRecords: Array<Record<string, unknown>>
+    beforeRecords: SyncRecord[]
   ): Promise<Record<string, unknown>> {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     const fqdn = this.requireFqdn(hostname)
@@ -85,7 +86,7 @@ export class DnspodSyncDriver implements SyncDriver {
     }
   }
 
-  async cleanup(providerId: string, hostnameFqdn: string, records: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
+  async cleanup(providerId: string, hostnameFqdn: string, records: SyncRecord[]): Promise<Record<string, unknown>> {
     if (records.length === 0 || hostnameFqdn === '') return { cleaned: 0, records: [] }
 
     const dnspodProviderId = String(records[0]?.provider_id ?? '').trim()
@@ -100,7 +101,7 @@ export class DnspodSyncDriver implements SyncDriver {
       }
     }
 
-    const results = await Promise.all(records.map((record) => this.withPurpose(record as DnsPodSyncRecord, this.support.delete(dnspodProviderId, dnspodZone, record as DnsPodSyncRecord))))
+    const results = await Promise.all(records.map((record) => this.withPurpose(record, this.support.delete(dnspodProviderId, dnspodZone, record))))
     return { cleaned: results.filter((r) => r.status === 'deleted').length, dnspod_zone: dnspodZone, records: results }
   }
 
@@ -126,7 +127,7 @@ export class DnspodSyncDriver implements SyncDriver {
     return { cleaned: deleted.filter((r) => r.status === 'deleted').length, dnspod_zone: dnspodZone, records: deleted }
   }
 
-  async collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<Record<string, unknown>> {
+  async collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<{ hostname_fqdn: string; records: DnsPodSyncRecord[] }> {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn)
     const dnspodProviderId = await this.resolveDnspodProviderId(providerId, hostname)
     const fqdn = String(hostname.hostname ?? '')
@@ -146,13 +147,13 @@ export class DnspodSyncDriver implements SyncDriver {
     }
   }
 
-  private requireFqdn(hostname: Record<string, unknown>): string {
+  private requireFqdn(hostname: CloudflareCustomHostname): string {
     const fqdn = String(hostname.hostname ?? '')
     if (fqdn === '') throw new ApiError('saas_fqdn_missing', 'SaaS hostname FQDN missing', 422)
     return fqdn
   }
 
-  private async resolveEffectiveOrigin(providerId: string, cfZoneName: string, hostname: Record<string, unknown>): Promise<string> {
+  private async resolveEffectiveOrigin(providerId: string, cfZoneName: string, hostname: CloudflareCustomHostname): Promise<string> {
     const custom = String(hostname.custom_origin_server ?? '').trim()
     if (custom !== '') return custom
     return (await this.hostnames.fallbackOrigin(providerId, cfZoneName)) ?? ''
@@ -178,14 +179,14 @@ export class DnspodSyncDriver implements SyncDriver {
     return this.support.resolveDnspodZone(dnspodProviderId, fqdn, 'saas')
   }
 
-  private async resolveDnspodProviderId(providerId: string, hostname: Record<string, unknown>): Promise<string> {
+  private async resolveDnspodProviderId(providerId: string, hostname: CloudflareCustomHostname): Promise<string> {
     const syncProviderId = String(hostname.sync_provider_id ?? '').trim()
     if (syncProviderId !== '') return syncProviderId
     return this.support.lookupDnspodProviderId(providerId, 'saas', 'SaaS')
   }
 
   private collectRecords(
-    hostname: Record<string, unknown>,
+    hostname: CloudflareCustomHostname,
     effectiveOrigin: string,
     dnspodProviderId: string,
     dnspodZone: string,
@@ -201,19 +202,18 @@ export class DnspodSyncDriver implements SyncDriver {
       records.push(this.record('CNAME', fqdn, effectiveOrigin, 'origin_cname', fqdn, dnspodProviderId, this.defaultLine, dnspodZone))
     }
 
-    const metadata = (hostname.custom_metadata as Record<string, unknown> | null) ?? {}
+    const metadata = hostname.custom_metadata ?? {}
     const preferred = String(metadata.preferred_domain ?? '').trim()
     if (autoPreferred && fqdn !== '' && preferred !== '') {
       records.push(this.record('CNAME', fqdn, preferred, 'preferred_cname', fqdn, dnspodProviderId, this.preferredLine, dnspodZone))
     }
 
-    const ssl = (hostname.ssl as Record<string, unknown>) ?? {}
-    const dcvRecords = Array.isArray(ssl.dcv_delegation_records) ? ssl.dcv_delegation_records : []
+    const ssl = hostname.ssl ?? {}
+    const dcvRecords = ssl.dcv_delegation_records ?? []
     let dcvAdded = false
     for (const rec of dcvRecords) {
-      if (typeof rec !== 'object' || rec === null) continue
-      const cname = String((rec as Record<string, unknown>).cname ?? '')
-      const target = String((rec as Record<string, unknown>).cname_target ?? '')
+      const cname = String(rec.cname ?? '')
+      const target = String(rec.cname_target ?? '')
       if (cname !== '' && target !== '') {
         records.push(this.record('CNAME', cname, target, 'dcv_delegation', fqdn, dnspodProviderId, this.defaultLine, dnspodZone))
         dcvAdded = true
@@ -228,7 +228,7 @@ export class DnspodSyncDriver implements SyncDriver {
     }
 
     if (shouldOutputOwnership) {
-      const ownership = (hostname.ownership_verification as Record<string, unknown>) ?? null
+      const ownership = hostname.ownership_verification ?? null
       if (ownership && ownership.name && ownership.value) {
         records.push(this.record('TXT', String(ownership.name), String(ownership.value), 'ownership_verification', fqdn, dnspodProviderId, this.defaultLine, dnspodZone))
       } else if (forceOwnershipName && fqdn !== '') {
@@ -261,7 +261,7 @@ export class DnspodSyncDriver implements SyncDriver {
     }
   }
 
-  private async withPurpose(record: DnsPodSyncRecord, resultPromise: Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
+  private async withPurpose(record: SyncRecord, resultPromise: Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
     const result = await resultPromise
     return { purpose: record.purpose, ...result }
   }
@@ -269,24 +269,24 @@ export class DnspodSyncDriver implements SyncDriver {
   private async deleteMissingRecords(
     dnspodProviderId: string,
     dnspodZone: string,
-    beforeRecords: Array<Record<string, unknown>>,
+    beforeRecords: SyncRecord[],
     afterRecords: DnsPodSyncRecord[]
-  ): Promise<Array<Record<string, unknown>>> {
+  ): Promise<Record<string, unknown>[]> {
     const afterMap = new Set(afterRecords.map((record) => this.recordSignature(record)))
-    const deleted: Array<Record<string, unknown>> = []
+    const deleted: Record<string, unknown>[] = []
     const seen = new Set<string>()
 
     for (const record of beforeRecords) {
       const signature = this.recordSignature(record)
       if (signature === '' || seen.has(signature) || afterMap.has(signature)) continue
       seen.add(signature)
-      deleted.push(await this.withPurpose(record as DnsPodSyncRecord, this.support.delete(dnspodProviderId, dnspodZone, record as DnsPodSyncRecord)))
+      deleted.push(await this.withPurpose(record, this.support.delete(dnspodProviderId, dnspodZone, record)))
     }
 
     return deleted
   }
 
-  private recordSignature(record: Record<string, unknown>): string {
+  private recordSignature(record: SyncRecord): string {
     const type = String(record.type ?? '').toUpperCase().trim()
     const name = String(record.name ?? '').toLowerCase().replace(/\.$/, '').trim()
     const value = String(record.value ?? '').toLowerCase().replace(/\.$/, '').trim()
