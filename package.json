@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "npm run dev:server",
     "dev:server": "tsx watch src/server.ts",
-    "dev:server:debug": "LOG_LEVEL=info tsx watch src/server.ts | pino-pretty",
+    "dev:server:debug": "tsx watch src/server.ts --log-level info | pino-pretty",
     "dev:web": "npm --workspace dns-pro-web run dev",
     "start": "node dist/server.js",
     "build": "npm run build:server && npm run build:web",
