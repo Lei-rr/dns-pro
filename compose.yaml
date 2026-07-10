@@ -1,9 +1,6 @@
 services:
   dns-pro:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: dns-pro:local
+    image: ghcr.io/lei-rr/dns-pro:fast
     container_name: dns-pro
     restart: unless-stopped
     ports:

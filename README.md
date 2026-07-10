@@ -196,10 +196,32 @@ npm run verify
 
 ## Docker 部署
 
-使用 Docker Compose：
+GitHub Actions 会自动构建并推送公开镜像到 GHCR：
+
+```text
+ghcr.io/lei-rr/dns-pro:fast
+```
+
+使用 Docker Compose 启动：
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
+```
+
+查看运行状态和日志：
+
+```bash
+docker compose ps
+docker compose logs -f dns-pro
+```
+
+停止或重新部署：
+
+```bash
+docker compose down
+docker compose pull
+docker compose up -d
 ```
 
 `compose.yaml` 默认映射端口：
@@ -212,6 +234,38 @@ docker compose up -d --build
 
 ```text
 ./data:/app/data
+```
+
+不使用 Compose 时，也可以直接拉取公开镜像运行：
+
+```bash
+docker pull ghcr.io/lei-rr/dns-pro:fast
+docker run -d \
+  --name dns-pro \
+  --restart unless-stopped \
+  -p 2022:2022 \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/lei-rr/dns-pro:fast
+```
+
+查看日志、停止和删除容器：
+
+```bash
+docker logs -f dns-pro
+docker stop dns-pro
+docker rm dns-pro
+```
+
+服务启动后访问：
+
+```text
+http://服务器IP:2022
+```
+
+如需本地开发或调试镜像，再手动构建：
+
+```bash
+docker build -t dns-pro:local .
 ```
 
 ## Provider 配置
