@@ -254,13 +254,12 @@ export class DnsPodRecordService {
   }
 
   private async requireProvider(providerId: string): Promise<DnsPodProvider> {
-    const provider = await this.providers.requireType(
+    return this.providers.requireType<DnsPodProvider>(
       providerId,
       'dnspod',
       'DNSPod provider not found',
       'dnspod_provider_not_found'
     )
-    return provider as unknown as DnsPodProvider
   }
 
   private wrapError(

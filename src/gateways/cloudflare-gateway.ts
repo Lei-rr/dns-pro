@@ -27,17 +27,17 @@ export class CloudflareGateway extends BaseGateway {
     return response
   }
 
-  async post<T>(path: string, data?: Record<string, unknown>): Promise<CloudflareApiResponse<T>> {
+  async post<T>(path: string, data?: unknown): Promise<CloudflareApiResponse<T>> {
     const response = await this.call<T>({ method: 'POST', url: path, data })
     return response
   }
 
-  async put<T>(path: string, data?: Record<string, unknown>): Promise<CloudflareApiResponse<T>> {
+  async put<T>(path: string, data?: unknown): Promise<CloudflareApiResponse<T>> {
     const response = await this.call<T>({ method: 'PUT', url: path, data })
     return response
   }
 
-  async patch<T>(path: string, data?: Record<string, unknown>): Promise<CloudflareApiResponse<T>> {
+  async patch<T>(path: string, data?: unknown): Promise<CloudflareApiResponse<T>> {
     const response = await this.call<T>({ method: 'PATCH', url: path, data })
     return response
   }

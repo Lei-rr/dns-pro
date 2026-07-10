@@ -5,7 +5,7 @@ import { globalCache } from '../../support/cache-service.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
 import { CloudflareZoneService } from '../cloudflare/cloudflare-zone-service.js'
 import { CloudflareDnsRecordService } from '../cloudflare/cloudflare-dns-record-service.js'
-import type { CloudflareProvider } from '../../types/provider.js'
+import type { CloudflareProvider, CloudflaredProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
@@ -153,7 +153,7 @@ export class CloudflaredRouteService {
   async listZones(providerId: string, refresh = false): Promise<{ items: Array<Record<string, unknown>> }> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const result = await this.cfZones.list(cfProviderId, 1, 100, '', refresh)
-    return { items: result.items as unknown as Array<Record<string, unknown>> }
+    return { items: result.items }
   }
 
   buildServiceUrl(protocol: string, address: string): string {
@@ -298,7 +298,7 @@ export class CloudflaredRouteService {
       const result = await this.dns.list(cfProviderId, zoneId, { type: 'CNAME', search: hostname, page, per_page: 100 })
       for (const record of result.items) {
         if (String(record.name ?? '') === hostname) {
-          matches.push(record as unknown as Record<string, unknown>)
+          matches.push(record)
         }
       }
       totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
@@ -336,7 +336,7 @@ export class CloudflaredRouteService {
 
     do {
       const result = await this.cfZones.list(cfProviderId, page, 100, '', page === 1)
-      items.push(...(result.items as unknown as Array<Record<string, unknown>>))
+      items.push(...result.items)
       totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
       page++
     } while (page <= totalPages)
@@ -346,7 +346,7 @@ export class CloudflaredRouteService {
 
   private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
-    const cfProvider = (await this.providers.requireType(cfProviderId, 'cloudflare', 'Cloudflare provider not found', 'cloudflare_provider_not_found')) as unknown as CloudflareProvider
+    const cfProvider = await this.providers.requireType<CloudflareProvider>(cfProviderId, 'cloudflare', 'Cloudflare provider not found', 'cloudflare_provider_not_found')
     const accountId = cfProvider.account_id.trim()
     if (accountId === '') {
       throw new ApiError('cloudflared_account_id_required', 'Cloudflare account_id is required for tunnel operations', 422)
@@ -355,13 +355,13 @@ export class CloudflaredRouteService {
   }
 
   private async cfProviderIdOf(providerId: string): Promise<string> {
-    const cloudflaredProvider = await this.providers.requireType(
+    const cloudflaredProvider = await this.providers.requireType<CloudflaredProvider>(
       providerId,
       'cloudflared',
       'Cloudflare Tunnel provider not found',
       'cloudflared_provider_not_found'
     )
-    const cfProviderId = String((cloudflaredProvider as unknown as Record<string, unknown>).cloudflare_provider ?? '').trim()
+    const cfProviderId = cloudflaredProvider.cloudflare_provider.trim()
     if (cfProviderId === '') {
       throw new ApiError('cloudflared_cloudflare_provider_missing', 'Cloudflare Tunnel provider is not linked to a Cloudflare provider', 422)
     }

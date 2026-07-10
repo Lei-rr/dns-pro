@@ -6,6 +6,7 @@ import { CloudflareDnsRecordService } from '../cloudflare/cloudflare-dns-record-
 import { CloudflareZoneService } from '../cloudflare/cloudflare-zone-service.js'
 import { SaasHostnameService } from './saas-hostname-service.js'
 import { SaasPreferenceService } from './saas-preference-service.js'
+import type { SaasProvider } from '../../types/provider.js'
 
 export class SaasWorkflowService {
   constructor(
@@ -621,12 +622,10 @@ class CloudflareDnsSyncDriver implements SyncDriver {
   }
 
   private async requireCloudflareDnsProviderId(providerId: string): Promise<string> {
-    const provider = await this.providers.requireType(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
-    const record = provider as unknown as Record<string, unknown>
-    const id = String(record.cloudflare_dns_provider ?? '')
-    if (id !== '') return id
-    const fallback = String(record.cloudflare_provider ?? '')
-    if (fallback !== '') return fallback
+    const provider = await this.providers.requireType<SaasProvider>(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
+    const cloudflareDns = provider.cloudflare_dns_provider ?? ''
+    if (cloudflareDns !== '') return cloudflareDns
+    if (provider.cloudflare_provider !== '') return provider.cloudflare_provider
     throw new ApiError('saas_cloudflare_dns_provider_missing', 'SaaS provider is not linked to a Cloudflare DNS provider', 422)
   }
 
@@ -772,7 +771,7 @@ class CloudflareDnsSyncDriver implements SyncDriver {
       const result = await this.records.list(cloudflareProviderId, zoneId, { type, search: fqdn, page, per_page: 100 })
       for (const record of result.items) {
         if (String(record.name ?? '') === fqdn && String(record.type ?? '') === type) {
-          matches.push(record as unknown as Record<string, unknown>)
+          matches.push(record)
         }
       }
       totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)

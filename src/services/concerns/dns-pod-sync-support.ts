@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { DnsPodZoneService } from '../dnspod/dnspod-zone-service.js'
 import { DnsPodRecordService, type RecordCreateInput } from '../dnspod/dnspod-record-service.js'
+import type { EdgeOneProvider, ProviderType, SaasProvider } from '../../types/provider.js'
 
 export interface PrecleanedRecord {
   type: string
@@ -38,8 +39,10 @@ export class DnsPodSyncSupport {
   ) {}
 
   async lookupDnspodProviderId(providerId: string, providerType: string, label: string): Promise<string> {
-    const provider = await this.providers.requireType(providerId, providerType as never, `${label} provider not found`, `${providerType}_provider_not_found`)
-    return String((provider as Record<string, unknown>).dnspod_provider ?? '')
+    const provider = await this.providers.requireType(providerId, providerType as ProviderType, `${label} provider not found`, `${providerType}_provider_not_found`)
+    if (provider.type === 'edgeone') return (provider as EdgeOneProvider).dnspod_provider
+    if (provider.type === 'saas') return (provider as SaasProvider).dnspod_provider ?? ''
+    return ''
   }
 
   async requireDnspodProviderId(providerId: string, providerType: string, label: string): Promise<string> {

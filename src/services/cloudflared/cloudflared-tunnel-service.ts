@@ -3,7 +3,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
-import type { CloudflareProvider } from '../../types/provider.js'
+import type { CloudflareProvider, CloudflaredProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
@@ -121,19 +121,19 @@ export class CloudflaredTunnelService {
   }
 
   private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {
-    const cloudflaredProvider = await this.providers.requireType(
+    const cloudflaredProvider = await this.providers.requireType<CloudflaredProvider>(
       providerId,
       'cloudflared',
       'Cloudflare Tunnel provider not found',
       'cloudflared_provider_not_found'
     )
 
-    const cfProviderId = String((cloudflaredProvider as unknown as Record<string, unknown>).cloudflare_provider ?? '').trim()
+    const cfProviderId = cloudflaredProvider.cloudflare_provider.trim()
     if (cfProviderId === '') {
       throw new ApiError('cloudflared_cloudflare_provider_missing', 'Cloudflare Tunnel provider is not linked to a Cloudflare provider', 422)
     }
 
-    const cfProvider = (await this.providers.requireType(cfProviderId, 'cloudflare', 'Cloudflare provider not found', 'cloudflare_provider_not_found')) as unknown as CloudflareProvider
+    const cfProvider = await this.providers.requireType<CloudflareProvider>(cfProviderId, 'cloudflare', 'Cloudflare provider not found', 'cloudflare_provider_not_found')
     const accountId = cfProvider.account_id.trim()
     if (accountId === '') {
       throw new ApiError('cloudflared_account_id_required', 'Cloudflare account_id is required for tunnel operations', 422)

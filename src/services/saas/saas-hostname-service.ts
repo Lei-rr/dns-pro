@@ -4,6 +4,7 @@ import { CloudflareZoneService, type ZoneListResult } from '../cloudflare/cloudf
 import { CloudflareCustomHostnameGateway } from '../../gateways/cloudflare-custom-hostname-gateway.js'
 import { PreferredDomainService } from './preferred-domain-service.js'
 import { SaasPreferenceService, type HostnamePreference } from './saas-preference-service.js'
+import type { SaasProvider } from '../../types/provider.js'
 
 export class SaasHostnameService {
   constructor(
@@ -196,17 +197,16 @@ export class SaasHostnameService {
   }
 
   async defaultSyncTarget(providerId: string): Promise<string> {
-    const provider = await this.providers.requireType(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
-    const record = provider as unknown as Record<string, unknown>
+    const provider = await this.providers.requireType<SaasProvider>(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
 
-    if (String(record.dnspod_provider ?? '') !== '') return 'dnspod'
-    if (String(record.cloudflare_dns_provider ?? '') !== '' || String(record.cloudflare_provider ?? '') !== '') return 'cloudflare_dns'
+    if (provider.dnspod_provider !== '') return 'dnspod'
+    if (provider.cloudflare_dns_provider !== '' || provider.cloudflare_provider !== '') return 'cloudflare_dns'
     return ''
   }
 
   private async cloudflareProviderId(providerId: string): Promise<string> {
-    const provider = await this.providers.requireType(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
-    const cfId = String((provider as unknown as Record<string, unknown>).cloudflare_provider ?? '').trim()
+    const provider = await this.providers.requireType<SaasProvider>(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
+    const cfId = provider.cloudflare_provider.trim()
     if (cfId === '') {
       throw new ApiError('saas_cloudflare_provider_missing', 'SaaS provider is not linked to a Cloudflare provider', 422)
     }
@@ -230,7 +230,7 @@ export class SaasHostnameService {
     const fqdn = hostnameFqdn.toLowerCase().trim()
     const zones = await this.zones(providerId, 1, 1000, '', false)
 
-    for (const zone of (zones.items as unknown as Array<Record<string, unknown>>) ?? []) {
+    for (const zone of zones.items ?? []) {
       const zoneName = String(zone.name ?? '')
       if (zoneName === '') continue
       try {
@@ -316,13 +316,12 @@ export class SaasHostnameService {
     const explicit = explicitProviderId.trim()
     if (explicit !== '') return explicit
 
-    const provider = await this.providers.requireType(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
-    const record = provider as unknown as Record<string, unknown>
+    const provider = await this.providers.requireType<SaasProvider>(providerId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
 
-    if (target === 'dnspod') return String(record.dnspod_provider ?? '')
+    if (target === 'dnspod') return provider.dnspod_provider ?? ''
     if (target === 'cloudflare_dns') {
-      const cloudflareDns = String(record.cloudflare_dns_provider ?? '')
-      return cloudflareDns !== '' ? cloudflareDns : String(record.cloudflare_provider ?? '')
+      const cloudflareDns = provider.cloudflare_dns_provider ?? ''
+      return cloudflareDns !== '' ? cloudflareDns : provider.cloudflare_provider
     }
     return ''
   }

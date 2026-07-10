@@ -2,7 +2,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { EdgeOneGateway } from '../../gateways/edgeone-gateway.js'
-import type { DnsPodProvider } from '../../types/provider.js'
+import type { DnsPodProvider, EdgeOneProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
@@ -91,13 +91,13 @@ export class EdgeOneZoneService {
     const cached = this.credentialCache.get(providerId)
     if (cached) return cached
 
-    const edgeoneProvider = await this.providers.requireType(providerId, 'edgeone', 'EdgeOne provider not found', 'edgeone_provider_not_found')
-    const dnspodProviderId = String((edgeoneProvider as unknown as Record<string, unknown>).dnspod_provider ?? '')
+    const edgeoneProvider = await this.providers.requireType<EdgeOneProvider>(providerId, 'edgeone', 'EdgeOne provider not found', 'edgeone_provider_not_found')
+    const dnspodProviderId = edgeoneProvider.dnspod_provider.trim()
     if (dnspodProviderId === '') {
       throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne provider is not linked to a DNSPod provider', 422)
     }
 
-    const dnspodProvider = (await this.providers.requireType(dnspodProviderId, 'dnspod', 'DNSPod provider not found', 'dnspod_provider_not_found')) as unknown as DnsPodProvider
+    const dnspodProvider = await this.providers.requireType<DnsPodProvider>(dnspodProviderId, 'dnspod', 'DNSPod provider not found', 'dnspod_provider_not_found')
     this.credentialCache.set(providerId, dnspodProvider)
     return dnspodProvider
   }

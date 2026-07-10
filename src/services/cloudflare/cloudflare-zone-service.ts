@@ -9,12 +9,13 @@ import {
   recordCacheTag,
   zoneCacheTag,
 } from '../../support/cache-helpers.js'
-import type { PresentedProvider } from '../../types/provider.js'
+import type { CloudflareProvider } from '../../types/provider.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
 
 interface ZonePresentation {
+  [key: string]: unknown
   id: string | null
   name: string | null
   status: string | null
@@ -109,7 +110,7 @@ export class CloudflareZoneService {
 
   async create(providerId: string, name: string, type = 'full'): Promise<ZonePresentation> {
     const provider = await this.requireProvider(providerId)
-    const accountId = String((provider as unknown as Record<string, string>).account_id ?? '').trim()
+    const accountId = provider.account_id.trim()
 
     if (accountId === '') {
       throw new ApiError('cloudflare_account_id_required', 'Cloudflare account_id is required', 422)
@@ -122,7 +123,7 @@ export class CloudflareZoneService {
       type,
     }
 
-    const payload = await gateway.post<unknown>('zones', body as unknown as Record<string, unknown>)
+    const payload = await gateway.post<unknown>('zones', body)
     globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId)])
 
     return this.presentZone(payload.result ?? {})
@@ -187,8 +188,8 @@ export class CloudflareZoneService {
     return uuid
   }
 
-  private async requireProvider(providerId: string): Promise<PresentedProvider> {
-    return this.providers.requireType(
+  private async requireProvider(providerId: string): Promise<CloudflareProvider> {
+    return this.providers.requireType<CloudflareProvider>(
       providerId,
       'cloudflare',
       'Cloudflare provider not found',
@@ -196,9 +197,8 @@ export class CloudflareZoneService {
     )
   }
 
-  private gatewayFor(provider: PresentedProvider): CloudflareGateway {
-    const token = String((provider as unknown as Record<string, string>).api_token ?? '')
-    return new CloudflareGateway(token)
+  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
+    return new CloudflareGateway(provider.api_token)
   }
 
   private presentZone(zone: unknown): ZonePresentation {

@@ -1,8 +1,9 @@
 import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import type { PresentedProvider, Provider, ProviderInput, ProviderType } from '../../types/provider.js'
-import { getProviderDefinition } from '../../config/providers.js'
+import { getProviderDefinition, getProviderDefinitionsList } from '../../config/providers.js'
 import { ProviderNormalizer } from './provider-normalizer.js'
+import { ProviderPresenter } from './provider-presenter.js'
 import { SaasPreferenceService } from '../saas/saas-preference-service.js'
 
 interface DependencyInfo {
@@ -17,18 +18,19 @@ export class ProviderService {
   constructor(
     private readonly providers: ProviderRepository = new ProviderRepository(),
     private readonly normalizer: ProviderNormalizer = new ProviderNormalizer(),
+    private readonly presenter: ProviderPresenter = new ProviderPresenter(),
     private readonly hostnamePreferences: SaasPreferenceService = new SaasPreferenceService()
   ) {}
 
   definitions() {
-    return this.providers.definitions()
+    return getProviderDefinitionsList()
   }
 
   async all(): Promise<PresentedProvider[]> {
     const providers = await this.providers.all()
     const dependencyMap = await this.dependencyMap(providers)
 
-    return providers.map((provider) => ({
+    return this.presenter.presentAll(providers).map((provider) => ({
       ...provider,
       dependencies: dependencyMap[provider.id] ?? [],
     }))
@@ -41,7 +43,7 @@ export class ProviderService {
     const providers = await this.providers.all()
     const dependencyMap = await this.dependencyMap(providers)
 
-    return { ...provider, dependencies: dependencyMap[id] ?? [] }
+    return { ...this.presenter.present(provider, providers), dependencies: dependencyMap[id] ?? [] }
   }
 
   async create(data: Record<string, unknown>): Promise<PresentedProvider> {
@@ -55,7 +57,7 @@ export class ProviderService {
       return [...providers, normalized as Provider]
     })
 
-    return this.providers.present(normalized as Provider)
+    return this.presenter.present(normalized as Provider)
   }
 
   async update(id: string, data: Record<string, unknown>): Promise<PresentedProvider> {
@@ -80,11 +82,11 @@ export class ProviderService {
     if (!updated) {
       throw new ApiError('server_error', 'Provider update failed', 500)
     }
-    return this.providers.present(updated)
+    return this.presenter.present(updated as Provider)
   }
 
   async delete(id: string): Promise<void> {
-    const providers = await this.providers.rawAll()
+    const providers = await this.providers.all()
     const dependencies = await this.dependenciesFor(id, providers)
     if (dependencies.length > 0) {
       throw new ApiError('provider_in_use', 'Provider is still in use', 409, { dependencies })
@@ -108,8 +110,8 @@ export class ProviderService {
       return trimmedIds.map((id) => byId[id])
     })
 
-    const presented = await Promise.all(ordered.map((p) => this.providers.present(p)))
-    const dependencyMap = await this.dependencyMap(presented)
+    const presented = this.presenter.presentAll(ordered)
+    const dependencyMap = await this.dependencyMap(ordered)
 
     return presented.map((provider) => ({
       ...provider,
@@ -127,39 +129,23 @@ export class ProviderService {
     return definition
   }
 
-  private async dependencyMap(providers: PresentedProvider[]): Promise<Record<string, DependencyInfo[]>> {
+  private async dependencyMap(providers: Provider[]): Promise<Record<string, DependencyInfo[]>> {
     const map: Record<string, DependencyInfo[]> = {}
 
     for (const provider of providers) {
       const providerId = provider.id
-      if (!providerId) continue
       const type = provider.type
 
       const rules: Array<{ field: string; targetType: string; label: string; appliesTo: ProviderType[] }> = [
-        {
-          field: 'dnspod_provider',
-          targetType: 'dnspod',
-          label: 'EdgeOne 关联 DNSPod',
-          appliesTo: ['edgeone'],
-        },
-        {
-          field: 'cloudflare_provider',
-          targetType: 'cloudflare',
-          label: 'SaaS 关联 Cloudflare',
-          appliesTo: ['saas'],
-        },
+        { field: 'dnspod_provider', targetType: 'dnspod', label: 'EdgeOne 关联 DNSPod', appliesTo: ['edgeone'] },
+        { field: 'cloudflare_provider', targetType: 'cloudflare', label: 'SaaS 关联 Cloudflare', appliesTo: ['saas'] },
         {
           field: 'cloudflare_dns_provider',
           targetType: 'cloudflare',
           label: 'SaaS Cloudflare DNS 同步',
           appliesTo: ['saas'],
         },
-        {
-          field: 'dnspod_provider',
-          targetType: 'dnspod',
-          label: 'SaaS DNSPod 同步',
-          appliesTo: ['saas'],
-        },
+        { field: 'dnspod_provider', targetType: 'dnspod', label: 'SaaS DNSPod 同步', appliesTo: ['saas'] },
         {
           field: 'cloudflare_provider',
           targetType: 'cloudflare',
@@ -170,7 +156,7 @@ export class ProviderService {
 
       for (const rule of rules) {
         if (!rule.appliesTo.includes(type)) continue
-        const targetId = String((provider as unknown as Record<string, unknown>)[rule.field] ?? '').trim()
+        const targetId = String((provider as Record<string, unknown>)[rule.field] ?? '').trim()
         if (targetId === '') continue
 
         if (!map[targetId]) map[targetId] = []
@@ -204,8 +190,7 @@ export class ProviderService {
   }
 
   private async dependenciesFor(id: string, providers: Provider[]): Promise<DependencyInfo[]> {
-    const presented = await Promise.all(providers.map((p) => this.providers.present(p, false, providers)))
-    const map = await this.dependencyMap(presented)
+    const map = await this.dependencyMap(providers)
     return map[id] ?? []
   }
 

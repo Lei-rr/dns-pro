@@ -1,6 +1,7 @@
 import { SaasPreferenceRepository } from '../../repositories/saas-preference-repository.js'
 
 export interface HostnamePreference {
+  [key: string]: unknown
   hostname: string
   preferred_domain: string
   sync_target: string
@@ -102,10 +103,9 @@ export class SaasPreferenceService {
       const row = (items[key] as Record<string, unknown> | undefined) ?? {}
       const normalized = this.present(row)
 
-      const mutable = normalized as unknown as Record<string, unknown>
       for (const field of ['hostname', 'preferred_domain', 'sync_target', 'sync_provider_id', 'sync_zone'] as const) {
         if (field in changes) {
-          mutable[field] = String(changes[field] ?? '')
+          normalized[field] = String(changes[field] ?? '')
         }
       }
       if ('auto_preferred' in changes) normalized.auto_preferred = Boolean(changes.auto_preferred)
@@ -124,7 +124,7 @@ export class SaasPreferenceService {
       if (shouldDelete) {
         delete items[key]
       } else {
-        items[key] = normalized as unknown as Record<string, unknown>
+        items[key] = normalized
       }
 
       return { next: { items } }

@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
 import { globalCache } from '../../support/cache-service.js'
-import type { PresentedProvider } from '../../types/provider.js'
+import type { CloudflareProvider } from '../../types/provider.js'
 import {
   buildCacheKey,
   pagePaginationMeta,
@@ -13,6 +13,7 @@ const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
 
 interface RecordPresentation {
+  [key: string]: unknown
   id: string | null
   zone_id: string | null
   zone_name: string | null
@@ -227,8 +228,8 @@ export class CloudflareDnsRecordService {
     }
   }
 
-  private async requireProvider(providerId: string): Promise<PresentedProvider> {
-    return this.providers.requireType(
+  private async requireProvider(providerId: string): Promise<CloudflareProvider> {
+    return this.providers.requireType<CloudflareProvider>(
       providerId,
       'cloudflare',
       'Cloudflare provider not found',
@@ -236,8 +237,7 @@ export class CloudflareDnsRecordService {
     )
   }
 
-  private gatewayFor(provider: PresentedProvider): CloudflareGateway {
-    const token = String((provider as unknown as Record<string, string>).api_token ?? '')
-    return new CloudflareGateway(token)
+  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
+    return new CloudflareGateway(provider.api_token)
   }
 }

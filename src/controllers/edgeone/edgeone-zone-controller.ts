@@ -1,15 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { EdgeOneZoneService } from '../../services/edgeone/edgeone-zone-service.js'
 import { success } from '../../support/api-response.js'
+import { parseBool } from '../../support/parse-bool.js'
 import type { EdgeOneZoneListInput, EdgeOneZoneShowInput } from '../../schemas/edgeone.js'
 
 const zoneService = new EdgeOneZoneService()
-
-function parseBool(value: unknown): boolean {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true'
-  return false
-}
 
 export async function edgeOneZonesIndex(
   request: FastifyRequest<{ Params: { providerId: string }; Querystring: EdgeOneZoneListInput }>,

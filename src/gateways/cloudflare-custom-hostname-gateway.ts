@@ -2,6 +2,7 @@ import { ProviderRepository } from '../repositories/provider-repository.js'
 import { CloudflareGateway } from './cloudflare-gateway.js'
 import { globalCache } from '../support/cache-service.js'
 import { ApiError } from '../support/api-error.js'
+import type { CloudflareProvider } from '../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
@@ -28,8 +29,8 @@ export class CloudflareCustomHostnameGateway {
     const cached = globalCache.get<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }>(cacheKey)
     if (cached) return cached
 
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     const response = await gateway.get<CloudflareCustomHostname[]>(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
@@ -58,8 +59,8 @@ export class CloudflareCustomHostnameGateway {
       if (cached) return cached
     }
 
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     const response = await gateway.get<CloudflareCustomHostname>(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
@@ -84,8 +85,8 @@ export class CloudflareCustomHostnameGateway {
   }
 
   async create(cloudflareProviderId: string, zoneId: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     const payload: Record<string, unknown> = { hostname: String(data.hostname ?? '').trim() }
     const ssl: Record<string, unknown> = { type: 'dv' }
@@ -106,8 +107,8 @@ export class CloudflareCustomHostnameGateway {
   }
 
   async update(cloudflareProviderId: string, zoneId: string, hostnameId: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     const payload: Record<string, unknown> = {}
     if (Object.prototype.hasOwnProperty.call(data, 'custom_origin_server')) {
@@ -133,8 +134,8 @@ export class CloudflareCustomHostnameGateway {
   }
 
   async delete(cloudflareProviderId: string, zoneId: string, hostnameId: string): Promise<{ id: string }> {
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     await gateway.delete<Record<string, unknown>>(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
@@ -151,8 +152,8 @@ export class CloudflareCustomHostnameGateway {
       if (cached) return cached
     }
 
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     let info: { origin?: string | null; status?: string | null }
     try {
@@ -173,8 +174,8 @@ export class CloudflareCustomHostnameGateway {
   }
 
   async setFallbackOrigin(cloudflareProviderId: string, zoneId: string, origin: string): Promise<{ origin?: string | null; status?: string | null }> {
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     const response = await gateway.put<{ origin?: string; status?: string }>(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`,
@@ -186,8 +187,8 @@ export class CloudflareCustomHostnameGateway {
   }
 
   async deleteFallbackOrigin(cloudflareProviderId: string, zoneId: string): Promise<{ origin?: string | null; status?: string | null }> {
-    const provider = await this.providers.requireType(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway((provider as unknown as Record<string, string>).api_token)
+    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+    const gateway = new CloudflareGateway(provider.api_token)
 
     await gateway.delete<Record<string, unknown>>(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
     globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])

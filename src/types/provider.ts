@@ -14,6 +14,7 @@ export interface BaseProvider {
   type: ProviderType
   id: string
   name: string
+  [key: string]: unknown
 }
 
 export interface DnsPodProvider extends BaseProvider {
@@ -52,7 +53,7 @@ export type Provider =
   | SaasProvider
   | CloudflaredProvider
 
-export type ProviderInput = Omit<Provider, 'configured' | 'fields' | 'editable_fields'>
+export type ProviderInput = Provider
 
 export interface PresentedProvider extends BaseProvider {
   [key: string]: unknown

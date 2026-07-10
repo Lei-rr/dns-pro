@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { EdgeOneDomainService } from '../../services/edgeone/edgeone-domain-service.js'
 import { EdgeOneWorkflowService } from '../../services/edgeone/edgeone-workflow-service.js'
 import { success } from '../../support/api-response.js'
+import { parseBool } from '../../support/parse-bool.js'
 import type {
   EdgeOneAccelerationDomainListInput,
   EdgeOneAccelerationDomainStoreInput,
@@ -12,12 +13,6 @@ import type {
 
 const domainService = new EdgeOneDomainService()
 const workflowService = new EdgeOneWorkflowService()
-
-function parseBool(value: unknown): boolean {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true'
-  return false
-}
 
 export async function edgeOneAccelerationDomainsIndex(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string }; Querystring: EdgeOneAccelerationDomainListInput }>,
