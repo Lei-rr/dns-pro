@@ -1,5 +1,5 @@
 import { ApiError } from '../../support/api-error.js'
-import { type SideEffects } from '../../support/side-effect-result.js'
+import { type DnsSideEffect, type SideEffects } from '../../support/side-effect-result.js'
 import { DnsPodSyncSupport } from '../concerns/dns-pod-sync-support.js'
 import { EdgeOneDomainService } from './edgeone-domain-service.js'
 
@@ -128,24 +128,27 @@ export class EdgeOneWorkflowService {
     return { dnspod_provider_id: dnspodProviderId, dnspod_zone: dnspodZone, domain_name: fqdn }
   }
 
-  private presentCnameSync(syncResult: unknown): Record<string, unknown> {
+  private presentCnameSync(syncResult: unknown): DnsSideEffect {
     const result = syncResult as Record<string, unknown>
     const record = (result.record as Record<string, unknown>) ?? {}
-    const status = String(record.status ?? '')
+    const action = String(record.status ?? '')
+    const status = action === 'failed' ? 'failed' : action === '' ? 'skipped' : 'completed'
     return {
+      status,
       synced: status !== 'failed',
-      action: status || 'unknown',
-      message: this.syncActionMessage(status),
+      action: action || 'unknown',
+      message: this.syncActionMessage(action),
       record_id: String(record.record_id ?? ''),
+      details: [record],
     }
   }
 
-  private presentCleanup(result: unknown): Record<string, unknown> {
+  private presentCleanup(result: unknown): DnsSideEffect {
     const r = result as Record<string, unknown>
     const cleaned = Number(r.cleaned ?? 0)
     const status = r.reason ? 'skipped' : cleaned > 0 ? 'completed' : 'skipped'
     return {
-      status,
+      status: status as DnsSideEffect['status'],
       message: status === 'completed' ? '已执行 DNS 清理' : String(r.reason ?? '未找到需要清理的 DNS 记录'),
       details: [r],
     }
@@ -166,10 +169,10 @@ export class EdgeOneWorkflowService {
     }
   }
 
-  private dnsSideEffects(effects: { sync?: Record<string, unknown>; cleanup?: Record<string, unknown> }): SideEffects {
+  private dnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: DnsSideEffect }): SideEffects {
     const sideEffects: SideEffects = { dns: {} }
-    if (effects.sync) sideEffects.dns!.sync = effects.sync as never
-    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup as never
+    if (effects.sync) sideEffects.dns!.sync = effects.sync
+    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup
     return sideEffects
   }
 }

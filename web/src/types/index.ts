@@ -14,6 +14,7 @@ export interface Provider {
 }
 
 export interface ProviderDefinition {
+  [key: string]: unknown
   type: string
   name: string
   fields: string[]

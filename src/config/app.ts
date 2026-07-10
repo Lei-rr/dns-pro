@@ -15,6 +15,7 @@ export interface AppConfig {
   rateLimitGlobalMax: number
   rateLimitLoginMax: number
   rateLimitTimeWindow: string
+  trustProxy: boolean
 }
 
 const appConfigSchema = z.object({
@@ -32,6 +33,7 @@ const appConfigSchema = z.object({
   rateLimitGlobalMax: z.number().int().positive(),
   rateLimitLoginMax: z.number().int().positive(),
   rateLimitTimeWindow: z.string().min(1),
+  trustProxy: z.boolean(),
 })
 
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -63,6 +65,7 @@ export function loadAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     rateLimitGlobalMax: Number(process.env.RATE_LIMIT_GLOBAL_MAX ?? 300),
     rateLimitLoginMax: Number(process.env.RATE_LIMIT_LOGIN_MAX ?? 10),
     rateLimitTimeWindow: process.env.RATE_LIMIT_TIME_WINDOW ?? '1 minute',
+    trustProxy: parseBoolean(process.env.TRUST_PROXY, false),
     ...overrides,
   }
 

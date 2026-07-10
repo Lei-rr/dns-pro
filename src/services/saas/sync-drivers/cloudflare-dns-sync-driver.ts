@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../../repositories/provider-repository.js'
 import { ApiError } from '../../../support/api-error.js'
 import type { SaasProvider } from '../../../types/provider.js'
-import { CloudflareDnsRecordService } from '../../cloudflare/cloudflare-dns-record-service.js'
+import { CloudflareDnsRecordService, type RecordPayload } from '../../cloudflare/cloudflare-dns-record-service.js'
 import { CloudflareZoneService } from '../../cloudflare/cloudflare-zone-service.js'
 import { SaasHostnameService } from '../saas-hostname-service.js'
 import { isHostnameActive } from '../utils/host-status.js'
@@ -80,7 +80,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
       return { cleaned: 0, records: [], reason: 'cloudflare_zone_not_found' }
     }
 
-    const results = await Promise.all(records.map((record) => this.withPurpose(record as never, this.deleteRecord(cloudflareProviderId, zoneId, record))))
+      const results = await Promise.all(records.map((record) => this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record))))
     return { cleaned: results.filter((r) => r.status === 'deleted').length, cloudflare_zone: zoneName, records: results }
   }
 
@@ -237,7 +237,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
 
     for (const match of matches) {
       if (String(match.comment ?? '') !== expectedComment) continue
-      const updated = await this.records.update(cloudflareProviderId, zoneId, String(match.id), this.recordPayload(record) as never)
+      const updated = await this.records.update(cloudflareProviderId, zoneId, String(match.id), this.recordPayload(record))
       return { ...base, status: 'updated', record_id: String(updated.id ?? match.id ?? '') }
     }
 
@@ -245,7 +245,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
       throw new ApiError('cloudflare_dns_record_conflict', 'Cloudflare DNS record conflict', 409, { name: record.name, type: record.type })
     }
 
-    const created = await this.records.create(cloudflareProviderId, zoneId, this.recordPayload(record) as never)
+    const created = await this.records.create(cloudflareProviderId, zoneId, this.recordPayload(record))
     return { ...base, status: 'created', record_id: String(created.id ?? '') }
   }
 
@@ -287,7 +287,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     return matches
   }
 
-  private recordPayload(record: Record<string, unknown>): Record<string, unknown> {
+  private recordPayload(record: Record<string, unknown>): RecordPayload {
     return {
       type: String(record.type),
       name: String(record.name),
@@ -312,7 +312,7 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
       const signature = this.recordSignature(record)
       if (signature === '' || seen.has(signature) || afterMap.has(signature)) continue
       seen.add(signature)
-      deleted.push(await this.withPurpose(record as never, this.deleteRecord(cloudflareProviderId, zoneId, record)))
+      deleted.push(await this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record)))
     }
 
     return deleted

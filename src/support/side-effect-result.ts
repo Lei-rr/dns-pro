@@ -25,10 +25,10 @@ export function failed(message: string, details: unknown[] = []): DnsSideEffect 
 }
 
 export interface DnsOperationResult {
+  [key: string]: unknown
   action: string
   message?: string
   error?: unknown
-  [key: string]: unknown
 }
 
 export function fromDnsOperationResult(result: DnsOperationResult, defaultMessage: string): DnsSideEffect {

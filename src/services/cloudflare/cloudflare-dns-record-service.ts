@@ -50,7 +50,7 @@ interface RecordListResult {
   }
 }
 
-interface RecordPayload {
+export interface RecordPayload {
   type: string
   name: string
   content: string

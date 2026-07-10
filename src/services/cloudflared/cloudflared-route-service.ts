@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
-import { fromDnsOperationResult, type SideEffects } from '../../support/side-effect-result.js'
+import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../support/side-effect-result.js'
 import { globalCache } from '../../support/cache-service.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
 import { CloudflareZoneService } from '../cloudflare/cloudflare-zone-service.js'
@@ -134,7 +134,7 @@ export class CloudflaredRouteService {
     await this.writeIngress(providerId, tunnelId, newRoutes)
 
     const stillUsed = newRoutes.filter((r) => r.hostname === normalizedHostname)
-    let dnsResult: Record<string, unknown>
+    let dnsResult: DnsOperationResult
     if (stillUsed.length > 0) {
       dnsResult = { action: 'kept', reason: 'hostname_still_used' }
     } else {
@@ -146,7 +146,7 @@ export class CloudflaredRouteService {
     return {
       hostname: normalizedHostname,
       path,
-      side_effects: this.dnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult as never, '已执行 Cloudflare DNS 清理') }),
+      side_effects: this.dnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 清理') }),
     }
   }
 
@@ -241,10 +241,10 @@ export class CloudflaredRouteService {
     return cfProviderId
   }
 
-  private dnsSideEffects(effects: { sync?: Record<string, unknown>; cleanup?: Record<string, unknown> }): SideEffects {
+  private dnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: DnsSideEffect }): SideEffects {
     const sideEffects: SideEffects = { dns: {} }
-    if (effects.sync) sideEffects.dns!.sync = effects.sync as never
-    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup as never
+    if (effects.sync) sideEffects.dns!.sync = effects.sync
+    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup
     return sideEffects
   }
 }

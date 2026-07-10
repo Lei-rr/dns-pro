@@ -29,6 +29,7 @@ const NO_STORE_HEADERS = {
 export function buildApp(config: AppConfig) {
   const app = Fastify({
     logger: config.logLevel ? { level: config.logLevel } : false,
+    trustProxy: config.trustProxy,
   })
 
   app.setValidatorCompiler(validatorCompiler)

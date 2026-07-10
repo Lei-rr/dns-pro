@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { CloudflaredTunnelService } from '../../services/cloudflared/cloudflared-tunnel-service.js'
-import { CloudflaredRouteService } from '../../services/cloudflared/cloudflared-route-service.js'
+import { CloudflaredRouteService, type CloudflaredRoute } from '../../services/cloudflared/cloudflared-route-service.js'
 import { success } from '../../support/api-response.js'
 import type {
   CloudflaredTunnelCreateInput,
@@ -65,11 +65,20 @@ export async function cloudflaredTunnelConfigShow(
   return reply.send(success(result))
 }
 
+function buildRoute(body: CloudflaredRouteInput): CloudflaredRoute {
+  return {
+    hostname: body.hostname,
+    service: routeService.buildServiceUrl(body.protocol ?? 'http', body.address),
+    zone_id: body.zone_id,
+    path: body.path ?? '',
+  }
+}
+
 export async function cloudflaredTunnelRouteStore(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Body: CloudflaredRouteInput }>,
   reply: FastifyReply
 ) {
-  const result = await routeService.addRoute(request.params.providerId, request.params.tunnelId, request.body as never)
+  const result = await routeService.addRoute(request.params.providerId, request.params.tunnelId, buildRoute(request.body))
   return reply.status(201).send(success(result))
 }
 
@@ -94,7 +103,7 @@ export async function cloudflaredTunnelRouteUpdate(
     request.params.tunnelId,
     originalHostname,
     originalPath,
-    request.body as never
+    buildRoute(request.body)
   )
   return reply.send(success(result))
 }
