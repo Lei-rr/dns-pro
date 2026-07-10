@@ -151,13 +151,13 @@ export class ProviderService {
         {
           field: 'cloudflare_dns_provider',
           targetType: 'cloudflare',
-          label: 'SaaS 旧版 Cloudflare DNS 关联',
+          label: 'SaaS Cloudflare DNS 同步',
           appliesTo: ['saas'],
         },
         {
           field: 'dnspod_provider',
           targetType: 'dnspod',
-          label: 'SaaS 旧版 DNSPod 关联',
+          label: 'SaaS DNSPod 同步',
           appliesTo: ['saas'],
         },
         {

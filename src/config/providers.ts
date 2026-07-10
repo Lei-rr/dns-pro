@@ -36,11 +36,13 @@ export const providerDefinitions: Record<ProviderType, ProviderDefinition> = {
   saas: {
     type: 'saas',
     name: 'Cloudflare SaaS',
-    fields: ['cloudflare_provider'],
+    fields: ['cloudflare_provider', 'dnspod_provider', 'cloudflare_dns_provider'],
     required: ['cloudflare_provider'],
     secret_fields: [],
     labels: {
       cloudflare_provider: '关联 Cloudflare API',
+      dnspod_provider: 'DNSPod 同步 API',
+      cloudflare_dns_provider: 'Cloudflare DNS 同步 API',
     },
   },
   cloudflared: {

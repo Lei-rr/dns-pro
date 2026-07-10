@@ -179,11 +179,12 @@ export class CloudflaredRouteService {
   private normalizeRoute(route: CloudflaredRoute): CloudflaredRoute {
     const hostname = route.hostname.toLowerCase().trim()
     const service = route.service.trim()
+    const zoneId = (route.zone_id ?? '').trim()
     const path = (route.path ?? '').trim()
-    if (hostname === '' || service === '') {
-      throw new ApiError('cloudflared_route_invalid', 'hostname and service are required', 422)
+    if (hostname === '' || service === '' || zoneId === '') {
+      throw new ApiError('cloudflared_route_invalid', 'hostname, service and zone_id are required', 422)
     }
-    return { hostname, service, path }
+    return { hostname, service, zone_id: zoneId, path }
   }
 
   private isSameRouteKey(a: CloudflaredRoute, b: CloudflaredRoute): boolean {

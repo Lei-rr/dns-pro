@@ -39,7 +39,7 @@ git clone -b fast https://github.com/lei-rr/dns-pro.git
 cd dns-pro
 npm install
 npm run build
-HOST=0.0.0.0 PORT=2022 SESSION_SECRET="replace-with-a-long-random-secret" NODE_ENV=production npm start
+npm start
 ```
 
 访问服务后使用默认账号登录：
@@ -49,7 +49,7 @@ HOST=0.0.0.0 PORT=2022 SESSION_SECRET="replace-with-a-long-random-secret" NODE_E
 密码：admin
 ```
 
-生产环境部署后请立即修改默认登录信息，并设置强 `SESSION_SECRET`。
+生产环境部署后请立即修改默认登录信息。
 
 ## 开发调试
 
@@ -101,19 +101,6 @@ docker compose up -d --build
 ```text
 ./data:/app/data
 ```
-
-生产环境请修改 `compose.yaml` 中的 `SESSION_SECRET`，不要使用默认占位值。
-
-## 环境变量
-
-| 变量 | 默认值 | 说明 |
-|---|---|---|
-| `HOST` | `127.0.0.1` | 后端监听地址 |
-| `PORT` | `2022` | 后端监听端口 |
-| `SESSION_SECRET` | 开发兜底值 | Cookie Session 签名密钥，生产环境必须设置强随机值 |
-| `NODE_ENV` | 未设置 | 设置为 `production` 后启用安全 Cookie 配置 |
-| `LOG_LEVEL` | `info` | Fastify 日志等级 |
-| `DATA_DIR` | `./data` | 运行数据目录 |
 
 ## 运行数据
 
@@ -218,7 +205,6 @@ dns-pro/
 ## 安全建议
 
 - 不要提交 `data/` 目录或真实 Provider 凭据
-- 生产环境必须设置强 `SESSION_SECRET`
 - 首次部署后立即修改默认 `admin/admin` 登录信息
 - Cloudflare 和腾讯云密钥建议按最小权限授权
 - 生产环境建议通过 HTTPS 访问

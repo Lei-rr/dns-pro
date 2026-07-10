@@ -15,10 +15,6 @@ interface ProvidersFile {
 
 const DEFAULT_PROVIDERS: ProvidersFile = { items: [] }
 
-const TYPE_ALIASES: Record<string, ProviderType> = {
-  hostname: 'saas',
-}
-
 export class ProviderRepository {
   private readonly store = new JsonStore<ProvidersFile>('providers.json', DEFAULT_PROVIDERS)
 
@@ -28,8 +24,7 @@ export class ProviderRepository {
 
   async rawAll(): Promise<Provider[]> {
     const data = await this.store.read()
-    const providers = Array.isArray(data.items) ? data.items : []
-    return providers.map((p) => this.normalizeType(p))
+    return Array.isArray(data.items) ? data.items : []
   }
 
   async all(includeSecrets = false): Promise<PresentedProvider[]> {
@@ -62,8 +57,7 @@ export class ProviderRepository {
   async mutateAll(mutator: (current: Provider[]) => Provider[]): Promise<Provider[]> {
     const result = await this.store.transaction((current) => {
       const items = Array.isArray(current.items) ? current.items : []
-      const before = items.map((p) => this.normalizeType(p))
-      const next = mutator(before)
+      const next = mutator(items)
       const after = next.map((p) => this.normalizeForStorage(p))
       return { next: { items: after }, result: after }
     })
@@ -186,7 +180,7 @@ export class ProviderRepository {
   }
 
   private normalizeForStorage(provider: ProviderInput): Provider {
-    const type = this.normalizedType(provider.type)
+    const type = provider.type
     const definition = getProviderDefinition(type)
 
     const head: BaseProvider = {
@@ -202,25 +196,6 @@ export class ProviderRepository {
       }
     }
 
-    const declared = new Set([...Object.keys(head), ...Object.keys(body)])
-    const extras: Record<string, unknown> = {}
-    for (const [key, value] of Object.entries(provider)) {
-      if (!declared.has(key)) {
-        extras[key] = value
-      }
-    }
-
-    return { ...head, ...body, ...extras } as Provider
-  }
-
-  private normalizedType(type: string): ProviderType {
-    return TYPE_ALIASES[type] ?? (type as ProviderType)
-  }
-
-  private normalizeType(provider: Provider): Provider {
-    if (provider.type) {
-      ;(provider as unknown as Record<string, ProviderType>).type = this.normalizedType(provider.type)
-    }
-    return provider
+    return { ...head, ...body } as Provider
   }
 }

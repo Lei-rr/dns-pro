@@ -8,6 +8,7 @@ export interface Provider {
   dependencies?: Array<{ reason?: string; name?: string; id?: string }>
   dnspod_provider?: string
   cloudflare_provider?: string
+  cloudflare_dns_provider?: string
   description?: string
   [key: string]: unknown
 }

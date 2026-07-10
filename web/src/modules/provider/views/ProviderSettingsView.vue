@@ -410,18 +410,19 @@ function providerDefinition(type: string): ProviderDefinition | null {
 }
 
 function isProviderSelectField(field: string) {
-  return field === 'dnspod_provider' || field === 'cloudflare_provider'
+  return field === 'dnspod_provider' || field === 'cloudflare_provider' || field === 'cloudflare_dns_provider'
 }
 
 function selectFieldProviders(field: string): Provider[] {
   if (field === 'dnspod_provider') return dnspodProviders.value
-  if (field === 'cloudflare_provider') return cloudflareProviders.value
+  if (field === 'cloudflare_provider' || field === 'cloudflare_dns_provider') return cloudflareProviders.value
   return []
 }
 
 function selectFieldPlaceholder(field: string) {
   if (field === 'dnspod_provider') return '选择 DNSPod API'
   if (field === 'cloudflare_provider') return '选择 Cloudflare API'
+  if (field === 'cloudflare_dns_provider') return '选择 Cloudflare DNS API'
   return '请选择'
 }
 
@@ -457,8 +458,24 @@ function configItems(provider: Provider): Array<{ key: string; value: string; co
   if (provider.type === 'saas' && provider.cloudflare_provider) {
     items.push({
       key: 'saas-cloudflare',
-      value: linkedProviderLabel(provider.cloudflare_provider),
+      value: `SaaS：${linkedProviderLabel(provider.cloudflare_provider)}`,
       color: 'orange',
+    })
+  }
+
+  if (provider.type === 'saas' && provider.dnspod_provider) {
+    items.push({
+      key: 'saas-dnspod-sync',
+      value: `DNSPod 同步：${linkedProviderLabel(provider.dnspod_provider)}`,
+      color: 'blue',
+    })
+  }
+
+  if (provider.type === 'saas' && provider.cloudflare_dns_provider) {
+    items.push({
+      key: 'saas-cloudflare-dns-sync',
+      value: `Cloudflare DNS 同步：${linkedProviderLabel(provider.cloudflare_dns_provider)}`,
+      color: 'cyan',
     })
   }
 
