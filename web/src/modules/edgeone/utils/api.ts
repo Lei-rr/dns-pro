@@ -1,5 +1,5 @@
 import http, { unwrapItems, withRefresh } from '@/shared/utils/request'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, EdgeOneAccelerationDomain, EdgeOneZone } from '@/types'
 
 const path = (value: string) => encodeURIComponent(value)
 const providerBase = (provider: string) => `/edgeone/providers/${path(provider)}`
@@ -35,24 +35,21 @@ function edgeOneQuery(options: Record<string, unknown> = {}, defaultPerPage = 20
 }
 
 export const edgeOneApi = {
-  zones: async (
-    provider: string,
-    options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
-    unwrapItems<Record<string, unknown>[]>(
+  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<EdgeOneZone[]>> =>
+    unwrapItems<EdgeOneZone[]>(
       await http.get(
         endpoints.zones(provider),
         withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh })
       )
     ),
-  zone: (provider: string, zoneId: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  zone: (provider: string, zoneId: string): Promise<ApiResponse<EdgeOneZone>> =>
     http.get(endpoints.zone(provider, zoneId)),
   accelerationDomains: async (
     provider: string,
     zone: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
-    unwrapItems<Record<string, unknown>[]>(
+  ): Promise<ApiResponse<EdgeOneAccelerationDomain[]>> =>
+    unwrapItems<EdgeOneAccelerationDomain[]>(
       await http.get(
         endpoints.accelerationDomains(provider, zone),
         withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh })

@@ -14,7 +14,7 @@
       </a-descriptions-item>
     </a-descriptions>
     <a-form-item v-if="showCertId" label="证书 ID" required>
-      <a-input v-model:value="form.cert_id" placeholder="请输入 CertId" />
+      <a-input v-model:value="form.cert_id" placeholder="请输入证书 ID" />
     </a-form-item>
     <a-space style="display: flex; justify-content: flex-end">
       <a-button :disabled="saving" @click="$emit('cancel')">取消</a-button>
@@ -27,9 +27,10 @@
 import { ref, computed, watch } from 'vue'
 import { message } from '@/shared/plugins/antDesignVue'
 import { certificateStatusColor, certificateStatusLabel } from '../utils/format'
+import type { EdgeOneAccelerationDomain, EdgeOneCertificateItem } from '@/types'
 
 const props = defineProps<{
-  modelValue?: Record<string, unknown> | null
+  modelValue?: EdgeOneAccelerationDomain | null
   saving?: boolean
 }>()
 
@@ -42,26 +43,27 @@ const form = ref<Record<string, unknown>>({ https_mode: 'disable', cert_id: '' }
 
 const showCertId = computed(() => form.value.https_mode === 'sslcert')
 const certificate = computed(() => {
-  const certificate = (props.modelValue?.certificate as Record<string, unknown>) || {}
-  const list = (certificate.items as unknown[]) || (certificate.list as unknown[]) || []
-  return (list[0] as Record<string, unknown>) || null
+  const certificate = props.modelValue?.certificate || {}
+  const list = certificate.items || certificate.list || []
+  return list[0] || null
 })
-const modeText = computed(
-  () =>
-    (({ disable: '未配置', eofreecert: 'EdgeOne 免费证书', sslcert: 'SSL 证书 ID' }) as Record<string, string>)[
-      form.value.https_mode as string
-    ] || (form.value.https_mode as string)
-)
+const modeTextMap: Record<string, string> = {
+  disable: '未配置',
+  eofreecert: 'EdgeOne 免费证书',
+  sslcert: 'SSL 证书 ID',
+}
+
+const modeText = computed(() => modeTextMap[form.value.https_mode as string] || (form.value.https_mode as string))
 const certificateDetails = computed(() => {
   if (!certificate.value) return []
   return [
-    { label: '证书类型', value: certificateTypeLabel(certificate.value.type as string) },
+    { label: '证书类型', value: certificateTypeLabel(certificate.value.type) },
     { label: '自动更新', value: autoRenewText() },
-    { label: '到期时间', value: formatTime(certificate.value.expire_time as string) },
+    { label: '到期时间', value: formatTime(certificate.value.expire_time) },
     {
       label: '状态',
-      value: certificateStatusLabel(certificate.value.status as string),
-      status: certificate.value.status as string,
+      value: certificateStatusLabel(certificate.value.status || ''),
+      status: certificate.value.status,
     },
   ]
 })
@@ -69,11 +71,8 @@ const certificateDetails = computed(() => {
 watch(
   () => props.modelValue,
   (value) => {
-    const certificate = (value?.certificate as Record<string, unknown>) || {}
-    const list =
-      (certificate.items as Array<Record<string, unknown>>) ||
-      (certificate.list as Array<Record<string, unknown>>) ||
-      []
+    const certificate = value?.certificate || {}
+    const list = certificate.items || certificate.list || []
     form.value = {
       https_mode: certificate.mode || 'disable',
       cert_id: list[0]?.cert_id || '',
@@ -89,23 +88,24 @@ function submit() {
   }
   emit('save', form.value)
 }
-function certificateTypeLabel(type: string) {
-  return (
-    ({ default: '免费证书', free: '免费证书', upload: '上传证书', managed: '托管证书' } as Record<string, string>)[
-      type
-    ] ||
-    type ||
-    '-'
-  )
+const certificateTypeLabels: Record<string, string> = {
+  default: '免费证书',
+  free: '免费证书',
+  upload: '上传证书',
+  managed: '托管证书',
+}
+
+function certificateTypeLabel(type: string | undefined) {
+  return certificateTypeLabels[type || ''] || type || '-'
 }
 function autoRenewText() {
   if (form.value.https_mode === 'eofreecert' || certificate.value?.type === 'default') return '到期前 15 天自动更新'
   return '-'
 }
-function statusColor(status: string) {
-  return certificateStatusColor(status)
+function statusColor(status: string | undefined) {
+  return certificateStatusColor(status || '')
 }
-function formatTime(value: string) {
+function formatTime(value: string | undefined) {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value

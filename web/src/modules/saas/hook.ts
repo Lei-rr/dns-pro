@@ -1,3 +1,6 @@
+import { defaultProviderHook } from '@/modules/common/dns/hook'
+import type { ProviderHook } from '@/types'
+
 const zoneStatusLabels: Record<string, string> = {
   active: '正常',
   pending: '待接入',
@@ -11,7 +14,8 @@ const zoneStatusGreen = new Set(['active'])
 const zoneStatusGold = new Set(['pending', 'pending_nameserver', 'initializing'])
 const zoneStatusDefault = new Set(['moved', 'deactivated'])
 
-export default {
+const hook: ProviderHook = {
+  ...defaultProviderHook,
   capabilities: {
     createZone: false,
     deleteZone: false,
@@ -23,12 +27,12 @@ export default {
   proxyLabel: '启用 Cloudflare 代理',
   proxyOnText: '已开启',
   proxyOnColor: 'cyan',
-  proxyTypes: [] as string[],
-  recordLines: [] as Array<{ label: string; value: string }>,
+  proxyTypes: [],
+  recordLines: [],
   showLine: () => false,
   zoneStatusLabel(status: unknown) {
     const k = String(status || '').toLowerCase()
-    return zoneStatusLabels[k] || (status as string) || '-'
+    return zoneStatusLabels[k] || String(status || '') || '-'
   },
   zoneStatusColor(status: unknown) {
     const k = String(status || '').toLowerCase()
@@ -38,3 +42,5 @@ export default {
     return k ? 'blue' : 'default'
   },
 }
+
+export default hook

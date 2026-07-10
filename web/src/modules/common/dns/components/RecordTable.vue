@@ -71,10 +71,11 @@ import CopyButton from '@/shared/components/CopyButton.vue'
 import TableActions from '@/shared/components/TableActions.vue'
 import { defaultProviderHook } from '../hook'
 import { dnsRecordTypeColors } from '../utils/format'
+import type { DnsRecord, ProviderHook } from '@/types'
 
 const props = defineProps<{
-  records?: Record<string, unknown>[]
-  providerHook?: Record<string, unknown>
+  records?: DnsRecord[]
+  providerHook?: ProviderHook
   loading?: boolean
   pagination?: Record<string, unknown>
   emptyText?: string
@@ -84,17 +85,17 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'edit', record: Record<string, unknown>): void
-  (e: 'delete', record: Record<string, unknown>): void
-  (e: 'selection-change', rows: Record<string, unknown>[]): void
+  (e: 'edit', record: DnsRecord): void
+  (e: 'delete', record: DnsRecord): void
+  (e: 'selection-change', rows: DnsRecord[]): void
   (e: 'change', pagination: { current?: number; pageSize?: number }): void
 }>()
 
 const selectedRowKeys = ref<(string | number)[]>([])
 
 const hook = computed(() => props.providerHook || defaultProviderHook)
-const showTtl = computed(() => hook.value.showTtl as boolean)
-const hasProxy = computed(() => (hook.value.proxyTypes as string[]).length > 0)
+const showTtl = computed(() => hook.value.showTtl)
+const hasProxy = computed(() => hook.value.proxyTypes.length > 0)
 const columns = computed(() => {
   const cols: Array<Record<string, unknown>> = [
     { title: '主机', dataIndex: 'name', key: 'name', width: 150 },
@@ -104,15 +105,15 @@ const columns = computed(() => {
       key: 'type',
       width: 80,
       filters: (props.typeOptions || []).map((item) => ({ text: item.label, value: item.value })),
-      onFilter: (value: string, record: Record<string, unknown>) => record.type === value,
+      onFilter: (value: string, record: DnsRecord) => record.type === value,
     },
     {
       title: '记录值',
       dataIndex: 'value',
       key: 'value',
       width: 360,
-      filters: uniqueFilters((props.records || []).map((record) => record.value as string)),
-      onFilter: (value: string, record: Record<string, unknown>) => record.value === value,
+      filters: uniqueFilters((props.records || []).map((record) => record.value || '')),
+      onFilter: (value: string, record: DnsRecord) => record.value === value,
     },
   ]
 
@@ -130,13 +131,13 @@ const columns = computed(() => {
             { text: hook.value.proxyOnText, value: 'proxied' },
             { text: hook.value.proxyOffText, value: 'dns_only' },
           ]
-        : uniqueFilters((props.records || []).map((record) => (record.line as string) || '默认')),
-      onFilter: (value: string, record: Record<string, unknown>) =>
+        : uniqueFilters((props.records || []).map((record) => record.line || '默认')),
+      onFilter: (value: string, record: DnsRecord) =>
         hasProxy.value
           ? value === 'proxied'
             ? !!record.proxied
             : !record.proxied
-          : ((record.line as string) || '默认') === value,
+          : (record.line || '默认') === value,
     },
     { title: '备注', dataIndex: 'remark', key: 'remark', width: 160 },
     { title: '操作', key: 'actions', width: 110, align: 'right' }
@@ -146,7 +147,7 @@ const columns = computed(() => {
 })
 const tablePaginationConfig = computed(() => props.pagination || tablePagination())
 
-function rowKey(record: Record<string, unknown>) {
+function rowKey(record: DnsRecord) {
   return String(record.id || '')
 }
 
@@ -164,11 +165,11 @@ watch(
   }
 )
 
-function typeColor(type: string) {
-  return dnsRecordTypeColors[type] || 'default'
+function typeColor(type: string | undefined) {
+  return dnsRecordTypeColors[type || ''] || 'default'
 }
 
-function selectRows(keys: (string | number)[], rows: Record<string, unknown>[]) {
+function selectRows(keys: (string | number)[], rows: DnsRecord[]) {
   selectedRowKeys.value = keys
   emit('selection-change', rows)
 }
@@ -183,11 +184,11 @@ function handleTableChange(pagination: { current?: number; pageSize?: number }) 
   emit('change', pagination)
 }
 
-function actionItems(_record?: Record<string, unknown>): Array<{ key: string; label: string; danger?: boolean }> {
+function actionItems(_record?: DnsRecord): Array<{ key: string; label: string; danger?: boolean }> {
   return [{ key: 'delete', label: '删除', danger: true }]
 }
 
-function selectAction(action: string, record: Record<string, unknown>) {
+function selectAction(action: string, record: DnsRecord) {
   if (action === 'delete') emit('delete', record)
 }
 </script>

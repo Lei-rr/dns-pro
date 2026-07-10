@@ -71,21 +71,22 @@ import { ref, computed, watch } from 'vue'
 import { message } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
 import { defaultProviderHook } from '../hook'
+import type { DnsRecord, ProviderHook } from '@/types'
 
 const props = defineProps<{
-  modelValue?: Record<string, unknown> | null
+  modelValue?: DnsRecord | null
   saving?: boolean
-  providerHook?: Record<string, unknown>
+  providerHook?: ProviderHook
   lines?: Array<{ label: string; value: string }>
 }>()
 
 const emit = defineEmits<{
-  (e: 'save', form: Record<string, unknown>): void
+  (e: 'save', form: DnsRecord): void
   (e: 'cancel'): void
-  (e: 'delete', form: Record<string, unknown>): void
+  (e: 'delete', form: DnsRecord): void
 }>()
 
-const form = ref<Record<string, unknown>>({
+const form = ref<DnsRecord>({
   id: '',
   name: '@',
   type: 'A',
@@ -98,10 +99,10 @@ const form = ref<Record<string, unknown>>({
 })
 
 const hook = computed(() => props.providerHook || defaultProviderHook)
-const showTtl = computed(() => hook.value.showTtl as boolean)
+const showTtl = computed(() => hook.value.showTtl)
 const showPriority = computed(() => form.value.type === 'MX')
-const showProxy = computed(() => (hook.value.proxyTypes as string[]).includes(form.value.type as string))
-const showLine = computed(() => (hook.value.showLine as (lines: unknown[]) => boolean)(props.lines || []))
+const showProxy = computed(() => hook.value.proxyTypes.includes(form.value.type || ''))
+const showLine = computed(() => hook.value.showLine(props.lines || []))
 const lineOptions = computed(() => {
   const options = [...(props.lines || [])]
   const current = String(form.value.line || '').trim()

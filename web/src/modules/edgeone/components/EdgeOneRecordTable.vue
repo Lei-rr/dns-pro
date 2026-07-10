@@ -87,9 +87,10 @@ import {
   edgeOneStatusLabels,
   normalizeStatus,
 } from '../utils/format'
+import type { EdgeOneAccelerationDomain, EdgeOneCertificate, EdgeOneCertificateItem } from '@/types'
 
 const props = defineProps<{
-  records?: Record<string, unknown>[]
+  records?: EdgeOneAccelerationDomain[]
   loading?: boolean
   pagination?: Record<string, unknown>
   emptyText?: string
@@ -98,11 +99,11 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'edit', record: Record<string, unknown>): void
-  (e: 'status', record: Record<string, unknown>): void
-  (e: 'certificate', record: Record<string, unknown>): void
-  (e: 'delete', record: Record<string, unknown>): void
-  (e: 'selection-change', rows: Record<string, unknown>[]): void
+  (e: 'edit', record: EdgeOneAccelerationDomain): void
+  (e: 'status', record: EdgeOneAccelerationDomain): void
+  (e: 'certificate', record: EdgeOneAccelerationDomain): void
+  (e: 'delete', record: EdgeOneAccelerationDomain): void
+  (e: 'selection-change', rows: EdgeOneAccelerationDomain[]): void
   (e: 'change', pagination: { current?: number; pageSize?: number }): void
 }>()
 
@@ -121,25 +122,22 @@ const columns = computed(() => [
       { text: '未生效', value: 'init' },
       { text: '已封禁', value: 'forbidden' },
     ],
-    onFilter: (value: string, record: Record<string, unknown>) => record.status === value,
+    onFilter: (value: string, record: EdgeOneAccelerationDomain) => record.status === value,
   },
   {
     title: 'CNAME',
     dataIndex: 'cname',
     key: 'cname',
     width: 320,
-    filters: uniqueFilters((props.records || []).map((record) => record.cname as string)),
-    onFilter: (value: string, record: Record<string, unknown>) => record.cname === value,
+    filters: uniqueFilters((props.records || []).map((record) => record.cname || '')),
+    onFilter: (value: string, record: EdgeOneAccelerationDomain) => record.cname === value,
   },
   {
     title: '源站',
     key: 'origin',
     width: 320,
-    filters: uniqueFilters(
-      (props.records || []).map((record) => (record.origin as Record<string, unknown>)?.value as string)
-    ),
-    onFilter: (value: string, record: Record<string, unknown>) =>
-      (record.origin as Record<string, unknown>)?.value === value,
+    filters: uniqueFilters((props.records || []).map((record) => record.origin?.value || '')),
+    onFilter: (value: string, record: EdgeOneAccelerationDomain) => record.origin?.value === value,
   },
   { title: 'IPv6', key: 'ipv6', width: 90 },
   {
@@ -150,16 +148,16 @@ const columns = computed(() => [
       { text: '已配置', value: 'enabled' },
       { text: '未配置', value: 'disabled' },
     ],
-    onFilter: (value: string, record: Record<string, unknown>) =>
+    onFilter: (value: string, record: EdgeOneAccelerationDomain) =>
       value === 'enabled'
-        ? (record.certificate as Record<string, unknown>)?.mode !== 'disable'
-        : (record.certificate as Record<string, unknown>)?.mode === 'disable',
+        ? record.certificate?.mode !== 'disable'
+        : record.certificate?.mode === 'disable',
   },
   { title: '操作', key: 'actions', width: 110, align: 'right' },
 ])
 const tablePaginationConfig = computed(() => props.pagination || tablePagination())
 
-function rowKey(record: Record<string, unknown>) {
+function rowKey(record: EdgeOneAccelerationDomain) {
   return String(record.name || '')
 }
 
@@ -176,13 +174,13 @@ watch(
   }
 )
 
-function statusColor(status: string) {
-  return edgeOneStatusColors[status] || (status ? 'red' : 'default')
+function statusColor(status: string | undefined) {
+  return edgeOneStatusColors[status || ''] || (status ? 'red' : 'default')
 }
-function statusLabel(record: Record<string, unknown>) {
-  return edgeOneStatusLabels[record.status as string] || record.status || '-'
+function statusLabel(record: EdgeOneAccelerationDomain) {
+  return edgeOneStatusLabels[record.status || ''] || record.status || '-'
 }
-function selectRows(keys: (string | number)[], rows: Record<string, unknown>[]) {
+function selectRows(keys: (string | number)[], rows: EdgeOneAccelerationDomain[]) {
   internalSelectedRowKeys.value = keys
   emit('selection-change', rows)
 }
@@ -194,39 +192,36 @@ function handleTableChange(pagination: { current?: number; pageSize?: number }) 
   clearSelection()
   emit('change', pagination)
 }
-function originTypeLabel(type: string) {
-  return edgeOneOriginTypeLabels[type] || type || '-'
+function originTypeLabel(type: string | undefined) {
+  return edgeOneOriginTypeLabels[type || ''] || type || '-'
 }
-function ipv6Label(status: string) {
+function ipv6Label(status: string | undefined) {
   const normalized = String(status || '').toLowerCase()
   return edgeOneIpv6Labels[normalized] || status || '-'
 }
-function ipv6Enabled(status: string) {
+function ipv6Enabled(status: string | undefined) {
   return ['on', 'enabled', 'enable'].includes(String(status || '').toLowerCase())
 }
-function httpsLabel(record: Record<string, unknown>) {
-  const mode = (record.certificate as Record<string, unknown>)?.mode || 'disable'
+function certificateList(certificate?: EdgeOneCertificate): EdgeOneCertificateItem[] {
+  return certificate?.items || certificate?.list || []
+}
+function httpsLabel(record: EdgeOneAccelerationDomain) {
+  const mode = record.certificate?.mode || 'disable'
   if (mode === 'disable') return '未配置'
-  const cert =
-    ((record.certificate as Record<string, unknown>)?.items as unknown[]) ||
-    ((record.certificate as Record<string, unknown>)?.list as unknown[]) ||
-    []
-  const first = cert[0] as Record<string, unknown>
-  if (first?.status && normalizeStatus(first.status as string) !== 'deployed')
-    return certificateStatusLabel(first.status as string)
+  const cert = certificateList(record.certificate)
+  const first = cert[0]
+  if (first?.status && normalizeStatus(first.status) !== 'deployed')
+    return certificateStatusLabel(first.status)
   return '已部署'
 }
-function httpsColor(record: Record<string, unknown>) {
-  const mode = (record.certificate as Record<string, unknown>)?.mode || 'disable'
+function httpsColor(record: EdgeOneAccelerationDomain) {
+  const mode = record.certificate?.mode || 'disable'
   if (mode === 'disable') return 'default'
-  const cert =
-    ((record.certificate as Record<string, unknown>)?.items as unknown[]) ||
-    ((record.certificate as Record<string, unknown>)?.list as unknown[]) ||
-    []
-  const first = cert[0] as Record<string, unknown>
-  return certificateStatusColor((first?.status as string) || 'deployed')
+  const cert = certificateList(record.certificate)
+  const first = cert[0]
+  return certificateStatusColor(first?.status || 'deployed')
 }
-function actionItems(record: Record<string, unknown>): Array<{ key: string; label: string; danger?: boolean }> {
+function actionItems(record: EdgeOneAccelerationDomain): Array<{ key: string; label: string; danger?: boolean }> {
   const items: Array<{ key: string; label: string; danger?: boolean }> = [
     { key: 'status', label: record.status === 'offline' ? '启用' : '停用' },
   ]
@@ -237,7 +232,7 @@ function actionItems(record: Record<string, unknown>): Array<{ key: string; labe
 
   return items
 }
-function selectAction(action: string, record: Record<string, unknown>) {
+function selectAction(action: string, record: EdgeOneAccelerationDomain) {
   if (action === 'status') emit('status', record)
   if (action === 'delete') emit('delete', record)
 }

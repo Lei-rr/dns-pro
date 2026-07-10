@@ -1,4 +1,5 @@
-import { makeZoneStatusRenderer } from '@/modules/common/dns/hook'
+import { defaultProviderHook, makeZoneStatusRenderer } from '@/modules/common/dns/hook'
+import type { ProviderHook } from '@/types'
 
 const { zoneStatusLabel, zoneStatusColor } = makeZoneStatusRenderer({
   labels: {
@@ -16,7 +17,8 @@ const { zoneStatusLabel, zoneStatusColor } = makeZoneStatusRenderer({
   fallbackColor: 'default',
 })
 
-export default {
+const hook: ProviderHook = {
+  ...defaultProviderHook,
   showTtl: false,
   lineLabel: '代理',
   proxyLabel: '启用 Cloudflare 代理',
@@ -28,3 +30,5 @@ export default {
   zoneStatusLabel,
   zoneStatusColor,
 }
+
+export default hook

@@ -1,5 +1,5 @@
 import http, { unwrapItems, withRefresh } from '@/shared/utils/request'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, SaaSFallbackOrigin, SaaSHostname } from '@/types'
 
 const path = (value: string) => encodeURIComponent(value)
 const providerBase = (provider: string) => `/saas/providers/${path(provider)}`
@@ -23,8 +23,8 @@ export const saasApi = {
     provider: string,
     zone: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
-    unwrapItems<Record<string, unknown>[]>(
+  ): Promise<ApiResponse<SaaSHostname[]>> =>
+    unwrapItems<SaaSHostname[]>(
       await http.get(endpoints.hostnames(provider, zone), withRefresh({ params: options, refresh: options?.refresh }))
     ),
   hostname: async (
@@ -32,21 +32,21 @@ export const saasApi = {
     zone: string,
     hostname: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
-    unwrapItems<Record<string, unknown>>(
+  ): Promise<ApiResponse<SaaSHostname>> =>
+    unwrapItems<SaaSHostname>(
       await http.get(
         endpoints.hostname(provider, zone, hostname),
         withRefresh({ params: options, refresh: options?.refresh })
       )
     ),
-  refreshHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  refreshHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
     http.post(endpoints.refreshHostname(provider, zone, hostname)),
   createHostname: (
     provider: string,
     zone: string,
     data: Record<string, unknown>,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
+  ): Promise<ApiResponse<SaaSHostname>> =>
     http.post(endpoints.createHostname(provider, zone), data, options.autoSync ? { params: { auto_sync: 1 } } : {}),
   updateHostname: (
     provider: string,
@@ -54,14 +54,14 @@ export const saasApi = {
     hostname: string,
     data: Record<string, unknown>,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
+  ): Promise<ApiResponse<SaaSHostname>> =>
     http.put(endpoints.hostname(provider, zone, hostname), data, options.autoSync ? { params: { auto_sync: 1 } } : {}),
   deleteHostname: (
     provider: string,
     zone: string,
     hostname: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
+  ): Promise<ApiResponse<SaaSHostname>> =>
     http.delete(
       endpoints.hostname(provider, zone, hostname),
       options.skipCleanup ? { params: { auto_cleanup: 0 } } : {}
@@ -70,9 +70,9 @@ export const saasApi = {
     provider: string,
     zone: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
+  ): Promise<ApiResponse<SaaSFallbackOrigin>> =>
     http.get(endpoints.fallbackOrigin(provider, zone), withRefresh({ refresh: options?.refresh })),
-  setFallbackOrigin: (provider: string, zone: string, origin: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  setFallbackOrigin: (provider: string, zone: string, origin: string): Promise<ApiResponse<SaaSFallbackOrigin>> =>
     http.put(endpoints.fallbackOrigin(provider, zone), { origin }),
   deleteFallbackOrigin: (provider: string, zone: string) => http.delete(endpoints.fallbackOrigin(provider, zone)),
 }

@@ -1,3 +1,5 @@
+import type { ProviderHook, ZoneStatusColumn } from '@/types'
+
 export interface ZoneStatusRendererOptions {
   labels?: Record<string, string>
   green?: string[]
@@ -34,7 +36,7 @@ export function makeZoneStatusRenderer(options: ZoneStatusRendererOptions = {}) 
   }
 }
 
-export const defaultProviderHook = {
+export const defaultProviderHook: ProviderHook = {
   capabilities: {
     createZone: true,
     deleteZone: true,
@@ -48,22 +50,20 @@ export const defaultProviderHook = {
   proxyOffText: '仅 DNS',
   proxyOnColor: 'green',
   proxyOffColor: 'default',
-  proxyTypes: [] as string[],
-  recordLines: [] as Array<{ label: string; value: string }>,
-  showLine: (lines: Array<unknown>) => lines.length > 0,
+  proxyTypes: [],
+  recordLines: [],
+  showLine: (lines) => lines.length > 0,
   zoneStatusColumns: [
     {
       key: 'status',
       title: '状态',
-      getStatus: (record: Record<string, unknown>) => record.status || record.access_status || record.dns_status,
+      getStatus: (record) => record.status || record.access_status || record.dns_status,
     },
   ],
   ...makeZoneStatusRenderer(),
 }
 
-export type ProviderHook = typeof defaultProviderHook
-
-export function mergeHook(custom: Partial<ProviderHook> | undefined) {
+export function mergeHook(custom: Partial<ProviderHook> | undefined): ProviderHook {
   if (!custom) return defaultProviderHook
   return {
     ...defaultProviderHook,

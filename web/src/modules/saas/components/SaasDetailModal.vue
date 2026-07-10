@@ -13,24 +13,20 @@
         <a-descriptions bordered size="small" :column="1" style="margin-bottom: 16px">
           <a-descriptions-item label="主机名">{{ hostnameRecord.hostname || '-' }}</a-descriptions-item>
           <a-descriptions-item label="主机名状态">
-            <a-tag :color="statusColor(hostnameRecord.status as string)">{{
-              statusLabel(hostnameRecord.status as string)
-            }}</a-tag>
+            <a-tag :color="statusColor(hostnameRecord.status || '')">{{ statusLabel(hostnameRecord.status || '') }}</a-tag>
           </a-descriptions-item>
           <a-descriptions-item v-if="hostnameRecord.custom_origin_server" label="回源服务器">{{
             hostnameRecord.custom_origin_server
           }}</a-descriptions-item>
           <a-descriptions-item v-if="sslSettings.min_tls_version" label="最低 TLS 版本">{{
-            minTlsLabel(sslSettings.min_tls_version as string)
+            minTlsLabel(String(sslSettings.min_tls_version))
           }}</a-descriptions-item>
           <a-descriptions-item v-if="sslRecord.issuer" label="证书颁发">{{ sslRecord.issuer }}</a-descriptions-item>
           <a-descriptions-item v-if="sslRecord.expires_on" label="证书到期">{{
-            formatDate(sslRecord.expires_on as string)
+            formatDate(sslRecord.expires_on)
           }}</a-descriptions-item>
           <a-descriptions-item label="证书状态">
-            <a-tag :color="statusColor(sslRecord.status as string)">{{
-              statusLabel(sslRecord.status as string)
-            }}</a-tag>
+            <a-tag :color="statusColor(sslRecord.status || '')">{{ statusLabel(sslRecord.status || '') }}</a-tag>
           </a-descriptions-item>
         </a-descriptions>
 
@@ -90,40 +86,39 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { statusColor, statusLabel, minTlsLabel, formatDate } from '../utils/saas'
+import type { SaaSHostname, SaaSHostnameSSL } from '@/types'
 
 const props = defineProps<{
   open?: boolean
-  hostname?: Record<string, unknown> | null
+  hostname?: SaaSHostname | null
   loading?: boolean
   refreshing?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
-  (e: 'refresh', hostname: Record<string, unknown>): void
-  (e: 'edit', hostname: Record<string, unknown>): void
+  (e: 'refresh', hostname: SaaSHostname): void
+  (e: 'edit', hostname: SaaSHostname): void
 }>()
 
-const hostnameRecord = computed(() => (props.hostname || {}) as Record<string, unknown>)
-const sslRecord = computed(() => (hostnameRecord.value.ssl as Record<string, unknown>) || {})
-const sslSettings = computed(() => (sslRecord.value.settings as Record<string, unknown>) || {})
-const ownershipVerification = computed(
-  () => (hostnameRecord.value.ownership_verification as Record<string, unknown>) || {}
-)
+const hostnameRecord = computed(() => props.hostname || ({} as SaaSHostname))
+const sslRecord = computed(() => hostnameRecord.value.ssl || ({} as SaaSHostnameSSL))
+const sslSettings = computed(() => sslRecord.value.settings || {})
+const ownershipVerification = computed(() => hostnameRecord.value.ownership_verification || {})
 
 const needsDcvHelp = computed(() => {
-  const status = sslRecord.value.status as string
+  const status = sslRecord.value.status
   const finalStates = ['active', 'deleted', 'deactivated', 'pending_deletion']
   return !!status && !finalStates.includes(status)
 })
 const needsOwnershipHelp = computed(() => {
-  const status = hostnameRecord.value.status as string
+  const status = hostnameRecord.value.status
   const finalStates = ['active', 'active_renewing', 'moved', 'deleted', 'blocked', 'pending_deletion']
   return !!status && !finalStates.includes(status)
 })
 const errorMessages = computed(() => {
   const out: string[] = []
-  const top = (hostnameRecord.value.verification_errors as unknown[]) || []
+  const top = hostnameRecord.value.verification_errors || []
   for (const e of top) {
     if (typeof e === 'string') out.push(e)
     else if (e && typeof e === 'object')
@@ -133,7 +128,7 @@ const errorMessages = computed(() => {
           JSON.stringify(e)
       )
   }
-  const ssl = (sslRecord.value.validation_errors as unknown[]) || []
+  const ssl = sslRecord.value.validation_errors || []
   for (const e of ssl) {
     if (typeof e === 'string') out.push(e)
     else if (e && typeof e === 'object')
@@ -148,11 +143,11 @@ const errorMessages = computed(() => {
 const dcvDelegationRecords = computed(() => {
   if (!needsDcvHelp.value) return []
 
-  const records = (sslRecord.value.dcv_delegation_records as Array<{ cname: string; cname_target: string }>) || []
+  const records = (sslRecord.value.dcv_delegation_records || []) as Array<{ cname: string; cname_target: string }>
   if (Array.isArray(records) && records.length > 0) return records
 
-  const uuid = sslRecord.value.dcv_delegation_uuid as string
-  const fqdn = hostnameRecord.value.hostname as string
+  const uuid = sslRecord.value.dcv_delegation_uuid
+  const fqdn = hostnameRecord.value.hostname
   if (uuid && fqdn) {
     return [
       {
@@ -166,23 +161,23 @@ const dcvDelegationRecords = computed(() => {
 const acmeTempRecords = computed(() => {
   if (!needsDcvHelp.value) return []
 
-  const records = (sslRecord.value.validation_records as Array<Record<string, unknown>>) || []
+  const records = sslRecord.value.validation_records || []
   if (!Array.isArray(records)) return []
   return records
     .map((r) => {
-      if (r?.txt_name && r?.txt_value)
+      if (r.txt_name && r.txt_value)
         return {
           type: 'TXT',
-          name: r.txt_name as string,
-          value: r.txt_value as string,
-          status: r.status as string | undefined,
+          name: r.txt_name,
+          value: r.txt_value,
+          status: r.status,
         }
-      if (r?.http_url && r?.http_body)
+      if (r.http_url && r.http_body)
         return {
           type: 'HTTP',
-          name: r.http_url as string,
-          value: r.http_body as string,
-          status: r.status as string | undefined,
+          name: r.http_url,
+          value: r.http_body,
+          status: r.status,
         }
       return null
     })

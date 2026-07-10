@@ -104,9 +104,10 @@ import {
   fullDomainName,
   validateEdgeOneRecordForm,
 } from '../utils/recordPayload'
+import type { EdgeOneAccelerationDomain } from '@/types'
 
 const props = defineProps<{
-  modelValue?: Record<string, unknown> | null
+  modelValue?: EdgeOneAccelerationDomain | null
   saving?: boolean
   zoneName?: string
   dnspodLinked?: boolean
@@ -152,19 +153,15 @@ const hostHeaderAutoText = computed(() => {
   if (isWildcardDomain.value) return '使用请求 HOST 作为回源 HOST'
   return `使用加速域名 ${fullDomainNameComputed.value || '.' + domainSuffix.value}`
 })
-const originPlaceholder = computed(() => {
-  return (
-    (
-      {
-        IP_DOMAIN: '请输入合法的 IP 或域名，例如 1.2.3.4 或 origin.example.com',
-        COS: '请输入 COS 访问域名，例如 bucket-1250000000.cos.ap-guangzhou.myqcloud.com',
-        AWS_S3: '请输入 S3 访问域名',
-        ORIGIN_GROUP: '请输入源站组 ID',
-        VOD: '请输入云点播应用 ID',
-      } as Record<string, string>
-    )[form.value.origin_type as string] || '请输入源站地址或资源 ID'
-  )
-})
+const originPlaceholders: Record<string, string> = {
+  IP_DOMAIN: '请输入合法的 IP 或域名，例如 1.2.3.4 或 origin.example.com',
+  COS: '请输入 COS 访问域名，例如 bucket-1250000000.cos.ap-guangzhou.myqcloud.com',
+  AWS_S3: '请输入 S3 访问域名',
+  ORIGIN_GROUP: '请输入源站组 ID',
+  VOD: '请输入云点播应用 ID',
+}
+
+const originPlaceholder = computed(() => originPlaceholders[form.value.origin_type as string] || '请输入源站地址或资源 ID')
 const submitPayload = computed(() => formStateToRecordPayload(form.value, domainSuffix.value))
 const showHostHeader = computed(() => form.value.origin_type === 'IP_DOMAIN')
 const showHttpPort = computed(() => ['FOLLOW', 'HTTP'].includes(form.value.origin_protocol as string))

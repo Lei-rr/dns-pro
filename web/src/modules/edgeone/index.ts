@@ -1,4 +1,5 @@
 import { defineAsyncComponent } from 'vue'
+import hook from './hook'
 import { providerBrand } from '@/providers/branding'
 
 const EdgeOneView = defineAsyncComponent(() => import(/* webpackChunkName: "edgeone-view" */ './views/EdgeOneView.vue'))
@@ -11,6 +12,7 @@ import type { Provider, ProviderModule, RouteEntry } from '@/types'
 const module: ProviderModule = {
   name: 'edgeone',
   providerType: 'edgeone',
+  hook,
   resolveEntry(provider: Provider): RouteEntry {
     return { type: 'edgeone', id: provider.id, provider, component: EdgeOneView }
   },

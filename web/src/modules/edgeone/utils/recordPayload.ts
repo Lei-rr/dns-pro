@@ -1,11 +1,13 @@
+import type { EdgeOneAccelerationDomain } from '@/types'
+
 export function recordToFormState(
-  record: Record<string, unknown> | undefined,
+  record: EdgeOneAccelerationDomain | undefined,
   zoneName: string
 ): Record<string, unknown> {
-  const origin = (record?.origin as Record<string, unknown> | undefined) || {}
+  const origin = record?.origin || {}
   const hostHeader = origin.host_header
   return {
-    prefix: record?.name ? prefixFromDomain(record.name as string, zoneName) : 'www',
+    prefix: record?.name ? prefixFromDomain(record.name, zoneName) : 'www',
     origin_type: origin.type || 'IP_DOMAIN',
     origin: origin.value || '',
     origin_protocol: record?.origin_protocol || 'HTTP',

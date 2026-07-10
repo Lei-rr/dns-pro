@@ -1,4 +1,5 @@
-import { makeZoneStatusRenderer } from '@/modules/common/dns/hook'
+import { defaultProviderHook, makeZoneStatusRenderer } from '@/modules/common/dns/hook'
+import type { ProviderHook, Zone } from '@/types'
 
 const { zoneStatusLabel, zoneStatusColor } = makeZoneStatusRenderer({
   labels: {
@@ -17,7 +18,8 @@ const { zoneStatusLabel, zoneStatusColor } = makeZoneStatusRenderer({
   emptyColor: 'green',
 })
 
-export default {
+const hook: ProviderHook = {
+  ...defaultProviderHook,
   recordLines: [
     { label: '默认', value: '默认' },
     { label: '境内', value: '境内' },
@@ -30,15 +32,17 @@ export default {
     {
       key: 'status',
       title: '托管状态',
-      getStatus: (record: Record<string, unknown>) => record.status,
+      getStatus: (record: Zone) => record.status,
     },
     {
       key: 'dns_status',
       title: 'NS 状态',
-      getStatus: (record: Record<string, unknown>) => record.dns_status,
+      getStatus: (record: Zone) => record.dns_status,
     },
   ],
-  showLine: (lines: Array<unknown>) => lines.length > 0,
+  showLine: (lines) => lines.length > 0,
   zoneStatusLabel,
   zoneStatusColor,
 }
+
+export default hook

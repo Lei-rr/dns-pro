@@ -111,7 +111,7 @@ import RecordForm from '../components/RecordForm.vue'
 import RecordTable from '../components/RecordTable.vue'
 import { defaultProviderHook } from '../hook'
 import { showBatchFailures } from '@/shared/utils/batch'
-import type { Provider } from '@/types'
+import type { DnsRecord, Provider, ProviderHook } from '@/types'
 
 const props = defineProps<{
   provider: string
@@ -121,15 +121,15 @@ const props = defineProps<{
 
 const router = useRouter()
 
-const records = ref<Record<string, unknown>[]>([])
+const records = ref<DnsRecord[]>([])
 const recordMeta = ref(paginationState())
-const selectedRecords = ref<Record<string, unknown>[]>([])
+const selectedRecords = ref<DnsRecord[]>([])
 const selectionResetKey = ref(0)
 const lines = ref<Array<{ label: string; value: string }>>([])
 const currentProviderMeta = ref<Provider | null>(props.providerMeta || null)
 const currentDomainName = ref('')
-const providerHook = ref<Record<string, unknown>>(defaultProviderHook)
-const editing = ref<Record<string, unknown> | null>(null)
+const providerHook = ref<ProviderHook>(defaultProviderHook)
+const editing = ref<DnsRecord | null>(null)
 const showForm = ref(false)
 const keyword = ref('')
 const appliedKeyword = ref('')
@@ -139,20 +139,18 @@ const deleting = ref(false)
 const deletingText = ref('')
 const importMode = ref('create')
 const showImportConfirm = ref(false)
-const pendingImportRecords = ref<Record<string, unknown>[]>([])
+const pendingImportRecords = ref<DnsRecord[]>([])
 const loadTask = useLatestTask()
 
 const decodedDomain = computed(() => decodeURIComponent(props.domain))
 const providerType = computed(
-  () => currentProviderMeta.value?.type || (records.value[0]?.provider_type as string) || props.provider
+  () => currentProviderMeta.value?.type || records.value[0]?.provider_type || props.provider
 )
 const displayDomain = computed(() => currentDomainName.value || decodedDomain.value)
 const recordsTarget = computed(() => decodedDomain.value)
-const capabilities = computed(
-  () => (providerHook.value.capabilities as Record<string, boolean>) || defaultProviderHook.capabilities
-)
+const capabilities = computed(() => providerHook.value.capabilities)
 const typeOptions = computed(() => {
-  const types = [...new Set(records.value.map((record) => String(record.type || '')).filter(Boolean))] as string[]
+  const types = [...new Set(records.value.map((record) => String(record.type || '')).filter(Boolean))]
   return types.sort().map((type) => ({ label: type, value: type }))
 })
 const importPreviewText = computed(() => {
@@ -251,7 +249,7 @@ async function load(options: Record<string, unknown> = {}) {
     records.value = response.data
     recordMeta.value = mergePaginationMeta(recordMeta.value, response.meta || {})
     providerHook.value = resolveProviderHook(providerType.value)
-    lines.value = (providerHook.value.recordLines as Array<{ label: string; value: string }>) || []
+    lines.value = providerHook.value.recordLines
   } catch (error) {
     if (!loadTask.isCurrent(requestToken)) return
     if (shouldReturnToDomains(error as { code?: string })) {
@@ -278,7 +276,7 @@ async function returnToDomains() {
   message.warning('当前域名未添加解析，已返回域名列表。')
   await router.replace(path).catch(() => {})
 }
-function edit(record: Record<string, unknown>) {
+function edit(record: DnsRecord) {
   editing.value = { ...record }
   showForm.value = true
 }
@@ -294,11 +292,11 @@ async function handleRefresh() {
   await load({ refresh: true })
   message.success('已刷新')
 }
-async function save(form: Record<string, unknown>) {
+async function save(form: DnsRecord) {
   saving.value = true
   try {
     const recordOptions = { zoneName: displayDomain.value }
-    if (form.id) await dnsApi.updateRecord(props.provider, recordsTarget.value, form.id as string, form, recordOptions)
+    if (form.id) await dnsApi.updateRecord(props.provider, recordsTarget.value, form.id, form, recordOptions)
     else await dnsApi.createRecord(props.provider, recordsTarget.value, form, recordOptions)
     message.success(form.id ? '记录已更新' : '记录已添加')
     showForm.value = false
@@ -309,7 +307,7 @@ async function save(form: Record<string, unknown>) {
     saving.value = false
   }
 }
-function askRemove(record: Record<string, unknown>) {
+function askRemove(record: DnsRecord) {
   modal.confirm({
     title: '删除解析记录',
     content: `确认删除 ${record.name} · ${record.type}？删除后将立即同步到云服务商。`,
@@ -342,10 +340,10 @@ function updateBatchRemoveDialog(dialog: ReturnType<typeof modal.confirm> | null
     cancelButtonProps: { disabled: deleting.value },
   })
 }
-async function remove(record: Record<string, unknown>) {
+async function remove(record: DnsRecord) {
   deleting.value = true
   try {
-    await dnsApi.deleteRecord(props.provider, recordsTarget.value, record.id as string)
+    await dnsApi.deleteRecord(props.provider, recordsTarget.value, record.id || '')
     message.success('已删除')
     clearSelection()
     await load({ refresh: true })
@@ -367,7 +365,7 @@ async function batchRemove(dialog: ReturnType<typeof modal.confirm> | null, tota
       deletingText.value = `正在删除 ${index + 1}/${records.length}`
       updateBatchRemoveDialog(dialog, total)
       try {
-        await dnsApi.deleteRecord(props.provider, recordsTarget.value, record.id as string)
+        await dnsApi.deleteRecord(props.provider, recordsTarget.value, record.id || '')
       } catch (error) {
         failed.push(`${record.name} ${record.type}: ${errorMessage(error)}`)
       }
@@ -390,7 +388,7 @@ async function importRecords() {
     const records = await chooseJsonFile()
     if (!records) return
     if (!Array.isArray(records)) throw new Error('导入文件必须是记录数组')
-    pendingImportRecords.value = records as Record<string, unknown>[]
+    pendingImportRecords.value = records as DnsRecord[]
     importMode.value = 'create'
     showImportConfirm.value = true
   } catch (error) {
@@ -398,7 +396,7 @@ async function importRecords() {
   }
 }
 async function loadAllRecordsForImport() {
-  const all: Record<string, unknown>[] = []
+  const all: DnsRecord[] = []
   let page = 1
   const perPage = 20
 
@@ -416,7 +414,7 @@ async function loadAllRecordsForImport() {
 
   return all
 }
-function importMatchKey(record: Record<string, unknown>) {
+function importMatchKey(record: DnsRecord) {
   const type = String(record.type || record.record_type || '').toUpperCase()
   const name = String(record.name || record.subdomain || '@')
     .trim()
@@ -430,14 +428,12 @@ async function confirmImport() {
   showImportConfirm.value = false
   await batchImport(records, importMode.value)
 }
-async function batchImport(records: Record<string, unknown>[], mode = 'create') {
+async function batchImport(records: DnsRecord[], mode = 'create') {
   saving.value = true
   const failed: string[] = []
   try {
     const existingRecords = mode === 'overwrite' ? await loadAllRecordsForImport() : []
-    const existingMap = new Map<string, Record<string, unknown>>(
-      existingRecords.map((record) => [importMatchKey(record), record])
-    )
+    const existingMap = new Map<string, DnsRecord>(existingRecords.map((record) => [importMatchKey(record), record]))
 
     for (const [index, record] of records.entries()) {
       deletingText.value = `正在导入 ${index + 1}/${records.length}`
@@ -448,17 +444,17 @@ async function batchImport(records: Record<string, unknown>[], mode = 'create') 
           const updated = await dnsApi.updateRecord(
             props.provider,
             recordsTarget.value,
-            existing.id as string,
+            existing.id,
             { ...existing, ...record },
             { zoneName: displayDomain.value }
           )
-          const updatedData = (updated?.data as Record<string, unknown>) || existing
-          existingMap.set(key, { ...updatedData, ...record, id: (updatedData.id as string) || (existing.id as string) })
+          const updatedData = updated?.data || existing
+          existingMap.set(key, { ...updatedData, ...record, id: updatedData.id || existing.id })
         } else {
           const created = await dnsApi.createRecord(props.provider, recordsTarget.value, record, {
             zoneName: displayDomain.value,
           })
-          existingMap.set(key, { ...record, id: ((created?.data as Record<string, unknown>)?.id as string) || '' })
+          existingMap.set(key, { ...record, id: created?.data?.id || '' })
         }
       } catch (error) {
         failed.push(`第 ${index + 1} 条 ${record.name || ''} ${record.type || ''}: ${errorMessage(error)}`)

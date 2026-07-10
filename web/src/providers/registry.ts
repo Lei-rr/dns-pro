@@ -34,7 +34,7 @@ export function resolveProviderAvatarColor(provider: Provider) {
   const mod = providerModule(provider)
   if (!mod?.cards) return providerAvatarColor(provider?.type)
   const cards = mod.cards(provider)
-  return (cards[0] as Record<string, string>)?.avatarColor || providerAvatarColor(provider?.type)
+  return cards[0]?.avatarColor || providerAvatarColor(provider?.type)
 }
 
 export { defaultProviderHook }

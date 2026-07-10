@@ -117,7 +117,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { filterOption } from '../utils/saas'
-import type { Provider } from '@/types'
+import type { Provider, SaaSHostname, Zone } from '@/types'
 
 const props = defineProps<{
   open?: boolean
@@ -128,11 +128,11 @@ const props = defineProps<{
   cloudflareDnsLinked?: boolean
   dnspodProviders?: Provider[]
   cloudflareDnsProviders?: Provider[]
-  dnspodZones?: Record<string, Array<Record<string, unknown>>>
-  cloudflareDnsZones?: Record<string, Array<Record<string, unknown>>>
+  dnspodZones?: Record<string, Zone[]>
+  cloudflareDnsZones?: Record<string, Zone[]>
   originSuggestions?: Array<{ value: string }>
-  preferredDomains?: Array<Record<string, unknown>>
-  initialValue?: Record<string, unknown> | null
+  preferredDomains?: Array<{ domain: string }>
+  initialValue?: SaaSHostname | null
   editing?: boolean
 }>()
 
@@ -228,8 +228,8 @@ const hostnamePreview = computed(() => {
 })
 const preferredOptions = computed(() => {
   return (props.preferredDomains || []).map((item) => ({
-    value: (item.domain as string) ?? (item.value as string),
-    label: (item.domain as string) ?? (item.label as string),
+    value: item.domain,
+    label: item.domain,
   }))
 })
 const hostnameEmpty = computed(
@@ -251,9 +251,8 @@ function firstPreferred(): string {
 }
 function defaultSyncZone(providerId = ''): string {
   const currentProviderId: string = providerId || String(form.value?.sync_provider_id || '')
-  const zones: Array<Record<string, unknown>> =
-    props.dnspodZones?.[currentProviderId] || props.cloudflareDnsZones?.[currentProviderId] || []
-  return (zones[0]?.name as string) || ''
+  const zones: Zone[] = props.dnspodZones?.[currentProviderId] || props.cloudflareDnsZones?.[currentProviderId] || []
+  return zones[0]?.name || ''
 }
 function defaultSyncProviderId() {
   return props.cloudflareDnsProviders?.[0]?.id || props.dnspodProviders?.[0]?.id || ''
@@ -265,21 +264,18 @@ function ensureSyncDefaults() {
     form.value.sync_zone = defaultSyncZone(form.value.sync_provider_id as string)
 }
 function normalizeInitialValue(): Record<string, unknown> {
-  const current = (props.initialValue as Record<string, unknown>) || {}
+  const current = props.initialValue || ({} as SaaSHostname)
   const customOriginServer = String(current.custom_origin_server || '').trim()
 
   return {
     hostname: String(current.hostname || '').trim(),
     hostname_prefix: '',
     custom_origin_server: customOriginServer,
-    method: String((current.ssl as Record<string, unknown>)?.method || 'txt').trim() || 'txt',
-    min_tls_version:
-      String(
-        ((current.ssl as Record<string, unknown>)?.settings as Record<string, unknown>)?.min_tls_version || '1.0'
-      ).trim() || '1.0',
+    method: String(current.ssl?.method || 'txt').trim() || 'txt',
+    min_tls_version: String(current.ssl?.settings?.min_tls_version || '1.0').trim() || '1.0',
     use_custom_origin_server: customOriginServer !== '',
     autoPreferred: Boolean(current.auto_preferred),
-    preferred_domain: String((current.custom_metadata as Record<string, unknown>)?.preferred_domain || '').trim(),
+    preferred_domain: String(current.custom_metadata?.preferred_domain || '').trim(),
     sync_provider_id: String(current.sync_provider_id || '').trim(),
     sync_zone: String(current.sync_zone || '').trim(),
   }

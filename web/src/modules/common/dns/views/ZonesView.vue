@@ -89,17 +89,17 @@ import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import { mergePaginationMeta, nextPaginationState, paginationState, tablePagination } from '@/shared/utils/pagination'
 import { defaultProviderHook } from '../hook'
-import type { Provider } from '@/types'
+import type { Provider, ProviderHook, Zone, ZoneStatusColumn } from '@/types'
 
 const props = defineProps<{
   provider: string
   providerMeta?: Provider | null
 }>()
 
-const zones = ref<Record<string, unknown>[]>([])
+const zones = ref<Zone[]>([])
 const zoneMeta = ref(paginationState())
 const currentProviderMeta = ref<Provider | null>(props.providerMeta || null)
-const providerHook = ref<Record<string, unknown>>(defaultProviderHook)
+const providerHook = ref<ProviderHook>(defaultProviderHook)
 const keyword = ref('')
 const appliedKeyword = ref('')
 const loading = ref(true)
@@ -110,31 +110,17 @@ const addZoneName = ref('')
 const loadTask = useLatestTask()
 
 const providerName = computed(() => currentProviderMeta.value?.name || props.provider)
-const capabilities = computed(
-  () => (providerHook.value.capabilities as Record<string, boolean>) || defaultProviderHook.capabilities
-)
+const capabilities = computed(() => providerHook.value.capabilities)
 const filteredZones = computed(() => zones.value)
 const statusColumns = computed(() => {
-  return (
-    (providerHook.value.zoneStatusColumns as Array<{ title: string; key: string; width?: number }>) ||
-    defaultProviderHook.zoneStatusColumns
-  ).map((column) => ({
+  return (providerHook.value.zoneStatusColumns || defaultProviderHook.zoneStatusColumns).map((column) => ({
     title: column.title,
     key: column.key,
     width: column.width || 120,
     responsive: ['sm'],
   }))
 })
-const statusDefinitions = computed(() => {
-  return (
-    (providerHook.value.zoneStatusColumns as Array<{
-      title: string
-      key: string
-      width?: number
-      getStatus?: (r: Record<string, unknown>) => unknown
-    }>) || defaultProviderHook.zoneStatusColumns
-  )
-})
+const statusDefinitions = computed(() => providerHook.value.zoneStatusColumns || defaultProviderHook.zoneStatusColumns)
 const columns = computed(() => {
   return [
     { title: '域名', dataIndex: 'name', key: 'name', width: 320 },
@@ -184,7 +170,7 @@ watch(keyword, (value) => {
 function routeBase(): string {
   return providerPath(props.provider)
 }
-function zoneRowKey(zone: Record<string, unknown>): string {
+function zoneRowKey(zone: Zone): string {
   return String(zone.provider || '') + String(zone.name || '')
 }
 function zoneAvatar(zone: string): string {
@@ -193,28 +179,17 @@ function zoneAvatar(zone: string): string {
 function avatarColor(): string {
   return resolveProviderAvatarColor(currentProviderMeta.value as Provider)
 }
-function statusDefinition(key: string) {
-  return statusDefinitions.value.find((item) => item.key === key) || null
+function statusDefinition(key: string): ZoneStatusColumn | undefined {
+  return statusDefinitions.value.find((item) => item.key === key)
 }
-function zoneStatus(
-  record: Record<string, unknown>,
-  column: { getStatus?: (r: Record<string, unknown>) => unknown } | null
-) {
-  return (
-    column?.getStatus || ((item: Record<string, unknown>) => item.status || item.access_status || item.dns_status)
-  )(record)
+function zoneStatus(record: Zone, column?: ZoneStatusColumn) {
+  return (column?.getStatus || ((item: Zone) => item.status || item.access_status || item.dns_status))(record)
 }
-function statusColor(
-  record: Record<string, unknown>,
-  column: { getStatus?: (r: Record<string, unknown>) => unknown } | null
-): string {
-  return (providerHook.value.zoneStatusColor as (s: unknown) => string)(zoneStatus(record, column))
+function statusColor(record: Zone, column?: ZoneStatusColumn): string {
+  return providerHook.value.zoneStatusColor(zoneStatus(record, column))
 }
-function statusText(
-  record: Record<string, unknown>,
-  column: { getStatus?: (r: Record<string, unknown>) => unknown } | null
-): string {
-  return (providerHook.value.zoneStatusLabel as (s: unknown) => string)(zoneStatus(record, column))
+function statusText(record: Zone, column?: ZoneStatusColumn): string {
+  return providerHook.value.zoneStatusLabel(zoneStatus(record, column))
 }
 function applyKeyword() {
   const nextKeyword = keyword.value.trim()
@@ -227,8 +202,8 @@ function openAddZone() {
   addZoneName.value = ''
   showAddZone.value = true
 }
-function zoneRouteId(zone: Record<string, unknown>): string {
-  return zone.name as string
+function zoneRouteId(zone: Zone): string {
+  return zone.name
 }
 function handleTableChange(pagination: { current?: number; pageSize?: number }) {
   const next = nextPaginationState(zoneMeta.value, pagination)
@@ -244,7 +219,7 @@ async function createZone() {
   }
   adding.value = true
   try {
-    const response = (await dnsApi.createZone(props.provider, { domain: zone })) as { data: Record<string, unknown> }
+    const response = await dnsApi.createZone(props.provider, { domain: zone })
     showAddZone.value = false
     await load({ refresh: true })
     showCreateResult(response.data)
@@ -254,18 +229,18 @@ async function createZone() {
     adding.value = false
   }
 }
-function showCreateResult(result: Record<string, unknown>) {
-  const nameServers = (result.name_servers as string[]) || []
-  const summary = (result.message as string) || `域名 ${result.name || addZoneName.value.trim().toLowerCase()} 已添加`
+function showCreateResult(result: Zone) {
+  const nameServers = result.name_servers || []
+  const summary = result.provider_name || `域名 ${result.name || addZoneName.value.trim().toLowerCase()} 已添加`
   modal.info({
     title: '域名已添加',
     content: nameServers.length
       ? `${summary}\n\n请将域名 NS 修改为：\n${nameServers.join('\n')}`
-      : `${summary}\n\n当前接口未返回 NS，请到 ${(result.provider_name as string) || providerName.value} 控制台查看应修改的 NS。`,
+      : `${summary}\n\n当前接口未返回 NS，请到 ${result.provider_name || providerName.value} 控制台查看应修改的 NS。`,
     okText: '知道了',
   })
 }
-function askRemove(zone: Record<string, unknown>) {
+function askRemove(zone: Zone) {
   modal.confirm({
     title: '删除域名托管',
     content: `确认从 ${providerName.value} 删除 ${zone.name}？这会删除服务商中的域名托管和解析记录，不会删除注册商里的域名。若 NS 仍指向该服务商，解析可能中断。`,
@@ -275,7 +250,7 @@ function askRemove(zone: Record<string, unknown>) {
     onOk: () => remove(zone),
   })
 }
-async function remove(zone: Record<string, unknown>) {
+async function remove(zone: Zone) {
   deleting.value = true
   try {
     await dnsApi.deleteZone(props.provider, zoneRouteId(zone))

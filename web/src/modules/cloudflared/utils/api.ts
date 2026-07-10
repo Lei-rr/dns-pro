@@ -1,5 +1,5 @@
 import http, { unwrapItems, withRefresh } from '@/shared/utils/request'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, CloudflaredRoute, CloudflaredTunnel, Zone } from '@/types'
 
 const path = (value: string) => encodeURIComponent(value)
 const providerBase = (provider: string) => `/cloudflared/providers/${path(provider)}`
@@ -15,47 +15,39 @@ const endpoints = {
 }
 
 export const cloudflaredApi = {
-  zones: async (
-    provider: string,
-    options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
-    unwrapItems<Record<string, unknown>[]>(
-      await http.get(endpoints.zones(provider), withRefresh({ refresh: options?.refresh }))
-    ),
-  tunnels: async (
-    provider: string,
-    options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
-    unwrapItems<Record<string, unknown>[]>(
+  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Zone[]>> =>
+    unwrapItems<Zone[]>(await http.get(endpoints.zones(provider), withRefresh({ refresh: options?.refresh }))),
+  tunnels: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<CloudflaredTunnel[]>> =>
+    unwrapItems<CloudflaredTunnel[]>(
       await http.get(endpoints.tunnels(provider), withRefresh({ refresh: options?.refresh }))
     ),
   tunnel: (
     provider: string,
     tunnelId: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
+  ): Promise<ApiResponse<CloudflaredTunnel>> =>
     http.get(endpoints.tunnel(provider, tunnelId), withRefresh({ refresh: options?.refresh })),
-  createTunnel: (provider: string, name: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  createTunnel: (provider: string, name: string): Promise<ApiResponse<{ tunnel: CloudflaredTunnel }>> =>
     http.post(endpoints.tunnels(provider), { name }),
   deleteTunnel: (provider: string, tunnelId: string) => http.delete(endpoints.tunnel(provider, tunnelId)),
-  tunnelToken: (provider: string, tunnelId: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  tunnelToken: (provider: string, tunnelId: string): Promise<ApiResponse<{ token: string }>> =>
     http.get(endpoints.token(provider, tunnelId)),
-  rotateToken: (provider: string, tunnelId: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  rotateToken: (provider: string, tunnelId: string): Promise<ApiResponse<{ token: string }>> =>
     http.post(endpoints.tokenRotate(provider, tunnelId)),
-  routes: (provider: string, tunnelId: string): Promise<ApiResponse<Record<string, unknown>>> =>
+  routes: (provider: string, tunnelId: string): Promise<ApiResponse<{ routes: CloudflaredRoute[] }>> =>
     http.get(endpoints.routes(provider, tunnelId)),
   addRoute: (
     provider: string,
     tunnelId: string,
     data: Record<string, unknown>
-  ): Promise<ApiResponse<Record<string, unknown>>> => http.post(endpoints.routes(provider, tunnelId), data),
+  ): Promise<ApiResponse<CloudflaredRoute>> => http.post(endpoints.routes(provider, tunnelId), data),
   updateRoute: (
     provider: string,
     tunnelId: string,
     data: Record<string, unknown>,
     originalHostname: string,
     originalPath: string
-  ): Promise<ApiResponse<Record<string, unknown>>> =>
+  ): Promise<ApiResponse<CloudflaredRoute>> =>
     http.put(endpoints.routes(provider, tunnelId), data, {
       params: { original_hostname: originalHostname, original_path: originalPath || '' },
     }),

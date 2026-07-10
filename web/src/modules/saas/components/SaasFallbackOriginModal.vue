@@ -136,12 +136,12 @@ async function load() {
   loading.value = true
   try {
     const response = await saasApi.fallbackOrigin(props.provider, props.zoneName, { refresh: true })
-    const data = (response.data as Record<string, unknown>) || {}
-    const originValue = (data.origin as string) || ''
+    const data = response.data || {}
+    const originValue = data.origin || ''
     currentOrigin.value = originValue
     origin.value = originValue
     enabled.value = !!originValue
-    currentStatus.value = (data.status as string) || ''
+    currentStatus.value = data.status || ''
     currentErrors.value = Array.isArray(data.errors) ? data.errors : []
   } catch (error) {
     message.error(errorMessage(error))
@@ -158,10 +158,10 @@ async function save() {
   saving.value = true
   try {
     const response = await saasApi.setFallbackOrigin(props.provider, props.zoneName, trimmedOrigin.value)
-    const data = (response.data as Record<string, unknown>) || {}
-    currentOrigin.value = (data.origin as string) || trimmedOrigin.value
+    const data = response.data || {}
+    currentOrigin.value = data.origin || trimmedOrigin.value
     origin.value = currentOrigin.value
-    currentStatus.value = (data.status as string) || ''
+    currentStatus.value = data.status || ''
     currentErrors.value = Array.isArray(data.errors) ? data.errors : []
     message.success('默认回源已保存')
     emit('updated', currentOrigin.value)

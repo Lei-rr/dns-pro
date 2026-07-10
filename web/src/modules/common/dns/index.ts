@@ -4,7 +4,7 @@ import { providerBrand } from '@/providers/branding'
 const ZonesView = defineAsyncComponent(() => import(/* webpackChunkName: "dns-zones" */ './views/ZonesView.vue'))
 const RecordsView = defineAsyncComponent(() => import(/* webpackChunkName: "dns-records" */ './views/RecordsView.vue'))
 import { providerPath } from '@/routes/paths'
-import type { Provider, ProviderModule, RouteEntry } from '@/types'
+import type { Provider, ProviderHook, ProviderModule, RouteEntry } from '@/types'
 
 export function createDnsModule({
   name,
@@ -16,7 +16,7 @@ export function createDnsModule({
 }: {
   name: string
   providerType: string
-  hook?: Record<string, unknown>
+  hook?: ProviderHook
   color?: string
   avatarColor?: string
   description?: string | ((provider: Provider) => string)

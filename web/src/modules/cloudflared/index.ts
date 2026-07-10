@@ -1,4 +1,5 @@
 import { defineAsyncComponent } from 'vue'
+import hook from './hook'
 import { providerBrand } from '@/providers/branding'
 
 const CloudflaredView = defineAsyncComponent(
@@ -13,6 +14,7 @@ import type { Provider, ProviderModule, RouteEntry } from '@/types'
 const module: ProviderModule = {
   name: 'cloudflared',
   providerType: 'cloudflared',
+  hook,
   resolveEntry(provider: Provider): RouteEntry {
     return { type: 'cloudflared', id: provider.id, provider, component: CloudflaredView }
   },

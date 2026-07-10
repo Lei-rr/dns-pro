@@ -46,12 +46,13 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { protocolOptions, parseServiceUrl, hostnamePrefix } from '../utils/format'
+import type { CloudflaredRoute, Zone } from '@/types'
 
 const props = defineProps<{
   open?: boolean
   confirmLoading?: boolean
-  zones?: Array<Record<string, unknown>>
-  initialRoute?: Record<string, unknown> | null
+  zones?: Zone[]
+  initialRoute?: CloudflaredRoute | null
 }>()
 
 const emit = defineEmits<{
@@ -64,9 +65,9 @@ const form = ref<Record<string, unknown>>(defaultForm())
 const protocols = computed(() => protocolOptions)
 const zoneOptions = computed(() =>
   (props.zones || []).map((zone) => ({
-    value: zone.id as string,
-    label: zone.name as string,
-    name: zone.name as string,
+    value: zone.id || '',
+    label: zone.name || '',
+    name: zone.name || '',
   }))
 )
 const selectedZone = computed(() => zoneOptions.value.find((z) => z.value === form.value.zone_id) || null)
@@ -99,11 +100,11 @@ function matchZone(hostname: string) {
 function defaultForm() {
   const initial = props.initialRoute
   if (initial?.hostname) {
-    const matched = matchZone(initial.hostname as string)
-    const { protocol, address } = parseServiceUrl(initial.service as string)
+    const matched = matchZone(initial.hostname)
+    const { protocol, address } = parseServiceUrl(initial.service || '')
     return {
       zone_id: matched?.id || '',
-      prefix: hostnamePrefix(initial.hostname as string, matched?.name as string) || '@',
+      prefix: hostnamePrefix(initial.hostname, matched?.name || '') || '@',
       protocol,
       address,
       path: initial.path || '',

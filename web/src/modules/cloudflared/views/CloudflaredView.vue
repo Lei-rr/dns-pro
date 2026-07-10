@@ -65,6 +65,7 @@ import { message, modal } from '@/shared/plugins/antDesignVue'
 import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import TunnelCreateModal from '../components/TunnelCreateModal.vue'
+import type { CloudflaredTunnel } from '@/types'
 
 const props = defineProps<{
   provider: string
@@ -72,7 +73,7 @@ const props = defineProps<{
 
 const router = useRouter()
 
-const tunnels = ref<Record<string, unknown>[]>([])
+const tunnels = ref<CloudflaredTunnel[]>([])
 const loading = ref(true)
 const creating = ref(false)
 const showCreate = ref(false)
@@ -102,16 +103,16 @@ watch(
   }
 )
 
-function tunnelAvatar(name: string) {
+function tunnelAvatar(name: string | undefined) {
   return (String(name || '').match(/[a-z0-9]/i)?.[0] || 'T').toUpperCase()
 }
 function tunnelAvatarColor() {
   return providerAvatarColor('cloudflared')
 }
-function detailPath(tunnel: Record<string, unknown>) {
-  return providerChildPath(props.provider, tunnel.id as string)
+function detailPath(tunnel: CloudflaredTunnel) {
+  return providerChildPath(props.provider, tunnel.id || '')
 }
-function tunnelRowKey(tunnel: Record<string, unknown>) {
+function tunnelRowKey(tunnel: CloudflaredTunnel) {
   return String(tunnel.id || '')
 }
 
@@ -141,7 +142,7 @@ async function create(name: string) {
   try {
     const response = await cloudflaredApi.createTunnel(props.provider, name)
     if (!contextTask.isCurrent(token)) return
-    const tunnel = ((response.data as Record<string, unknown>)?.tunnel as Record<string, unknown>) || {}
+    const tunnel = response.data?.tunnel || {}
     showCreate.value = false
     message.success('隧道已创建')
     router.push(detailPath(tunnel))
@@ -153,7 +154,7 @@ async function create(name: string) {
   }
 }
 
-function askDelete(tunnel: Record<string, unknown>) {
+function askDelete(tunnel: CloudflaredTunnel) {
   modal.confirm({
     title: '删除隧道',
     content: `确认删除隧道「${tunnel.name}」？`,
@@ -164,10 +165,10 @@ function askDelete(tunnel: Record<string, unknown>) {
   })
 }
 
-async function remove(tunnel: Record<string, unknown>) {
+async function remove(tunnel: CloudflaredTunnel) {
   const token = contextTask.next()
   try {
-    await cloudflaredApi.deleteTunnel(props.provider, tunnel.id as string)
+    await cloudflaredApi.deleteTunnel(props.provider, tunnel.id || '')
     if (!contextTask.isCurrent(token)) return
     message.success('已删除')
     await load({ refresh: true })
@@ -177,9 +178,9 @@ async function remove(tunnel: Record<string, unknown>) {
   }
 }
 
-function replicaCount(tunnel: Record<string, unknown>) {
-  return ((tunnel.connections as Array<{ is_pending_reconnect?: boolean }>) || []).filter(
+function replicaCount(tunnel: CloudflaredTunnel) {
+  return ((tunnel.connections || []).filter(
     (c) => !c.is_pending_reconnect
-  ).length
+  )).length
 }
 </script>

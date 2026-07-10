@@ -1,6 +1,6 @@
 import http, { unwrapItems, withRefresh } from '@/shared/utils/request'
 import { getCachedProvider } from '@/stores/providers'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, DnsRecord, Zone } from '@/types'
 
 const path = (value: string) => encodeURIComponent(value)
 const providerType = (provider: string) => getCachedProvider(provider)?.type || 'dnspod'
@@ -103,7 +103,14 @@ function recordPayload(
   }
 }
 
-function presentDomain(provider: string, domain: Record<string, unknown>) {
+const providerTypeNames: Record<string, string> = {
+  cloudflare: 'Cloudflare',
+  dnspod: 'DNSPod',
+  saas: 'Cloudflare SaaS',
+  edgeone: 'EdgeOne',
+}
+
+function presentDomain(provider: string, domain: Zone): Zone {
   const cached = getCachedProvider(provider)
   const type = cached?.type || providerType(provider)
 
@@ -111,21 +118,13 @@ function presentDomain(provider: string, domain: Record<string, unknown>) {
     ...domain,
     provider,
     provider_type: type,
-    provider_name:
-      cached?.name ||
-      (
-        { cloudflare: 'Cloudflare', dnspod: 'DNSPod', saas: 'Cloudflare SaaS', edgeone: 'EdgeOne' } as Record<
-          string,
-          string
-        >
-      )[type] ||
-      type,
-    name_servers: (domain.name_servers as unknown[]) || (domain.effective_dns as unknown[]) || [],
+    provider_name: cached?.name || providerTypeNames[type] || type,
+    name_servers: domain.name_servers || domain.effective_dns || [],
     access_status: domain.access_status || domain.status || domain.dns_status,
   }
 }
 
-function presentRecord(provider: string, domain: string, record: Record<string, unknown>) {
+function presentRecord(provider: string, domain: string, record: DnsRecord): DnsRecord {
   if (providerType(provider) === 'cloudflare') {
     const fqdn = String(record.name || '')
     const zoneName = String(record.zone_name || domain || '')
@@ -159,11 +158,8 @@ function presentRecord(provider: string, domain: string, record: Record<string, 
 }
 
 export const dnsApi = {
-  zones: async (
-    provider: string,
-    options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> => {
-    const response = unwrapItems<Record<string, unknown>[]>(
+  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Zone[]>> => {
+    const response = unwrapItems<Zone[]>(
       await http.get(
         endpoints.zones(provider),
         withRefresh({ params: zoneQuery(provider, options), refresh: options?.refresh })
@@ -171,15 +167,11 @@ export const dnsApi = {
     )
     return { ...response, data: response.data.map((domain) => presentDomain(provider, domain)) }
   },
-  createZone: (provider: string, data: Record<string, unknown>) =>
+  createZone: (provider: string, data: Record<string, unknown>): Promise<ApiResponse<Zone>> =>
     http.post(endpoints.zones(provider), providerType(provider) === 'cloudflare' ? { name: data.domain } : data),
   deleteZone: (provider: string, zone: string) => http.delete(endpoints.zone(provider, zone)),
-  records: async (
-    provider: string,
-    domain: string,
-    options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<Record<string, unknown>[]>> => {
-    const response = unwrapItems<Record<string, unknown>[]>(
+  records: async (provider: string, domain: string, options: Record<string, unknown> = {}): Promise<ApiResponse<DnsRecord[]>> => {
+    const response = unwrapItems<DnsRecord[]>(
       await http.get(
         endpoints.records(provider, domain),
         withRefresh({ params: recordQuery(provider, options), refresh: options?.refresh })
@@ -187,7 +179,12 @@ export const dnsApi = {
     )
     return { ...response, data: response.data.map((record) => presentRecord(provider, domain, record)) }
   },
-  createRecord: (provider: string, domain: string, data: Record<string, unknown>, options?: Record<string, unknown>) =>
+  createRecord: (
+    provider: string,
+    domain: string,
+    data: Record<string, unknown>,
+    options?: Record<string, unknown>
+  ): Promise<ApiResponse<DnsRecord>> =>
     http.post(endpoints.records(provider, domain), recordPayload(provider, domain, data, options || {})),
   updateRecord: (
     provider: string,
@@ -195,7 +192,8 @@ export const dnsApi = {
     recordId: string,
     data: Record<string, unknown>,
     options?: Record<string, unknown>
-  ) => http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
+  ): Promise<ApiResponse<DnsRecord>> =>
+    http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
   deleteRecord: (provider: string, domain: string, recordId: string) =>
     http.delete(endpoints.record(provider, domain, recordId)),
 }

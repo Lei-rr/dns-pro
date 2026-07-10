@@ -61,12 +61,13 @@ import { message } from '@/shared/plugins/antDesignVue'
 import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import { mergePaginationMeta, nextPaginationState, paginationState, tablePagination } from '@/shared/utils/pagination'
+import type { EdgeOneZone } from '@/types'
 
 const props = defineProps<{
   provider: string
 }>()
 
-const zones = ref<Record<string, unknown>[]>([])
+const zones = ref<EdgeOneZone[]>([])
 const zoneMeta = ref(paginationState())
 const keyword = ref('')
 const loading = ref(true)
@@ -76,7 +77,7 @@ const filteredZones = computed(() => {
   const k = keyword.value.trim().toLowerCase()
   if (!k) return zones.value
   return zones.value.filter(
-    (zone) => (zone.name as string).toLowerCase().includes(k) || (zone.id as string).toLowerCase().includes(k)
+    (zone) => (zone.name || '').toLowerCase().includes(k) || (zone.id || '').toLowerCase().includes(k)
   )
 })
 const columns = computed(() => [
@@ -135,48 +136,57 @@ async function load(options: Record<string, unknown> = {}) {
     if (loadTask.isCurrent(requestToken)) loading.value = false
   }
 }
-function zoneAvatar(zone: string) {
+function zoneAvatar(zone: string | undefined) {
   return (String(zone || '').match(/[a-z0-9]/i)?.[0] || 'E').toUpperCase()
 }
-function zoneRowKey(zone: Record<string, unknown>) {
+function zoneRowKey(zone: EdgeOneZone) {
   return String(zone.id || '')
 }
 function zoneAvatarColor() {
   return providerAvatarColor('edgeone')
 }
-function areaLabel(value: string) {
-  return ({ global: '全球', mainland: '中国大陆', overseas: '海外' } as Record<string, string>)[value] || value || '-'
+const areaLabels: Record<string, string> = {
+  global: '全球',
+  mainland: '中国大陆',
+  overseas: '海外',
 }
-function typeLabel(value: string) {
-  return (
-    (
-      {
-        full: 'NS 接入',
-        partial: 'CNAME 接入',
-        noDomainAccess: '无域名接入',
-        dnsPodAccess: 'DNSPod 托管',
-        pages: 'Pages',
-        ai: '边缘推理',
-      } as Record<string, string>
-    )[value] ||
-    value ||
-    '-'
-  )
+
+const typeLabels: Record<string, string> = {
+  full: 'NS 接入',
+  partial: 'CNAME 接入',
+  noDomainAccess: '无域名接入',
+  dnsPodAccess: 'DNSPod 托管',
+  pages: 'Pages',
+  ai: '边缘推理',
 }
-function activeStatusLabel(value: string) {
-  return ({ active: '已启用', inactive: '未生效', paused: '已停用' } as Record<string, string>)[value] || value || '-'
+
+const activeStatusLabels: Record<string, string> = {
+  active: '已启用',
+  inactive: '未生效',
+  paused: '已停用',
 }
-function zonePath(zone: Record<string, unknown>) {
-  return providerChildPath(props.provider, zone.id as string)
+
+function areaLabel(value: string | undefined) {
+  return areaLabels[value || ''] || value || '-'
 }
-function zoneRoute(zone: Record<string, unknown>) {
+function typeLabel(value: string | undefined) {
+  return typeLabels[value || ''] || value || '-'
+}
+function activeStatusLabel(value: string | undefined) {
+  return activeStatusLabels[value || ''] || value || '-'
+}
+function zonePath(zone: EdgeOneZone) {
+  return providerChildPath(props.provider, zone.id || '')
+}
+function zoneRoute(zone: EdgeOneZone) {
   return zonePath(zone)
 }
-function statusColor(status: string) {
-  if (['active', 'online', 'enable', 'normal'].includes(status)) return 'green'
-  if (['process', 'pending', 'initializing', 'init', 'plan_migrate'].includes(status)) return 'gold'
-  if (['paused', 'offline', 'inactive'].includes(status)) return 'default'
-  if (['deactivated', 'isolated', 'destroyed', 'disable'].includes(status)) return 'red'
-  return status ? 'red' : 'default'
+function statusColor(status: string | undefined) {
+  const s = status || ''
+  if (['active', 'online', 'enable', 'normal'].includes(s)) return 'green'
+  if (['process', 'pending', 'initializing', 'init', 'plan_migrate'].includes(s)) return 'gold'
+  if (['paused', 'offline', 'inactive'].includes(s)) return 'default'
+  if (['deactivated', 'isolated', 'destroyed', 'disable'].includes(s)) return 'red'
+  return s ? 'red' : 'default'
 }
 </script>
