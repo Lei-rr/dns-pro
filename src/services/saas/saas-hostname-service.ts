@@ -30,9 +30,9 @@ export class SaasHostnameService {
     if (refresh) {
       try {
         const cached = await this.cloudflareHostnames.list(cfId, zoneId, page, perPage, false)
-        for (const item of (cached.items as Array<Record<string, unknown>>) ?? []) {
-          const id = String(item.id ?? '')
-          if (id !== '') previousStatusMap.set(id, String(item.status ?? ''))
+        for (const item of cached.items) {
+          const id = item.id
+          if (id !== '') previousStatusMap.set(id, item.status ?? '')
         }
       } catch {
         // ignore
@@ -43,13 +43,13 @@ export class SaasHostnameService {
     const preferenceMap = await this.preferences.listByProvider(cfId)
 
     const items = await Promise.all(
-      (((result.items as Array<Record<string, unknown>>) ?? []).map((hostname) => {
-        const id = String(hostname.id ?? '')
+      result.items.map((hostname) => {
+        const id = hostname.id
         const enriched = refresh
           ? { ...hostname, previous_status: previousStatusMap.get(id) ?? '' }
           : hostname
         return this.applyEffectiveSyncConfig(providerId, this.mergePreference(enriched, preferenceMap[id] ?? null))
-      }))
+      })
     )
 
     return { ...result, items }
@@ -159,7 +159,7 @@ export class SaasHostnameService {
 
   async fallbackOrigin(providerId: string, zoneName: string): Promise<string | null> {
     const info = await this.fallbackOriginInfo(providerId, zoneName)
-    return (info.origin as string | null) ?? null
+    return typeof info.origin === 'string' ? info.origin : null
   }
 
   async syncConfig(providerId: string, hostnameFqdn: string, zoneName = ''): Promise<Record<string, unknown>> {

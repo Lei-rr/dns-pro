@@ -2,7 +2,11 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { globalCache } from '../../support/cache-service.js'
 import { ApiError } from '../../support/api-error.js'
 import { DnsPodGateway } from '../../gateways/dnspod-gateway.js'
-import { dnspodRecordSchema } from '../../schemas/dnspod-responses.js'
+import {
+  dnspodRecordListResponseSchema,
+  dnspodRecordMutationResponseSchema,
+  dnspodRecordSchema,
+} from '../../schemas/dnspod-responses.js'
 import type { DnsPodProvider } from '../../types/provider.js'
 import {
   providerCacheTag,
@@ -105,18 +109,19 @@ export class DnsPodRecordService {
     if (record_type !== '') payload.RecordType = record_type
     if (keyword !== '') payload.Keyword = keyword
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('DescribeRecordList', payload)
+      response = await gateway.call('DescribeRecordList', payload)
     } catch (error) {
       throw this.wrapError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
         domain,
       })
     }
 
-    const rawRecordList = Array.isArray(response.RecordList) ? response.RecordList : []
+    const parsed = dnspodRecordListResponseSchema.parse(response)
+    const rawRecordList = Array.isArray(parsed.RecordList) ? parsed.RecordList : []
     const recordList = rawRecordList.map((record) => presentRecord(dnspodRecordSchema.parse(record)))
-    const countInfo = response.RecordCountInfo as Record<string, unknown> | undefined
+    const countInfo = parsed.RecordCountInfo
 
     const result: RecordListResult = {
       items: recordList,
@@ -126,7 +131,7 @@ export class DnsPodRecordService {
         count: Number(countInfo?.ListCount ?? 0),
         total: Number(countInfo?.TotalCount ?? 0),
       },
-      request_id: response.RequestId as string | undefined,
+      request_id: parsed.RequestId,
       meta: offsetPaginationMeta({
         offset,
         limit,
@@ -147,9 +152,9 @@ export class DnsPodRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('CreateRecord', payload)
+      response = await gateway.call('CreateRecord', payload)
     } catch (error) {
       throw this.wrapError('dnspod_record_create_failed', 'DNSPod record create failed', providerId, error, {
         domain,
@@ -158,9 +163,10 @@ export class DnsPodRecordService {
 
     globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
+    const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
-      id: Number(response.RecordId ?? 0),
-      request_id: response.RequestId as string | undefined,
+      id: parsed.RecordId ?? 0,
+      request_id: parsed.RequestId,
     }
   }
 
@@ -176,9 +182,9 @@ export class DnsPodRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('ModifyRecord', payload)
+      response = await gateway.call('ModifyRecord', payload)
     } catch (error) {
       throw this.wrapError('dnspod_record_update_failed', 'DNSPod record update failed', providerId, error, {
         domain,
@@ -187,9 +193,10 @@ export class DnsPodRecordService {
 
     globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
+    const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
-      id: Number(response.RecordId ?? 0),
-      request_id: response.RequestId as string | undefined,
+      id: parsed.RecordId ?? 0,
+      request_id: parsed.RequestId,
     }
   }
 
@@ -197,9 +204,9 @@ export class DnsPodRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('DeleteRecord', {
+      response = await gateway.call('DeleteRecord', {
         Domain: domain,
         RecordId: Number(recordId),
       })
@@ -211,9 +218,10 @@ export class DnsPodRecordService {
 
     globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
+    const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
       id: Number(recordId),
-      request_id: response.RequestId as string | undefined,
+      request_id: parsed.RequestId,
     }
   }
 
@@ -300,7 +308,7 @@ function presentRecord(record: import('../../schemas/dnspod-responses.js').Dnspo
     ttl: record.TTL ?? 0,
     mx: record.MX ?? 0,
     weight: record.Weight ?? 0,
-    monitor_status: (record.MonitorStatus as string | undefined) ?? '',
+    monitor_status: record.MonitorStatus ?? '',
     remark: record.Remark ?? '',
     default_ns: Boolean(record.DefaultNS ?? false),
     updated_on: record.UpdatedOn ?? '',

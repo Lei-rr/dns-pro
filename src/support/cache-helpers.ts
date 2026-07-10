@@ -11,7 +11,15 @@ export function offsetPaginationMeta(pagination: { offset: number; limit: number
 }
 
 export function pagePaginationMeta(
-  resultInfo: Record<string, unknown> | undefined,
+  resultInfo:
+    | {
+        page?: number | null
+        per_page?: number | null
+        count?: number | null
+        total_count?: number | null
+        total_pages?: number | null
+      }
+    | undefined,
   page: number,
   perPage: number
 ): {
@@ -25,8 +33,8 @@ export function pagePaginationMeta(
 } {
   const resolvedPage = Number(resultInfo?.page ?? page)
   const resolvedPerPage = Number(resultInfo?.per_page ?? perPage)
-  const count = resultInfo?.count !== undefined ? Number(resultInfo.count) : null
-  const total = resultInfo?.total_count !== undefined ? Number(resultInfo.total_count) : null
+  const count = resultInfo?.count !== undefined && resultInfo.count !== null ? Number(resultInfo.count) : null
+  const total = resultInfo?.total_count !== undefined && resultInfo.total_count !== null ? Number(resultInfo.total_count) : null
 
   return {
     page: resolvedPage,
@@ -35,7 +43,7 @@ export function pagePaginationMeta(
     limit: resolvedPerPage,
     count,
     total,
-    total_pages: resultInfo?.total_pages !== undefined ? Number(resultInfo.total_pages) : null,
+    total_pages: resultInfo?.total_pages !== undefined && resultInfo.total_pages !== null ? Number(resultInfo.total_pages) : null,
   }
 }
 

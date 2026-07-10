@@ -1,8 +1,14 @@
 import crypto from 'node:crypto'
+import { z } from 'zod'
 import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
+import {
+  cloudflareTunnelSchema,
+  parseCloudflareItemResponse,
+  parseCloudflareListResponse,
+} from '../../schemas/cloudflare-responses.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -36,12 +42,12 @@ export class CloudflaredTunnelService {
     let page = 1
     let hasMore = true
     while (hasMore) {
-      const response = await gateway.get<Array<Record<string, unknown>>>(`accounts/${accountId}/cfd_tunnel`, {
+      const response = await gateway.get(`accounts/${accountId}/cfd_tunnel`, {
         is_deleted: 'false',
         page,
         per_page: 100,
       })
-      const batch = (response.result ?? []) as Array<Record<string, unknown>>
+      const batch = parseCloudflareListResponse(response, cloudflareTunnelSchema).result
       for (const tunnel of batch) {
         items.push(this.presentTunnel(tunnel))
       }
@@ -64,8 +70,8 @@ export class CloudflaredTunnelService {
     const [provider, accountId] = await this.requireProvider(providerId)
     const gateway = new CloudflareGateway(provider.api_token)
 
-    const response = await gateway.get<Record<string, unknown>>(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
-    const result = this.presentTunnel(response.result ?? {})
+    const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+    const result = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
     globalCache.set(cacheKey, result, TTL_MS, [`cloudflared:tunnels:${providerId}`])
     return result
   }
@@ -74,14 +80,14 @@ export class CloudflaredTunnelService {
     const [provider, accountId] = await this.requireProvider(providerId)
     const gateway = new CloudflareGateway(provider.api_token)
 
-    const response = await gateway.post<Record<string, unknown>>(`accounts/${accountId}/cfd_tunnel`, {
+    const response = await gateway.post(`accounts/${accountId}/cfd_tunnel`, {
       name: name.trim(),
       config_src: 'cloudflare',
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
     globalCache.invalidateTags([`cloudflared:tunnels:${providerId}`])
-    const tunnel = this.presentTunnel(response.result ?? {})
+    const tunnel = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
     const token = await this.fetchToken(provider, accountId, tunnel.id)
     return { tunnel, token }
   }
@@ -91,12 +97,12 @@ export class CloudflaredTunnelService {
     const gateway = new CloudflareGateway(provider.api_token)
 
     try {
-      await gateway.delete<Record<string, unknown>>(`accounts/${accountId}/cfd_tunnel/${tunnelId}/connections`)
+      await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}/connections`)
     } catch (error) {
       if (!(error instanceof ApiError && error.statusCode === 404)) throw error
     }
 
-    await gateway.delete<Record<string, unknown>>(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+    await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
     globalCache.invalidateTags([`cloudflared:tunnels:${providerId}`])
     return { id: tunnelId }
   }
@@ -111,7 +117,7 @@ export class CloudflaredTunnelService {
     const [provider, accountId] = await this.requireProvider(providerId)
     const gateway = new CloudflareGateway(provider.api_token)
 
-    await gateway.patch<Record<string, unknown>>(`accounts/${accountId}/cfd_tunnel/${tunnelId}`, {
+    await gateway.patch(`accounts/${accountId}/cfd_tunnel/${tunnelId}`, {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
@@ -144,21 +150,22 @@ export class CloudflaredTunnelService {
 
   private async fetchToken(provider: CloudflareProvider, accountId: string, tunnelId: string): Promise<string> {
     const gateway = new CloudflareGateway(provider.api_token)
-    const response = await gateway.get<string>(`accounts/${accountId}/cfd_tunnel/${tunnelId}/token`)
-    return String(response.result ?? '')
+    const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/token`)
+    const parsed = parseCloudflareItemResponse(response, z.string())
+    return parsed.result
   }
 
-  private presentTunnel(tunnel: Record<string, unknown>): CloudflaredTunnel {
+  private presentTunnel(tunnel: import('../../schemas/cloudflare-responses.js').CloudflareTunnel): CloudflaredTunnel {
     return {
-      id: String(tunnel.id ?? ''),
-      name: String(tunnel.name ?? ''),
-      status: String(tunnel.status ?? 'inactive'),
-      config_src: tunnel.config_src as string | undefined,
-      remote_config: Boolean(tunnel.remote_config ?? false),
-      connections: Array.isArray(tunnel.connections) ? tunnel.connections.map((conn) => this.presentConnection(conn as Record<string, unknown>)) : [],
-      conns_active_at: tunnel.conns_active_at as string | undefined,
-      conns_inactive_at: tunnel.conns_inactive_at as string | undefined,
-      created_at: tunnel.created_at as string | undefined,
+      id: tunnel.id ?? '',
+      name: tunnel.name ?? '',
+      status: tunnel.status ?? 'inactive',
+      config_src: tunnel.config_src,
+      remote_config: tunnel.remote_config ?? false,
+      connections: tunnel.connections?.map((conn) => this.presentConnection(conn)) ?? [],
+      conns_active_at: tunnel.conns_active_at,
+      conns_inactive_at: tunnel.conns_inactive_at,
+      created_at: tunnel.created_at,
     }
   }
 
@@ -173,4 +180,5 @@ export class CloudflaredTunnelService {
       origin_ip: conn.origin_ip,
     }
   }
+
 }

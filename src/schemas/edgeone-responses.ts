@@ -38,3 +38,53 @@ export const edgeOneAccelerationDomainSchema = z
   .passthrough()
 
 export type EdgeOneAccelerationDomain = z.infer<typeof edgeOneAccelerationDomainSchema>
+
+export const edgeoneResponseSchema = z.object({
+  Response: z.record(z.string(), z.unknown()).and(
+    z.object({
+      RequestId: z.string().optional(),
+      Error: z
+        .object({
+          Code: z.string(),
+          Message: z.string(),
+        })
+        .optional(),
+    })
+  ),
+})
+
+export type EdgeoneResponse = z.infer<typeof edgeoneResponseSchema>
+
+export function parseEdgeoneResponse(response: unknown): { Response: Record<string, unknown>; RequestId?: string } {
+  const parsed = edgeoneResponseSchema.parse(response)
+  return { Response: parsed.Response, RequestId: parsed.Response.RequestId }
+}
+
+export const edgeoneZoneListResponseSchema = z
+  .object({
+    Zones: z.array(z.unknown()).optional(),
+    TotalCount: z.number().optional(),
+    RequestId: z.string().optional(),
+  })
+  .passthrough()
+
+export const edgeoneAccelerationDomainListResponseSchema = z
+  .object({
+    AccelerationDomains: z.array(z.unknown()).optional(),
+    TotalCount: z.number().optional(),
+    RequestId: z.string().optional(),
+  })
+  .passthrough()
+
+export const edgeoneAccelerationDomainCreateResponseSchema = z
+  .object({
+    RequestId: z.string().optional(),
+    OwnershipVerification: z.unknown().optional(),
+  })
+  .passthrough()
+
+export const edgeoneMutationResponseSchema = z
+  .object({
+    RequestId: z.string().optional(),
+  })
+  .passthrough()

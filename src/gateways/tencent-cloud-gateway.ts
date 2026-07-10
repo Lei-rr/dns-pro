@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { BaseGateway } from './base-gateway.js'
 import { ApiError } from '../support/api-error.js'
 import { signTencentTc3, TENCENT_CONTENT_TYPE } from './tencent-tc3.js'
@@ -45,11 +46,11 @@ export class TencentCloudGateway extends BaseGateway {
   private readonly secretId: string
   private readonly secretKey: string
 
-  async call<T>(action: string, payload: Record<string, unknown> = {}): Promise<T & { RequestId?: string }> {
+  async call(action: string, payload: Record<string, unknown> = {}): Promise<unknown> {
     const timestamp = Math.floor(Date.now() / 1000)
     const body = JSON.stringify(payload)
 
-    const response = await this.request<TencentCloudResponse<T>>({
+    const response = await this.request({
       method: 'POST',
       url: '/',
       headers: {
@@ -67,19 +68,34 @@ export class TencentCloudGateway extends BaseGateway {
       data: body,
     })
 
-    if (response.Response.Error) {
+    const parsed = tencentCloudResponseSchema.parse(response)
+    if (parsed.Response.Error) {
       throw new ApiError(
         this.options.errorCode,
-        `${this.options.errorPrefix}: ${response.Response.Error.Code} ${response.Response.Error.Message}`,
+        `${this.options.errorPrefix}: ${parsed.Response.Error.Code} ${parsed.Response.Error.Message}`,
         502,
         {
-          code: response.Response.Error.Code,
-          message: response.Response.Error.Message,
-          request_id: response.Response.RequestId,
+          code: parsed.Response.Error.Code,
+          message: parsed.Response.Error.Message,
+          request_id: parsed.Response.RequestId,
         }
       )
     }
 
-    return response.Response
+    return parsed.Response
   }
 }
+
+const tencentCloudErrorSchema = z.object({
+  Code: z.string(),
+  Message: z.string(),
+})
+
+const tencentCloudResponseSchema = z.object({
+  Response: z.record(z.string(), z.unknown()).and(
+    z.object({
+      RequestId: z.string().optional(),
+      Error: tencentCloudErrorSchema.optional(),
+    })
+  ),
+})

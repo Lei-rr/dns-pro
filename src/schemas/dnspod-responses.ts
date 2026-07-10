@@ -36,6 +36,8 @@ export const dnspodRecordSchema = z
     Status: z.string().optional(),
     Remark: z.string().optional(),
     UpdatedOn: z.string().optional(),
+    MonitorStatus: z.string().optional(),
+    DefaultNS: z.boolean().optional(),
   })
   .passthrough()
 
@@ -50,3 +52,54 @@ export const dnspodDomainInfoSchema = z
   .passthrough()
 
 export type DnspodDomainInfo = z.infer<typeof dnspodDomainInfoSchema>
+
+export const dnspodResponseSchema = z.object({
+  Response: z.record(z.string(), z.unknown()).and(
+    z.object({
+      RequestId: z.string().optional(),
+      Error: z
+        .object({
+          Code: z.string(),
+          Message: z.string(),
+        })
+        .optional(),
+    })
+  ),
+})
+
+export type DnspodResponse = z.infer<typeof dnspodResponseSchema>
+
+export function parseDnspodResponse(response: unknown): { Response: Record<string, unknown>; RequestId?: string } {
+  const parsed = dnspodResponseSchema.parse(response)
+  return { Response: parsed.Response, RequestId: parsed.Response.RequestId }
+}
+
+export const dnspodDomainListResponseSchema = z
+  .object({
+    DomainList: z.array(z.unknown()).optional(),
+    DomainCountInfo: z.record(z.string(), z.unknown()).optional(),
+    RequestId: z.string().optional(),
+  })
+  .passthrough()
+
+export const dnspodDomainCreateResponseSchema = z
+  .object({
+    DomainInfo: z.unknown().optional(),
+    RequestId: z.string().optional(),
+  })
+  .passthrough()
+
+export const dnspodRecordListResponseSchema = z
+  .object({
+    RecordList: z.array(z.unknown()).optional(),
+    RecordCountInfo: z.record(z.string(), z.unknown()).optional(),
+    RequestId: z.string().optional(),
+  })
+  .passthrough()
+
+export const dnspodRecordMutationResponseSchema = z
+  .object({
+    RecordId: z.number().optional(),
+    RequestId: z.string().optional(),
+  })
+  .passthrough()

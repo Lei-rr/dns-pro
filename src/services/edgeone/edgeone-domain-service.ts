@@ -2,7 +2,12 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { EdgeOneGateway } from '../../gateways/edgeone-gateway.js'
-import { edgeOneAccelerationDomainSchema } from '../../schemas/edgeone-responses.js'
+import {
+  edgeOneAccelerationDomainSchema,
+  edgeoneAccelerationDomainCreateResponseSchema,
+  edgeoneAccelerationDomainListResponseSchema,
+  edgeoneMutationResponseSchema,
+} from '../../schemas/edgeone-responses.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -49,19 +54,16 @@ export class EdgeOneDomainService {
     const provider = await this.credentialProvider(providerId)
     const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const response = await gateway.call<{
-      AccelerationDomains?: Record<string, unknown>[]
-      TotalCount?: number
-      RequestId?: string
-    }>('DescribeAccelerationDomains', { ZoneId: zoneId, Offset: offset, Limit: limit })
+    const response = await gateway.call('DescribeAccelerationDomains', { ZoneId: zoneId, Offset: offset, Limit: limit })
+    const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
 
-    const items = (response.AccelerationDomains ?? []).map((domain) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
-    const total = response.TotalCount ?? items.length
+    const items = (parsed.AccelerationDomains ?? []).map((domain) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
+    const total = parsed.TotalCount ?? items.length
     const result = {
       items,
       pagination: { offset, limit, total },
       meta: { page: limit > 0 ? Math.floor(offset / limit) + 1 : 1, per_page: limit, offset, limit, total, total_pages: limit > 0 ? Math.ceil(total / limit) : 1 },
-      request_id: response.RequestId,
+      request_id: parsed.RequestId,
     }
 
     globalCache.set(cacheKey, result, TTL_MS, [`edgeone:domains:${providerId}:${zoneId}`])
@@ -73,7 +75,7 @@ export class EdgeOneDomainService {
     const provider = await this.credentialProvider(providerId)
     const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const response = await gateway.call<{ RequestId?: string; OwnershipVerification?: unknown }>('CreateAccelerationDomain', {
+    const response = await gateway.call('CreateAccelerationDomain', {
       ZoneId: zoneId,
       DomainName: normalized.domain_name,
       OriginInfo: this.buildOriginInfo(normalized),
@@ -88,7 +90,8 @@ export class EdgeOneDomainService {
     })
 
     globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
-    return { name: normalized.domain_name, request_id: response.RequestId, ownership_verification: response.OwnershipVerification ?? null }
+    const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
+    return { name: normalized.domain_name, request_id: parsed.RequestId, ownership_verification: parsed.OwnershipVerification ?? null }
   }
 
   async updateAccelerationDomain(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -96,7 +99,7 @@ export class EdgeOneDomainService {
     const provider = await this.credentialProvider(providerId)
     const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const response = await gateway.call<{ RequestId?: string }>('ModifyAccelerationDomain', {
+    const response = await gateway.call('ModifyAccelerationDomain', {
       ZoneId: zoneId,
       DomainName: normalized.domain_name,
       OriginInfo: this.buildOriginInfo(normalized),
@@ -111,28 +114,28 @@ export class EdgeOneDomainService {
     })
 
     globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
-    return { name: normalized.domain_name, request_id: response.RequestId }
+    return { name: normalized.domain_name, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
   async deleteAccelerationDomain(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
     const provider = await this.credentialProvider(providerId)
     const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const response = await gateway.call<{ RequestId?: string }>('DeleteAccelerationDomains', {
+    const response = await gateway.call('DeleteAccelerationDomains', {
       ZoneId: zoneId,
       DomainNames: [domainName],
       Force: false,
     })
 
     globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
-    return { name: domainName, request_id: response.RequestId }
+    return { name: domainName, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
   async updateAccelerationDomainStatus(providerId: string, zoneId: string, domainName: string, status: string): Promise<Record<string, unknown>> {
     const provider = await this.credentialProvider(providerId)
     const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const response = await gateway.call<{ RequestId?: string }>('ModifyAccelerationDomainStatuses', {
+    const response = await gateway.call('ModifyAccelerationDomainStatuses', {
       ZoneId: zoneId,
       DomainNames: [domainName],
       Status: status,
@@ -140,7 +143,7 @@ export class EdgeOneDomainService {
     })
 
     globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
-    return { name: domainName, status, request_id: response.RequestId }
+    return { name: domainName, status, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
   async updateCertificate(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -162,9 +165,9 @@ export class EdgeOneDomainService {
       payload.ServerCertInfo = [{ CertId: certId }]
     }
 
-    const response = await gateway.call<{ RequestId?: string }>('ModifyHostsCertificate', payload)
+    const response = await gateway.call('ModifyHostsCertificate', payload)
     globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
-    return { name: domainName, https_mode: httpsMode, request_id: response.RequestId }
+    return { name: domainName, https_mode: httpsMode, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
   async assignedCname(providerId: string, zoneId: string, domainName: string): Promise<string> {
@@ -231,8 +234,8 @@ export class EdgeOneDomainService {
     domain: import('../../schemas/edgeone-responses.js').EdgeOneAccelerationDomain,
     zoneId: string
   ): EdgeOneAccelerationDomain {
-    const origin = (domain.OriginDetail as Record<string, unknown>) ?? {}
-    const certificate = (domain.Certificate as Record<string, unknown>) ?? {}
+    const origin = domain.OriginDetail ?? {}
+    const certificate = domain.Certificate ?? {}
 
     return {
       zone_id: domain.ZoneId ?? zoneId,

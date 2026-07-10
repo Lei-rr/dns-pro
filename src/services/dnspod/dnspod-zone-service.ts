@@ -10,7 +10,9 @@ import {
 } from '../../support/cache-helpers.js'
 import { DnsPodGateway } from '../../gateways/dnspod-gateway.js'
 import {
+  dnspodDomainCreateResponseSchema,
   dnspodDomainInfoSchema,
+  dnspodDomainListResponseSchema,
   dnspodDomainSchema,
 } from '../../schemas/dnspod-responses.js'
 import type { DnsPodProvider } from '../../types/provider.js'
@@ -94,18 +96,17 @@ export class DnsPodZoneService {
       payload.Keyword = keyword
     }
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('DescribeDomainList', payload)
+      response = await gateway.call('DescribeDomainList', payload)
     } catch (error) {
       throw this.wrapError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
     }
 
-    const rawDomainList = Array.isArray(response.DomainList) ? response.DomainList : []
+    const parsed = dnspodDomainListResponseSchema.parse(response)
+    const rawDomainList = Array.isArray(parsed.DomainList) ? parsed.DomainList : []
     const domainList = rawDomainList.map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
-    const total = Number(
-      (response.DomainCountInfo as Record<string, unknown> | undefined)?.DomainTotal ?? 0
-    )
+    const total = Number(parsed.DomainCountInfo?.DomainTotal ?? 0)
 
     const result: ZoneListResult = {
       items: domainList,
@@ -114,7 +115,7 @@ export class DnsPodZoneService {
         limit,
         total,
       },
-      request_id: response.RequestId as string | undefined,
+      request_id: parsed.RequestId,
       meta: offsetPaginationMeta({ offset, limit, total }),
     }
 
@@ -132,21 +133,22 @@ export class DnsPodZoneService {
 
     const domain = zone.toLowerCase().trim()
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('CreateDomain', { Domain: domain })
+      response = await gateway.call('CreateDomain', { Domain: domain })
     } catch (error) {
       throw this.wrapError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
     }
 
     globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
-    const domainInfo = dnspodDomainInfoSchema.parse(response.DomainInfo ?? {})
+    const parsed = dnspodDomainCreateResponseSchema.parse(response)
+    const domainInfo = dnspodDomainInfoSchema.parse(parsed.DomainInfo ?? {})
     return {
       id: domainInfo.Id ?? 0,
       name: domainInfo.Domain ?? domain,
       name_servers: domainInfo.GradeNsList ?? [],
-      request_id: response.RequestId as string | undefined,
+      request_id: parsed.RequestId,
     }
   }
 
@@ -156,18 +158,19 @@ export class DnsPodZoneService {
 
     const domain = zone.toLowerCase().trim()
 
-    let response: Record<string, unknown>
+    let response: unknown
     try {
-      response = await gateway.call<Record<string, unknown>>('DeleteDomain', { Domain: domain })
+      response = await gateway.call('DeleteDomain', { Domain: domain })
     } catch (error) {
       throw this.wrapError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
     }
 
     globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
+    const parsed = dnspodDomainCreateResponseSchema.parse(response)
     return {
       name: domain,
-      request_id: response.RequestId as string | undefined,
+      request_id: parsed.RequestId,
     }
   }
 

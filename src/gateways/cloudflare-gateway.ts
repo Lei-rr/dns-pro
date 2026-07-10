@@ -1,4 +1,5 @@
 import axios, { type AxiosRequestConfig } from 'axios'
+import { z } from 'zod'
 import { BaseGateway } from './base-gateway.js'
 import { ApiError } from '../support/api-error.js'
 
@@ -9,6 +10,12 @@ export interface CloudflareApiResponse<T = unknown> {
   result: T
   result_info?: Record<string, unknown>
 }
+
+const cloudflareErrorSchema = z
+  .object({
+    message: z.string().optional(),
+  })
+  .passthrough()
 
 export class CloudflareGateway extends BaseGateway {
   constructor(apiToken: string) {
@@ -22,38 +29,34 @@ export class CloudflareGateway extends BaseGateway {
     })
   }
 
-  async get<T>(path: string, params?: Record<string, unknown>): Promise<CloudflareApiResponse<T>> {
-    const response = await this.call<T>({ method: 'GET', url: path, params })
-    return response
+  async get(path: string, params?: Record<string, unknown>): Promise<CloudflareApiResponse<unknown>> {
+    return this.call({ method: 'GET', url: path, params })
   }
 
-  async post<T>(path: string, data?: unknown): Promise<CloudflareApiResponse<T>> {
-    const response = await this.call<T>({ method: 'POST', url: path, data })
-    return response
+  async post(path: string, data?: unknown): Promise<CloudflareApiResponse<unknown>> {
+    return this.call({ method: 'POST', url: path, data })
   }
 
-  async put<T>(path: string, data?: unknown): Promise<CloudflareApiResponse<T>> {
-    const response = await this.call<T>({ method: 'PUT', url: path, data })
-    return response
+  async put(path: string, data?: unknown): Promise<CloudflareApiResponse<unknown>> {
+    return this.call({ method: 'PUT', url: path, data })
   }
 
-  async patch<T>(path: string, data?: unknown): Promise<CloudflareApiResponse<T>> {
-    const response = await this.call<T>({ method: 'PATCH', url: path, data })
-    return response
+  async patch(path: string, data?: unknown): Promise<CloudflareApiResponse<unknown>> {
+    return this.call({ method: 'PATCH', url: path, data })
   }
 
-  async delete<T>(path: string): Promise<CloudflareApiResponse<T>> {
-    const response = await this.call<T>({ method: 'DELETE', url: path })
-    return response
+  async delete(path: string): Promise<CloudflareApiResponse<unknown>> {
+    return this.call({ method: 'DELETE', url: path })
   }
 
-  private async call<T>(config: AxiosRequestConfig): Promise<CloudflareApiResponse<T>> {
+  private async call(config: AxiosRequestConfig): Promise<CloudflareApiResponse<unknown>> {
     try {
-      const response = await this.request<CloudflareApiResponse<T>>(config)
-      if (!response.success) {
-        this.throwCloudflareError(response)
+      const response = await this.request(config)
+      const parsed = cloudflareResponseSchema.parse(response)
+      if (!parsed.success) {
+        this.throwCloudflareError(parsed)
       }
-      return response
+      return parsed
     } catch (error) {
       if (axios.isAxiosError(error) && !error.response) {
         throw new ApiError(
@@ -70,9 +73,17 @@ export class CloudflareGateway extends BaseGateway {
   private throwCloudflareError(response: CloudflareApiResponse<unknown>): never {
     const firstError =
       Array.isArray(response.errors) && response.errors.length > 0
-        ? String((response.errors[0] as { message?: string }).message ?? '')
+        ? String(cloudflareErrorSchema.safeParse(response.errors[0]).data?.message ?? '')
         : ''
     const detail = firstError !== '' ? `Cloudflare request failed: ${firstError}` : 'Cloudflare request failed'
     throw new ApiError('cloudflare_request_failed', detail, 502, { errors: response.errors })
   }
 }
+
+const cloudflareResponseSchema = z.object({
+  success: z.boolean(),
+  errors: z.array(z.unknown()),
+  messages: z.array(z.unknown()),
+  result: z.unknown(),
+  result_info: z.record(z.string(), z.unknown()).optional(),
+})

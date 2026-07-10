@@ -2,7 +2,7 @@ import { ProviderRepository } from '../../repositories/provider-repository.js'
 import { ApiError } from '../../support/api-error.js'
 import { globalCache } from '../../support/cache-service.js'
 import { EdgeOneGateway } from '../../gateways/edgeone-gateway.js'
-import { edgeOneZoneSchema } from '../../schemas/edgeone-responses.js'
+import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../../schemas/edgeone-responses.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -42,21 +42,18 @@ export class EdgeOneZoneService {
 
     let hasMore = true
     while (hasMore) {
-      const response = await gateway.call<{
-        Zones?: Record<string, unknown>[]
-        TotalCount?: number
-        RequestId?: string
-      }>('DescribeZones', { Offset: pageOffset, Limit: pageLimit })
+      const response = await gateway.call('DescribeZones', { Offset: pageOffset, Limit: pageLimit })
+      const parsed = edgeoneZoneListResponseSchema.parse(response)
 
-      requestId = response.RequestId
-      const pageItems = (response.Zones ?? [])
+      requestId = parsed.RequestId
+      const pageItems = (parsed.Zones ?? [])
         .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
         .filter((zone) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
       items.push(...pageItems)
 
       hasMore = pageItems.length >= pageLimit
       pageOffset += pageItems.length
-      const total = response.TotalCount ?? 0
+      const total = parsed.TotalCount ?? 0
       if (pageOffset >= total) hasMore = false
     }
 

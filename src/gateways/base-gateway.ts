@@ -28,9 +28,9 @@ export class BaseGateway {
     })
   }
 
-  protected async request<T>(config: AxiosRequestConfig): Promise<T> {
+  protected async request(config: AxiosRequestConfig): Promise<unknown> {
     try {
-      const response: AxiosResponse<T> = await this.client.request(config)
+      const response: AxiosResponse<unknown> = await this.client.request(config)
       return response.data
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {

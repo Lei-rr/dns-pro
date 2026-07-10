@@ -3,6 +3,7 @@ import { ApiError } from '../../support/api-error.js'
 import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../support/side-effect-result.js'
 import { globalCache } from '../../support/cache-service.js'
 import { CloudflareGateway } from '../../gateways/cloudflare-gateway.js'
+import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../schemas/cloudflare-responses.js'
 import { CloudflareZoneService } from '../cloudflare/cloudflare-zone-service.js'
 import { CloudflaredDnsService } from './cloudflared-dns-service.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../types/provider.js'
@@ -33,10 +34,8 @@ export class CloudflaredRouteService {
     const [provider, accountId] = await this.requireProvider(providerId)
     const gateway = new CloudflareGateway(provider.api_token)
 
-    const response = await gateway.get<{ config?: { ingress?: Array<Record<string, unknown>> }; version?: number }>(
-      `accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`
-    )
-    const result = this.presentConfig(response.result ?? {})
+    const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`)
+    const result = this.presentConfig(parseCloudflareItemResponse(response, cloudflareRouteConfigSchema).result)
     globalCache.set(cacheKey, result, TTL_MS, [`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
     return result
   }
@@ -170,7 +169,7 @@ export class CloudflaredRouteService {
     const [provider, accountId] = await this.requireProvider(providerId)
     const gateway = new CloudflareGateway(provider.api_token)
 
-    await gateway.put<Record<string, unknown>>(
+    await gateway.put(
       `accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
       this.buildIngress(routes)
     )
@@ -201,8 +200,8 @@ export class CloudflaredRouteService {
     return { config: { ingress } }
   }
 
-  private presentConfig(config: Record<string, unknown>): { routes: CloudflaredRoute[]; catch_all: string; version: number } {
-    const ingress = (config.config as Record<string, unknown> | undefined)?.ingress as Array<Record<string, unknown>> | undefined
+  private presentConfig(config: import('../../schemas/cloudflare-responses.js').CloudflareRouteConfig): { routes: CloudflaredRoute[]; catch_all: string; version: number } {
+    const ingress = config.config?.ingress
     const routes: CloudflaredRoute[] = []
     let catchAll = 'http_status:404'
 
@@ -210,11 +209,11 @@ export class CloudflaredRouteService {
       if (!rule.hostname) {
         catchAll = String(rule.service ?? 'http_status:404')
       } else {
-        routes.push({ hostname: String(rule.hostname), service: String(rule.service), path: String(rule.path ?? '') })
+        routes.push({ hostname: rule.hostname, service: rule.service ?? '', path: String(rule.path ?? '') })
       }
     }
 
-    return { routes, catch_all: catchAll, version: Number(config.version ?? 0) }
+    return { routes, catch_all: catchAll, version: config.version ?? 0 }
   }
 
   private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {

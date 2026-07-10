@@ -1,8 +1,15 @@
+import { z } from 'zod'
 import { ProviderRepository } from '../repositories/provider-repository.js'
 import { CloudflareGateway } from './cloudflare-gateway.js'
 import { globalCache } from '../support/cache-service.js'
 import { ApiError } from '../support/api-error.js'
-import { cloudflareCustomHostnameSchema } from '../schemas/cloudflare-responses.js'
+import {
+  cloudflareCustomHostnameSchema,
+  cloudflareFallbackOriginSchema,
+  cloudflareResultInfoSchema,
+  parseCloudflareItemResponse,
+  parseCloudflareListResponse,
+} from '../schemas/cloudflare-responses.js'
 import type { CloudflareProvider } from '../types/provider.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -33,19 +40,21 @@ export class CloudflareCustomHostnameGateway {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
     const gateway = new CloudflareGateway(provider.api_token)
 
-    const response = await gateway.get<CloudflareCustomHostname[]>(
+    const response = await gateway.get(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
       { page, per_page: perPage }
     )
 
-    const items = (response.result ?? []).map((hostname) => this.present(hostname))
+    const parsed = parseCloudflareListResponse(response, cloudflareCustomHostnameSchema)
+    const resultInfo = parsed.result_info ?? cloudflareResultInfoSchema.parse({})
+    const items = parsed.result.map((hostname) => this.present(hostname))
     const result = {
       items,
       pagination: {
-        page: (response.result_info?.page as number) ?? page,
-        per_page: (response.result_info?.per_page as number) ?? perPage,
-        total_count: response.result_info?.total_count,
-        total_pages: response.result_info?.total_pages,
+        page: resultInfo.page ?? page,
+        per_page: resultInfo.per_page ?? perPage,
+        total_count: resultInfo.total_count,
+        total_pages: resultInfo.total_pages,
       },
     }
 
@@ -63,10 +72,10 @@ export class CloudflareCustomHostnameGateway {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
     const gateway = new CloudflareGateway(provider.api_token)
 
-    const response = await gateway.get<CloudflareCustomHostname>(
+    const response = await gateway.get(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
     )
-    const result = this.present(response.result ?? {})
+    const result = this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
     globalCache.set(cacheKey, result, TTL_MS, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return result
   }
@@ -98,13 +107,13 @@ export class CloudflareCustomHostnameGateway {
     const customOrigin = String(data.custom_origin_server ?? '').trim()
     if (customOrigin) payload.custom_origin_server = customOrigin
 
-    const response = await gateway.post<CloudflareCustomHostname>(
+    const response = await gateway.post(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
       payload
     )
 
     globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    return this.present(response.result ?? {})
+    return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
   async update(cloudflareProviderId: string, zoneId: string, hostnameId: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
@@ -125,20 +134,20 @@ export class CloudflareCustomHostnameGateway {
       payload.ssl = ssl
     }
 
-    const response = await gateway.patch<CloudflareCustomHostname>(
+    const response = await gateway.patch(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`,
       payload
     )
 
     globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    return this.present(response.result ?? {})
+    return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
   async delete(cloudflareProviderId: string, zoneId: string, hostnameId: string): Promise<{ id: string }> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
     const gateway = new CloudflareGateway(provider.api_token)
 
-    await gateway.delete<Record<string, unknown>>(
+    await gateway.delete(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
     )
 
@@ -158,10 +167,10 @@ export class CloudflareCustomHostnameGateway {
 
     let info: { origin?: string | null; status?: string | null }
     try {
-      const response = await gateway.get<{ origin?: string; status?: string }>(
+      const response = await gateway.get(
         `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`
       )
-      info = this.presentFallbackOrigin(response.result ?? {})
+      info = this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
     } catch (error) {
       if (error instanceof ApiError && error.statusCode === 404) {
         info = this.presentFallbackOrigin({})
@@ -178,20 +187,20 @@ export class CloudflareCustomHostnameGateway {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
     const gateway = new CloudflareGateway(provider.api_token)
 
-    const response = await gateway.put<{ origin?: string; status?: string }>(
+    const response = await gateway.put(
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`,
       { origin }
     )
 
     globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    return this.presentFallbackOrigin(response.result ?? {})
+    return this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
   }
 
   async deleteFallbackOrigin(cloudflareProviderId: string, zoneId: string): Promise<{ origin?: string | null; status?: string | null }> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
     const gateway = new CloudflareGateway(provider.api_token)
 
-    await gateway.delete<Record<string, unknown>>(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
+    await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
     globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.presentFallbackOrigin({})
   }
@@ -221,7 +230,7 @@ export class CloudflareCustomHostnameGateway {
     const parsed = cloudflareCustomHostnameSchema.parse(hostname)
     const ssl = parsed.ssl ?? {}
     const certificates = Array.isArray(ssl.certificates) ? ssl.certificates : []
-    const firstCert = (certificates[0] as Record<string, unknown>) ?? {}
+    const firstCert = z.record(z.string(), z.unknown()).safeParse(certificates[0]).data ?? {}
 
     return {
       id: parsed.id ?? '',
@@ -239,11 +248,11 @@ export class CloudflareCustomHostnameGateway {
     }
   }
 
-  private presentFallbackOrigin(result: Record<string, unknown>): { origin?: string | null; status?: string | null } {
+  private presentFallbackOrigin(result: import('../schemas/cloudflare-responses.js').CloudflareFallbackOrigin): { origin?: string | null; status?: string | null } {
     const origin = String(result.origin ?? '')
     return {
       origin: origin !== '' ? origin : null,
-      status: (result.status as string) ?? null,
+      status: result.status ?? null,
     }
   }
 }

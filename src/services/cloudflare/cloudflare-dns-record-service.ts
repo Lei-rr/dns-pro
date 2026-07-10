@@ -8,7 +8,12 @@ import {
   providerCacheTag,
   recordCacheTag,
 } from '../../support/cache-helpers.js'
-import { cloudflareDnsRecordSchema } from '../../schemas/cloudflare-responses.js'
+import {
+  cloudflareDnsRecordSchema,
+  cloudflareIdResultSchema,
+  parseCloudflareItemResponse,
+  parseCloudflareListResponse,
+} from '../../schemas/cloudflare-responses.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
@@ -102,19 +107,19 @@ export class CloudflareDnsRecordService {
       query.search = normalized.search
     }
 
-    const payload = await gateway.get<unknown[]>(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
+    const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
+    const parsed = parseCloudflareListResponse(response, cloudflareDnsRecordSchema)
+    const resultInfo = parsed.result_info
     const result: RecordListResult = {
-      items: (payload.result ?? []).map((record) => this.presentRecord(record)),
+      items: parsed.result.map((record) => this.presentRecord(record)),
       pagination: {
-        page: Number((payload.result_info?.page ?? normalized.page) as number),
-        per_page: Number((payload.result_info?.per_page ?? normalized.per_page) as number),
-        count: payload.result_info?.count !== undefined ? Number(payload.result_info.count) : null,
-        total_count:
-          payload.result_info?.total_count !== undefined ? Number(payload.result_info.total_count) : null,
-        total_pages:
-          payload.result_info?.total_pages !== undefined ? Number(payload.result_info.total_pages) : null,
+        page: Number(resultInfo?.page ?? normalized.page),
+        per_page: Number(resultInfo?.per_page ?? normalized.per_page),
+        count: resultInfo?.count ?? null,
+        total_count: resultInfo?.total_count ?? null,
+        total_pages: resultInfo?.total_pages ?? null,
       },
-      meta: pagePaginationMeta(payload.result_info as Record<string, unknown> | undefined, normalized.page, normalized.per_page),
+      meta: pagePaginationMeta(resultInfo, normalized.page, normalized.per_page),
     }
 
     globalCache.set(cacheKey, result, DEFAULT_TTL_MS, [
@@ -130,13 +135,13 @@ export class CloudflareDnsRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const payload = await gateway.post<unknown>(
+    const response = await gateway.post(
       `zones/${encodeURIComponent(zoneId)}/dns_records`,
-      this.recordPayload(normalized) as Record<string, unknown>
+      this.recordPayload(normalized)
     )
 
     globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
-    return this.presentRecord(payload.result ?? {})
+    return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
   async update(
@@ -149,25 +154,26 @@ export class CloudflareDnsRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const payload = await gateway.put<unknown>(
+    const response = await gateway.put(
       `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`,
-      this.recordPayload(normalized) as Record<string, unknown>
+      this.recordPayload(normalized)
     )
 
     globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
-    return this.presentRecord(payload.result ?? {})
+    return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
   async delete(providerId: string, zoneId: string, recordId: string): Promise<{ id: string }> {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const payload = await gateway.delete<Record<string, unknown>>(
+    const response = await gateway.delete(
       `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`
     )
 
     globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
-    return { id: String((payload.result?.id ?? recordId) as string) }
+    const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
+    return { id: parsed.result.id ?? recordId }
   }
 
   private normalizeFilters(filters: RecordFilters): Required<RecordFilters> {

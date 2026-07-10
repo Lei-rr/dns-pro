@@ -64,3 +64,79 @@ export const cloudflareCustomHostnameSchema = z
   .passthrough()
 
 export type CloudflareCustomHostnameResponse = z.infer<typeof cloudflareCustomHostnameSchema>
+
+export const cloudflareApiResponseSchema = z.object({
+  success: z.boolean(),
+  errors: z.array(z.unknown()),
+  messages: z.array(z.unknown()),
+  result: z.unknown(),
+  result_info: z.record(z.string(), z.unknown()).optional(),
+})
+
+export type CloudflareApiResponse = z.infer<typeof cloudflareApiResponseSchema>
+
+export function parseCloudflareListResponse<T>(
+  response: unknown,
+  itemSchema: z.ZodType<T>
+): { result: T[]; result_info: CloudflareResultInfo | undefined } {
+  const parsed = cloudflareApiResponseSchema.parse(response)
+  const resultInfo = parsed.result_info ? cloudflareResultInfoSchema.parse(parsed.result_info) : undefined
+  const result = z.array(z.unknown()).parse(parsed.result ?? [])
+  return { result: result.map((item) => itemSchema.parse(item)), result_info: resultInfo }
+}
+
+export function parseCloudflareItemResponse<T>(response: unknown, itemSchema: z.ZodType<T>): { result: T } {
+  const parsed = cloudflareApiResponseSchema.parse(response)
+  return { result: itemSchema.parse(parsed.result ?? {}) }
+}
+
+export const cloudflareIdResultSchema = z
+  .object({
+    id: z.string(),
+  })
+  .passthrough()
+
+export const cloudflareDcvDelegationSchema = z
+  .object({
+    uuid: z.string(),
+  })
+  .passthrough()
+
+export const cloudflareFallbackOriginSchema = z
+  .object({
+    origin: z.string().optional(),
+    status: z.string().optional(),
+  })
+  .passthrough()
+
+export type CloudflareFallbackOrigin = z.infer<typeof cloudflareFallbackOriginSchema>
+
+export const cloudflareTunnelSchema = z
+  .object({
+    id: z.string(),
+    name: z.string(),
+    status: z.string(),
+    config_src: z.string().optional(),
+    remote_config: z.boolean().optional(),
+    connections: z.array(z.record(z.string(), z.unknown())).optional(),
+    conns_active_at: z.string().optional(),
+    conns_inactive_at: z.string().optional(),
+    created_at: z.string().optional(),
+  })
+  .passthrough()
+
+export type CloudflareTunnel = z.infer<typeof cloudflareTunnelSchema>
+
+export const cloudflareRouteConfigSchema = z
+  .object({
+    config: z
+      .object({
+        ingress: z.array(z.record(z.string(), z.unknown()).and(z.object({ hostname: z.string().optional(), service: z.string().optional() }))).optional(),
+      })
+      .passthrough()
+      .optional(),
+    version: z.number().optional(),
+  })
+  .passthrough()
+
+export type CloudflareRouteConfig = z.infer<typeof cloudflareRouteConfigSchema>
