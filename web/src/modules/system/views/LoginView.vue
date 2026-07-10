@@ -10,12 +10,32 @@
         </div>
         <a-form layout="vertical" @submit.prevent="submit">
           <a-form-item style="margin-bottom: 18px">
-            <a-input v-model:value="username" size="large" placeholder="请输入用户名" autocomplete="username" @pressEnter="submit" />
+            <a-input
+              v-model:value="username"
+              size="large"
+              placeholder="请输入用户名"
+              autocomplete="username"
+              @pressEnter="submit"
+            />
           </a-form-item>
           <a-form-item style="margin-bottom: 18px">
-            <a-input-password v-model:value="password" size="large" placeholder="请输入密码" autocomplete="current-password" @pressEnter="submit" />
+            <a-input-password
+              v-model:value="password"
+              size="large"
+              placeholder="请输入密码"
+              autocomplete="current-password"
+              @pressEnter="submit"
+            />
           </a-form-item>
-          <a-button type="primary" size="large" block :loading="loading" :disabled="!username.trim() || !password" @click="submit">登录</a-button>
+          <a-button
+            type="primary"
+            size="large"
+            block
+            :loading="loading"
+            :disabled="!username.trim() || !password"
+            @click="submit"
+            >登录</a-button
+          >
         </a-form>
       </div>
     </a-layout-content>
@@ -23,29 +43,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { authApi } from '@/modules/system/api/auth'
+import { useSessionStore } from '@/stores/session'
 import { message } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
 
 const router = useRouter()
+const sessionStore = useSessionStore()
 
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
-
-onMounted(async () => {
-  try {
-    const response = await authApi.me()
-    if (response.data?.authenticated) {
-      router.replace('/')
-      return
-    }
-  } catch (error: unknown) {
-    // unauthenticated is expected on the login page
-  }
-})
 
 async function submit() {
   const user = username.value.trim()
@@ -58,7 +67,7 @@ async function submit() {
 
   loading.value = true
   try {
-    await authApi.login(user, pass)
+    await sessionStore.login(user, pass)
     router.replace('/')
   } catch (error: unknown) {
     message.error(errorMessage(error))

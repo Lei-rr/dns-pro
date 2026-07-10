@@ -34,7 +34,6 @@ export default defineConfig({
             if (id.includes('@vue') || id.includes('/vue/')) return 'vendor-vue'
             return 'vendor-others'
           }
-          return undefined
         },
       },
     },

@@ -1,60 +1,65 @@
 import { defineStore } from 'pinia'
+import { ref } from 'vue'
 import { providersApi } from '@/providers/api'
 import type { Provider } from '@/types'
 
-let providersPromise: Promise<Provider[]> | null = null
-let providersRequestToken = 0
+export const useProviderStore = defineStore('providers', () => {
+  const providers = ref<Provider[] | null>(null)
+  const loading = ref(false)
+  const error = ref<unknown | null>(null)
 
-export const useProviderStore = defineStore('providers', {
-  state: () => ({
-    providers: null as Provider[] | null,
-    loading: false,
-    error: null as unknown | null,
-  }),
-  actions: {
-    async load(options: { refresh?: boolean } = {}) {
-      if (options.refresh) {
-        providersPromise = null
-      }
-      if (!options.refresh && this.providers) return this.providers
+  let pendingLoad: Promise<Provider[]> | null = null
+  let requestToken = 0
 
-      if (!providersPromise) {
-        const requestToken = providersRequestToken + 1
-        providersRequestToken = requestToken
-        this.loading = true
-        this.error = null
-        providersPromise = providersApi
-          .configured()
-          .then((response) => {
-            if (requestToken !== providersRequestToken) return this.providers as Provider[]
-            this.providers = response.data
-            return this.providers
-          })
-          .catch((error) => {
-            if (requestToken !== providersRequestToken) return this.providers as Provider[]
-            this.error = error
-            throw error
-          })
-          .finally(() => {
-            if (requestToken === providersRequestToken) {
-              providersPromise = null
-              this.loading = false
-            }
-          })
-      }
+  async function load(options: { refresh?: boolean } = {}) {
+    if (options.refresh) pendingLoad = null
+    if (!options.refresh && providers.value) return providers.value
 
-      await providersPromise
+    if (!pendingLoad) {
+      const token = requestToken + 1
+      requestToken = token
+      loading.value = true
+      error.value = null
+      pendingLoad = providersApi
+        .configured()
+        .then((response) => {
+          if (token !== requestToken) return providers.value || []
+          providers.value = response.data
+          return providers.value
+        })
+        .catch((err) => {
+          if (token !== requestToken) return providers.value || []
+          error.value = err
+          throw err
+        })
+        .finally(() => {
+          if (token === requestToken) {
+            pendingLoad = null
+            loading.value = false
+          }
+        })
+    }
 
-      return this.providers
-    },
-    clear() {
-      providersPromise = null
-      providersRequestToken += 1
-      this.providers = null
-      this.error = null
-      this.loading = false
-    },
-  },
+    return pendingLoad
+  }
+
+  function clear() {
+    pendingLoad = null
+    requestToken += 1
+    providers.value = null
+    error.value = null
+    loading.value = false
+  }
+
+  function replace(nextProviders: Provider[]) {
+    pendingLoad = null
+    requestToken += 1
+    providers.value = nextProviders
+    error.value = null
+    loading.value = false
+  }
+
+  return { providers, loading, error, load, clear, replace }
 })
 
 export async function loadProviders(options: { refresh?: boolean } = {}) {
@@ -66,12 +71,7 @@ export function clearProvidersCache() {
 }
 
 export function replaceProvidersCache(providers: Provider[]) {
-  providersPromise = null
-  providersRequestToken += 1
-  const store = useProviderStore()
-  store.providers = providers
-  store.error = null
-  store.loading = false
+  useProviderStore().replace(providers)
 }
 
 export function getCachedProvider(providerId: string): Provider | null {

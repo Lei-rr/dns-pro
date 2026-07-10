@@ -4,15 +4,20 @@ import type { ApiResponse } from '@/types'
 const path = (value: string) => encodeURIComponent(value)
 const providerBase = (provider: string) => `/edgeone/providers/${path(provider)}`
 const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/zones/${path(zone)}`
-const accelerationDomainBase = (provider: string, zone: string, domain: string) => `${zoneBase(provider, zone)}/records/${path(domain)}`
+const accelerationDomainBase = (provider: string, zone: string, domain: string) =>
+  `${zoneBase(provider, zone)}/records/${path(domain)}`
 const endpoints = {
   zones: (provider: string) => `${providerBase(provider)}/zones`,
   zone: (provider: string, zoneId: string) => `${providerBase(provider)}/zones/${path(zoneId)}`,
   accelerationDomains: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records`,
-  accelerationDomain: (provider: string, zone: string, domain: string) => accelerationDomainBase(provider, zone, domain),
-  accelerationDomainStatus: (provider: string, zone: string, domain: string) => `${accelerationDomainBase(provider, zone, domain)}/status`,
-  accelerationDomainCertificate: (provider: string, zone: string, domain: string) => `${accelerationDomainBase(provider, zone, domain)}/certificate`,
-  accelerationDomainCnameSyncs: (provider: string, zone: string, domain: string) => `${accelerationDomainBase(provider, zone, domain)}/cname-sync`,
+  accelerationDomain: (provider: string, zone: string, domain: string) =>
+    accelerationDomainBase(provider, zone, domain),
+  accelerationDomainStatus: (provider: string, zone: string, domain: string) =>
+    `${accelerationDomainBase(provider, zone, domain)}/status`,
+  accelerationDomainCertificate: (provider: string, zone: string, domain: string) =>
+    `${accelerationDomainBase(provider, zone, domain)}/certificate`,
+  accelerationDomainCnameSyncs: (provider: string, zone: string, domain: string) =>
+    `${accelerationDomainBase(provider, zone, domain)}/cname-sync`,
 }
 
 function normalizedPaging(options: Record<string, unknown> = {}, defaultPerPage = 20) {
@@ -30,13 +35,51 @@ function edgeOneQuery(options: Record<string, unknown> = {}, defaultPerPage = 20
 }
 
 export const edgeOneApi = {
-  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Record<string, unknown>[]>> => unwrapItems<Record<string, unknown>[]>(await http.get(endpoints.zones(provider), withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh }))),
-  zone: (provider: string, zoneId: string): Promise<ApiResponse<Record<string, unknown>>> => http.get(endpoints.zone(provider, zoneId)) as Promise<ApiResponse<Record<string, unknown>>>,
-  accelerationDomains: async (provider: string, zone: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Record<string, unknown>[]>> => unwrapItems<Record<string, unknown>[]>(await http.get(endpoints.accelerationDomains(provider, zone), withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh }))),
-  createAccelerationDomain: (provider: string, zone: string, data: Record<string, unknown>, options: Record<string, unknown> = {}) => http.post(endpoints.accelerationDomains(provider, zone), data, options.autoSync ? { params: { auto_sync: 1 } } : {}),
-  updateAccelerationDomain: (provider: string, zone: string, domain: string, data: Record<string, unknown>) => http.put(endpoints.accelerationDomain(provider, zone, domain), data),
-  updateAccelerationDomainStatus: (provider: string, zone: string, domain: string, status: string) => http.put(endpoints.accelerationDomainStatus(provider, zone, domain), { status }),
-  updateCertificate: (provider: string, zone: string, domain: string, data: Record<string, unknown>) => http.put(endpoints.accelerationDomainCertificate(provider, zone, domain), data),
-  syncAccelerationDomainCname: (provider: string, zone: string, domain: string) => http.post(endpoints.accelerationDomainCnameSyncs(provider, zone, domain)),
-  deleteAccelerationDomain: (provider: string, zone: string, domain: string, options: Record<string, unknown> = {}) => http.delete(endpoints.accelerationDomain(provider, zone, domain), options.skipCleanup ? { params: { auto_cleanup: 0 } } : {}),
+  zones: async (
+    provider: string,
+    options: Record<string, unknown> = {}
+  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
+    unwrapItems<Record<string, unknown>[]>(
+      await http.get(
+        endpoints.zones(provider),
+        withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh })
+      )
+    ),
+  zone: (provider: string, zoneId: string): Promise<ApiResponse<Record<string, unknown>>> =>
+    http.get(endpoints.zone(provider, zoneId)),
+  accelerationDomains: async (
+    provider: string,
+    zone: string,
+    options: Record<string, unknown> = {}
+  ): Promise<ApiResponse<Record<string, unknown>[]>> =>
+    unwrapItems<Record<string, unknown>[]>(
+      await http.get(
+        endpoints.accelerationDomains(provider, zone),
+        withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh })
+      )
+    ),
+  createAccelerationDomain: (
+    provider: string,
+    zone: string,
+    data: Record<string, unknown>,
+    options: Record<string, unknown> = {}
+  ) =>
+    http.post(
+      endpoints.accelerationDomains(provider, zone),
+      data,
+      options.autoSync ? { params: { auto_sync: 1 } } : {}
+    ),
+  updateAccelerationDomain: (provider: string, zone: string, domain: string, data: Record<string, unknown>) =>
+    http.put(endpoints.accelerationDomain(provider, zone, domain), data),
+  updateAccelerationDomainStatus: (provider: string, zone: string, domain: string, status: string) =>
+    http.put(endpoints.accelerationDomainStatus(provider, zone, domain), { status }),
+  updateCertificate: (provider: string, zone: string, domain: string, data: Record<string, unknown>) =>
+    http.put(endpoints.accelerationDomainCertificate(provider, zone, domain), data),
+  syncAccelerationDomainCname: (provider: string, zone: string, domain: string) =>
+    http.post(endpoints.accelerationDomainCnameSyncs(provider, zone, domain)),
+  deleteAccelerationDomain: (provider: string, zone: string, domain: string, options: Record<string, unknown> = {}) =>
+    http.delete(
+      endpoints.accelerationDomain(provider, zone, domain),
+      options.skipCleanup ? { params: { auto_cleanup: 0 } } : {}
+    ),
 }

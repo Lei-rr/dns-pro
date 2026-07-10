@@ -1,13 +1,18 @@
-export function recordToFormState(record: Record<string, unknown> | undefined, zoneName: string): Record<string, unknown> {
+export function recordToFormState(
+  record: Record<string, unknown> | undefined,
+  zoneName: string
+): Record<string, unknown> {
+  const origin = (record?.origin as Record<string, unknown> | undefined) || {}
+  const hostHeader = origin.host_header
   return {
     prefix: record?.name ? prefixFromDomain(record.name as string, zoneName) : 'www',
-    origin_type: (record?.origin as Record<string, unknown>)?.type || 'IP_DOMAIN',
-    origin: (record?.origin as Record<string, unknown>)?.value || '',
+    origin_type: origin.type || 'IP_DOMAIN',
+    origin: origin.value || '',
     origin_protocol: record?.origin_protocol || 'HTTP',
     http_origin_port: record?.http_origin_port || 80,
     https_origin_port: record?.https_origin_port || 443,
-    host_header: (record?.origin as Record<string, unknown>)?.host_header || '',
-    host_header_mode: (record?.origin as Record<string, unknown>)?.host_header && (record.origin as Record<string, unknown>).host_header !== record.name ? 'custom' : 'accelerate',
+    host_header: hostHeader || '',
+    host_header_mode: hostHeader && hostHeader !== record?.name ? 'custom' : 'accelerate',
     ipv6_status: record?.ipv6_status || 'follow',
   }
 }
@@ -22,7 +27,9 @@ export function formStateToRecordPayload(form: Record<string, unknown>, zoneName
 }
 
 export function fullDomainName(prefixValue: string, zoneName: string) {
-  const prefix = String(prefixValue || '').trim().toLowerCase()
+  const prefix = String(prefixValue || '')
+    .trim()
+    .toLowerCase()
   if (!zoneName) return prefix
   if (prefix === '@' || prefix === '') return zoneName
   return `${prefix}.${zoneName}`
@@ -43,9 +50,22 @@ export function validateEdgeOneRecordForm(form: Record<string, unknown>, zoneNam
 
   const httpPort = Number(form.http_origin_port)
   const httpsPort = Number(form.https_origin_port)
-  if (['FOLLOW', 'HTTP'].includes(form.origin_protocol as string) && (!Number.isInteger(httpPort) || httpPort < 1 || httpPort > 65535)) return 'HTTP 回源端口必须是 1 到 65535 之间的整数'
-  if (['FOLLOW', 'HTTPS'].includes(form.origin_protocol as string) && (!Number.isInteger(httpsPort) || httpsPort < 1 || httpsPort > 65535)) return 'HTTPS 回源端口必须是 1 到 65535 之间的整数'
-  if (form.origin_type === 'IP_DOMAIN' && form.host_header_mode === 'custom' && !validDomain(form.host_header as string)) return '回源 HOST 头格式不正确'
+  if (
+    ['FOLLOW', 'HTTP'].includes(form.origin_protocol as string) &&
+    (!Number.isInteger(httpPort) || httpPort < 1 || httpPort > 65535)
+  )
+    return 'HTTP 回源端口必须是 1 到 65535 之间的整数'
+  if (
+    ['FOLLOW', 'HTTPS'].includes(form.origin_protocol as string) &&
+    (!Number.isInteger(httpsPort) || httpsPort < 1 || httpsPort > 65535)
+  )
+    return 'HTTPS 回源端口必须是 1 到 65535 之间的整数'
+  if (
+    form.origin_type === 'IP_DOMAIN' &&
+    form.host_header_mode === 'custom' &&
+    !validDomain(form.host_header as string)
+  )
+    return '回源 HOST 头格式不正确'
 
   return ''
 }

@@ -2,7 +2,7 @@
   <a-table
     :columns="columns"
     :data-source="records"
-    :row-key="record => record.id"
+    :row-key="rowKey"
     :loading="loading"
     :pagination="tablePaginationConfig"
     :row-selection="{ selectedRowKeys, onChange: selectRows }"
@@ -14,12 +14,24 @@
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
-        <a-typography-text strong :ellipsis="{ tooltip: record.name }" class="dns-record-name">{{ record.name }}</a-typography-text>
+        <a-typography-text strong :ellipsis="{ tooltip: record.name }" class="dns-record-name">{{
+          record.name
+        }}</a-typography-text>
       </template>
       <template v-else-if="column.key === 'type'">
         <span class="dns-type-cell">
           <a-tag :color="typeColor(record.type)">{{ record.type }}</a-tag>
-          <a-tag v-if="record.type === 'MX' && record.priority !== undefined && record.priority !== null && record.priority !== ''" color="blue" class="dns-priority-tag">{{ record.priority }}</a-tag>
+          <a-tag
+            v-if="
+              record.type === 'MX' &&
+              record.priority !== undefined &&
+              record.priority !== null &&
+              record.priority !== ''
+            "
+            color="blue"
+            class="dns-priority-tag"
+            >{{ record.priority }}</a-tag
+          >
         </span>
       </template>
       <template v-else-if="column.key === 'value'">
@@ -29,14 +41,23 @@
         </div>
       </template>
       <template v-else-if="column.key === 'line'">
-        <a-tag v-if="hasProxy" :color="record.proxied ? hook.proxyOnColor : hook.proxyOffColor">{{ record.proxied ? hook.proxyOnText : hook.proxyOffText }}</a-tag>
+        <a-tag v-if="hasProxy" :color="record.proxied ? hook.proxyOnColor : hook.proxyOffColor">{{
+          record.proxied ? hook.proxyOnText : hook.proxyOffText
+        }}</a-tag>
         <span v-else class="nowrap-cell">{{ record.line || '默认' }}</span>
       </template>
       <template v-else-if="column.key === 'remark'">
-        <a-typography-text type="secondary" :ellipsis="{ tooltip: record.remark }" class="table-remark">{{ record.remark || '-' }}</a-typography-text>
+        <a-typography-text type="secondary" :ellipsis="{ tooltip: record.remark }" class="table-remark">{{
+          record.remark || '-'
+        }}</a-typography-text>
       </template>
       <template v-else-if="column.key === 'actions'">
-        <TableActions :items="actionItems(record)" :disabled="actionsDisabled" @edit="$emit('edit', record)" @select="action => selectAction(action, record)" />
+        <TableActions
+          :items="actionItems(record)"
+          :disabled="actionsDisabled"
+          @edit="$emit('edit', record)"
+          @select="(action) => selectAction(action, record)"
+        />
       </template>
     </template>
   </a-table>
@@ -105,27 +126,43 @@ const columns = computed(() => {
       key: 'line',
       width: 100,
       filters: hasProxy.value
-        ? [{ text: hook.value.proxyOnText, value: 'proxied' }, { text: hook.value.proxyOffText, value: 'dns_only' }]
-        : uniqueFilters((props.records || []).map((record) => record.line as string || '默认')),
-      onFilter: (value: string, record: Record<string, unknown>) => hasProxy.value
-        ? (value === 'proxied' ? !!record.proxied : !record.proxied)
-        : (record.line as string || '默认') === value,
+        ? [
+            { text: hook.value.proxyOnText, value: 'proxied' },
+            { text: hook.value.proxyOffText, value: 'dns_only' },
+          ]
+        : uniqueFilters((props.records || []).map((record) => (record.line as string) || '默认')),
+      onFilter: (value: string, record: Record<string, unknown>) =>
+        hasProxy.value
+          ? value === 'proxied'
+            ? !!record.proxied
+            : !record.proxied
+          : ((record.line as string) || '默认') === value,
     },
     { title: '备注', dataIndex: 'remark', key: 'remark', width: 160 },
-    { title: '操作', key: 'actions', width: 110, align: 'right' },
+    { title: '操作', key: 'actions', width: 110, align: 'right' }
   )
 
   return cols
 })
 const tablePaginationConfig = computed(() => props.pagination || tablePagination())
 
-watch(() => props.records, () => {
-  clearSelection()
-})
+function rowKey(record: Record<string, unknown>) {
+  return String(record.id || '')
+}
 
-watch(() => props.selectionResetKey, () => {
-  clearSelection()
-})
+watch(
+  () => props.records,
+  () => {
+    clearSelection()
+  }
+)
+
+watch(
+  () => props.selectionResetKey,
+  () => {
+    clearSelection()
+  }
+)
 
 function typeColor(type: string) {
   return dnsRecordTypeColors[type] || 'default'

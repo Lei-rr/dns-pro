@@ -1,14 +1,33 @@
 <template>
   <section>
-    <ListToolbar back-text="返回站点" :title="decodedZoneName" subtitle="Cloudflare for SaaS 自定义主机名列表" @back="router.push(zonesPath)">
+    <ListToolbar
+      back-text="返回站点"
+      :title="decodedZoneName"
+      subtitle="Cloudflare for SaaS 自定义主机名列表"
+      @back="router.push(zonesPath)"
+    >
       <template #actions>
-        <a-button :loading="loading" :disabled="creating || savingEdit || deleting" @click="handleRefresh">刷新</a-button>
-        <a-button :disabled="notFound || creating || savingEdit || deleting" @click="openFallbackOrigin">默认回源</a-button>
-        <a-button v-if="dnspodLinked" :disabled="creating || savingEdit || deleting" @click="openPreferredManager">优选域名</a-button>
-        <a-button type="primary" :disabled="notFound || creating || savingEdit || deleting" @click="openCreate">新增主机名</a-button>
+        <a-button :loading="loading" :disabled="creating || savingEdit || deleting" @click="handleRefresh"
+          >刷新</a-button
+        >
+        <a-button :disabled="notFound || creating || savingEdit || deleting" @click="openFallbackOrigin"
+          >默认回源</a-button
+        >
+        <a-button v-if="dnspodLinked" :disabled="creating || savingEdit || deleting" @click="openPreferredManager"
+          >优选域名</a-button
+        >
+        <a-button type="primary" :disabled="notFound || creating || savingEdit || deleting" @click="openCreate"
+          >新增主机名</a-button
+        >
       </template>
     </ListToolbar>
-    <BatchToolbar :count="selectedHostnames.length" :deleting="deleting" delete-text="批量删除" @delete="askBatchDelete" @clear="clearSelection" />
+    <BatchToolbar
+      :count="selectedHostnames.length"
+      :deleting="deleting"
+      delete-text="批量删除"
+      @delete="askBatchDelete"
+      @clear="clearSelection"
+    />
     <a-result v-if="notFound" status="404" title="站点不存在或不可访问" :sub-title="decodedZoneName">
       <template #extra><a-button type="primary" @click="router.push(zonesPath)">返回站点</a-button></template>
     </a-result>
@@ -17,10 +36,13 @@
       v-else
       :columns="columns"
       :data-source="hostnames"
-      :row-key="record => record.id || record.hostname"
+      :row-key="hostnameRowKey"
       :loading="loading"
       :pagination="pagination"
-      :row-selection="{ selectedRowKeys: selectedHostnames.map(item => item.id || item.hostname), onChange: (_keys, rows) => selectedHostnames = rows }"
+      :row-selection="{
+        selectedRowKeys: selectedHostnames.map((item) => item.id || item.hostname),
+        onChange: selectHostnames,
+      }"
       size="middle"
       :scroll="{ x: 1000 }"
       :locale="{ emptyText: '暂无自定义主机名' }"
@@ -28,7 +50,9 @@
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'hostname'">
           <a-space size="small">
-            <a-avatar size="small" :style="{ background: hostnameAvatarColor() }">{{ hostnameAvatar(record.hostname) }}</a-avatar>
+            <a-avatar size="small" :style="{ background: hostnameAvatarColor() }">{{
+              hostnameAvatar(record.hostname)
+            }}</a-avatar>
             <a @click="openDetails(record)">{{ record.hostname }}</a>
           </a-space>
         </template>
@@ -44,21 +68,31 @@
         <template v-else-if="column.key === 'custom_origin_server'">
           <div class="origin-cell">
             <a-tag v-if="!record.custom_origin_server" color="blue">默认回源</a-tag>
-            <a-typography-text v-else :ellipsis="{ tooltip: record.custom_origin_server }" style="max-width: 140px; display: inline-block;">
+            <a-typography-text
+              v-else
+              :ellipsis="{ tooltip: record.custom_origin_server }"
+              style="max-width: 140px; display: inline-block"
+            >
               {{ record.custom_origin_server }}
             </a-typography-text>
           </div>
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space size="small">
-            <a-button type="link" size="small" :disabled="creating || savingEdit || deleting" @click="openDetails(record)">详情</a-button>
+            <a-button
+              type="link"
+              size="small"
+              :disabled="creating || savingEdit || deleting"
+              @click="openDetails(record)"
+              >详情</a-button
+            >
             <a-dropdown>
               <a-button type="link" size="small" :disabled="creating || savingEdit || deleting">更多</a-button>
               <template #overlay>
-                  <a-menu>
-                    <a-menu-item @click="openEdit(record)">编辑</a-menu-item>
-                    <a-menu-item danger @click="askDelete(record)">删除</a-menu-item>
-                  </a-menu>
+                <a-menu>
+                  <a-menu-item @click="openEdit(record)">编辑</a-menu-item>
+                  <a-menu-item danger @click="askDelete(record)">删除</a-menu-item>
+                </a-menu>
               </template>
             </a-dropdown>
           </a-space>
@@ -81,7 +115,12 @@
       :preferred-domains="preferredDomains"
       :initial-value="editingHostname"
       :editing="!!editingHostname"
-      @update:open="value => { showCreateForm = value; if (!value) editingHostname = null }"
+      @update:open="
+        (value) => {
+          showCreateForm = value
+          if (!value) editingHostname = null
+        }
+      "
       @submit="editingHostname ? update($event) : create($event)"
     />
     <SaasDetailModal
@@ -93,10 +132,7 @@
       @edit="openEdit"
       @refresh="refreshHostname"
     />
-    <PreferredDomainsModal
-      v-model:open="showPreferredManager"
-      @update="onPreferredUpdate"
-    />
+    <PreferredDomainsModal v-model:open="showPreferredManager" @update="onPreferredUpdate" />
     <SaasFallbackOriginModal
       v-model:open="showFallbackOrigin"
       :provider="provider"
@@ -118,6 +154,7 @@ import { providerPath } from '@/routes/paths'
 import ListToolbar from '@/shared/components/ListToolbar.vue'
 import { message, modal } from '@/shared/plugins/antDesignVue'
 import BatchToolbar from '@/shared/components/BatchToolbar.vue'
+import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import { showBatchFailures } from '@/shared/utils/batch'
 import { tablePagination } from '@/shared/utils/pagination'
@@ -145,10 +182,9 @@ const savingEdit = ref(false)
 const deleting = ref(false)
 const deletingText = ref('')
 const detailLoading = ref(false)
-let detailRequestToken = 0
-let listLoadRequestToken = 0
-let preferredLoadRequestToken = 0
-let syncZoneLoadRequestToken = 0
+const listLoadTask = useLatestTask()
+const preferredLoadTask = useLatestTask()
+const syncZoneLoadTask = useLatestTask()
 const refreshing = ref<Record<string, boolean>>({})
 const providerMeta = ref<Provider | null>(null)
 const allProviders = ref<Provider[]>([])
@@ -166,10 +202,16 @@ const zonesPath = computed(() => providerPath(props.provider))
 const hostnameCloudflareProvider = computed(() => {
   const providerId = providerMeta.value?.cloudflare_provider || ''
   if (!providerId) return null
-  return allProviders.value.find((provider) => provider.id === providerId && provider.type === 'cloudflare' && provider.configured) || null
+  return (
+    allProviders.value.find(
+      (provider) => provider.id === providerId && provider.type === 'cloudflare' && provider.configured
+    ) || null
+  )
 })
-const dnspodProviders = computed(() => allProviders.value.filter((provider) => provider.type === 'dnspod' && provider.configured))
-const cloudflareProviders = computed(() => hostnameCloudflareProvider.value ? [hostnameCloudflareProvider.value] : [])
+const dnspodProviders = computed(() =>
+  allProviders.value.filter((provider) => provider.type === 'dnspod' && provider.configured)
+)
+const cloudflareProviders = computed(() => (hostnameCloudflareProvider.value ? [hostnameCloudflareProvider.value] : []))
 const dnspodLinked = computed(() => dnspodProviders.value.length > 0)
 const cloudflareDnsLinked = computed(() => cloudflareProviders.value.length > 0)
 const originSuggestions = computed(() => {
@@ -199,24 +241,36 @@ onMounted(async () => {
   loadPreferredDomains()
 })
 
-watch(() => props.provider, () => {
-  resetContextState()
-  providerMeta.value = null
-  dnspodZones.value = {}
-  cloudflareDnsZones.value = {}
-  load()
-  loadPreferredDomains()
-})
-watch(() => props.zoneName, () => {
-  resetContextState()
-  load()
-})
+watch(
+  () => props.provider,
+  () => {
+    resetContextState()
+    providerMeta.value = null
+    dnspodZones.value = {}
+    cloudflareDnsZones.value = {}
+    load()
+    loadPreferredDomains()
+  }
+)
+watch(
+  () => props.zoneName,
+  () => {
+    resetContextState()
+    load()
+  }
+)
 
 function hostnameAvatar(hostname: string) {
   return (String(hostname || '').match(/[a-z0-9]/i)?.[0] || '#').toUpperCase()
 }
 function hostnameAvatarColor() {
   return providerAvatarColor('saas')
+}
+function hostnameRowKey(record: Record<string, unknown>) {
+  return String(record.id || record.hostname || '')
+}
+function selectHostnames(_keys: Array<string | number>, rows: Record<string, unknown>[]) {
+  selectedHostnames.value = rows
 }
 function resetContextState() {
   showCreateForm.value = false
@@ -234,29 +288,28 @@ function clearSelection() {
 }
 
 async function load(options: Record<string, unknown> = {}) {
-  const requestToken = listLoadRequestToken + 1
-  listLoadRequestToken = requestToken
+  const requestToken = listLoadTask.next()
   loading.value = true
   try {
     notFound.value = false
     if (!providerMeta.value) {
       const providers = await loadProviders()
-      if (requestToken !== listLoadRequestToken) return
+      if (!listLoadTask.isCurrent(requestToken)) return
       allProviders.value = providers || []
       providerMeta.value = providers.find((p) => p.id === props.provider) || null
       await loadSyncZones(requestToken)
     }
-    if (requestToken !== listLoadRequestToken) return
+    if (!listLoadTask.isCurrent(requestToken)) return
     const response = await saasApi.hostnames(props.provider, decodedZoneName.value, {
       page: 1,
       per_page: 100,
       ...options,
     })
-    if (requestToken !== listLoadRequestToken) return
+    if (!listLoadTask.isCurrent(requestToken)) return
     hostnames.value = response.data
     syncSelectedHostnameFromList()
   } catch (error) {
-    if (requestToken !== listLoadRequestToken) return
+    if (!listLoadTask.isCurrent(requestToken)) return
     const e = error as { status?: number; code?: string }
     if (Number(e.status) === 404 || e.code === 'cloudflare_zone_not_found') {
       hostnames.value = []
@@ -265,13 +318,12 @@ async function load(options: Record<string, unknown> = {}) {
     }
     message.error(errorMessage(error))
   } finally {
-    if (requestToken === listLoadRequestToken) loading.value = false
+    if (listLoadTask.isCurrent(requestToken)) loading.value = false
   }
 }
 
-async function loadSyncZones(requestToken = listLoadRequestToken) {
-  const zoneRequestToken = syncZoneLoadRequestToken + 1
-  syncZoneLoadRequestToken = zoneRequestToken
+async function loadSyncZones(requestToken: number) {
+  const zoneRequestToken = syncZoneLoadTask.next()
 
   try {
     const [dnspod, cloudflareDns] = await Promise.all([
@@ -279,11 +331,11 @@ async function loadSyncZones(requestToken = listLoadRequestToken) {
       loadZonesForProviders(cloudflareProviders.value),
     ])
 
-    if (requestToken !== listLoadRequestToken || zoneRequestToken !== syncZoneLoadRequestToken) return
+    if (!listLoadTask.isCurrent(requestToken) || !syncZoneLoadTask.isCurrent(zoneRequestToken)) return
     dnspodZones.value = dnspod
     cloudflareDnsZones.value = cloudflareDns
   } catch {
-    if (requestToken !== listLoadRequestToken || zoneRequestToken !== syncZoneLoadRequestToken) return
+    if (!listLoadTask.isCurrent(requestToken) || !syncZoneLoadTask.isCurrent(zoneRequestToken)) return
     dnspodZones.value = {}
     cloudflareDnsZones.value = {}
   }
@@ -313,27 +365,32 @@ async function loadZonesForProviders(providers: Provider[]) {
 }
 
 async function loadPreferredDomains() {
-  const requestToken = preferredLoadRequestToken + 1
-  preferredLoadRequestToken = requestToken
+  const requestToken = preferredLoadTask.next()
   try {
     const response = await preferredDomainApi.list()
-    if (requestToken !== preferredLoadRequestToken) return
+    if (!preferredLoadTask.isCurrent(requestToken)) return
     preferredDomains.value = response.data
   } catch (error) {
-    if (requestToken !== preferredLoadRequestToken) return
+    if (!preferredLoadTask.isCurrent(requestToken)) return
     preferredDomains.value = []
   }
 }
 
-function openPreferredManager() { showPreferredManager.value = true }
-function onPreferredUpdate(items: Array<Record<string, unknown>>) { preferredDomains.value = items || [] }
+function openPreferredManager() {
+  showPreferredManager.value = true
+}
+function onPreferredUpdate(items: Array<Record<string, unknown>>) {
+  preferredDomains.value = items || []
+}
 
 function dnsOperationMessage(operation: { message?: string } | undefined, fallback: string) {
   if (!operation) return fallback
   return operation.message || fallback
 }
 
-function openFallbackOrigin() { showFallbackOrigin.value = true }
+function openFallbackOrigin() {
+  showFallbackOrigin.value = true
+}
 function onFallbackUpdated() {
   load({ refresh: true })
 }
@@ -343,7 +400,10 @@ async function handleRefresh() {
   message.success('已刷新')
 }
 
-function openCreate() { editingHostname.value = null; showCreateForm.value = true }
+function openCreate() {
+  editingHostname.value = null
+  showCreateForm.value = true
+}
 async function create(formData: Record<string, unknown>) {
   creating.value = true
   try {
@@ -369,8 +429,10 @@ async function create(formData: Record<string, unknown>) {
     }
 
     const options = { autoSync: !!formData.sync_target }
-    const response = (await saasApi.createHostname(props.provider, decodedZoneName.value, payload, options)) as { data: Record<string, unknown> }
-    const dnsSync = ((response?.data?.side_effects as Record<string, unknown>)?.dns as { sync?: { message?: string } })?.sync
+    const response = await saasApi.createHostname(props.provider, decodedZoneName.value, payload, options)
+    const dnsSync = (
+      (response.side_effects as Record<string, unknown> | undefined)?.dns as { sync?: { message?: string } } | undefined
+    )?.sync
     message.success(dnsOperationMessage(dnsSync, '自定义主机名已创建'))
     showCreateForm.value = false
     await load({ refresh: true })
@@ -395,9 +457,7 @@ async function update(formData: Record<string, unknown>) {
     const payload: Record<string, unknown> = {
       method: String(formData.method || 'txt').trim(),
       min_tls_version: String(formData.min_tls_version || '1.0').trim(),
-      custom_origin_server: formData.use_custom_origin_server
-        ? String(formData.custom_origin_server || '').trim()
-        : '',
+      custom_origin_server: formData.use_custom_origin_server ? String(formData.custom_origin_server || '').trim() : '',
       preferred_domain: String(formData.preferred_domain || '').trim(),
       sync_target: String(formData.sync_target || '').trim(),
       sync_provider_id: String(formData.sync_provider_id || '').trim(),
@@ -406,14 +466,16 @@ async function update(formData: Record<string, unknown>) {
     }
 
     const options = { autoSync: !!formData.sync_target }
-    const response = (await saasApi.updateHostname(
+    const response = await saasApi.updateHostname(
       props.provider,
       decodedZoneName.value,
       editingHostname.value.hostname as string,
       payload,
-      options,
-    )) as { data: Record<string, unknown> }
-    const dnsSync = ((response?.data?.side_effects as Record<string, unknown>)?.dns as { sync?: { message?: string } })?.sync
+      options
+    )
+    const dnsSync = (
+      (response.side_effects as Record<string, unknown> | undefined)?.dns as { sync?: { message?: string } } | undefined
+    )?.sync
     message.success(dnsOperationMessage(dnsSync, '自定义主机名已更新'))
     showCreateForm.value = false
     editingHostname.value = null
@@ -432,7 +494,7 @@ async function update(formData: Record<string, unknown>) {
 async function openDetails(record: Record<string, unknown>) {
   selectedHostname.value = {
     ...record,
-    ssl: { ...(record?.ssl as Record<string, unknown> || {}) },
+    ssl: { ...((record?.ssl as Record<string, unknown>) || {}) },
   }
   showDetails.value = true
   detailLoading.value = false
@@ -440,12 +502,14 @@ async function openDetails(record: Record<string, unknown>) {
 async function refreshHostname(record: Record<string, unknown>) {
   refreshing.value = { ...refreshing.value, [record.id as string]: true }
   try {
-    const response = (await saasApi.refreshHostname(props.provider, decodedZoneName.value, record.hostname as string)) as { data: Record<string, unknown> }
+    const response = await saasApi.refreshHostname(props.provider, decodedZoneName.value, record.hostname as string)
     mergeHostnameRecord(response.data)
     if (showDetails.value && selectedHostname.value?.id === record.id) {
       selectedHostname.value = response.data
     }
-    const cleanup = (((response.data as Record<string, unknown>)?.side_effects as Record<string, unknown>)?.dns as Record<string, unknown>)?.cleanup as { details?: { cleaned?: number } }
+    const cleanup = (
+      (response.side_effects as Record<string, unknown> | undefined)?.dns as Record<string, unknown> | undefined
+    )?.cleanup as { details?: { cleaned?: number } } | undefined
     const cleaned = Number(cleanup?.details?.cleaned || 0)
     message.success(cleaned > 0 ? '已刷新,已自动清理TXT验证' : '已刷新')
   } catch (error) {
@@ -458,7 +522,9 @@ function askDelete(record: Record<string, unknown>) {
   modal.confirm({
     title: '删除自定义主机名',
     content: `确认删除 ${record.hostname}？关联的 DNSPod 记录会一并清理。`,
-    okText: '删除', okType: 'danger', cancelText: '取消',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
     onOk: () => deleteHostname(record),
   })
 }
@@ -491,15 +557,21 @@ function isCurrentHostname(record: Record<string, unknown>) {
   const recordId = record.id
   if (currentId && recordId) return currentId === recordId
 
-  const currentHostname = String(selectedHostname.value.hostname || '').trim().toLowerCase()
-  const recordHostname = String(record.hostname || '').trim().toLowerCase()
+  const currentHostname = String(selectedHostname.value.hostname || '')
+    .trim()
+    .toLowerCase()
+  const recordHostname = String(record.hostname || '')
+    .trim()
+    .toLowerCase()
   return currentHostname !== '' && currentHostname === recordHostname
 }
 async function deleteHostname(record: Record<string, unknown>) {
   deleting.value = true
   try {
-    const response = (await saasApi.deleteHostname(props.provider, decodedZoneName.value, record.hostname as string)) as { data: Record<string, unknown> }
-    const dnsCleanup = ((response?.data?.side_effects as Record<string, unknown>)?.dns as Record<string, unknown>)?.cleanup as { message?: string }
+    const response = await saasApi.deleteHostname(props.provider, decodedZoneName.value, record.hostname as string)
+    const dnsCleanup = (
+      (response.side_effects as Record<string, unknown> | undefined)?.dns as Record<string, unknown> | undefined
+    )?.cleanup as { message?: string } | undefined
     message.success(dnsOperationMessage(dnsCleanup, '已删除'))
     if (isCurrentHostname(record)) {
       selectedHostname.value = null
@@ -554,23 +626,24 @@ function syncSelectedHostnameFromList() {
   if (!selectedHostname.value) return
   const selectedId = selectedHostname.value.id
   const selectedName = String(selectedHostname.value.hostname || '').toLowerCase()
-  const updated = hostnames.value.find((item) => (
-    (selectedId && item.id === selectedId)
-    || String(item.hostname || '').toLowerCase() === selectedName
-  ))
+  const updated = hostnames.value.find(
+    (item) => (selectedId && item.id === selectedId) || String(item.hostname || '').toLowerCase() === selectedName
+  )
   if (!updated) return
 
   selectedHostname.value = {
     ...selectedHostname.value,
     ...updated,
-    ssl: { ...(selectedHostname.value.ssl as Record<string, unknown> || {}), ...(updated.ssl as Record<string, unknown> || {}) },
+    ssl: {
+      ...((selectedHostname.value.ssl as Record<string, unknown>) || {}),
+      ...((updated.ssl as Record<string, unknown>) || {}),
+    },
   }
 }
 
 function handleDetailsOpenChange(open: boolean) {
   showDetails.value = open
   if (!open) {
-    detailRequestToken += 1
     detailLoading.value = false
   }
 }

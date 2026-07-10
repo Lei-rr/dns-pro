@@ -7,7 +7,13 @@
             <a-avatar shape="square" style="background: #1677ff">D</a-avatar>
             <a-typography-text strong style="font-size: 16px">DNS-PRO</a-typography-text>
           </router-link>
-          <a-menu class="app-menu" mode="horizontal" :selected-keys="selectedKeys" :items="menuItems" @click="openMenu" />
+          <a-menu
+            class="app-menu"
+            mode="horizontal"
+            :selected-keys="selectedKeys"
+            :items="menuItems"
+            @click="openMenu"
+          />
         </div>
         <a-dropdown :trigger="['click']">
           <a-button shape="circle" title="管理" aria-label="管理">☰</a-button>
@@ -32,7 +38,7 @@
 <script setup lang="ts">
 import { computed, h, onMounted } from 'vue'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { authApi } from '@/modules/system/api/auth'
+import { useSessionStore } from '@/stores/session'
 import { loadProviders, useProviderStore } from '@/stores/providers'
 import { providerMenuEntries, selectedMenuKey } from '@/routes/utils'
 import { message } from '@/shared/plugins/antDesignVue'
@@ -41,6 +47,7 @@ import type { Provider } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
+const sessionStore = useSessionStore()
 const providerStore = useProviderStore()
 
 const selectedKeys = computed(() => [selectedMenuKey(route.path)])
@@ -68,7 +75,7 @@ async function loadProvidersSafely() {
 }
 
 async function logout() {
-  await authApi.logout().catch(() => {})
+  await sessionStore.logout()
   router.replace('/login')
 }
 

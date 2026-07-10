@@ -62,15 +62,21 @@ function recordQuery(provider: string, options: Record<string, unknown> = {}) {
   }
 }
 
-function recordPayload(provider: string, zone: string, data: Record<string, unknown>, options: Record<string, unknown> = {}) {
+function recordPayload(
+  provider: string,
+  zone: string,
+  data: Record<string, unknown>,
+  options: Record<string, unknown> = {}
+) {
   if (providerType(provider) === 'cloudflare') {
     const zoneName = (options.zoneName as string) || zone
     const rawName = String(data.name || '').toLowerCase()
-    const name = data.name === '@'
-      ? zoneName
-      : rawName.endsWith('.' + String(zoneName).toLowerCase())
-        ? data.name
-        : `${data.name}.${zoneName}`
+    const name =
+      data.name === '@'
+        ? zoneName
+        : rawName.endsWith('.' + String(zoneName).toLowerCase())
+          ? data.name
+          : `${data.name}.${zoneName}`
 
     return {
       type: data.type,
@@ -105,7 +111,15 @@ function presentDomain(provider: string, domain: Record<string, unknown>) {
     ...domain,
     provider,
     provider_type: type,
-    provider_name: cached?.name || ({ cloudflare: 'Cloudflare', dnspod: 'DNSPod', saas: 'Cloudflare SaaS', edgeone: 'EdgeOne' } as Record<string, string>)[type] || type,
+    provider_name:
+      cached?.name ||
+      (
+        { cloudflare: 'Cloudflare', dnspod: 'DNSPod', saas: 'Cloudflare SaaS', edgeone: 'EdgeOne' } as Record<
+          string,
+          string
+        >
+      )[type] ||
+      type,
     name_servers: (domain.name_servers as unknown[]) || (domain.effective_dns as unknown[]) || [],
     access_status: domain.access_status || domain.status || domain.dns_status,
   }
@@ -115,11 +129,12 @@ function presentRecord(provider: string, domain: string, record: Record<string, 
   if (providerType(provider) === 'cloudflare') {
     const fqdn = String(record.name || '')
     const zoneName = String(record.zone_name || domain || '')
-    const host = zoneName && fqdn.toLowerCase() === zoneName.toLowerCase()
-      ? '@'
-      : zoneName && fqdn.toLowerCase().endsWith('.' + zoneName.toLowerCase())
-        ? fqdn.slice(0, -(zoneName.length + 1))
-        : fqdn
+    const host =
+      zoneName && fqdn.toLowerCase() === zoneName.toLowerCase()
+        ? '@'
+        : zoneName && fqdn.toLowerCase().endsWith('.' + zoneName.toLowerCase())
+          ? fqdn.slice(0, -(zoneName.length + 1))
+          : fqdn
 
     return {
       ...record,
@@ -144,17 +159,43 @@ function presentRecord(provider: string, domain: string, record: Record<string, 
 }
 
 export const dnsApi = {
-  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Record<string, unknown>[]>> => {
-    const response = unwrapItems<Record<string, unknown>[]>(await http.get(endpoints.zones(provider), withRefresh({ params: zoneQuery(provider, options), refresh: options?.refresh })))
+  zones: async (
+    provider: string,
+    options: Record<string, unknown> = {}
+  ): Promise<ApiResponse<Record<string, unknown>[]>> => {
+    const response = unwrapItems<Record<string, unknown>[]>(
+      await http.get(
+        endpoints.zones(provider),
+        withRefresh({ params: zoneQuery(provider, options), refresh: options?.refresh })
+      )
+    )
     return { ...response, data: response.data.map((domain) => presentDomain(provider, domain)) }
   },
-  createZone: (provider: string, data: Record<string, unknown>) => http.post(endpoints.zones(provider), providerType(provider) === 'cloudflare' ? { name: data.domain } : data),
+  createZone: (provider: string, data: Record<string, unknown>) =>
+    http.post(endpoints.zones(provider), providerType(provider) === 'cloudflare' ? { name: data.domain } : data),
   deleteZone: (provider: string, zone: string) => http.delete(endpoints.zone(provider, zone)),
-  records: async (provider: string, domain: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Record<string, unknown>[]>> => {
-    const response = unwrapItems<Record<string, unknown>[]>(await http.get(endpoints.records(provider, domain), withRefresh({ params: recordQuery(provider, options), refresh: options?.refresh })))
+  records: async (
+    provider: string,
+    domain: string,
+    options: Record<string, unknown> = {}
+  ): Promise<ApiResponse<Record<string, unknown>[]>> => {
+    const response = unwrapItems<Record<string, unknown>[]>(
+      await http.get(
+        endpoints.records(provider, domain),
+        withRefresh({ params: recordQuery(provider, options), refresh: options?.refresh })
+      )
+    )
     return { ...response, data: response.data.map((record) => presentRecord(provider, domain, record)) }
   },
-  createRecord: (provider: string, domain: string, data: Record<string, unknown>, options?: Record<string, unknown>) => http.post(endpoints.records(provider, domain), recordPayload(provider, domain, data, options || {})),
-  updateRecord: (provider: string, domain: string, recordId: string, data: Record<string, unknown>, options?: Record<string, unknown>) => http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
-  deleteRecord: (provider: string, domain: string, recordId: string) => http.delete(endpoints.record(provider, domain, recordId)),
+  createRecord: (provider: string, domain: string, data: Record<string, unknown>, options?: Record<string, unknown>) =>
+    http.post(endpoints.records(provider, domain), recordPayload(provider, domain, data, options || {})),
+  updateRecord: (
+    provider: string,
+    domain: string,
+    recordId: string,
+    data: Record<string, unknown>,
+    options?: Record<string, unknown>
+  ) => http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
+  deleteRecord: (provider: string, domain: string, recordId: string) =>
+    http.delete(endpoints.record(provider, domain, recordId)),
 }

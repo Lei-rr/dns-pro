@@ -1,5 +1,5 @@
 <template>
-  <a-modal :open="open" @update:open="v => $emit('update:open', v)" title="管理优选域名" width="560px" :footer="null">
+  <a-modal :open="open" @update:open="emitOpen" title="管理优选域名" width="560px" :footer="null">
     <a-typography-paragraph type="secondary">
       创建/编辑自定义主机名时可从这里选择"境内优选 CNAME"目标。同步到 DNSPod 时会下发线路为「境内」的 CNAME。
     </a-typography-paragraph>
@@ -13,7 +13,7 @@
     </a-form>
     <a-table
       :data-source="items"
-      :row-key="record => record.domain"
+      :row-key="rowKey"
       :loading="loading"
       :pagination="false"
       size="small"
@@ -78,13 +78,16 @@ const editingDomain = ref<string | null>(null)
 const editingValue = ref('')
 const draggingDomain = ref<string | null>(null)
 
-watch(() => props.open, (value) => {
-  if (value) {
-    resetEditing()
-    newDomain.value = ''
-    load()
+watch(
+  () => props.open,
+  (value) => {
+    if (value) {
+      resetEditing()
+      newDomain.value = ''
+      load()
+    }
   }
-})
+)
 
 async function load() {
   loading.value = true
@@ -159,7 +162,9 @@ function askDelete(item: { domain: string }) {
   modal.confirm({
     title: '删除优选域名',
     content: `确认删除 ${item.domain}？已使用该域名的 hostname 不会被自动清理。`,
-    okText: '删除', okType: 'danger', cancelText: '取消',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
     onOk: () => removeItem(item),
   })
 }
@@ -196,7 +201,9 @@ function rowProps(record: { domain: string }) {
       event.preventDefault()
       dropOn(record.domain)
     },
-    onDragend: () => { draggingDomain.value = null },
+    onDragend: () => {
+      draggingDomain.value = null
+    },
   }
 }
 async function dropOn(targetDomain: string) {
@@ -227,5 +234,11 @@ async function dropOn(targetDomain: string) {
 }
 function close() {
   emit('update:open', false)
+}
+function emitOpen(value: boolean) {
+  emit('update:open', value)
+}
+function rowKey(record: { domain: string }) {
+  return record.domain
 }
 </script>

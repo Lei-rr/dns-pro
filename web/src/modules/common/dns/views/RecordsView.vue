@@ -1,15 +1,37 @@
 <template>
   <section>
-    <ListToolbar back-text="返回域名" :title="displayDomain" subtitle="解析记录" v-model:keyword="keyword" search-placeholder="搜索记录" @back="router.push(routeBase())" @search="applyKeyword">
+    <ListToolbar
+      back-text="返回域名"
+      :title="displayDomain"
+      subtitle="解析记录"
+      v-model:keyword="keyword"
+      search-placeholder="搜索记录"
+      @back="router.push(routeBase())"
+      @search="applyKeyword"
+    >
       <template #actions>
-        <a-button v-if="capabilities.importRecords" :disabled="saving || deleting" @click="importRecords">导入</a-button>
+        <a-button v-if="capabilities.importRecords" :disabled="saving || deleting" @click="importRecords"
+          >导入</a-button
+        >
         <a-button v-if="capabilities.exportRecords" :disabled="!records.length" @click="exportRecords">导出</a-button>
         <a-button :loading="loading" :disabled="saving || deleting" @click="handleRefresh">刷新</a-button>
         <a-button type="primary" :disabled="saving || deleting" @click="create">添加记录</a-button>
       </template>
     </ListToolbar>
-    <a-alert v-if="saving && deletingText" type="warning" show-icon style="margin-bottom: 16px" :message="deletingText" />
-    <BatchToolbar :count="selectedRecords.length" :deleting="deleting" delete-text="批量删除" @delete="askBatchRemove" @clear="clearSelection" />
+    <a-alert
+      v-if="saving && deletingText"
+      type="warning"
+      show-icon
+      style="margin-bottom: 16px"
+      :message="deletingText"
+    />
+    <BatchToolbar
+      :count="selectedRecords.length"
+      :deleting="deleting"
+      delete-text="批量删除"
+      @delete="askBatchRemove"
+      @clear="clearSelection"
+    />
     <RecordTable
       :records="filteredRecords"
       :provider-hook="providerHook"
@@ -25,9 +47,29 @@
       @selection-change="selectedRecords = $event"
     />
     <a-modal v-model:open="showForm" :title="editing ? '编辑解析记录' : '添加解析记录'" :footer="null" destroy-on-close>
-      <RecordForm :model-value="editing" :saving="saving" :provider-hook="providerHook" :lines="lines" @save="save" @cancel="showForm = false" @delete="record => { showForm = false; askRemove(record) }" />
+      <RecordForm
+        :model-value="editing"
+        :saving="saving"
+        :provider-hook="providerHook"
+        :lines="lines"
+        @save="save"
+        @cancel="showForm = false"
+        @delete="
+          (record) => {
+            showForm = false
+            askRemove(record)
+          }
+        "
+      />
     </a-modal>
-    <a-modal v-model:open="showImportConfirm" title="预检导入解析记录" :confirm-loading="saving" ok-text="导入" cancel-text="取消" @ok="confirmImport">
+    <a-modal
+      v-model:open="showImportConfirm"
+      title="预检导入解析记录"
+      :confirm-loading="saving"
+      ok-text="导入"
+      cancel-text="取消"
+      @ok="confirmImport"
+    >
       <a-form layout="vertical">
         <a-form-item label="导入模式">
           <a-radio-group v-model:value="importMode">
@@ -36,7 +78,16 @@
           </a-radio-group>
         </a-form-item>
       </a-form>
-      <a-alert type="info" show-icon :message="importMode === 'overwrite' ? '按 主机记录 + 类型 + 线路 匹配；已存在则更新，不存在则新增。' : '逐条新增；已存在或格式不支持的记录会提示失败。'" style="margin-bottom: 16px" />
+      <a-alert
+        type="info"
+        show-icon
+        :message="
+          importMode === 'overwrite'
+            ? '按 主机记录 + 类型 + 线路 匹配；已存在则更新，不存在则新增。'
+            : '逐条新增；已存在或格式不支持的记录会提示失败。'
+        "
+        style="margin-bottom: 16px"
+      />
       <div style="white-space: pre-wrap">{{ importPreviewText }}</div>
     </a-modal>
   </section>
@@ -51,6 +102,7 @@ import { message, modal } from '@/shared/plugins/antDesignVue'
 import { providerPath } from '@/routes/paths'
 import { resolveProviderHook } from '@/providers/registry'
 import ListToolbar from '@/shared/components/ListToolbar.vue'
+import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { chooseJsonFile, downloadJson } from '@/shared/utils/files'
 import { errorMessage } from '@/shared/utils/errors'
 import { mergePaginationMeta, nextPaginationState, paginationState, tablePagination } from '@/shared/utils/pagination'
@@ -88,52 +140,72 @@ const deletingText = ref('')
 const importMode = ref('create')
 const showImportConfirm = ref(false)
 const pendingImportRecords = ref<Record<string, unknown>[]>([])
-let loadRequestToken = 0
+const loadTask = useLatestTask()
 
 const decodedDomain = computed(() => decodeURIComponent(props.domain))
-const providerType = computed(() => currentProviderMeta.value?.type || (records.value[0]?.provider_type as string) || props.provider)
+const providerType = computed(
+  () => currentProviderMeta.value?.type || (records.value[0]?.provider_type as string) || props.provider
+)
 const displayDomain = computed(() => currentDomainName.value || decodedDomain.value)
 const recordsTarget = computed(() => decodedDomain.value)
-const capabilities = computed(() => (providerHook.value.capabilities as Record<string, boolean>) || defaultProviderHook.capabilities)
+const capabilities = computed(
+  () => (providerHook.value.capabilities as Record<string, boolean>) || defaultProviderHook.capabilities
+)
 const typeOptions = computed(() => {
   const types = [...new Set(records.value.map((record) => String(record.type || '')).filter(Boolean))] as string[]
   return types.sort().map((type) => ({ label: type, value: type }))
 })
 const importPreviewText = computed(() => {
-  const preview = pendingImportRecords.value.slice(0, 8).map((record, index) => `${index + 1}. ${record.name || '@'} ${record.type || '-'} ${record.value || ''}`).join('\n')
+  const preview = pendingImportRecords.value
+    .slice(0, 8)
+    .map((record, index) => `${index + 1}. ${record.name || '@'} ${record.type || '-'} ${record.value || ''}`)
+    .join('\n')
   return pendingImportRecords.value.length > 8
     ? `${preview}\n... 另有 ${pendingImportRecords.value.length - 8} 条`
     : preview
 })
-const pagination = computed(() => tablePagination({
-  current: recordMeta.value.page || 1,
-  pageSize: recordMeta.value.per_page || 20,
-  total: recordMeta.value.total || 0,
-  defaultPageSize: 20,
-}))
+const pagination = computed(() =>
+  tablePagination({
+    current: recordMeta.value.page || 1,
+    pageSize: recordMeta.value.per_page || 20,
+    total: recordMeta.value.total || 0,
+    defaultPageSize: 20,
+  })
+)
 const filteredRecords = computed(() => records.value)
 
 onMounted(async () => {
   await load()
 })
 
-watch(() => props.provider, () => {
-  currentProviderMeta.value = props.providerMeta || null
-  resetAndLoad()
-})
-watch(() => props.domain, () => {
-  resetAndLoad()
-})
-watch(() => props.providerMeta, (value) => {
-  currentProviderMeta.value = value || null
-})
+watch(
+  () => props.provider,
+  () => {
+    currentProviderMeta.value = props.providerMeta || null
+    resetAndLoad()
+  }
+)
+watch(
+  () => props.domain,
+  () => {
+    resetAndLoad()
+  }
+)
+watch(
+  () => props.providerMeta,
+  (value) => {
+    currentProviderMeta.value = value || null
+  }
+)
 watch(keyword, (value) => {
   if (String(value || '').trim() === '' && appliedKeyword.value !== '') {
     applyKeyword()
   }
 })
 
-function routeBase(): string { return providerPath(props.provider) }
+function routeBase(): string {
+  return providerPath(props.provider)
+}
 function resetAndLoad() {
   clearSelection()
   editing.value = null
@@ -159,16 +231,15 @@ function handleTableChange(pagination: { current?: number; pageSize?: number }) 
   load()
 }
 async function load(options: Record<string, unknown> = {}) {
-  const requestToken = loadRequestToken + 1
-  loadRequestToken = requestToken
+  const requestToken = loadTask.next()
   loading.value = true
   try {
     if (!currentProviderMeta.value) {
       const providers = await loadProviders()
-      if (requestToken !== loadRequestToken) return
+      if (!loadTask.isCurrent(requestToken)) return
       currentProviderMeta.value = providers.find((provider) => provider.id === props.provider) || null
     }
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     currentDomainName.value = decodedDomain.value
     const response = await dnsApi.records(props.provider, recordsTarget.value, {
       page: recordMeta.value.page,
@@ -176,20 +247,20 @@ async function load(options: Record<string, unknown> = {}) {
       keyword: appliedKeyword.value,
       ...options,
     })
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     records.value = response.data
     recordMeta.value = mergePaginationMeta(recordMeta.value, response.meta || {})
     providerHook.value = resolveProviderHook(providerType.value)
     lines.value = (providerHook.value.recordLines as Array<{ label: string; value: string }>) || []
   } catch (error) {
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     if (shouldReturnToDomains(error as { code?: string })) {
       await returnToDomains()
       return
     }
     message.error(errorMessage(error))
   } finally {
-    if (requestToken === loadRequestToken) loading.value = false
+    if (loadTask.isCurrent(requestToken)) loading.value = false
   }
 }
 function shouldReturnToDomains(error: { code?: string }) {
@@ -206,11 +277,19 @@ async function returnToDomains() {
   const path = providerPath(props.provider)
   message.warning('当前域名未添加解析，已返回域名列表。')
   await router.replace(path).catch(() => {})
-  if (router.currentRoute.value.path !== path) window.location.hash = '#' + path
 }
-function edit(record: Record<string, unknown>) { editing.value = { ...record }; showForm.value = true }
-function create() { editing.value = null; showForm.value = true }
-function clearSelection() { selectedRecords.value = []; selectionResetKey.value += 1 }
+function edit(record: Record<string, unknown>) {
+  editing.value = { ...record }
+  showForm.value = true
+}
+function create() {
+  editing.value = null
+  showForm.value = true
+}
+function clearSelection() {
+  selectedRecords.value = []
+  selectionResetKey.value += 1
+}
 async function handleRefresh() {
   await load({ refresh: true })
   message.success('已刷新')
@@ -324,7 +403,11 @@ async function loadAllRecordsForImport() {
   const perPage = 20
 
   while (true) {
-    const response = await dnsApi.records(props.provider, recordsTarget.value, { page, per_page: perPage, refresh: page === 1 })
+    const response = await dnsApi.records(props.provider, recordsTarget.value, {
+      page,
+      per_page: perPage,
+      refresh: page === 1,
+    })
     all.push(...response.data)
     const totalPages = Number(response.meta?.total_pages || 1)
     if (page >= totalPages) break
@@ -335,7 +418,9 @@ async function loadAllRecordsForImport() {
 }
 function importMatchKey(record: Record<string, unknown>) {
   const type = String(record.type || record.record_type || '').toUpperCase()
-  const name = String(record.name || record.subdomain || '@').trim().toLowerCase()
+  const name = String(record.name || record.subdomain || '@')
+    .trim()
+    .toLowerCase()
   const line = String(record.line || record.record_line || '默认').trim()
   return `${name}__${type}__${line}`
 }
@@ -350,7 +435,9 @@ async function batchImport(records: Record<string, unknown>[], mode = 'create') 
   const failed: string[] = []
   try {
     const existingRecords = mode === 'overwrite' ? await loadAllRecordsForImport() : []
-    const existingMap = new Map<string, Record<string, unknown>>(existingRecords.map((record) => [importMatchKey(record), record]))
+    const existingMap = new Map<string, Record<string, unknown>>(
+      existingRecords.map((record) => [importMatchKey(record), record])
+    )
 
     for (const [index, record] of records.entries()) {
       deletingText.value = `正在导入 ${index + 1}/${records.length}`
@@ -358,11 +445,19 @@ async function batchImport(records: Record<string, unknown>[], mode = 'create') 
         const key = importMatchKey(record)
         const existing = mode === 'overwrite' ? existingMap.get(key) : null
         if (existing?.id) {
-          const updated = await dnsApi.updateRecord(props.provider, recordsTarget.value, existing.id as string, { ...existing, ...record }, { zoneName: displayDomain.value })
+          const updated = await dnsApi.updateRecord(
+            props.provider,
+            recordsTarget.value,
+            existing.id as string,
+            { ...existing, ...record },
+            { zoneName: displayDomain.value }
+          )
           const updatedData = (updated?.data as Record<string, unknown>) || existing
           existingMap.set(key, { ...updatedData, ...record, id: (updatedData.id as string) || (existing.id as string) })
         } else {
-          const created = await dnsApi.createRecord(props.provider, recordsTarget.value, record, { zoneName: displayDomain.value })
+          const created = await dnsApi.createRecord(props.provider, recordsTarget.value, record, {
+            zoneName: displayDomain.value,
+          })
           existingMap.set(key, { ...record, id: ((created?.data as Record<string, unknown>)?.id as string) || '' })
         }
       } catch (error) {

@@ -1,8 +1,12 @@
 import { defineAsyncComponent } from 'vue'
 import { providerBrand } from '@/providers/branding'
 
-const CloudflaredView = defineAsyncComponent(() => import(/* webpackChunkName: "cloudflared-view" */ './views/CloudflaredView.vue'))
-const CloudflaredDetailView = defineAsyncComponent(() => import(/* webpackChunkName: "cloudflared-detail" */ './views/CloudflaredDetailView.vue'))
+const CloudflaredView = defineAsyncComponent(
+  () => import(/* webpackChunkName: "cloudflared-view" */ './views/CloudflaredView.vue')
+)
+const CloudflaredDetailView = defineAsyncComponent(
+  () => import(/* webpackChunkName: "cloudflared-detail" */ './views/CloudflaredDetailView.vue')
+)
 import { providerPath } from '@/routes/paths'
 import type { Provider, ProviderModule, RouteEntry } from '@/types'
 
@@ -30,14 +34,16 @@ const module: ProviderModule = {
   },
   cards(provider: Provider) {
     const brand = providerBrand('cloudflared')
-    return [{
-      ...provider,
-      path: providerPath(provider.id),
-      description: '管理 Cloudflare Tunnel 隧道与路由',
-      tag: 'Cloudflare Tunnel',
-      color: brand.color,
-      avatarColor: brand.avatarColor,
-    }]
+    return [
+      {
+        ...provider,
+        path: providerPath(provider.id),
+        description: '管理 Cloudflare Tunnel 隧道与路由',
+        tag: 'Cloudflare Tunnel',
+        color: brand.color,
+        avatarColor: brand.avatarColor,
+      },
+    ]
   },
 }
 

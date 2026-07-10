@@ -1,10 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { authRequired } from '../middleware/auth-required.js'
-import {
-  providerStoreSchema,
-  providerUpdateSchema,
-  providerSortSchema,
-} from '../schemas/provider.js'
+import { providerStoreSchema, providerUpdateSchema, providerSortSchema } from '../schemas/provider.js'
 import {
   definitionsIndex,
   providerIndex,
@@ -16,8 +11,6 @@ import {
 } from '../controllers/provider/provider-controller.js'
 
 export async function providerRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authRequired)
-
   app.get('/providers/definitions', definitionsIndex)
   app.get('/providers', providerIndex)
   app.post('/providers', { schema: { body: providerStoreSchema } }, providerStore)

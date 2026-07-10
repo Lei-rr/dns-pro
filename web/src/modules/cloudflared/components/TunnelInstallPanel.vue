@@ -11,7 +11,21 @@
     <ol style="padding-left: 20px; margin: 0">
       <li v-for="(step, index) in steps" :key="index" style="margin-bottom: 12px">
         <div style="margin-bottom: 6px">{{ step.text }}</div>
-        <div v-if="step.command" style="position: relative; background: #1f1f1f; color: #f0f0f0; padding: 12px 44px 12px 14px; border-radius: 6px; word-break: break-all; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.6">
+        <div
+          v-if="step.command"
+          style="
+            position: relative;
+            background: #1f1f1f;
+            color: #f0f0f0;
+            padding: 12px 44px 12px 14px;
+            border-radius: 6px;
+            word-break: break-all;
+            white-space: pre-wrap;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.6;
+          "
+        >
           <CopyButton :value="step.command" style="position: absolute; top: 6px; right: 6px" />
           {{ step.command }}
         </div>
@@ -77,13 +91,14 @@ const steps = computed(() => {
   }
 
   if (os.value === 'debian') {
-    const install = '# 添加 Cloudflare GPG key\n'
-      + 'sudo mkdir -p --mode=0755 /usr/share/keyrings\n'
-      + 'curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null\n'
-      + '# 添加 apt 源\n'
-      + "echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list\n"
-      + '# 安装 cloudflared\n'
-      + 'sudo apt-get update && sudo apt-get install cloudflared'
+    const install =
+      '# 添加 Cloudflare GPG key\n' +
+      'sudo mkdir -p --mode=0755 /usr/share/keyrings\n' +
+      'curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null\n' +
+      '# 添加 apt 源\n' +
+      "echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main' | sudo tee /etc/apt/sources.list.d/cloudflared.list\n" +
+      '# 安装 cloudflared\n' +
+      'sudo apt-get update && sudo apt-get install cloudflared'
     return [
       { text: '安装 cloudflared：', command: install },
       { text: '安装为系统服务：', command: `sudo cloudflared service install ${token}` },
@@ -92,10 +107,11 @@ const steps = computed(() => {
   }
 
   if (os.value === 'redhat') {
-    const install = '# 添加 cloudflared.repo\n'
-      + 'curl -fsSl https://pkg.cloudflare.com/cloudflared-ascii.repo | sudo tee /etc/yum.repos.d/cloudflared.repo\n'
-      + '# 更新源并安装\n'
-      + 'sudo yum update && sudo yum install cloudflared'
+    const install =
+      '# 添加 cloudflared.repo\n' +
+      'curl -fsSl https://pkg.cloudflare.com/cloudflared-ascii.repo | sudo tee /etc/yum.repos.d/cloudflared.repo\n' +
+      '# 更新源并安装\n' +
+      'sudo yum update && sudo yum install cloudflared'
     return [
       { text: '安装 cloudflared：', command: install },
       { text: '安装为系统服务：', command: `sudo cloudflared service install ${token}` },
@@ -104,7 +120,10 @@ const steps = computed(() => {
   }
 
   return [
-    { text: '通过 Docker 运行隧道：', command: `docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${token}` },
+    {
+      text: '通过 Docker 运行隧道：',
+      command: `docker run cloudflare/cloudflared:latest tunnel --no-autoupdate run --token ${token}`,
+    },
   ]
 })
 

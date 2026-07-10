@@ -7,35 +7,80 @@
         <a-typography-text type="secondary">EdgeOne 加速域名</a-typography-text>
       </div>
       <div class="page-actions">
-        <a-button :loading="loading" :disabled="saving || deleting || statusUpdating" @click="load({ refresh: true })">刷新</a-button>
-        <a-button v-if="!notFound" type="primary" :disabled="saving || deleting || statusUpdating || !displayZoneName" @click="create">添加加速域名</a-button>
+        <a-button :loading="loading" :disabled="saving || deleting || statusUpdating" @click="load({ refresh: true })"
+          >刷新</a-button
+        >
+        <a-button
+          v-if="!notFound"
+          type="primary"
+          :disabled="saving || deleting || statusUpdating || !displayZoneName"
+          @click="create"
+          >添加加速域名</a-button
+        >
       </div>
     </div>
     <a-result v-if="notFound" status="404" title="站点不存在或未配置" :sub-title="decodedZoneId">
       <template #extra><a-button type="primary" @click="router.push(zonesPath)">返回 EdgeOne</a-button></template>
     </a-result>
     <template v-else>
-    <BatchToolbar :count="selectedRecords.length" :deleting="deleting || statusUpdating" delete-text="批量删除" :delete-disabled="batchDeleteDisabled" :actions="[{ key: 'offline', label: '批量停用', loading: statusUpdating, disabled: selectedRecords.every(record => record.status === 'offline') }]" @delete="askBatchRemove" @action="key => { if (key === 'offline') askBatchDisable() }" @clear="clearSelection" />
-    <EdgeOneRecordTable
-      :records="records"
-      :loading="loading"
-      :pagination="pagination"
-      :selection-reset-key="selectionResetKey"
-      :actions-disabled="saving || deleting || statusUpdating"
-      empty-text="暂无匹配的加速域名"
-      @edit="edit"
-      @status="askStatus"
-      @certificate="configureCertificate"
-      @delete="askRemove"
-      @change="handleTableChange"
-      @selection-change="selectedRecords = $event"
-    />
-    <a-modal v-model:open="showForm" :title="editing ? '编辑加速域名' : '添加加速域名'" :footer="null" destroy-on-close>
-      <EdgeOneRecordForm :model-value="editing" :saving="saving" :zone-name="displayZoneName" :dnspod-linked="dnspodLinked" @save="save" @cancel="showForm = false" />
-    </a-modal>
-    <a-modal v-model:open="showCertForm" title="HTTPS 配置" :footer="null" destroy-on-close>
-      <EdgeOneCertificateForm :model-value="certEditing" :saving="saving" @save="saveCertificate" @cancel="showCertForm = false" />
-    </a-modal>
+      <BatchToolbar
+        :count="selectedRecords.length"
+        :deleting="deleting || statusUpdating"
+        delete-text="批量删除"
+        :delete-disabled="batchDeleteDisabled"
+        :actions="[
+          {
+            key: 'offline',
+            label: '批量停用',
+            loading: statusUpdating,
+            disabled: selectedRecords.every((record) => record.status === 'offline'),
+          },
+        ]"
+        @delete="askBatchRemove"
+        @action="
+          (key) => {
+            if (key === 'offline') askBatchDisable()
+          }
+        "
+        @clear="clearSelection"
+      />
+      <EdgeOneRecordTable
+        :records="records"
+        :loading="loading"
+        :pagination="pagination"
+        :selection-reset-key="selectionResetKey"
+        :actions-disabled="saving || deleting || statusUpdating"
+        empty-text="暂无匹配的加速域名"
+        @edit="edit"
+        @status="askStatus"
+        @certificate="configureCertificate"
+        @delete="askRemove"
+        @change="handleTableChange"
+        @selection-change="selectedRecords = $event"
+      />
+      <a-modal
+        v-model:open="showForm"
+        :title="editing ? '编辑加速域名' : '添加加速域名'"
+        :footer="null"
+        destroy-on-close
+      >
+        <EdgeOneRecordForm
+          :model-value="editing"
+          :saving="saving"
+          :zone-name="displayZoneName"
+          :dnspod-linked="dnspodLinked"
+          @save="save"
+          @cancel="showForm = false"
+        />
+      </a-modal>
+      <a-modal v-model:open="showCertForm" title="HTTPS 配置" :footer="null" destroy-on-close>
+        <EdgeOneCertificateForm
+          :model-value="certEditing"
+          :saving="saving"
+          @save="saveCertificate"
+          @cancel="showCertForm = false"
+        />
+      </a-modal>
     </template>
   </section>
 </template>
@@ -47,6 +92,7 @@ import { edgeOneApi } from '../utils/api'
 import { providerPath } from '@/routes/paths'
 import { loadProviders } from '@/stores/providers'
 import { message, modal } from '@/shared/plugins/antDesignVue'
+import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import { tablePagination } from '@/shared/utils/pagination'
 import { showBatchFailures } from '@/shared/utils/batch'
@@ -80,25 +126,38 @@ const deletingText = ref('')
 const statusUpdatingText = ref('')
 const providerMeta = ref<Provider | null>(null)
 const zoneMeta = ref<Record<string, unknown> | null>(null)
-let loadRequestToken = 0
+const loadTask = useLatestTask()
 
 const decodedZoneId = computed(() => decodeURIComponent(props.zoneId))
 const displayZoneName = computed(() => (zoneMeta.value?.name as string) || '')
 const zonesPath = computed(() => providerPath(props.provider))
 const dnspodLinked = computed(() => Boolean(providerMeta.value?.dnspod_provider))
-const pagination = computed(() => tablePagination({
-  current: recordMeta.value.page || 1,
-  pageSize: recordMeta.value.per_page || 20,
-  total: recordMeta.value.total || 0,
-}))
+const pagination = computed(() =>
+  tablePagination({
+    current: recordMeta.value.page || 1,
+    pageSize: recordMeta.value.per_page || 20,
+    total: recordMeta.value.total || 0,
+  })
+)
 const batchDeleteDisabled = computed(() => selectedRecords.value.some((record) => record.status !== 'offline'))
 
 onMounted(async () => {
   await load()
 })
 
-watch(() => props.provider, () => { providerMeta.value = null; resetAndLoad() })
-watch(() => props.zoneId, () => { resetAndLoad() })
+watch(
+  () => props.provider,
+  () => {
+    providerMeta.value = null
+    resetAndLoad()
+  }
+)
+watch(
+  () => props.zoneId,
+  () => {
+    resetAndLoad()
+  }
+)
 
 function resetAndLoad() {
   clearSelection()
@@ -114,37 +173,36 @@ function resetAndLoad() {
 async function ensureZoneMeta(requestToken: number) {
   if (zoneMeta.value) return
   const response = await edgeOneApi.zone(props.provider, decodedZoneId.value)
-  if (requestToken !== loadRequestToken) return
+  if (!loadTask.isCurrent(requestToken)) return
   zoneMeta.value = (response.data as Record<string, unknown>) || null
 }
 function handleTableChange(pagination: { current?: number; pageSize?: number }) {
   const nextPerPage = Number(pagination?.pageSize) || recordMeta.value.per_page || 20
   const pageSizeChanged = nextPerPage !== recordMeta.value.per_page
-  const nextPage = pageSizeChanged ? 1 : (Number(pagination?.current) || 1)
+  const nextPage = pageSizeChanged ? 1 : Number(pagination?.current) || 1
   if (nextPage === recordMeta.value.page && nextPerPage === recordMeta.value.per_page) return
   recordMeta.value = { ...recordMeta.value, page: nextPage, per_page: nextPerPage }
   load()
 }
 async function load(options: Record<string, unknown> = {}) {
-  const requestToken = loadRequestToken + 1
-  loadRequestToken = requestToken
+  const requestToken = loadTask.next()
   loading.value = true
   try {
     notFound.value = false
     if (!providerMeta.value) {
       const providers = await loadProviders()
-      if (requestToken !== loadRequestToken) return
+      if (!loadTask.isCurrent(requestToken)) return
       providerMeta.value = providers.find((p) => p.id === props.provider) || null
     }
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     await ensureZoneMeta(requestToken)
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     const response = await edgeOneApi.accelerationDomains(props.provider, decodedZoneId.value, {
       page: recordMeta.value.page,
       per_page: recordMeta.value.per_page,
       ...options,
     })
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     records.value = response.data
     recordMeta.value = {
       page: (response.meta as Record<string, number>)?.page || recordMeta.value.page,
@@ -153,7 +211,7 @@ async function load(options: Record<string, unknown> = {}) {
     }
     if (options.refresh) message.success('已刷新')
   } catch (error) {
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     const e = error as { status?: number; code?: string }
     if (Number(e.status) === 404 || e.code === 'edgeone_zone_not_found') {
       records.value = []
@@ -163,13 +221,25 @@ async function load(options: Record<string, unknown> = {}) {
 
     message.error(errorMessage(error))
   } finally {
-    if (requestToken === loadRequestToken) loading.value = false
+    if (loadTask.isCurrent(requestToken)) loading.value = false
   }
 }
-function edit(record: Record<string, unknown>) { editing.value = { ...record }; showForm.value = true }
-function create() { editing.value = null; showForm.value = true }
-function clearSelection() { selectedRecords.value = []; selectionResetKey.value += 1 }
-function configureCertificate(record: Record<string, unknown>) { certEditing.value = { ...record }; showCertForm.value = true }
+function edit(record: Record<string, unknown>) {
+  editing.value = { ...record }
+  showForm.value = true
+}
+function create() {
+  editing.value = null
+  showForm.value = true
+}
+function clearSelection() {
+  selectedRecords.value = []
+  selectionResetKey.value += 1
+}
+function configureCertificate(record: Record<string, unknown>) {
+  certEditing.value = { ...record }
+  showCertForm.value = true
+}
 async function save(form: Record<string, unknown>) {
   saving.value = true
   try {
@@ -178,8 +248,10 @@ async function save(form: Record<string, unknown>) {
       message.success('加速域名已更新')
     } else {
       const { autoSync, ...payload } = form
-      const result = await edgeOneApi.createAccelerationDomain(props.provider, decodedZoneId.value, payload, { autoSync })
-      const sync = (result?.data as Record<string, unknown>)?.side_effects as { dns?: { sync?: { status?: string; message?: string } } }
+      const result = await edgeOneApi.createAccelerationDomain(props.provider, decodedZoneId.value, payload, {
+        autoSync,
+      })
+      const sync = result.side_effects as { dns?: { sync?: { status?: string; message?: string } } } | undefined
       if (autoSync && sync?.dns?.sync && sync.dns.sync.status === 'failed') {
         message.warning(`加速域名已添加，CNAME 同步失败：${sync.dns.sync.message || '-'}`)
       } else if (autoSync && sync?.dns?.sync && sync.dns.sync.status === 'skipped') {
@@ -281,7 +353,11 @@ function askBatchDisable() {
 }
 function batchStatusConfirmContent(total: number) {
   const base = `确认停用已选的 ${total} 个加速域名？`
-  return h('div', { style: 'white-space: pre-wrap' }, statusUpdatingText.value ? `${base}\n\n${statusUpdatingText.value}` : base)
+  return h(
+    'div',
+    { style: 'white-space: pre-wrap' },
+    statusUpdatingText.value ? `${base}\n\n${statusUpdatingText.value}` : base
+  )
 }
 function updateBatchStatusDialog(dialog: ReturnType<typeof modal.confirm> | null, total: number) {
   dialog?.update?.({
@@ -301,9 +377,13 @@ function updateBatchRemoveDialog(dialog: ReturnType<typeof modal.confirm> | null
 async function remove(record: Record<string, unknown>) {
   deleting.value = true
   try {
-    const response = await edgeOneApi.deleteAccelerationDomain(props.provider, decodedZoneId.value, record.name as string)
-    const sideEffects = (response?.data as Record<string, unknown>)?.side_effects as Record<string, unknown> | undefined
-    const dnsEffects = sideEffects?.dns as Record<string, unknown> | undefined
+    const response = await edgeOneApi.deleteAccelerationDomain(
+      props.provider,
+      decodedZoneId.value,
+      record.name as string
+    )
+    const dnsEffects = (response.side_effects as Record<string, unknown> | undefined)?.dns as
+      Record<string, unknown> | undefined
     const cleanup = dnsEffects?.cleanup as Record<string, unknown> | undefined
     const details = cleanup?.details as Record<string, unknown> | undefined
     const cleaned = Number(details?.cleaned || 0)
@@ -340,7 +420,12 @@ async function batchDisable(dialog: ReturnType<typeof modal.confirm> | null, rec
       statusUpdatingText.value = `正在停用 ${index + 1}/${total}`
       updateBatchStatusDialog(dialog, total)
       try {
-        await edgeOneApi.updateAccelerationDomainStatus(props.provider, decodedZoneId.value, record.name as string, 'offline')
+        await edgeOneApi.updateAccelerationDomainStatus(
+          props.provider,
+          decodedZoneId.value,
+          record.name as string,
+          'offline'
+        )
       } catch (error) {
         failed.push(`${record.name}: ${errorMessage(error)}`)
       }

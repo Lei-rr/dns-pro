@@ -14,7 +14,7 @@
     <a-table
       :columns="columns"
       :data-source="tunnels"
-      :row-key="record => record.id"
+      :row-key="tunnelRowKey"
       :loading="loading"
       :pagination="false"
       size="middle"
@@ -24,7 +24,9 @@
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
           <a-space>
-            <a-avatar size="small" :style="{ background: tunnelAvatarColor() }">{{ tunnelAvatar(record.name) }}</a-avatar>
+            <a-avatar size="small" :style="{ background: tunnelAvatarColor() }">{{
+              tunnelAvatar(record.name)
+            }}</a-avatar>
             <router-link :to="detailPath(record)">{{ record.name }}</router-link>
           </a-space>
         </template>
@@ -34,7 +36,9 @@
         <template v-else-if="column.key === 'replicas'">{{ replicaCount(record) }}</template>
         <template v-else-if="column.key === 'type'"><a-tag>cloudflared</a-tag></template>
         <template v-else-if="column.key === 'id'">
-          <a-typography-text :ellipsis="{ tooltip: record.id }" code style="max-width: 260px">{{ record.id }}</a-typography-text>
+          <a-typography-text :ellipsis="{ tooltip: record.id }" code style="max-width: 260px">{{
+            record.id
+          }}</a-typography-text>
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space size="small">
@@ -58,6 +62,7 @@ import { providerAvatarColor } from '@/providers/branding'
 import { statusLabel, statusColor } from '../utils/format'
 import { providerChildPath } from '@/routes/paths'
 import { message, modal } from '@/shared/plugins/antDesignVue'
+import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import TunnelCreateModal from '../components/TunnelCreateModal.vue'
 
@@ -71,8 +76,8 @@ const tunnels = ref<Record<string, unknown>[]>([])
 const loading = ref(true)
 const creating = ref(false)
 const showCreate = ref(false)
-let loadRequestToken = 0
-let contextToken = 0
+const loadTask = useLatestTask()
+const contextTask = useLatestTask()
 
 const columns = computed(() => [
   { title: '名称', dataIndex: 'name', key: 'name', width: 220 },
@@ -87,12 +92,15 @@ onMounted(async () => {
   await load()
 })
 
-watch(() => props.provider, () => {
-  contextToken += 1
-  tunnels.value = []
-  showCreate.value = false
-  load()
-})
+watch(
+  () => props.provider,
+  () => {
+    contextTask.cancel()
+    tunnels.value = []
+    showCreate.value = false
+    load()
+  }
+)
 
 function tunnelAvatar(name: string) {
   return (String(name || '').match(/[a-z0-9]/i)?.[0] || 'T').toUpperCase()
@@ -103,21 +111,23 @@ function tunnelAvatarColor() {
 function detailPath(tunnel: Record<string, unknown>) {
   return providerChildPath(props.provider, tunnel.id as string)
 }
+function tunnelRowKey(tunnel: Record<string, unknown>) {
+  return String(tunnel.id || '')
+}
 
 async function load(options: Record<string, unknown> = {}) {
-  const requestToken = loadRequestToken + 1
-  loadRequestToken = requestToken
+  const requestToken = loadTask.next()
   loading.value = true
   try {
     const response = await cloudflaredApi.tunnels(props.provider, options)
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     tunnels.value = response.data
     if (options.refresh) message.success('已刷新')
   } catch (error) {
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     message.error(errorMessage(error))
   } finally {
-    if (requestToken === loadRequestToken) loading.value = false
+    if (loadTask.isCurrent(requestToken)) loading.value = false
   }
 }
 
@@ -126,20 +136,20 @@ function openCreate() {
 }
 
 async function create(name: string) {
-  const token = contextToken
+  const token = contextTask.next()
   creating.value = true
   try {
     const response = await cloudflaredApi.createTunnel(props.provider, name)
-    if (token !== contextToken) return
+    if (!contextTask.isCurrent(token)) return
     const tunnel = ((response.data as Record<string, unknown>)?.tunnel as Record<string, unknown>) || {}
     showCreate.value = false
     message.success('隧道已创建')
     router.push(detailPath(tunnel))
   } catch (error) {
-    if (token !== contextToken) return
+    if (!contextTask.isCurrent(token)) return
     message.error(errorMessage(error))
   } finally {
-    if (token === contextToken) creating.value = false
+    if (contextTask.isCurrent(token)) creating.value = false
   }
 }
 
@@ -147,25 +157,29 @@ function askDelete(tunnel: Record<string, unknown>) {
   modal.confirm({
     title: '删除隧道',
     content: `确认删除隧道「${tunnel.name}」？`,
-    okText: '删除', okType: 'danger', cancelText: '取消',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
     onOk: () => remove(tunnel),
   })
 }
 
 async function remove(tunnel: Record<string, unknown>) {
-  const token = contextToken
+  const token = contextTask.next()
   try {
     await cloudflaredApi.deleteTunnel(props.provider, tunnel.id as string)
-    if (token !== contextToken) return
+    if (!contextTask.isCurrent(token)) return
     message.success('已删除')
     await load({ refresh: true })
   } catch (error) {
-    if (token !== contextToken) return
+    if (!contextTask.isCurrent(token)) return
     message.error(errorMessage(error))
   }
 }
 
 function replicaCount(tunnel: Record<string, unknown>) {
-  return ((tunnel.connections as Array<{ is_pending_reconnect?: boolean }>) || []).filter((c) => !c.is_pending_reconnect).length
+  return ((tunnel.connections as Array<{ is_pending_reconnect?: boolean }>) || []).filter(
+    (c) => !c.is_pending_reconnect
+  ).length
 }
 </script>

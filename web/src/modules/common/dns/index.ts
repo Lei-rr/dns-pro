@@ -45,14 +45,16 @@ export function createDnsModule({
     cards(provider: Provider) {
       const text = typeof description === 'function' ? description(provider) : description || `管理 ${provider.name}`
       const brand = providerBrand(providerType)
-      return [{
-        ...provider,
-        path: providerPath(provider.id),
-        description: text,
-        tag: provider.name,
-        color: color || brand.color,
-        avatarColor: avatarColor || brand.avatarColor,
-      }]
+      return [
+        {
+          ...provider,
+          path: providerPath(provider.id),
+          description: text,
+          tag: provider.name,
+          color: color || brand.color,
+          avatarColor: avatarColor || brand.avatarColor,
+        },
+      ]
     },
   }
 }

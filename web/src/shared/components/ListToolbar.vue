@@ -2,7 +2,9 @@
   <div class="page-toolbar">
     <div>
       <a-button v-if="backText" type="link" style="padding: 0" @click="$emit('back')">{{ backText }}</a-button>
-      <a-typography-title :level="3" :style="backText ? { margin: '4px 0' } : { marginBottom: '4px' }">{{ title }}</a-typography-title>
+      <a-typography-title :level="3" :style="backText ? { margin: '4px 0' } : { marginBottom: '4px' }">{{
+        title
+      }}</a-typography-title>
       <a-typography-text v-if="subtitle" type="secondary">{{ subtitle }}</a-typography-text>
     </div>
     <div class="page-actions">

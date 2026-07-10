@@ -1,5 +1,14 @@
 <template>
-  <a-modal :open="open" @update:open="v => $emit('update:open', v)" :title="title" :confirm-loading="confirmLoading" :ok-button-props="{ disabled: !canSubmit }" :ok-text="okText" cancel-text="取消" @ok="submit">
+  <a-modal
+    :open="open"
+    @update:open="emitOpen"
+    :title="title"
+    :confirm-loading="confirmLoading"
+    :ok-button-props="{ disabled: !canSubmit }"
+    :ok-text="okText"
+    cancel-text="取消"
+    @ok="submit"
+  >
     <a-form layout="vertical">
       <a-typography-title :level="5">主机名设置</a-typography-title>
       <a-form-item v-if="editing || !usesGuidedHostname" label="主机名" required>
@@ -21,7 +30,13 @@
           </a-col>
           <a-col :span="12">
             <a-form-item label="同步域名">
-              <a-select v-model:value="form.sync_zone" :options="activeSyncZones.map(zone => ({ label: zone.name, value: zone.name }))" placeholder="选择域名" show-search option-filter-prop="label" />
+              <a-select
+                v-model:value="form.sync_zone"
+                :options="activeSyncZones.map((zone) => ({ label: zone.name, value: zone.name }))"
+                placeholder="选择域名"
+                show-search
+                option-filter-prop="label"
+              />
             </a-form-item>
           </a-col>
         </a-row>
@@ -56,7 +71,7 @@
         :help="form.use_custom_origin_server ? '' : '关闭后使用默认回退源'"
       >
         <a-space>
-          <a-typography-title :level="5" style="margin: 0;">自定义源服务器</a-typography-title>
+          <a-typography-title :level="5" style="margin: 0">自定义源服务器</a-typography-title>
           <a-switch v-model:checked="form.use_custom_origin_server" size="small" />
         </a-space>
         <a-auto-complete
@@ -70,17 +85,30 @@
       </a-form-item>
 
       <template v-if="selectedSyncTarget === 'dnspod' || selectedSyncTarget === 'cloudflare_dns'">
-      <a-form-item>
-        <a-space>
-          <a-typography-title :level="5" style="margin: 0;">自动优选</a-typography-title>
-          <a-switch v-model:checked="form.autoPreferred" size="small" />
-        </a-space>
-      </a-form-item>
-      <a-form-item v-if="form.autoPreferred && (selectedSyncTarget === 'dnspod' || selectedSyncTarget === 'cloudflare_dns')" :label="selectedSyncTarget === 'cloudflare_dns' ? '优选域名' : '境内优选 CNAME'">
-        <a-select v-model:value="form.preferred_domain" allow-clear :placeholder="selectedSyncTarget === 'cloudflare_dns' ? '可选；选择后主业务 CNAME 直接指向该优选域名' : '可选；选择后会同步一条 CNAME（线路：境内）'">
-          <a-select-option v-for="opt in preferredOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</a-select-option>
-        </a-select>
-      </a-form-item>
+        <a-form-item>
+          <a-space>
+            <a-typography-title :level="5" style="margin: 0">自动优选</a-typography-title>
+            <a-switch v-model:checked="form.autoPreferred" size="small" />
+          </a-space>
+        </a-form-item>
+        <a-form-item
+          v-if="form.autoPreferred && (selectedSyncTarget === 'dnspod' || selectedSyncTarget === 'cloudflare_dns')"
+          :label="selectedSyncTarget === 'cloudflare_dns' ? '优选域名' : '境内优选 CNAME'"
+        >
+          <a-select
+            v-model:value="form.preferred_domain"
+            allow-clear
+            :placeholder="
+              selectedSyncTarget === 'cloudflare_dns'
+                ? '可选；选择后主业务 CNAME 直接指向该优选域名'
+                : '可选；选择后会同步一条 CNAME（线路：境内）'
+            "
+          >
+            <a-select-option v-for="opt in preferredOptions" :key="opt.value" :value="opt.value">{{
+              opt.label
+            }}</a-select-option>
+          </a-select>
+        </a-form-item>
       </template>
     </a-form>
   </a-modal>
@@ -113,32 +141,53 @@ const emit = defineEmits<{
   (e: 'submit', form: Record<string, unknown>): void
 }>()
 
-const form = ref<Record<string, unknown>>(defaultForm())
+const form = ref<Record<string, unknown>>({})
 
-watch(() => props.open, (value) => {
-  if (value) form.value = defaultForm()
-})
-watch(() => props.dnspodZones, () => ensureSyncDefaults())
-watch(() => props.cloudflareDnsZones, () => ensureSyncDefaults())
-watch(() => form.value.sync_target, (value: string) => {
-  if (!value) return
-  form.value.sync_provider_id = defaultSyncProviderId()
-  form.value.sync_zone = defaultSyncZone()
-})
-watch(() => form.value.sync_provider_id, (value: string) => {
-  if (!value) return
-  form.value.sync_zone = defaultSyncZone(value)
-})
-watch(() => form.value.autoPreferred, (value: boolean) => {
-  if (value && !form.value.preferred_domain) {
-    form.value.preferred_domain = firstPreferred()
+watch(
+  () => props.open,
+  (value) => {
+    if (value) form.value = defaultForm()
   }
-})
-watch(() => props.preferredDomains, () => {
-  if (props.open && form.value.autoPreferred && !form.value.preferred_domain) {
-    form.value.preferred_domain = firstPreferred()
+)
+watch(
+  () => props.dnspodZones,
+  () => ensureSyncDefaults()
+)
+watch(
+  () => props.cloudflareDnsZones,
+  () => ensureSyncDefaults()
+)
+watch(
+  () => String(form.value.sync_target || ''),
+  (value) => {
+    if (!value) return
+    form.value.sync_provider_id = defaultSyncProviderId()
+    form.value.sync_zone = defaultSyncZone()
   }
-})
+)
+watch(
+  () => String(form.value.sync_provider_id || ''),
+  (value) => {
+    if (!value) return
+    form.value.sync_zone = defaultSyncZone(value)
+  }
+)
+watch(
+  () => Boolean(form.value.autoPreferred),
+  (value) => {
+    if (value && !form.value.preferred_domain) {
+      form.value.preferred_domain = firstPreferred()
+    }
+  }
+)
+watch(
+  () => props.preferredDomains,
+  () => {
+    if (props.open && form.value.autoPreferred && !form.value.preferred_domain) {
+      form.value.preferred_domain = firstPreferred()
+    }
+  }
+)
 
 const syncProviderOptions = computed(() => {
   return [
@@ -153,13 +202,15 @@ const syncProviderOptions = computed(() => {
   ]
 })
 const selectedSyncTarget = computed(() => {
-  if ((props.cloudflareDnsProviders || []).some((provider) => provider.id === form.value.sync_provider_id)) return 'cloudflare_dns'
+  if ((props.cloudflareDnsProviders || []).some((provider) => provider.id === form.value.sync_provider_id))
+    return 'cloudflare_dns'
   if ((props.dnspodProviders || []).some((provider) => provider.id === form.value.sync_provider_id)) return 'dnspod'
   return ''
 })
 const activeSyncZones = computed(() => {
   if (selectedSyncTarget.value === 'dnspod') return props.dnspodZones?.[form.value.sync_provider_id as string] || []
-  if (selectedSyncTarget.value === 'cloudflare_dns') return props.cloudflareDnsZones?.[form.value.sync_provider_id as string] || []
+  if (selectedSyncTarget.value === 'cloudflare_dns')
+    return props.cloudflareDnsZones?.[form.value.sync_provider_id as string] || []
   return []
 })
 const syncPlatformLabel = computed(() => {
@@ -170,7 +221,9 @@ const syncPlatformLabel = computed(() => {
 const usesGuidedHostname = computed(() => !props.editing && !!form.value.sync_provider_id)
 const hostnamePreview = computed(() => {
   if (!usesGuidedHostname.value || !form.value.sync_zone) return ''
-  const prefix = String(form.value.hostname_prefix || '').trim().toLowerCase()
+  const prefix = String(form.value.hostname_prefix || '')
+    .trim()
+    .toLowerCase()
   return prefix ? `${prefix}.${form.value.sync_zone}` : String(form.value.sync_zone)
 })
 const preferredOptions = computed(() => {
@@ -179,18 +232,27 @@ const preferredOptions = computed(() => {
     label: (item.domain as string) ?? (item.label as string),
   }))
 })
-const hostnameEmpty = computed(() => !String(usesGuidedHostname.value ? hostnamePreview.value : form.value.hostname || '').trim())
-const originRequired = computed(() => !!form.value.use_custom_origin_server && !String(form.value.custom_origin_server || '').trim())
-const preferredRequired = computed(() => !!form.value.autoPreferred && !String(form.value.preferred_domain || '').trim())
+const hostnameEmpty = computed(
+  () => !String(usesGuidedHostname.value ? hostnamePreview.value : form.value.hostname || '').trim()
+)
+const originRequired = computed(
+  () => !!form.value.use_custom_origin_server && !String(form.value.custom_origin_server || '').trim()
+)
+const preferredRequired = computed(
+  () => !!form.value.autoPreferred && !String(form.value.preferred_domain || '').trim()
+)
 const syncZoneRequired = computed(() => usesGuidedHostname.value && !String(form.value.sync_zone || '').trim())
-const canSubmit = computed(() => !hostnameEmpty.value && !originRequired.value && !syncZoneRequired.value && !preferredRequired.value)
+const canSubmit = computed(
+  () => !hostnameEmpty.value && !originRequired.value && !syncZoneRequired.value && !preferredRequired.value
+)
 
 function firstPreferred(): string {
   return preferredOptions.value[0]?.value || ''
 }
-function defaultSyncZone(providerId = '') {
-  const currentProviderId = providerId || String(form.value?.sync_provider_id || '')
-  const zones = props.dnspodZones?.[currentProviderId] || props.cloudflareDnsZones?.[currentProviderId] || []
+function defaultSyncZone(providerId = ''): string {
+  const currentProviderId: string = providerId || String(form.value?.sync_provider_id || '')
+  const zones: Array<Record<string, unknown>> =
+    props.dnspodZones?.[currentProviderId] || props.cloudflareDnsZones?.[currentProviderId] || []
   return (zones[0]?.name as string) || ''
 }
 function defaultSyncProviderId() {
@@ -199,9 +261,10 @@ function defaultSyncProviderId() {
 function ensureSyncDefaults() {
   if (!props.open || props.editing) return
   if (!form.value.sync_provider_id) form.value.sync_provider_id = defaultSyncProviderId()
-  if (form.value.sync_provider_id && !form.value.sync_zone) form.value.sync_zone = defaultSyncZone(form.value.sync_provider_id as string)
+  if (form.value.sync_provider_id && !form.value.sync_zone)
+    form.value.sync_zone = defaultSyncZone(form.value.sync_provider_id as string)
 }
-function normalizeInitialValue() {
+function normalizeInitialValue(): Record<string, unknown> {
   const current = (props.initialValue as Record<string, unknown>) || {}
   const customOriginServer = String(current.custom_origin_server || '').trim()
 
@@ -210,7 +273,10 @@ function normalizeInitialValue() {
     hostname_prefix: '',
     custom_origin_server: customOriginServer,
     method: String((current.ssl as Record<string, unknown>)?.method || 'txt').trim() || 'txt',
-    min_tls_version: String((((current.ssl as Record<string, unknown>)?.settings as Record<string, unknown>)?.min_tls_version || '1.0')).trim() || '1.0',
+    min_tls_version:
+      String(
+        ((current.ssl as Record<string, unknown>)?.settings as Record<string, unknown>)?.min_tls_version || '1.0'
+      ).trim() || '1.0',
     use_custom_origin_server: customOriginServer !== '',
     autoPreferred: Boolean(current.auto_preferred),
     preferred_domain: String((current.custom_metadata as Record<string, unknown>)?.preferred_domain || '').trim(),
@@ -218,7 +284,7 @@ function normalizeInitialValue() {
     sync_zone: String(current.sync_zone || '').trim(),
   }
 }
-function defaultForm() {
+function defaultForm(): Record<string, unknown> {
   if (props.editing) return normalizeInitialValue()
 
   const syncProviderId = defaultSyncProviderId()
@@ -236,11 +302,14 @@ function defaultForm() {
     sync_zone: defaultSyncZone(syncProviderId),
   }
 }
+form.value = defaultForm()
+
+function emitOpen(value: boolean) {
+  emit('update:open', value)
+}
 function submit() {
   if (!canSubmit.value) return
-  const hostname = usesGuidedHostname.value
-    ? hostnamePreview.value
-    : String(form.value.hostname || '').trim()
+  const hostname = usesGuidedHostname.value ? hostnamePreview.value : String(form.value.hostname || '').trim()
   emit('submit', {
     ...form.value,
     sync_target: selectedSyncTarget.value,

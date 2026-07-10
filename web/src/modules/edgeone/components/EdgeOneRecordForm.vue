@@ -4,7 +4,12 @@
       <a-col :xs="24" :sm="12">
         <a-form-item label="加速域名" required>
           <a-input-group compact>
-            <a-input v-model:value="form.prefix" :disabled="!!modelValue" placeholder="www / * / @" style="width: 45%" />
+            <a-input
+              v-model:value="form.prefix"
+              :disabled="!!modelValue"
+              placeholder="www / * / @"
+              style="width: 45%"
+            />
             <a-input :value="'.' + domainSuffix" disabled style="width: 55%" />
           </a-input-group>
         </a-form-item>
@@ -60,7 +65,12 @@
               <a-radio value="accelerate">{{ hostHeaderAutoText }}</a-radio>
               <a-radio value="custom">自定义</a-radio>
             </a-radio-group>
-            <a-input v-if="form.host_header_mode === 'custom'" v-model:value="form.host_header" placeholder="请输入回源 HOST 头" style="margin-top: 12px" />
+            <a-input
+              v-if="form.host_header_mode === 'custom'"
+              v-model:value="form.host_header"
+              placeholder="请输入回源 HOST 头"
+              style="margin-top: 12px"
+            />
           </template>
           <a-typography-text v-else type="secondary">当前源站类型无需设置。</a-typography-text>
         </a-form-item>
@@ -69,7 +79,9 @@
 
     <a-form-item v-if="dnspodLinked && !modelValue" label="自动同步 DNSPod" style="margin-bottom: 16px">
       <a-switch v-model:checked="form.autoSync" />
-      <a-typography-text v-if="form.autoSync" type="secondary" style="margin-left: 12px">创建后自动添加 CNAME 解析到 DNSPod</a-typography-text>
+      <a-typography-text v-if="form.autoSync" type="secondary" style="margin-left: 12px"
+        >创建后自动添加 CNAME 解析到 DNSPod</a-typography-text
+      >
     </a-form-item>
 
     <div class="modal-form-actions">
@@ -86,7 +98,12 @@
 import { ref, computed, watch } from 'vue'
 import { message } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
-import { recordToFormState, formStateToRecordPayload, fullDomainName, validateEdgeOneRecordForm } from '../utils/recordPayload'
+import {
+  recordToFormState,
+  formStateToRecordPayload,
+  fullDomainName,
+  validateEdgeOneRecordForm,
+} from '../utils/recordPayload'
 
 const props = defineProps<{
   modelValue?: Record<string, unknown> | null
@@ -113,30 +130,40 @@ const form = ref<Record<string, unknown>>({
   autoSync: props.dnspodLinked,
 })
 
-watch(() => props.modelValue, (value) => {
-  const state = recordToFormState(value, props.zoneName || '')
-  state.autoSync = !value && props.dnspodLinked
-  form.value = state
-}, { immediate: true })
+watch(
+  () => props.modelValue,
+  (value) => {
+    const state = recordToFormState(value || undefined, props.zoneName || '')
+    state.autoSync = !value && props.dnspodLinked
+    form.value = state
+  },
+  { immediate: true }
+)
 
 const domainSuffix = computed(() => props.zoneName || '')
 const fullDomainNameComputed = computed(() => {
-  const prefix = String(form.value.prefix || '').trim().toLowerCase()
+  const prefix = String(form.value.prefix || '')
+    .trim()
+    .toLowerCase()
   return fullDomainName(prefix, domainSuffix.value)
 })
 const isWildcardDomain = computed(() => String(form.value.prefix || '').trim() === '*')
 const hostHeaderAutoText = computed(() => {
   if (isWildcardDomain.value) return '使用请求 HOST 作为回源 HOST'
-  return `使用加速域名 ${fullDomainNameComputed.value || ('.' + domainSuffix.value)}`
+  return `使用加速域名 ${fullDomainNameComputed.value || '.' + domainSuffix.value}`
 })
 const originPlaceholder = computed(() => {
-  return ({
-    IP_DOMAIN: '请输入合法的 IP 或域名，例如 1.2.3.4 或 origin.example.com',
-    COS: '请输入 COS 访问域名，例如 bucket-1250000000.cos.ap-guangzhou.myqcloud.com',
-    AWS_S3: '请输入 S3 访问域名',
-    ORIGIN_GROUP: '请输入源站组 ID',
-    VOD: '请输入云点播应用 ID',
-  } as Record<string, string>)[form.value.origin_type as string] || '请输入源站地址或资源 ID'
+  return (
+    (
+      {
+        IP_DOMAIN: '请输入合法的 IP 或域名，例如 1.2.3.4 或 origin.example.com',
+        COS: '请输入 COS 访问域名，例如 bucket-1250000000.cos.ap-guangzhou.myqcloud.com',
+        AWS_S3: '请输入 S3 访问域名',
+        ORIGIN_GROUP: '请输入源站组 ID',
+        VOD: '请输入云点播应用 ID',
+      } as Record<string, string>
+    )[form.value.origin_type as string] || '请输入源站地址或资源 ID'
+  )
 })
 const submitPayload = computed(() => formStateToRecordPayload(form.value, domainSuffix.value))
 const showHostHeader = computed(() => form.value.origin_type === 'IP_DOMAIN')

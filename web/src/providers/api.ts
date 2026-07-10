@@ -8,7 +8,7 @@ const endpoints = {
 
 export const providersApi = {
   configured: async (): Promise<ApiResponse<Provider[]>> => {
-    const response = (await http.get(endpoints.configured)) as ApiResponse<Provider[]>
+    const response = await http.get<Provider[]>(endpoints.configured)
     return {
       ...response,
       data: response.data.map(presentProvider).filter((provider) => provider.configured),

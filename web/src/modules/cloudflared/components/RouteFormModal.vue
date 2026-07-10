@@ -1,9 +1,25 @@
 <template>
-  <a-modal :open="open" @update:open="v => $emit('update:open', v)" :title="title" :confirm-loading="confirmLoading" :ok-button-props="{ disabled: !canSubmit }" ok-text="保存" cancel-text="取消" @ok="submit">
+  <a-modal
+    :open="open"
+    @update:open="emitOpen"
+    :title="title"
+    :confirm-loading="confirmLoading"
+    :ok-button-props="{ disabled: !canSubmit }"
+    ok-text="保存"
+    cancel-text="取消"
+    @ok="submit"
+  >
     <a-form layout="vertical">
       <a-form-item label="域名（Cloudflare 站点）" required>
-        <a-select v-model:value="form.zone_id" placeholder="选择已托管的 Cloudflare 站点" show-search :filter-option="(input, option) => option.label.toLowerCase().includes(input.toLowerCase())">
-          <a-select-option v-for="z in zoneOptions" :key="z.value" :value="z.value" :label="z.label">{{ z.label }}</a-select-option>
+        <a-select
+          v-model:value="form.zone_id"
+          placeholder="选择已托管的 Cloudflare 站点"
+          show-search
+          :filter-option="filterZoneOption"
+        >
+          <a-select-option v-for="z in zoneOptions" :key="z.value" :value="z.value" :label="z.label">{{
+            z.label
+          }}</a-select-option>
         </a-select>
       </a-form-item>
       <a-form-item label="公共主机名" required>
@@ -46,25 +62,38 @@ const emit = defineEmits<{
 const form = ref<Record<string, unknown>>(defaultForm())
 
 const protocols = computed(() => protocolOptions)
-const zoneOptions = computed(() => (props.zones || []).map((zone) => ({ value: zone.id as string, label: zone.name as string, name: zone.name as string })))
+const zoneOptions = computed(() =>
+  (props.zones || []).map((zone) => ({
+    value: zone.id as string,
+    label: zone.name as string,
+    name: zone.name as string,
+  }))
+)
 const selectedZone = computed(() => zoneOptions.value.find((z) => z.value === form.value.zone_id) || null)
 const fullHostname = computed(() => {
-  const prefix = String(form.value.prefix || '').trim().toLowerCase()
+  const prefix = String(form.value.prefix || '')
+    .trim()
+    .toLowerCase()
   const zone = selectedZone.value?.name || ''
   if (!zone) return ''
   if (prefix === '' || prefix === '@') return zone
   return `${prefix}.${zone}`
 })
-const canSubmit = computed(() => Boolean(form.value.zone_id && fullHostname.value && String(form.value.address || '').trim()))
-const title = computed(() => props.initialRoute ? '编辑路由' : '添加路由')
+const canSubmit = computed(() =>
+  Boolean(form.value.zone_id && fullHostname.value && String(form.value.address || '').trim())
+)
+const title = computed(() => (props.initialRoute ? '编辑路由' : '添加路由'))
 
-watch(() => props.open, (value) => {
-  if (value) form.value = defaultForm()
-})
+watch(
+  () => props.open,
+  (value) => {
+    if (value) form.value = defaultForm()
+  }
+)
 
 function matchZone(hostname: string) {
   const fqdn = String(hostname || '').toLowerCase()
-  const sorted = [...(props.zones || [])].sort((a, b) => (String(b.name || '').length) - (String(a.name || '').length))
+  const sorted = [...(props.zones || [])].sort((a, b) => String(b.name || '').length - String(a.name || '').length)
   return sorted.find((z) => z.name && (fqdn === z.name || fqdn.endsWith('.' + z.name))) || null
 }
 function defaultForm() {
@@ -81,6 +110,14 @@ function defaultForm() {
     }
   }
   return { zone_id: '', prefix: '', protocol: 'http', address: '', path: '' }
+}
+function emitOpen(value: boolean) {
+  emit('update:open', value)
+}
+function filterZoneOption(input: string, option?: { label?: string }) {
+  return String(option?.label || '')
+    .toLowerCase()
+    .includes(input.toLowerCase())
 }
 function submit() {
   if (!canSubmit.value) return

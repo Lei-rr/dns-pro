@@ -1,5 +1,14 @@
 <template>
-  <a-modal :open="open" @update:open="v => $emit('update:open', v)" title="创建隧道" :confirm-loading="confirmLoading" :ok-button-props="{ disabled: !canSubmit }" ok-text="创建" cancel-text="取消" @ok="submit">
+  <a-modal
+    :open="open"
+    @update:open="emitOpen"
+    title="创建隧道"
+    :confirm-loading="confirmLoading"
+    :ok-button-props="{ disabled: !canSubmit }"
+    ok-text="创建"
+    cancel-text="取消"
+    @ok="submit"
+  >
     <a-form layout="vertical">
       <a-form-item label="隧道名称" required>
         <a-input v-model:value="name" placeholder="如 home-server / ctyun" @keyup.enter="submit" />
@@ -26,12 +35,18 @@ const emit = defineEmits<{
 
 const name = ref('')
 
-watch(() => props.open, (value) => {
-  if (value) name.value = ''
-})
+watch(
+  () => props.open,
+  (value) => {
+    if (value) name.value = ''
+  }
+)
 
 const canSubmit = computed(() => String(name.value || '').trim().length > 0)
 
+function emitOpen(value: boolean) {
+  emit('update:open', value)
+}
 function submit() {
   if (!canSubmit.value) return
   emit('submit', String(name.value).trim())

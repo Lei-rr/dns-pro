@@ -18,8 +18,8 @@ export function paginationState(defaults: Record<string, unknown> = {}) {
 
 export function nextPaginationState(
   current: { page: number; per_page: number; total: number } & Record<string, number>,
-  pagination: { pageSize?: number; current?: number },
-): { page: number; per_page: number; total: number } & Record<string, number> | null {
+  pagination: { pageSize?: number; current?: number }
+): ({ page: number; per_page: number; total: number } & Record<string, number>) | null {
   const nextPerPage = Number(pagination?.pageSize) || current.per_page || 20
   const pageSizeChanged = nextPerPage !== current.per_page
   const nextPage = pageSizeChanged ? 1 : Number(pagination?.current) || 1
@@ -35,7 +35,11 @@ export function nextPaginationState(
   }
 }
 
-export function mergePaginationMeta(current: Record<string, number>, meta: Record<string, unknown> = {}, fallback: Record<string, unknown> = {}) {
+export function mergePaginationMeta(
+  current: Record<string, number>,
+  meta: Record<string, unknown> = {},
+  fallback: Record<string, unknown> = {}
+) {
   return {
     page: Number(meta.page) || Number(fallback.page) || current.page || 1,
     per_page: Number(meta.per_page) || Number(fallback.per_page) || current.per_page || 20,

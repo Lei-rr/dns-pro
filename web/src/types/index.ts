@@ -26,11 +26,23 @@ export interface ProviderDefinitions {
   labels: Record<string, string>
 }
 
-export interface ApiResponse<T = unknown> {
+export interface ApiSuccessResponse<T = unknown> {
+  code: 0
+  message: 'success'
   data: T
   meta?: Record<string, unknown>
+  side_effects?: Record<string, unknown>
   [key: string]: unknown
 }
+
+export interface ApiErrorResponse {
+  message: string
+  code: string
+  status: number
+  details?: unknown
+}
+
+export type ApiResponse<T = unknown> = ApiSuccessResponse<T>
 
 export interface RouteEntry {
   type: string

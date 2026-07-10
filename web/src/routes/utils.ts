@@ -22,7 +22,11 @@ export function selectedMenuKey(path: string) {
 }
 
 export function providerMenuEntries(provider: Provider) {
-  return providerModule(provider)?.menuEntries?.(provider) || [{ key: provider.id, label: provider.name, path: providerPath(provider.id) }]
+  return (
+    providerModule(provider)?.menuEntries?.(provider) || [
+      { key: provider.id, label: provider.name, path: providerPath(provider.id) },
+    ]
+  )
 }
 
 export function providerCards(provider: Provider) {

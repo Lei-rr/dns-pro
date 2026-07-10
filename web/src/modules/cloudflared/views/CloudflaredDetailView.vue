@@ -19,25 +19,39 @@
         <a-tab-pane key="overview" tab="概览">
           <a-row :gutter="16" style="margin-bottom: 24px">
             <a-col :xs="12" :sm="6">
-              <a-card size="small" :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }">
+              <a-card
+                size="small"
+                :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }"
+              >
                 <a-typography-text type="secondary">活动副本</a-typography-text>
                 <a-typography-title :level="3" style="margin: 4px 0 0">{{ replicaCount }}</a-typography-title>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="6">
-              <a-card size="small" :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }">
+              <a-card
+                size="small"
+                :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }"
+              >
                 <a-typography-text type="secondary">路由</a-typography-text>
                 <a-typography-title :level="3" style="margin: 4px 0 0">{{ routes.length }}</a-typography-title>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="6">
-              <a-card size="small" :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }">
+              <a-card
+                size="small"
+                :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }"
+              >
                 <a-typography-text type="secondary">状态</a-typography-text>
-                <div style="margin-top: 8px"><a-tag :color="statusColor(tunnelStatus)">{{ statusLabel(tunnelStatus) }}</a-tag></div>
+                <div style="margin-top: 8px">
+                  <a-tag :color="statusColor(tunnelStatus)">{{ statusLabel(tunnelStatus) }}</a-tag>
+                </div>
               </a-card>
             </a-col>
             <a-col :xs="12" :sm="6">
-              <a-card size="small" :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }">
+              <a-card
+                size="small"
+                :body-style="{ height: '88px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }"
+              >
                 <a-typography-text type="secondary">运行时间</a-typography-text>
                 <a-typography-title :level="5" style="margin: 4px 0 0">{{ uptime }}</a-typography-title>
               </a-card>
@@ -46,13 +60,21 @@
 
           <template v-if="((tunnel?.connections as unknown[]) || []).length > 0">
             <a-typography-title :level="5">副本</a-typography-title>
-            <a-table :columns="connectionColumns" :data-source="tunnel?.connections" :row-key="r => r.id" :pagination="false" size="small" style="margin-bottom: 24px" />
+            <a-table
+              :columns="connectionColumns"
+              :data-source="tunnel?.connections"
+              :row-key="connectionRowKey"
+              :pagination="false"
+              size="small"
+              style="margin-bottom: 24px"
+            />
           </template>
 
           <a-card size="small" style="margin-bottom: 24px">
             <template #title>安装 cloudflared 连接器</template>
             <a-typography-text v-if="!isConnected" type="secondary" style="display: block; margin-bottom: 12px">
-              要激活此隧道，请在服务器上安装 cloudflared 连接器。每个连接器会创建一个副本，并与 Cloudflare 的网络建立 4 个连接以实现高可用性。
+              要激活此隧道，请在服务器上安装 cloudflared 连接器。每个连接器会创建一个副本，并与 Cloudflare 的网络建立 4
+              个连接以实现高可用性。
             </a-typography-text>
             <a-alert v-else type="success" show-icon message="客户端已连接" style="margin-bottom: 12px" />
             <a-alert v-if="tokenError" type="error" show-icon :message="tokenError" style="margin-bottom: 12px" />
@@ -64,7 +86,11 @@
             <template #title>隧道详情</template>
             <a-descriptions :column="1" bordered size="small">
               <a-descriptions-item label="名称">{{ tunnelName }}</a-descriptions-item>
-              <a-descriptions-item label="隧道 ID"><a-space size="small"><a-typography-text code>{{ tunnelId }}</a-typography-text><CopyButton :value="tunnelId" /></a-space></a-descriptions-item>
+              <a-descriptions-item label="隧道 ID"
+                ><a-space size="small"
+                  ><a-typography-text code>{{ tunnelId }}</a-typography-text
+                  ><CopyButton :value="tunnelId" /></a-space
+              ></a-descriptions-item>
               <a-descriptions-item label="类型">cloudflared</a-descriptions-item>
               <a-descriptions-item label="创建时间">{{ formatDate(tunnel?.created_at as string) }}</a-descriptions-item>
             </a-descriptions>
@@ -84,17 +110,36 @@
             <a-typography-text type="secondary">公共主机名到本地服务的映射</a-typography-text>
             <a-button type="primary" :disabled="!isConnected" @click="openAddRoute">添加路由</a-button>
           </div>
-          <a-alert v-if="!isConnected" type="warning" show-icon message="隧道未连接，请先安装客户端后再配置路由" style="margin-bottom: 16px" />
+          <a-alert
+            v-if="!isConnected"
+            type="warning"
+            show-icon
+            message="隧道未连接，请先安装客户端后再配置路由"
+            style="margin-bottom: 16px"
+          />
           <a-alert v-if="routesError" type="error" show-icon :message="routesError" style="margin-bottom: 16px" />
           <a-alert v-else-if="zonesError" type="warning" show-icon :message="zonesError" style="margin-bottom: 16px" />
-          <a-table :columns="routeColumns" :data-source="routes" :row-key="r => r.hostname + (r.path || '')" :loading="loadingConfig" :pagination="false" size="middle" :locale="{ emptyText: '暂无路由' }">
+          <a-table
+            :columns="routeColumns"
+            :data-source="routes"
+            :row-key="routeRowKey"
+            :loading="loadingConfig"
+            :pagination="false"
+            size="middle"
+            :locale="{ emptyText: '暂无路由' }"
+          >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'path'">{{ record.path || '/' }}</template>
               <template v-else-if="column.key === 'actions'">
                 <a-space size="small">
                   <a style="cursor: pointer" @click="openEditRoute(record)">编辑</a>
                   <a-divider type="vertical" />
-                  <a class="ant-typography ant-typography-danger" style="cursor: pointer" @click="askDeleteRoute(record)">删除</a>
+                  <a
+                    class="ant-typography ant-typography-danger"
+                    style="cursor: pointer"
+                    @click="askDeleteRoute(record)"
+                    >删除</a
+                  >
                 </a-space>
               </template>
             </template>
@@ -120,6 +165,7 @@ import { cloudflaredApi } from '../utils/api'
 import { statusLabel, statusColor } from '../utils/format'
 import { providerPath } from '@/routes/paths'
 import { message, modal } from '@/shared/plugins/antDesignVue'
+import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import CopyButton from '@/shared/components/CopyButton.vue'
 import TunnelInstallPanel from '../components/TunnelInstallPanel.vue'
@@ -150,13 +196,18 @@ const activeTab = ref('overview')
 const showRouteForm = ref(false)
 const editingRoute = ref<Record<string, unknown> | null>(null)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
-let contextToken = 0
+const contextTask = useLatestTask()
 
 const backPath = computed(() => providerPath(props.provider))
 const tunnelName = computed(() => (tunnel.value?.name as string) || '')
 const tunnelStatus = computed(() => (tunnel.value?.status as string) || 'inactive')
 const isConnected = computed(() => tunnelStatus.value === 'healthy' || tunnelStatus.value === 'degraded')
-const replicaCount = computed(() => ((tunnel.value?.connections as Array<{ is_pending_reconnect?: boolean }>) || []).filter((c) => !c.is_pending_reconnect).length)
+const replicaCount = computed(
+  () =>
+    ((tunnel.value?.connections as Array<{ is_pending_reconnect?: boolean }>) || []).filter(
+      (c) => !c.is_pending_reconnect
+    ).length
+)
 const routes = computed(() => (config.value?.routes as Record<string, unknown>[]) || [])
 const uptime = computed(() => {
   const active = tunnel.value?.conns_active_at as string
@@ -188,16 +239,21 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  contextToken += 1
+  contextTask.cancel()
   stopPolling()
 })
 
-watch(() => props.tunnelId, () => reloadContext())
-watch(() => props.provider, () => reloadContext())
+watch(
+  () => props.tunnelId,
+  () => reloadContext()
+)
+watch(
+  () => props.provider,
+  () => reloadContext()
+)
 
 async function reloadContext() {
-  const currentToken = contextToken + 1
-  contextToken = currentToken
+  const currentToken = contextTask.next()
   stopPolling()
   tunnel.value = null
   token.value = ''
@@ -211,43 +267,48 @@ async function reloadContext() {
   await loadAll(currentToken)
 }
 
-async function loadAll(currentToken = contextToken) {
+async function loadAll(currentToken = contextTask.next()) {
   loading.value = true
   try {
-    await Promise.all([loadTunnel(currentToken), loadToken(currentToken), loadRoutes(currentToken), loadZones(currentToken)])
-    if (currentToken !== contextToken) return
+    await Promise.all([
+      loadTunnel(currentToken),
+      loadToken(currentToken),
+      loadRoutes(currentToken),
+      loadZones(currentToken),
+    ])
+    if (!contextTask.isCurrent(currentToken)) return
     startPolling()
   } finally {
-    if (currentToken === contextToken) loading.value = false
+    if (contextTask.isCurrent(currentToken)) loading.value = false
   }
 }
 
 async function refreshAll() {
-  await loadAll(contextToken)
+  await loadAll()
 }
 
-async function loadTunnel(currentToken = contextToken) {
+async function loadTunnel(currentToken = contextTask.current()) {
   try {
     const response = await cloudflaredApi.tunnel(props.provider, props.tunnelId, { refresh: true })
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     tunnel.value = (response.data as Record<string, unknown>) || null
     if (isConnected.value) {
       stopPolling()
     }
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     message.error(errorMessage(error))
   }
 }
 
-async function loadToken(currentToken = contextToken) {
+async function loadToken(currentToken = contextTask.current()) {
   try {
     const response = await cloudflaredApi.tunnelToken(props.provider, props.tunnelId)
-    if (currentToken !== contextToken) return
-    token.value = (response.data as Record<string, unknown>)?.token as string || ''
+    if (!contextTask.isCurrent(currentToken)) return
+    token.value = ((response.data as Record<string, unknown>)?.token as string) || ''
     tokenError.value = ''
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     tokenError.value = (error as Error).message || '无法获取安装命令'
   }
 }
@@ -256,51 +317,53 @@ function askRotateToken() {
   modal.confirm({
     title: '轮换令牌',
     content: '轮换后当前令牌立即失效，所有已连接的副本会断开，需用新令牌重新安装/启动。确认轮换？',
-    okText: '轮换', okType: 'danger', cancelText: '取消',
+    okText: '轮换',
+    okType: 'danger',
+    cancelText: '取消',
     onOk: () => rotateToken(),
   })
 }
 
 async function rotateToken() {
-  const currentToken = contextToken
+  const currentToken = contextTask.current()
   rotating.value = true
   try {
     const response = await cloudflaredApi.rotateToken(props.provider, props.tunnelId)
-    if (currentToken !== contextToken) return
-    token.value = (response.data as Record<string, unknown>)?.token as string || ''
+    if (!contextTask.isCurrent(currentToken)) return
+    token.value = ((response.data as Record<string, unknown>)?.token as string) || ''
     message.success('令牌已轮换，请用新令牌更新所有副本')
     startPolling()
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     message.error(errorMessage(error))
   } finally {
-    if (currentToken === contextToken) rotating.value = false
+    if (contextTask.isCurrent(currentToken)) rotating.value = false
   }
 }
 
-async function loadRoutes(currentToken = contextToken) {
+async function loadRoutes(currentToken = contextTask.current()) {
   loadingConfig.value = true
   try {
     const response = await cloudflaredApi.routes(props.provider, props.tunnelId)
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     config.value = (response.data as Record<string, unknown>) || null
     routesError.value = ''
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     routesError.value = (error as Error).message || '无法加载路由配置'
   } finally {
-    if (currentToken === contextToken) loadingConfig.value = false
+    if (contextTask.isCurrent(currentToken)) loadingConfig.value = false
   }
 }
 
-async function loadZones(currentToken = contextToken) {
+async function loadZones(currentToken = contextTask.current()) {
   try {
     const response = await cloudflaredApi.zones(props.provider)
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     zones.value = response.data
     zonesError.value = ''
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     zonesError.value = (error as Error).message || '无法加载 Cloudflare 站点列表'
   }
 }
@@ -308,14 +371,29 @@ async function loadZones(currentToken = contextToken) {
 function startPolling() {
   stopPolling()
   if (isConnected.value) return
-  pollingTimer = setInterval(() => loadTunnel(contextToken), REFRESH_INTERVAL_MS)
+  pollingTimer = setInterval(() => loadTunnel(contextTask.current()), REFRESH_INTERVAL_MS)
 }
 function stopPolling() {
-  if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null }
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
 }
 
-function openAddRoute() { editingRoute.value = null; showRouteForm.value = true }
-function openEditRoute(route: Record<string, unknown>) { editingRoute.value = { ...route }; showRouteForm.value = true }
+function openAddRoute() {
+  editingRoute.value = null
+  showRouteForm.value = true
+}
+function openEditRoute(route: Record<string, unknown>) {
+  editingRoute.value = { ...route }
+  showRouteForm.value = true
+}
+function connectionRowKey(record: Record<string, unknown>) {
+  return String(record.id || record.client_id || '')
+}
+function routeRowKey(record: Record<string, unknown>) {
+  return String(record.hostname || '') + String(record.path || '')
+}
 
 function notifyDnsOperation(operation: { status?: string; message?: string } | undefined, successFallback: string) {
   if (!operation) {
@@ -337,7 +415,7 @@ function notifyDnsOperation(operation: { status?: string; message?: string } | u
 }
 
 async function saveRoute(form: Record<string, unknown>) {
-  const currentToken = contextToken
+  const currentToken = contextTask.current()
   savingRoute.value = true
   try {
     let response = null
@@ -347,25 +425,27 @@ async function saveRoute(form: Record<string, unknown>) {
         props.tunnelId,
         form,
         editingRoute.value.hostname as string,
-        (editingRoute.value.path as string) || '',
+        (editingRoute.value.path as string) || ''
       )
-      if (currentToken !== contextToken) return
-      const dnsSync = ((response?.data as Record<string, unknown>)?.side_effects as Record<string, unknown>)?.dns as Record<string, unknown> | undefined
+      if (!contextTask.isCurrent(currentToken)) return
+      const dnsSync = (response.side_effects as Record<string, unknown> | undefined)?.dns as
+        Record<string, unknown> | undefined
       notifyDnsOperation(dnsSync?.sync as { status?: string; message?: string } | undefined, '路由已更新')
     } else {
       response = await cloudflaredApi.addRoute(props.provider, props.tunnelId, form)
-      if (currentToken !== contextToken) return
-      const dnsSync = ((response?.data as Record<string, unknown>)?.side_effects as Record<string, unknown>)?.dns as Record<string, unknown> | undefined
+      if (!contextTask.isCurrent(currentToken)) return
+      const dnsSync = (response.side_effects as Record<string, unknown> | undefined)?.dns as
+        Record<string, unknown> | undefined
       notifyDnsOperation(dnsSync?.sync as { status?: string; message?: string } | undefined, '路由已添加')
     }
     showRouteForm.value = false
     editingRoute.value = null
     await loadRoutes()
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     message.error(errorMessage(error))
   } finally {
-    if (currentToken === contextToken) savingRoute.value = false
+    if (contextTask.isCurrent(currentToken)) savingRoute.value = false
   }
 }
 
@@ -373,27 +453,37 @@ function askDeleteRoute(route: Record<string, unknown>) {
   modal.confirm({
     title: '删除路由',
     content: `确认删除 ${route.hostname}${route.path ? ' (' + route.path + ')' : ''} 的路由？`,
-    okText: '删除', okType: 'danger', cancelText: '取消',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
     onOk: () => removeRoute(route),
   })
 }
 
 async function removeRoute(route: Record<string, unknown>) {
-  const currentToken = contextToken
+  const currentToken = contextTask.current()
   try {
     const zone = matchZone(route.hostname as string)
-    const response = await cloudflaredApi.deleteRoute(props.provider, props.tunnelId, route.hostname as string, (route.path as string) || '', (zone?.id as string) || '')
-    if (currentToken !== contextToken) return
-    notifyDnsOperation(((response?.data as Record<string, unknown>)?.side_effects as Record<string, unknown>)?.cleanup as { status?: string; message?: string }, '路由已删除')
+    const response = await cloudflaredApi.deleteRoute(
+      props.provider,
+      props.tunnelId,
+      route.hostname as string,
+      (route.path as string) || '',
+      (zone?.id as string) || ''
+    )
+    if (!contextTask.isCurrent(currentToken)) return
+    const dnsEffects = (response.side_effects as Record<string, unknown> | undefined)?.dns as
+      Record<string, unknown> | undefined
+    notifyDnsOperation(dnsEffects?.cleanup as { status?: string; message?: string } | undefined, '路由已删除')
     await loadRoutes()
   } catch (error) {
-    if (currentToken !== contextToken) return
+    if (!contextTask.isCurrent(currentToken)) return
     message.error(errorMessage(error))
   }
 }
 
 function matchZone(hostname: string) {
-  const sorted = [...zones.value].sort((a, b) => (String(b.name || '').length) - (String(a.name || '').length))
+  const sorted = [...zones.value].sort((a, b) => String(b.name || '').length - String(a.name || '').length)
   return sorted.find((zone) => hostname === zone.name || hostname.endsWith('.' + zone.name)) || null
 }
 

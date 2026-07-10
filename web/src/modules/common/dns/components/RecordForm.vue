@@ -28,7 +28,9 @@
       <a-col v-if="showLine" :xs="24" :sm="12">
         <a-form-item :label="hook.lineLabel">
           <a-select v-model:value="form.line">
-            <a-select-option v-for="line in lineOptions" :key="line.value" :value="line.value">{{ line.label }}</a-select-option>
+            <a-select-option v-for="line in lineOptions" :key="line.value" :value="line.value">{{
+              line.label
+            }}</a-select-option>
           </a-select>
         </a-form-item>
       </a-col>
@@ -83,7 +85,17 @@ const emit = defineEmits<{
   (e: 'delete', form: Record<string, unknown>): void
 }>()
 
-const form = ref<Record<string, unknown>>({ id: '', name: '@', type: 'A', value: '', ttl: 600, priority: '', remark: '', proxied: false, line: '默认' })
+const form = ref<Record<string, unknown>>({
+  id: '',
+  name: '@',
+  type: 'A',
+  value: '',
+  ttl: 600,
+  priority: '',
+  remark: '',
+  proxied: false,
+  line: '默认',
+})
 
 const hook = computed(() => props.providerHook || defaultProviderHook)
 const showTtl = computed(() => hook.value.showTtl as boolean)
@@ -99,10 +111,25 @@ const lineOptions = computed(() => {
   return options
 })
 
-watch(() => props.modelValue, (value) => {
-  form.value = { id: '', name: '@', type: 'A', value: '', ttl: 600, priority: '', remark: '', line: '默认', proxied: false, ...(value || {}) }
-  if (form.value.proxied === undefined) form.value.proxied = false
-}, { immediate: true })
+watch(
+  () => props.modelValue,
+  (value) => {
+    form.value = {
+      id: '',
+      name: '@',
+      type: 'A',
+      value: '',
+      ttl: 600,
+      priority: '',
+      remark: '',
+      line: '默认',
+      proxied: false,
+      ...(value || {}),
+    }
+    if (form.value.proxied === undefined) form.value.proxied = false
+  },
+  { immediate: true }
+)
 
 function submit() {
   const error = validate()

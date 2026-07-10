@@ -1,6 +1,11 @@
 <template>
   <section>
-    <ListToolbar title="EdgeOne" subtitle="选择站点进入安全加速域名管理。" v-model:keyword="keyword" search-placeholder="搜索站点">
+    <ListToolbar
+      title="EdgeOne"
+      subtitle="选择站点进入安全加速域名管理。"
+      v-model:keyword="keyword"
+      search-placeholder="搜索站点"
+    >
       <template #actions>
         <a-button :loading="loading" @click="load({ refresh: true })">刷新</a-button>
       </template>
@@ -8,7 +13,7 @@
     <a-table
       :columns="columns"
       :data-source="filteredZones"
-      :row-key="zone => zone.id"
+      :row-key="zoneRowKey"
       :loading="loading"
       :pagination="pagination"
       size="middle"
@@ -27,12 +32,16 @@
           <a-tag>EdgeOne</a-tag>
         </template>
         <template v-else-if="column.key === 'id'">
-          <a-typography-text :ellipsis="{ tooltip: record.id }" style="max-width: 160px">{{ record.id }}</a-typography-text>
+          <a-typography-text :ellipsis="{ tooltip: record.id }" style="max-width: 160px">{{
+            record.id
+          }}</a-typography-text>
         </template>
         <template v-else-if="column.key === 'area'">{{ areaLabel(record.area) }}</template>
         <template v-else-if="column.key === 'type'">{{ typeLabel(record.type) }}</template>
         <template v-else-if="column.key === 'status'">
-          <a-tag :color="statusColor(record.active_status || record.status)">{{ activeStatusLabel(record.active_status || record.status) }}</a-tag>
+          <a-tag :color="statusColor(record.active_status || record.status)">{{
+            activeStatusLabel(record.active_status || record.status)
+          }}</a-tag>
         </template>
         <template v-else-if="column.key === 'actions'">
           <router-link :to="zoneRoute(record)">管理</router-link>
@@ -49,6 +58,7 @@ import { providerAvatarColor } from '@/providers/branding'
 import { providerChildPath } from '@/routes/paths'
 import ListToolbar from '@/shared/components/ListToolbar.vue'
 import { message } from '@/shared/plugins/antDesignVue'
+import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import { mergePaginationMeta, nextPaginationState, paginationState, tablePagination } from '@/shared/utils/pagination'
 
@@ -60,12 +70,14 @@ const zones = ref<Record<string, unknown>[]>([])
 const zoneMeta = ref(paginationState())
 const keyword = ref('')
 const loading = ref(true)
-let loadRequestToken = 0
+const loadTask = useLatestTask()
 
 const filteredZones = computed(() => {
   const k = keyword.value.trim().toLowerCase()
   if (!k) return zones.value
-  return zones.value.filter((zone) => (zone.name as string).toLowerCase().includes(k) || (zone.id as string).toLowerCase().includes(k))
+  return zones.value.filter(
+    (zone) => (zone.name as string).toLowerCase().includes(k) || (zone.id as string).toLowerCase().includes(k)
+  )
 })
 const columns = computed(() => [
   { title: '站点', dataIndex: 'name', key: 'name', width: 320 },
@@ -76,21 +88,26 @@ const columns = computed(() => [
   { title: '状态', key: 'status', width: 120 },
   { title: '操作', key: 'actions', width: 100, align: 'right' },
 ])
-const pagination = computed(() => tablePagination({
-  current: zoneMeta.value.page || 1,
-  pageSize: zoneMeta.value.per_page || 20,
-  total: zoneMeta.value.total || 0,
-}))
+const pagination = computed(() =>
+  tablePagination({
+    current: zoneMeta.value.page || 1,
+    pageSize: zoneMeta.value.per_page || 20,
+    total: zoneMeta.value.total || 0,
+  })
+)
 
 onMounted(async () => {
   await load()
 })
 
-watch(() => props.provider, () => {
-  zoneMeta.value = paginationState()
-  keyword.value = ''
-  load()
-})
+watch(
+  () => props.provider,
+  () => {
+    zoneMeta.value = paginationState()
+    keyword.value = ''
+    load()
+  }
+)
 
 function handleTableChange(pagination: { current?: number; pageSize?: number }) {
   const next = nextPaginationState(zoneMeta.value, pagination)
@@ -99,8 +116,7 @@ function handleTableChange(pagination: { current?: number; pageSize?: number }) 
   load()
 }
 async function load(options: Record<string, unknown> = {}) {
-  const requestToken = loadRequestToken + 1
-  loadRequestToken = requestToken
+  const requestToken = loadTask.next()
   loading.value = true
   try {
     const response = await edgeOneApi.zones(props.provider, {
@@ -108,19 +124,22 @@ async function load(options: Record<string, unknown> = {}) {
       per_page: zoneMeta.value.per_page,
       ...options,
     })
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     zones.value = response.data
     zoneMeta.value = mergePaginationMeta(zoneMeta.value, response.meta || {})
     if (options.refresh) message.success('已刷新')
   } catch (error) {
-    if (requestToken !== loadRequestToken) return
+    if (!loadTask.isCurrent(requestToken)) return
     message.error(errorMessage(error))
   } finally {
-    if (requestToken === loadRequestToken) loading.value = false
+    if (loadTask.isCurrent(requestToken)) loading.value = false
   }
 }
 function zoneAvatar(zone: string) {
   return (String(zone || '').match(/[a-z0-9]/i)?.[0] || 'E').toUpperCase()
+}
+function zoneRowKey(zone: Record<string, unknown>) {
+  return String(zone.id || '')
 }
 function zoneAvatarColor() {
   return providerAvatarColor('edgeone')
@@ -129,7 +148,20 @@ function areaLabel(value: string) {
   return ({ global: '全球', mainland: '中国大陆', overseas: '海外' } as Record<string, string>)[value] || value || '-'
 }
 function typeLabel(value: string) {
-  return ({ full: 'NS 接入', partial: 'CNAME 接入', noDomainAccess: '无域名接入', dnsPodAccess: 'DNSPod 托管', pages: 'Pages', ai: '边缘推理' } as Record<string, string>)[value] || value || '-'
+  return (
+    (
+      {
+        full: 'NS 接入',
+        partial: 'CNAME 接入',
+        noDomainAccess: '无域名接入',
+        dnsPodAccess: 'DNSPod 托管',
+        pages: 'Pages',
+        ai: '边缘推理',
+      } as Record<string, string>
+    )[value] ||
+    value ||
+    '-'
+  )
 }
 function activeStatusLabel(value: string) {
   return ({ active: '已启用', inactive: '未生效', paused: '已停用' } as Record<string, string>)[value] || value || '-'

@@ -43,7 +43,9 @@ const certificateStatusColors: Record<string, string> = {
 }
 
 export function normalizeStatus(status: string) {
-  return String(status || '').trim().toLowerCase()
+  return String(status || '')
+    .trim()
+    .toLowerCase()
 }
 
 export function certificateStatusLabel(status: string) {

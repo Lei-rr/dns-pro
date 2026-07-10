@@ -13,12 +13,7 @@ import { ApiError } from './support/api-error.js'
 import { error } from './support/api-response.js'
 import { systemRoutes } from './routes/system.js'
 import { authRoutes } from './routes/auth.js'
-import { providerRoutes } from './routes/provider.js'
-import { cloudflareRoutes } from './routes/cloudflare.js'
-import { dnspodRoutes } from './routes/dnspod.js'
-import { saasRoutes } from './routes/saas.js'
-import { edgeOneRoutes } from './routes/edgeone.js'
-import { cloudflaredRoutes } from './routes/cloudflared.js'
+import { protectedRoutes } from './routes/protected.js'
 import './types/session.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -29,6 +24,8 @@ const NO_STORE_HEADERS = {
   Pragma: 'no-cache',
 }
 
+const SESSION_COOKIE_NAME = 'dns_pro_session'
+const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 const SESSION_KEY = crypto.createHash('sha256').update('dns-pro-secure-session').digest()
 
 export function buildApp() {
@@ -52,21 +49,19 @@ export function buildApp() {
 
   app.register(fastifyCookie)
   app.register(fastifySecureSession, {
-    cookieName: 'dns_pro_session',
+    cookieName: SESSION_COOKIE_NAME,
     key: SESSION_KEY,
     cookie: {
       secure: false,
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: SESSION_MAX_AGE_SECONDS,
     },
   })
   app.register(fastifyRateLimit, {
-    max: 10,
+    global: false,
     timeWindow: '1 minute',
     hook: 'preHandler',
-    keyGenerator: (request) => request.ip,
-    allowList: (request) => request.method !== 'POST' || request.url !== '/api/session',
     errorResponseBuilder: () => error('登录过于频繁，请稍后再试', 429, 'rate_limited'),
   })
 
@@ -86,12 +81,7 @@ export function buildApp() {
 
   app.register(systemRoutes, { prefix: '/api' })
   app.register(authRoutes, { prefix: '/api' })
-  app.register(providerRoutes, { prefix: '/api' })
-  app.register(cloudflareRoutes, { prefix: '/api' })
-  app.register(dnspodRoutes, { prefix: '/api' })
-  app.register(saasRoutes, { prefix: '/api' })
-  app.register(edgeOneRoutes, { prefix: '/api' })
-  app.register(cloudflaredRoutes, { prefix: '/api' })
+  app.register(protectedRoutes, { prefix: '/api' })
 
   app.setNotFoundHandler(async (request, reply) => {
     if (request.url.startsWith('/api/')) {

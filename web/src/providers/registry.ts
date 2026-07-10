@@ -10,9 +10,7 @@ import type { Provider, ProviderModule, RouteEntry } from '@/types'
 const providerFrontendModules = [dnspodModule, cloudflareModule, saasModule, edgeOneModule, cloudflaredModule]
 
 const providerModules: Record<string, ProviderModule> = Object.fromEntries(
-  providerFrontendModules
-    .filter((module) => module.providerType)
-    .map((module) => [module.providerType, module])
+  providerFrontendModules.filter((module) => module.providerType).map((module) => [module.providerType, module])
 )
 
 export function providerModule(provider: Provider | null) {

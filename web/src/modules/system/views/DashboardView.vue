@@ -9,7 +9,7 @@
     <a-spin :spinning="loading">
       <a-row :gutter="[16, 16]">
         <a-col v-for="provider in cards" :key="provider.id" :xs="24" :sm="12" :lg="8">
-          <router-link :to="provider.path">
+          <router-link :to="providerPath(provider)">
             <a-card hoverable class="provider-card">
               <a-card-meta :title="provider.name" :description="provider.description">
                 <template #avatar>
@@ -42,4 +42,8 @@ const cards = computed<Array<Provider & Record<string, unknown>>>(() => {
   return (providerStore.providers || []).flatMap((provider: Provider) => providerCards(provider))
 })
 const loading = computed(() => providerStore.loading)
+
+function providerPath(provider: Provider & Record<string, unknown>) {
+  return String(provider.path || '/')
+}
 </script>

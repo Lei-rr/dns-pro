@@ -2,7 +2,7 @@
   <a-table
     :columns="columns"
     :data-source="records"
-    :row-key="record => record.name"
+    :row-key="rowKey"
     :loading="loading"
     :pagination="tablePaginationConfig"
     :row-selection="{ selectedRowKeys: internalSelectedRowKeys, onChange: selectRows }"
@@ -28,22 +28,45 @@
         <a-space direction="vertical" size="small">
           <a-space size="small" wrap>
             <a-tag>{{ originTypeLabel(record.origin?.type) }}</a-tag>
-            <a-typography-text :ellipsis="{ tooltip: record.origin?.value }" style="max-width: var(--table-copy-width)">{{ record.origin?.value || '-' }}</a-typography-text>
+            <a-typography-text
+              :ellipsis="{ tooltip: record.origin?.value }"
+              style="max-width: var(--table-copy-width)"
+              >{{ record.origin?.value || '-' }}</a-typography-text
+            >
           </a-space>
-          <a-typography-text type="secondary">{{ record.origin_protocol || '-' }} · {{ record.http_origin_port || '-' }}{{ record.origin_protocol === 'FOLLOW' ? ' / ' + (record.https_origin_port || '-') : '' }}</a-typography-text>
+          <a-typography-text type="secondary"
+            >{{ record.origin_protocol || '-' }} · {{ record.http_origin_port || '-'
+            }}{{
+              record.origin_protocol === 'FOLLOW' ? ' / ' + (record.https_origin_port || '-') : ''
+            }}</a-typography-text
+          >
         </a-space>
       </template>
       <template v-else-if="column.key === 'ipv6'">
-        <a-tag :color="ipv6Enabled(record.ipv6_status) ? 'green' : 'default'">{{ ipv6Label(record.ipv6_status) }}</a-tag>
+        <a-tag :color="ipv6Enabled(record.ipv6_status) ? 'green' : 'default'">{{
+          ipv6Label(record.ipv6_status)
+        }}</a-tag>
       </template>
       <template v-else-if="column.key === 'https'">
         <a-space size="small" class="nowrap-cell">
           <a-tag :color="httpsColor(record)">{{ httpsLabel(record) }}</a-tag>
-          <a-button type="link" size="small" style="padding: 0" :disabled="actionsDisabled" @click="$emit('certificate', record)">配置</a-button>
+          <a-button
+            type="link"
+            size="small"
+            style="padding: 0"
+            :disabled="actionsDisabled"
+            @click="$emit('certificate', record)"
+            >配置</a-button
+          >
         </a-space>
       </template>
       <template v-else-if="column.key === 'actions'">
-        <TableActions :items="actionItems(record)" :disabled="actionsDisabled" @edit="$emit('edit', record)" @select="action => selectAction(action, record)" />
+        <TableActions
+          :items="actionItems(record)"
+          :disabled="actionsDisabled"
+          @edit="$emit('edit', record)"
+          @select="(action) => selectAction(action, record)"
+        />
       </template>
     </template>
   </a-table>
@@ -55,7 +78,15 @@ import { uniqueFilters } from '@/shared/utils/format'
 import { tablePagination } from '@/shared/utils/pagination'
 import CopyButton from '@/shared/components/CopyButton.vue'
 import TableActions from '@/shared/components/TableActions.vue'
-import { certificateStatusColor, certificateStatusLabel, edgeOneIpv6Labels, edgeOneOriginTypeLabels, edgeOneStatusColors, edgeOneStatusLabels, normalizeStatus } from '../utils/format'
+import {
+  certificateStatusColor,
+  certificateStatusLabel,
+  edgeOneIpv6Labels,
+  edgeOneOriginTypeLabels,
+  edgeOneStatusColors,
+  edgeOneStatusLabels,
+  normalizeStatus,
+} from '../utils/format'
 
 const props = defineProps<{
   records?: Record<string, unknown>[]
@@ -104,8 +135,11 @@ const columns = computed(() => [
     title: '源站',
     key: 'origin',
     width: 320,
-    filters: uniqueFilters((props.records || []).map((record) => (record.origin as Record<string, unknown>)?.value as string)),
-    onFilter: (value: string, record: Record<string, unknown>) => (record.origin as Record<string, unknown>)?.value === value,
+    filters: uniqueFilters(
+      (props.records || []).map((record) => (record.origin as Record<string, unknown>)?.value as string)
+    ),
+    onFilter: (value: string, record: Record<string, unknown>) =>
+      (record.origin as Record<string, unknown>)?.value === value,
   },
   { title: 'IPv6', key: 'ipv6', width: 90 },
   {
@@ -116,18 +150,31 @@ const columns = computed(() => [
       { text: '已配置', value: 'enabled' },
       { text: '未配置', value: 'disabled' },
     ],
-    onFilter: (value: string, record: Record<string, unknown>) => value === 'enabled' ? (record.certificate as Record<string, unknown>)?.mode !== 'disable' : (record.certificate as Record<string, unknown>)?.mode === 'disable',
+    onFilter: (value: string, record: Record<string, unknown>) =>
+      value === 'enabled'
+        ? (record.certificate as Record<string, unknown>)?.mode !== 'disable'
+        : (record.certificate as Record<string, unknown>)?.mode === 'disable',
   },
   { title: '操作', key: 'actions', width: 110, align: 'right' },
 ])
 const tablePaginationConfig = computed(() => props.pagination || tablePagination())
 
-watch(() => props.records, () => {
-  clearSelection()
-})
-watch(() => props.selectionResetKey, () => {
-  clearSelection()
-})
+function rowKey(record: Record<string, unknown>) {
+  return String(record.name || '')
+}
+
+watch(
+  () => props.records,
+  () => {
+    clearSelection()
+  }
+)
+watch(
+  () => props.selectionResetKey,
+  () => {
+    clearSelection()
+  }
+)
 
 function statusColor(status: string) {
   return edgeOneStatusColors[status] || (status ? 'red' : 'default')
@@ -160,15 +207,22 @@ function ipv6Enabled(status: string) {
 function httpsLabel(record: Record<string, unknown>) {
   const mode = (record.certificate as Record<string, unknown>)?.mode || 'disable'
   if (mode === 'disable') return '未配置'
-  const cert = ((record.certificate as Record<string, unknown>)?.items as unknown[]) || ((record.certificate as Record<string, unknown>)?.list as unknown[]) || []
+  const cert =
+    ((record.certificate as Record<string, unknown>)?.items as unknown[]) ||
+    ((record.certificate as Record<string, unknown>)?.list as unknown[]) ||
+    []
   const first = cert[0] as Record<string, unknown>
-  if (first?.status && normalizeStatus(first.status as string) !== 'deployed') return certificateStatusLabel(first.status as string)
+  if (first?.status && normalizeStatus(first.status as string) !== 'deployed')
+    return certificateStatusLabel(first.status as string)
   return '已部署'
 }
 function httpsColor(record: Record<string, unknown>) {
   const mode = (record.certificate as Record<string, unknown>)?.mode || 'disable'
   if (mode === 'disable') return 'default'
-  const cert = ((record.certificate as Record<string, unknown>)?.items as unknown[]) || ((record.certificate as Record<string, unknown>)?.list as unknown[]) || []
+  const cert =
+    ((record.certificate as Record<string, unknown>)?.items as unknown[]) ||
+    ((record.certificate as Record<string, unknown>)?.list as unknown[]) ||
+    []
   const first = cert[0] as Record<string, unknown>
   return certificateStatusColor((first?.status as string) || 'deployed')
 }

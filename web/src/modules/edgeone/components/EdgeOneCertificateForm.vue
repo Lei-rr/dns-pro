@@ -46,25 +46,41 @@ const certificate = computed(() => {
   const list = (certificate.items as unknown[]) || (certificate.list as unknown[]) || []
   return (list[0] as Record<string, unknown>) || null
 })
-const modeText = computed(() => ({ disable: '未配置', eofreecert: 'EdgeOne 免费证书', sslcert: 'SSL 证书 ID' } as Record<string, string>)[form.value.https_mode as string] || (form.value.https_mode as string))
+const modeText = computed(
+  () =>
+    (({ disable: '未配置', eofreecert: 'EdgeOne 免费证书', sslcert: 'SSL 证书 ID' }) as Record<string, string>)[
+      form.value.https_mode as string
+    ] || (form.value.https_mode as string)
+)
 const certificateDetails = computed(() => {
   if (!certificate.value) return []
   return [
     { label: '证书类型', value: certificateTypeLabel(certificate.value.type as string) },
     { label: '自动更新', value: autoRenewText() },
     { label: '到期时间', value: formatTime(certificate.value.expire_time as string) },
-    { label: '状态', value: certificateStatusLabel(certificate.value.status as string), status: certificate.value.status as string },
+    {
+      label: '状态',
+      value: certificateStatusLabel(certificate.value.status as string),
+      status: certificate.value.status as string,
+    },
   ]
 })
 
-watch(() => props.modelValue, (value) => {
-  const certificate = (value?.certificate as Record<string, unknown>) || {}
-  const list = (certificate.items as Array<Record<string, unknown>>) || (certificate.list as Array<Record<string, unknown>>) || []
-  form.value = {
-    https_mode: certificate.mode || 'disable',
-    cert_id: list[0]?.cert_id || '',
-  }
-}, { immediate: true })
+watch(
+  () => props.modelValue,
+  (value) => {
+    const certificate = (value?.certificate as Record<string, unknown>) || {}
+    const list =
+      (certificate.items as Array<Record<string, unknown>>) ||
+      (certificate.list as Array<Record<string, unknown>>) ||
+      []
+    form.value = {
+      https_mode: certificate.mode || 'disable',
+      cert_id: list[0]?.cert_id || '',
+    }
+  },
+  { immediate: true }
+)
 
 function submit() {
   if (showCertId.value && !String(form.value.cert_id || '').trim()) {
@@ -74,7 +90,13 @@ function submit() {
   emit('save', form.value)
 }
 function certificateTypeLabel(type: string) {
-  return ({ default: '免费证书', free: '免费证书', upload: '上传证书', managed: '托管证书' } as Record<string, string>)[type] || type || '-'
+  return (
+    ({ default: '免费证书', free: '免费证书', upload: '上传证书', managed: '托管证书' } as Record<string, string>)[
+      type
+    ] ||
+    type ||
+    '-'
+  )
 }
 function autoRenewText() {
   if (form.value.https_mode === 'eofreecert' || certificate.value?.type === 'default') return '到期前 15 天自动更新'

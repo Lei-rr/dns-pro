@@ -1,4 +1,6 @@
-[v-cloak] { display: none; }
+[v-cloak] {
+  display: none;
+}
 
 /* 全局消息提示：避免被导航栏遮挡（header 高 64px） */
 .ant-message {
@@ -149,7 +151,7 @@ body {
 }
 
 .provider-sort-row-dragging > td {
-  opacity: .45;
+  opacity: 0.45;
 }
 
 .modal-form-actions {
@@ -185,10 +187,10 @@ body {
   width: max-content;
   max-width: calc(100vw - 32px);
   padding: 10px 14px;
-  background: rgba(255, 255, 255, .96);
+  background: rgba(255, 255, 255, 0.96);
   border: 1px solid #e6eaf2;
   border-radius: 999px;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, .14);
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
   color: inherit;
   transform: translateX(-50%);
   backdrop-filter: blur(10px);

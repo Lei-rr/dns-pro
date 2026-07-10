@@ -1,7 +1,7 @@
 <template>
   <a-modal
     :open="open"
-    @update:open="v => $emit('update:open', v)"
+    @update:open="emitOpen"
     :title="'默认回源 · ' + zoneName"
     :confirm-loading="saving"
     :ok-button-props="{ disabled: !canSave }"
@@ -10,12 +10,7 @@
     @ok="save"
   >
     <a-spin :spinning="loading">
-      <a-alert
-        v-if="errorMessages.length"
-        type="error"
-        show-icon
-        style="margin-bottom: 16px"
-      >
+      <a-alert v-if="errorMessages.length" type="error" show-icon style="margin-bottom: 16px">
         <template #description>
           <ul style="margin: 0; padding-left: 18px">
             <li v-for="(msg, i) in errorMessages" :key="i">{{ msg }}</li>
@@ -25,7 +20,9 @@
       <a-form layout="vertical">
         <a-form-item v-if="hasExisting" label="当前状态">
           <a-tag :color="statusColor">{{ statusLabel }}</a-tag>
-          <a-typography-text v-if="hasExisting" type="secondary" style="margin-left: 8px">{{ currentOrigin }}</a-typography-text>
+          <a-typography-text v-if="hasExisting" type="secondary" style="margin-left: 8px">{{
+            currentOrigin
+          }}</a-typography-text>
         </a-form-item>
         <a-form-item label="启用默认回源">
           <a-switch v-model:checked="enabled" />
@@ -34,8 +31,8 @@
           v-if="enabled"
           label="源服务器"
           required
-          :validate-status="(originRequired || originSuffixInvalid) ? 'error' : ''"
-          :help="originError || ('如 origin' + requiredSuffix)"
+          :validate-status="originRequired || originSuffixInvalid ? 'error' : ''"
+          :help="originError || '如 origin' + requiredSuffix"
         >
           <a-input v-model:value="origin" :placeholder="'origin' + requiredSuffix" @press-enter="save" />
         </a-form-item>
@@ -87,7 +84,11 @@ const currentOrigin = ref('')
 const currentStatus = ref('')
 const currentErrors = ref<unknown[]>([])
 
-const trimmedOrigin = computed(() => String(origin.value || '').trim().toLowerCase())
+const trimmedOrigin = computed(() =>
+  String(origin.value || '')
+    .trim()
+    .toLowerCase()
+)
 const requiredSuffix = computed(() => '.' + String(props.zoneName || '').toLowerCase())
 const originRequired = computed(() => enabled.value && !trimmedOrigin.value)
 const originSuffixInvalid = computed(() => {
@@ -107,18 +108,29 @@ const canSave = computed(() => {
   return next !== currentOrigin.value
 })
 const hasExisting = computed(() => !!currentOrigin.value)
-const statusLabel = computed(() => FALLBACK_STATUS_LABELS[currentStatus.value] || (currentStatus.value || '-'))
-const statusColor = computed(() => FALLBACK_STATUS_COLORS[currentStatus.value] || (currentStatus.value ? 'blue' : 'default'))
+const statusLabel = computed(() => FALLBACK_STATUS_LABELS[currentStatus.value] || currentStatus.value || '-')
+const statusColor = computed(
+  () => FALLBACK_STATUS_COLORS[currentStatus.value] || (currentStatus.value ? 'blue' : 'default')
+)
 const errorMessages = computed(() => {
-  return (currentErrors.value || []).map((e) => {
-    if (typeof e === 'string') return e
-    return (e as { message?: string; error?: string }).message || (e as { message?: string; error?: string }).error || JSON.stringify(e)
-  }).filter(Boolean)
+  return (currentErrors.value || [])
+    .map((e) => {
+      if (typeof e === 'string') return e
+      return (
+        (e as { message?: string; error?: string }).message ||
+        (e as { message?: string; error?: string }).error ||
+        JSON.stringify(e)
+      )
+    })
+    .filter(Boolean)
 })
 
-watch(() => props.open, (value) => {
-  if (value) load()
-})
+watch(
+  () => props.open,
+  (value) => {
+    if (value) load()
+  }
+)
 
 async function load() {
   loading.value = true
@@ -163,7 +175,9 @@ function askDelete() {
   modal.confirm({
     title: '删除默认回源',
     content: `确认删除 ${props.zoneName} 的默认回源?删除后,未配置自定义源服务器的主机名将无法回源。`,
-    okText: '删除', okType: 'danger', cancelText: '取消',
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
     onOk: () => doDelete(),
   })
 }
@@ -187,5 +201,8 @@ async function doDelete() {
 }
 function close() {
   emit('update:open', false)
+}
+function emitOpen(value: boolean) {
+  emit('update:open', value)
 }
 </script>

@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify'
-import { authRequired } from '../middleware/auth-required.js'
 import {
   saasListZonesQuerySchema,
   saasListHostnamesQuerySchema,
@@ -32,8 +31,6 @@ import {
 } from '../controllers/saas/preferred-domain-controller.js'
 
 export async function saasRoutes(app: FastifyInstance) {
-  app.addHook('preHandler', authRequired)
-
   app.get('/saas/preferred-domains', preferredDomainsIndex)
   app.post('/saas/preferred-domains', { schema: { body: preferredDomainStoreSchema } }, preferredDomainsStore)
   app.put('/saas/preferred-domains/sort', { schema: { body: preferredDomainSortSchema } }, preferredDomainsSort)
@@ -41,13 +38,37 @@ export async function saasRoutes(app: FastifyInstance) {
   app.delete('/saas/preferred-domains/:domain', preferredDomainsDelete)
 
   app.get('/saas/providers/:providerId/zones', { schema: { querystring: saasListZonesQuerySchema } }, zonesIndex)
-  app.get('/saas/providers/:providerId/zones/:zoneName/hostnames', { schema: { querystring: saasListHostnamesQuerySchema } }, hostnamesIndex)
-  app.post('/saas/providers/:providerId/zones/:zoneName/hostnames', { schema: { body: saasStoreBodySchema } }, hostnamesStore)
-  app.get('/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn', { schema: { querystring: saasShowQuerySchema } }, hostnamesShow)
-  app.put('/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn', { schema: { body: saasUpdateBodySchema } }, hostnamesUpdate)
+  app.get(
+    '/saas/providers/:providerId/zones/:zoneName/hostnames',
+    { schema: { querystring: saasListHostnamesQuerySchema } },
+    hostnamesIndex
+  )
+  app.post(
+    '/saas/providers/:providerId/zones/:zoneName/hostnames',
+    { schema: { body: saasStoreBodySchema } },
+    hostnamesStore
+  )
+  app.get(
+    '/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn',
+    { schema: { querystring: saasShowQuerySchema } },
+    hostnamesShow
+  )
+  app.put(
+    '/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn',
+    { schema: { body: saasUpdateBodySchema } },
+    hostnamesUpdate
+  )
   app.delete('/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesDelete)
   app.post('/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn/refresh', hostnamesRefresh)
-  app.get('/saas/providers/:providerId/zones/:zoneName/fallback-origin', { schema: { querystring: saasShowQuerySchema } }, fallbackOriginShow)
-  app.put('/saas/providers/:providerId/zones/:zoneName/fallback-origin', { schema: { body: saasFallbackOriginBodySchema } }, fallbackOriginUpdate)
+  app.get(
+    '/saas/providers/:providerId/zones/:zoneName/fallback-origin',
+    { schema: { querystring: saasShowQuerySchema } },
+    fallbackOriginShow
+  )
+  app.put(
+    '/saas/providers/:providerId/zones/:zoneName/fallback-origin',
+    { schema: { body: saasFallbackOriginBodySchema } },
+    fallbackOriginUpdate
+  )
   app.delete('/saas/providers/:providerId/zones/:zoneName/fallback-origin', fallbackOriginDelete)
 }

@@ -11,9 +11,7 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "preserve",
-    "strict": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
+    "strict": true,
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {

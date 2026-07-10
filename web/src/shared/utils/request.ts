@@ -1,27 +1,45 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
+import type { ApiResponse } from '@/types'
 
-const http = axios.create({
+export type RequestError = Error & { code: string; details: unknown; status: number }
+
+let unauthorizedHandler: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: () => void) {
+  unauthorizedHandler = handler
+}
+
+const axiosClient = axios.create({
   baseURL: '/api',
   timeout: 120000,
   withCredentials: true,
 })
 
-http.interceptors.response.use(
+axiosClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     const payload = error.response?.data || {}
     const message = payload.message || error.message || '请求失败'
-    const requestError = new Error(message) as Error & { code: string; details: unknown; status: number }
+    const requestError = new Error(message) as RequestError
     requestError.code = payload.code || 'REQUEST_FAILED'
     requestError.details = payload.details || {}
     requestError.status = error.response?.status || 0
-    if (error.response?.status === 401 && location.hash !== '#/login') {
-      window.dispatchEvent(new CustomEvent('auth-invalidated'))
-      location.hash = '#/login'
+    if (requestError.status === 401) {
+      unauthorizedHandler?.()
     }
     return Promise.reject(requestError)
   }
 )
+
+const http = {
+  get: <T = unknown>(url: string, config?: AxiosRequestConfig) => axiosClient.get<unknown, ApiResponse<T>>(url, config),
+  post: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    axiosClient.post<unknown, ApiResponse<T>>(url, data, config),
+  put: <T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) =>
+    axiosClient.put<unknown, ApiResponse<T>>(url, data, config),
+  delete: <T = unknown>(url: string, config?: AxiosRequestConfig) =>
+    axiosClient.delete<unknown, ApiResponse<T>>(url, config),
+}
 
 export function withRefresh(options: Record<string, unknown> = {}) {
   const { refresh, params = {} } = options
@@ -34,9 +52,9 @@ export function withRefresh(options: Record<string, unknown> = {}) {
   return { params: refresh ? { ...queryParams, refresh: 1 } : queryParams }
 }
 
-export function unwrapItems<T>(response: Record<string, unknown>): import('@/types').ApiResponse<T> {
+export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
   if (Array.isArray(response?.data)) {
-    return { ...response, data: response.data as T } as import('@/types').ApiResponse<T>
+    return { ...response, data: response.data as T }
   }
   const data = response?.data as Record<string, unknown> | undefined
   if (Array.isArray(data?.items)) {
@@ -44,9 +62,9 @@ export function unwrapItems<T>(response: Record<string, unknown>): import('@/typ
       ...response,
       data: data.items as T,
       meta: data.meta || data.pagination || data,
-    } as import('@/types').ApiResponse<T>
+    } as ApiResponse<T>
   }
-  return response as import('@/types').ApiResponse<T>
+  return response as ApiResponse<T>
 }
 
 export default http
