@@ -10,6 +10,7 @@ import {
   zoneCacheTag,
 } from '../../support/cache-helpers.js'
 import type { CloudflareProvider } from '../../types/provider.js'
+import { cloudflareZoneSchema } from '../../schemas/cloudflare-responses.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
@@ -202,19 +203,19 @@ export class CloudflareZoneService {
   }
 
   private presentZone(zone: unknown): ZonePresentation {
-    const z = zone as Record<string, unknown>
+    const z = cloudflareZoneSchema.parse(zone)
     return {
-      id: z.id !== undefined ? String(z.id) : null,
-      name: z.name !== undefined ? String(z.name) : null,
-      status: z.status !== undefined ? String(z.status) : null,
-      type: z.type !== undefined ? String(z.type) : null,
-      paused: typeof z.paused === 'boolean' ? z.paused : null,
+      id: z.id ?? null,
+      name: z.name ?? null,
+      status: z.status ?? null,
+      type: z.type ?? null,
+      paused: z.paused ?? null,
       account: z.account ?? null,
-      name_servers: Array.isArray(z.name_servers) ? z.name_servers.map(String) : [],
-      original_name_servers: Array.isArray(z.original_name_servers) ? z.original_name_servers.map(String) : [],
-      created_on: z.created_on !== undefined ? String(z.created_on) : null,
-      modified_on: z.modified_on !== undefined ? String(z.modified_on) : null,
-      activated_on: z.activated_on !== undefined ? String(z.activated_on) : null,
+      name_servers: z.name_servers ?? [],
+      original_name_servers: z.original_name_servers ?? [],
+      created_on: z.created_on ?? null,
+      modified_on: z.modified_on ?? null,
+      activated_on: z.activated_on ?? null,
     }
   }
 }

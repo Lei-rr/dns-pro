@@ -1,3 +1,39 @@
+export interface ZoneStatusRendererOptions {
+  labels?: Record<string, string>
+  green?: string[]
+  gold?: string[]
+  red?: string[]
+  emptyLabel?: string
+  emptyColor?: string
+  fallbackColor?: string
+}
+
+export function makeZoneStatusRenderer(options: ZoneStatusRendererOptions = {}) {
+  const labels = options.labels ?? {}
+  const green = new Set((options.green ?? []).map((s) => s.toLowerCase()))
+  const gold = new Set((options.gold ?? []).map((s) => s.toLowerCase()))
+  const red = new Set((options.red ?? []).map((s) => s.toLowerCase()))
+  const emptyLabel = options.emptyLabel ?? '-'
+  const emptyColor = options.emptyColor ?? 'default'
+  const fallbackColor = options.fallbackColor ?? 'blue'
+
+  return {
+    zoneStatusLabel(status: unknown) {
+      if (status === '' || status === undefined || status === null) return emptyLabel
+      const key = String(status).toLowerCase()
+      return labels[key] || String(status) || emptyLabel
+    },
+    zoneStatusColor(status: unknown) {
+      if (status === '' || status === undefined || status === null) return emptyColor
+      const key = String(status).toLowerCase()
+      if (green.has(key)) return 'green'
+      if (gold.has(key)) return 'gold'
+      if (red.has(key)) return 'red'
+      return key ? fallbackColor : emptyColor
+    },
+  }
+}
+
 export const defaultProviderHook = {
   capabilities: {
     createZone: true,
@@ -22,17 +58,16 @@ export const defaultProviderHook = {
       getStatus: (record: Record<string, unknown>) => record.status || record.access_status || record.dns_status,
     },
   ],
-  zoneStatusLabel: (status: unknown) => (status as string) || '-',
-  zoneStatusColor: (status: unknown) => (status ? 'blue' : 'default'),
+  ...makeZoneStatusRenderer(),
 }
 
-export function mergeHook(custom: Record<string, unknown> | undefined) {
+export type ProviderHook = typeof defaultProviderHook
+
+export function mergeHook(custom: Partial<ProviderHook> | undefined) {
   if (!custom) return defaultProviderHook
   return {
     ...defaultProviderHook,
     ...custom,
-    capabilities: { ...defaultProviderHook.capabilities, ...((custom.capabilities as Record<string, boolean>) || {}) },
+    capabilities: { ...defaultProviderHook.capabilities, ...(custom.capabilities || {}) },
   }
 }
-
-export type ProviderHook = ReturnType<typeof mergeHook>

@@ -1,16 +1,21 @@
-const zoneStatusLabels: Record<string, string> = {
-  enable: '正常',
-  enabled: '正常',
-  success: '正常',
-  pause: '已暂停',
-  spam: '违规',
-  dnserror: 'NS 异常',
-  dns_error: 'NS 异常',
-}
+import { makeZoneStatusRenderer } from '@/modules/common/dns/hook'
 
-const zoneStatusGreen = new Set(['enable', 'enabled', 'success'])
-const zoneStatusGold = new Set(['pause'])
-const zoneStatusRed = new Set(['dnserror', 'dns_error', 'spam'])
+const { zoneStatusLabel, zoneStatusColor } = makeZoneStatusRenderer({
+  labels: {
+    enable: '正常',
+    enabled: '正常',
+    success: '正常',
+    pause: '已暂停',
+    spam: '违规',
+    dnserror: 'NS 异常',
+    dns_error: 'NS 异常',
+  },
+  green: ['enable', 'enabled', 'success'],
+  gold: ['pause'],
+  red: ['dnserror', 'dns_error', 'spam'],
+  emptyLabel: '正常',
+  emptyColor: 'green',
+})
 
 export default {
   recordLines: [
@@ -34,17 +39,6 @@ export default {
     },
   ],
   showLine: (lines: Array<unknown>) => lines.length > 0,
-  zoneStatusLabel(status: unknown) {
-    if (status === '') return '正常'
-    const k = String(status || '').toLowerCase()
-    return zoneStatusLabels[k] || (status as string) || '-'
-  },
-  zoneStatusColor(status: unknown) {
-    if (status === '') return 'green'
-    const k = String(status || '').toLowerCase()
-    if (zoneStatusGreen.has(k)) return 'green'
-    if (zoneStatusGold.has(k)) return 'gold'
-    if (zoneStatusRed.has(k)) return 'red'
-    return k ? 'blue' : 'default'
-  },
+  zoneStatusLabel,
+  zoneStatusColor,
 }

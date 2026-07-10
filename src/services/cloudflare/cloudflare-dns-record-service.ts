@@ -8,6 +8,7 @@ import {
   providerCacheTag,
   recordCacheTag,
 } from '../../support/cache-helpers.js'
+import { cloudflareDnsRecordSchema } from '../../schemas/cloudflare-responses.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
@@ -209,22 +210,22 @@ export class CloudflareDnsRecordService {
   }
 
   private presentRecord(record: unknown): RecordPresentation {
-    const r = record as Record<string, unknown>
+    const r = cloudflareDnsRecordSchema.parse(record)
     return {
-      id: r.id !== undefined ? String(r.id) : null,
-      zone_id: r.zone_id !== undefined ? String(r.zone_id) : null,
-      zone_name: r.zone_name !== undefined ? String(r.zone_name) : null,
-      name: r.name !== undefined ? String(r.name) : null,
-      type: r.type !== undefined ? String(r.type) : null,
-      content: r.content !== undefined ? String(r.content) : null,
-      ttl: r.ttl !== undefined ? Number(r.ttl) : null,
-      proxied: typeof r.proxied === 'boolean' ? r.proxied : null,
-      proxiable: typeof r.proxiable === 'boolean' ? r.proxiable : null,
-      priority: r.priority !== undefined ? Number(r.priority) : null,
-      comment: r.comment !== undefined ? String(r.comment) : null,
-      tags: Array.isArray(r.tags) ? r.tags.map(String) : [],
-      created_on: r.created_on !== undefined ? String(r.created_on) : null,
-      modified_on: r.modified_on !== undefined ? String(r.modified_on) : null,
+      id: r.id ?? null,
+      zone_id: r.zone_id ?? null,
+      zone_name: r.zone_name ?? null,
+      name: r.name ?? null,
+      type: r.type ?? null,
+      content: r.content ?? null,
+      ttl: r.ttl ?? null,
+      proxied: r.proxied ?? null,
+      proxiable: r.proxiable ?? null,
+      priority: r.priority ?? null,
+      comment: r.comment ?? null,
+      tags: r.tags ?? [],
+      created_on: r.created_on ?? null,
+      modified_on: r.modified_on ?? null,
     }
   }
 
