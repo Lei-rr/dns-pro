@@ -4,21 +4,32 @@ interface CacheEntry<T> {
   tags: string[]
 }
 
+interface CacheOptions {
+  maxEntries?: number
+  sweepIntervalMs?: number
+}
+
+const DEFAULT_MAX_ENTRIES = 1000
+const DEFAULT_SWEEP_INTERVAL_MS = 10 * 60 * 1000
+
 export class CacheService {
   private readonly store = new Map<string, CacheEntry<unknown>>()
-  private readonly maxEntries: number
+  private maxEntries: number
+  private sweepTimer: ReturnType<typeof setInterval> | null = null
 
-  constructor(
-    maxEntries = Number(process.env.CACHE_MAX_ENTRIES ?? 1000),
-    sweepIntervalMs = Number(process.env.CACHE_SWEEP_INTERVAL_MS ?? 10 * 60 * 1000)
-  ) {
-    this.maxEntries = Math.max(1, maxEntries)
+  constructor(options: CacheOptions = {}) {
+    this.maxEntries = Math.max(1, options.maxEntries ?? DEFAULT_MAX_ENTRIES)
+    this.startSweepTimer(options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS)
+  }
 
-    const timer = setInterval(() => {
-      this.sweepExpired()
-    }, Math.max(1000, sweepIntervalMs))
-
-    timer.unref()
+  updateOptions(options: CacheOptions): void {
+    if (options.maxEntries !== undefined) {
+      this.maxEntries = Math.max(1, options.maxEntries)
+    }
+    if (options.sweepIntervalMs !== undefined) {
+      this.stopSweepTimer()
+      this.startSweepTimer(options.sweepIntervalMs)
+    }
   }
 
   get<T>(key: string): T | undefined {
@@ -68,6 +79,21 @@ export class CacheService {
 
   stats(): { size: number; maxEntries: number } {
     return { size: this.store.size, maxEntries: this.maxEntries }
+  }
+
+  private startSweepTimer(intervalMs: number): void {
+    this.stopSweepTimer()
+    this.sweepTimer = setInterval(() => {
+      this.sweepExpired()
+    }, Math.max(1000, intervalMs))
+    this.sweepTimer.unref()
+  }
+
+  private stopSweepTimer(): void {
+    if (this.sweepTimer) {
+      clearInterval(this.sweepTimer)
+      this.sweepTimer = null
+    }
   }
 
   private sweepExpired(): void {

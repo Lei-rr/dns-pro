@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ApiError } from './api-error.js'
 
-let dataRoot = path.resolve(process.env.DATA_DIR ?? path.join(process.cwd(), 'data'))
+let dataRoot = path.join(process.cwd(), 'data')
 const LOCK_TIMEOUT_MS = 5000
 const STALE_LOCK_MS = 30000
 

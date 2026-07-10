@@ -4,6 +4,7 @@ import { buildApp } from './app.js'
 import { loadAppConfig } from './config/app.js'
 import { setDataRoot } from './support/json-store.js'
 import { setDefaultHttpTimeout } from './gateways/base-gateway.js'
+import { globalCache } from './support/cache-service.js'
 
 function printConfigError(err: unknown): never {
   if (err instanceof ZodError) {
@@ -44,6 +45,7 @@ const config = (() => {
 })()
 setDataRoot(config.dataDir)
 setDefaultHttpTimeout(config.httpTimeoutMs)
+globalCache.updateOptions({ maxEntries: config.cacheMaxEntries, sweepIntervalMs: config.cacheSweepIntervalMs })
 
 const app = buildApp(config)
 
