@@ -1,6 +1,6 @@
 services:
   dns-pro:
-    image: ghcr.io/lei-rr/dns-pro:fast
+    image: ghcr.io/lei-rr/dns-pro:latest
     container_name: dns-pro
     restart: unless-stopped
     ports:

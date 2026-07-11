@@ -199,6 +199,12 @@ npm run verify
 GitHub Actions 会自动构建并推送公开镜像到 GHCR：
 
 ```text
+ghcr.io/lei-rr/dns-pro:latest
+```
+
+默认分支 `fast` 也会保留同名标签：
+
+```text
 ghcr.io/lei-rr/dns-pro:fast
 ```
 
@@ -239,13 +245,13 @@ docker compose up -d
 不使用 Compose 时，也可以直接拉取公开镜像运行：
 
 ```bash
-docker pull ghcr.io/lei-rr/dns-pro:fast
+docker pull ghcr.io/lei-rr/dns-pro:latest
 docker run -d \
   --name dns-pro \
   --restart unless-stopped \
   -p 2022:2022 \
   -v "$PWD/data:/app/data" \
-  ghcr.io/lei-rr/dns-pro:fast
+  ghcr.io/lei-rr/dns-pro:latest
 ```
 
 查看日志、停止和删除容器：
