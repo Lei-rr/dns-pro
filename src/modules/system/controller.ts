@@ -40,7 +40,7 @@ export async function healthShow(_request: FastifyRequest, reply: FastifyReply) 
   }
 
   if (!writable) {
-    return reply.status(503).send(error('data directory is not writable', 503, 'health_check_failed', payload))
+    return reply.status(503).send(error('health_check_failed', 503, 'health_check_failed', payload))
   }
 
   return reply.send(success(payload))

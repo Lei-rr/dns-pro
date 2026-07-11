@@ -13,6 +13,8 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   request_error: '请求错误',
   validation_error: '参数校验失败',
   rate_limited: '请求过于频繁，请稍后再试',
+  service_unavailable: '服务暂时不可用，请稍后重试',
+  health_check_failed: '健康检查失败',
 
   // Provider 通用
   provider_not_found: '服务商不存在',

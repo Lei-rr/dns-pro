@@ -33,7 +33,7 @@
     "@fastify/secure-session": "^8.3.0",
     "@fastify/sensible": "^6.0.4",
     "@fastify/static": "^9.0.0",
-    "axios": "^1.7.7",
+    "@fastify/under-pressure": "^9.1.0",
     "fastify": "^5.2.1",
     "fastify-plugin": "^5.1.0",
     "fastify-type-provider-zod": "^7.0.0",

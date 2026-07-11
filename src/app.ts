@@ -4,6 +4,7 @@ import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod
 import type { AppConfig } from './config/app.js'
 import { createAppContext } from './app-context.js'
 import { securityPlugin } from './plugins/security.js'
+import { underPressurePlugin } from './plugins/under-pressure.js'
 import { staticPlugin } from './plugins/static.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
 import { systemModule } from './modules/system/index.js'
@@ -45,6 +46,7 @@ export async function buildApp(config: AppConfig) {
   app.decorate('ctx', createAppContext(config))
 
   await app.register(securityPlugin, { config })
+  await app.register(underPressurePlugin)
   await app.register(staticPlugin)
   await app.register(systemModule, { prefix: '/api' })
   await app.register(authModule, { prefix: '/api' })

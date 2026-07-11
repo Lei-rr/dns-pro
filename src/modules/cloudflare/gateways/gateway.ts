@@ -1,6 +1,5 @@
-import axios, { type AxiosRequestConfig } from 'axios'
 import { z } from 'zod'
-import { BaseGateway } from '../../../lib/http/base-gateway.js'
+import { BaseGateway, type GatewayRequestConfig } from '../../../lib/http/base-gateway.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 
 export interface CloudflareApiResponse<T = unknown> {
@@ -49,7 +48,7 @@ export class CloudflareGateway extends BaseGateway {
     return this.call({ method: 'DELETE', url: path })
   }
 
-  private async call(config: AxiosRequestConfig): Promise<CloudflareApiResponse<unknown>> {
+  private async call(config: GatewayRequestConfig): Promise<CloudflareApiResponse<unknown>> {
     try {
       const response = await this.request(config)
       const parsed = cloudflareResponseSchema.parse(response)
@@ -58,13 +57,10 @@ export class CloudflareGateway extends BaseGateway {
       }
       return parsed
     } catch (error) {
-      if (axios.isAxiosError(error) && !error.response) {
-        throw new ApiError(
-          'cloudflare_connection_failed',
-          'Cloudflare connection failed',
-          502,
-          { original_error: error.message }
-        )
+      if (error instanceof ApiError && error.code === 'http_error' && error.statusCode === 502 && !error.details) {
+        throw new ApiError('cloudflare_connection_failed', 'Cloudflare connection failed', 502, {
+          original_error: error.message,
+        })
       }
       throw error
     }
