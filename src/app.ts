@@ -27,7 +27,7 @@ async function protectedModules(app: FastifyInstance) {
   await app.register(cloudflaredModule)
 }
 
-export function buildApp(config: AppConfig) {
+export async function buildApp(config: AppConfig) {
   const DEFAULT_SESSION_SECRET = 'dns-pro-secure-session'
 
   const app = Fastify({
@@ -44,12 +44,12 @@ export function buildApp(config: AppConfig) {
 
   app.decorate('ctx', createAppContext(config))
 
-  securityPlugin(app, config)
-  app.register(staticPlugin)
-  app.register(systemModule, { prefix: '/api' })
-  app.register(authModule, { prefix: '/api' })
-  app.register(protectedModules, { prefix: '/api' })
-  app.register(errorHandlerPlugin)
+  await app.register(securityPlugin, { config })
+  await app.register(staticPlugin)
+  await app.register(systemModule, { prefix: '/api' })
+  await app.register(authModule, { prefix: '/api' })
+  await app.register(protectedModules, { prefix: '/api' })
+  await app.register(errorHandlerPlugin)
 
   return app
 }

@@ -59,7 +59,7 @@ setDataRoot(config.dataDir)
 setDefaultHttpTimeout(config.httpTimeoutMs)
 globalCache.updateOptions({ maxEntries: config.cacheMaxEntries, sweepIntervalMs: config.cacheSweepIntervalMs })
 
-const app = buildApp(config)
+const app = await buildApp(config)
 
 registerShutdownHooks(app)
 

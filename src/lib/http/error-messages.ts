@@ -9,6 +9,10 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   http_error: '请求失败',
   server_error: '服务内部错误',
   sync_skipped: '同步已跳过',
+  internal_error: '服务内部错误',
+  request_error: '请求错误',
+  validation_error: '参数校验失败',
+  rate_limited: '请求过于频繁，请稍后再试',
 
   // Provider 通用
   provider_not_found: '服务商不存在',
