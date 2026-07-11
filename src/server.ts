@@ -2,9 +2,9 @@ import type { FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import { buildApp } from './app.js'
 import { loadAppConfig, type AppConfig } from './config/app.js'
-import { setDataRoot } from './support/json-store.js'
-import { setDefaultHttpTimeout } from './gateways/base-gateway.js'
-import { globalCache } from './support/cache-service.js'
+import { setDataRoot } from './lib/storage/json-store.js'
+import { setDefaultHttpTimeout } from './lib/http/base-gateway.js'
+import { globalCache } from './lib/cache/cache-service.js'
 
 function parseCliOverrides(): Partial<AppConfig> {
   const overrides: Partial<AppConfig> = {}

@@ -28,25 +28,20 @@
 
 ## 后端架构
 
-后端采用分层架构，职责边界如下：
+后端采用 Fastify 模块化架构，职责边界如下：
 
 ```text
-server.ts (入口)
+server.ts (入口：配置、数据目录、缓存、监听)
   │
   ▼
-app.ts (Fastify 应用组装：插件、中间件、路由、静态资源)
+app.ts (buildApp：插件 + 模块注册)
   │
-  ▼
-routes/        ──►  路由注册，绑定 URL 与控制器
-middleware/    ──►  认证等通用前置钩子
-controllers/   ──►  HTTP 请求处理：解析入参、调用服务、返回响应
-services/      ──►  业务逻辑编排
-repositories/  ──►  JSON 文件持久化（读写、事务、锁）
-support/       ──►  基础设施：JSON Store、缓存、会话、统一响应、错误类型
-gateways/      ──►  外部 HTTP API 网关（Cloudflare、DNSPod、EdgeOne）
-schemas/       ──►  Zod 校验与类型定义
-config/        ──►  应用默认配置与 Provider 元数据定义
-types/         ──►  TypeScript 类型
+  ├── plugins/     ──►  跨切面插件（security / static / error-handler）
+  ├── lib/         ──►  共享库（http / storage / cache / auth / utils）
+  ├── modules/     ──►  功能模块（Fastify 插件：routes + controller + service…）
+  ├── config/      ──►  应用默认配置与 Provider 元数据
+  ├── app-context  ──►  服务组装工厂（createAppContext）
+  └── types/       ──►  Session 等类型扩展
 ```
 
 ### 一次请求的处理流程
@@ -57,19 +52,19 @@ types/         ──►  TypeScript 类型
 GET /api/cloudflare/providers/:providerId/zones
         │
         ▼
-protected.ts (authRequired 钩子校验登录状态)
+protectedModules (authRequired 钩子校验登录状态)
         │
         ▼
-cloudflare.ts (路由插件，解析 querystring schema)
+modules/cloudflare (cloudflareModule → routes)
         │
         ▼
-cloudflare-zone-controller.ts (提取 providerId / page / name 等参数)
+controllers/zone-controller.ts (提取 providerId / page / name 等参数)
         │
         ▼
-cloudflare-zone-service.ts (业务逻辑：读取 Provider、调用网关、缓存结果)
+services/zone-service.ts (业务逻辑：读取 Provider、调用网关、缓存结果)
         │
         ▼
-cloudflare-gateway.ts (调用 Cloudflare REST API)
+gateways/gateway.ts (调用 Cloudflare REST API)
         │
         ▼
 返回 success({ items, page, per_page, total })
@@ -322,18 +317,48 @@ EdgeOne 复用关联的 DNSPod Provider 凭据。腾讯云密钥需要具备 Edg
 ```text
 dns-pro/
 ├── src/                       # Fastify 后端源码
-│   ├── app.ts                 # Fastify 应用组装（插件、路由、静态资源）
+│   ├── app.ts                 # Fastify 应用组装（插件、模块）
+│   ├── app-context.ts         # 服务上下文工厂
 │   ├── server.ts              # 服务启动入口
-│   ├── config/                # 应用默认配置与 Provider 元数据定义
-│   ├── controllers/           # HTTP 控制器
-│   ├── gateways/              # 外部 API 网关与 TC3 签名
-│   ├── middleware/            # 认证等 Fastify hooks
-│   ├── repositories/          # JSON 持久化边界
-│   ├── routes/                # 路由插件
-│   ├── schemas/               # Zod 校验 schema
-│   ├── services/              # 业务服务和工作流
-│   ├── support/               # 基础设施与通用工具
-│   └── types/                 # TypeScript 类型
+│   ├── config/                # 应用默认配置与 Provider 元数据
+│   ├── plugins/               # 跨切面插件（security / static / error-handler）
+│   ├── lib/                   # 共享库（http / storage / cache / auth / utils）
+│   ├── modules/               # 功能模块（每个模块自相似布局）
+│   │   ├── auth/
+│   │   │   ├── hooks/         # auth-required 等钩子
+│   │   │   ├── controller.ts
+│   │   │   ├── service.ts
+│   │   │   ├── routes.ts
+│   │   │   ├── schemas.ts
+│   │   │   └── index.ts
+│   │   ├── system/
+│   │   ├── provider/          # 扁平小模块：controller / service / repository / schemas…
+│   │   ├── cloudflare/
+│   │   │   ├── controllers/
+│   │   │   ├── services/
+│   │   │   ├── gateways/      # gateway.ts
+│   │   │   ├── schemas/       # request.ts + response.ts
+│   │   │   ├── routes.ts
+│   │   │   └── index.ts
+│   │   ├── dnspod/            # 同 cloudflare 布局
+│   │   ├── edgeone/           # 同 cloudflare 布局
+│   │   ├── cloudflared/
+│   │   │   ├── controllers/
+│   │   │   ├── services/
+│   │   │   ├── schemas/       # request.ts
+│   │   │   ├── routes.ts
+│   │   │   └── index.ts
+│   │   └── saas/
+│   │       ├── controllers/
+│   │       ├── services/      # 含 dns-pod-sync.ts 等
+│   │       ├── repositories/
+│   │       ├── gateways/      # custom-hostname-gateway.ts
+│   │       ├── schemas/       # request.ts
+│   │       ├── sync-drivers/
+│   │       ├── utils/
+│   │       ├── routes.ts
+│   │       └── index.ts
+│   └── types/                 # Session 等类型扩展
 ├── web/                       # Vue 3 + Vite 前端源码
 ├── docker/                    # Docker 启动脚本
 ├── data/                      # 运行数据目录，Git 忽略

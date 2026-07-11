@@ -1,4 +1,4 @@
-import type { ProviderDefinition, ProviderType } from '../types/provider.js'
+import type { ProviderDefinition, ProviderType } from '../modules/provider/types.js'
 
 export const providerDefinitions: Record<ProviderType, ProviderDefinition> = {
   dnspod: {
