@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ COPY . .
 
 RUN npm run build
 
-FROM node:20-alpine AS prod-deps
+FROM node:20-bookworm-slim AS prod-deps
 
 WORKDIR /app
 
@@ -19,7 +19,7 @@ COPY package.json package-lock.json ./
 
 RUN npm ci --omit=dev --ignore-scripts
 
-FROM node:20-alpine AS runtime
+FROM node:20-bookworm-slim AS runtime
 
 WORKDIR /app
 
