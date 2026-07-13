@@ -266,14 +266,14 @@ export class CloudflareCustomHostnameGateway {
     }
 
     return {
+      ...parsed,
       id: parsed.id ?? '',
       hostname: parsed.hostname ?? '',
-      status: parsed.status,
+      status: parsed.status ?? undefined,
       custom_origin_server: parsed.custom_origin_server,
       ssl,
       ownership_verification: parsed.ownership_verification ?? {},
       custom_metadata: parsed.custom_metadata ?? null,
-      ...parsed,
     }
   }
 
