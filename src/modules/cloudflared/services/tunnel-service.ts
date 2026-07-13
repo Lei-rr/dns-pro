@@ -160,12 +160,12 @@ export class CloudflaredTunnelService {
       id: tunnel.id ?? '',
       name: tunnel.name ?? '',
       status: tunnel.status ?? 'inactive',
-      config_src: tunnel.config_src,
+      config_src: tunnel.config_src ?? undefined,
       remote_config: tunnel.remote_config ?? false,
       connections: tunnel.connections?.map((conn) => this.presentConnection(conn)) ?? [],
-      conns_active_at: tunnel.conns_active_at,
-      conns_inactive_at: tunnel.conns_inactive_at,
-      created_at: tunnel.created_at,
+      conns_active_at: tunnel.conns_active_at ?? undefined,
+      conns_inactive_at: tunnel.conns_inactive_at ?? undefined,
+      created_at: tunnel.created_at ?? undefined,
     }
   }
 
