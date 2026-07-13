@@ -25,8 +25,9 @@ export class EdgeOneZoneService {
 
   constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
 
-  async zones(providerId: string, offset = 0, limit = 20, refresh = false): Promise<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
-    const cacheKey = `edgeone:zones:${providerId}:${offset}:${limit}`
+  // 站点通常不多，直接全量拉取返回。
+  async zones(providerId: string, refresh = false): Promise<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
+    const cacheKey = `edgeone:zones:${providerId}:all`
     if (!refresh) {
       const cached = globalCache.get<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }>(cacheKey)
       if (cached) return cached
@@ -39,10 +40,13 @@ export class EdgeOneZoneService {
     const pageLimit = 100
     const items: EdgeOneZone[] = []
     let requestId: string | undefined
-
     let hasMore = true
+
     while (hasMore) {
-      const response = await gateway.call('DescribeZones', { Offset: pageOffset, Limit: pageLimit })
+      const response = await gateway.call('DescribeZones', {
+        Offset: Number(pageOffset),
+        Limit: Number(pageLimit),
+      })
       const parsed = edgeoneZoneListResponseSchema.parse(response)
 
       requestId = parsed.RequestId ?? undefined
@@ -51,18 +55,23 @@ export class EdgeOneZoneService {
         .filter((zone: any) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
       items.push(...pageItems)
 
-      hasMore = pageItems.length >= pageLimit
       pageOffset += pageItems.length
-      const total = parsed.TotalCount ?? 0
-      if (pageOffset >= total) hasMore = false
+      const total = Number(parsed.TotalCount ?? items.length)
+      hasMore = pageItems.length >= pageLimit && pageOffset < total
     }
 
     const total = items.length
-    const paginated = items.slice(offset, offset + limit)
     const result = {
-      items: paginated,
-      pagination: { offset, limit, total },
-      meta: { page: limit > 0 ? Math.floor(offset / limit) + 1 : 1, per_page: limit, offset, limit, total, total_pages: limit > 0 ? Math.ceil(total / limit) : 1 },
+      items,
+      pagination: { offset: 0, limit: total, total },
+      meta: {
+        page: 1,
+        per_page: total,
+        offset: 0,
+        limit: total,
+        total,
+        total_pages: 1,
+      },
       request_id: requestId,
     }
 
@@ -71,18 +80,12 @@ export class EdgeOneZoneService {
   }
 
   async zoneById(providerId: string, zoneId: string): Promise<EdgeOneZone> {
-    let offset = 0
-    let hasMore = true
-    while (hasMore) {
-      const zones = await this.zones(providerId, offset, 100)
-      for (const zone of zones.items) {
-        if (zone.id === zoneId) return zone
-      }
-      hasMore = zones.items.length >= 100
-      offset += 100
+    const zones = await this.zones(providerId)
+    const zone = zones.items.find((item) => item.id === zoneId)
+    if (!zone) {
+      throw new ApiError('edgeone_zone_not_found', `EdgeOne zone ${zoneId} not found`, 404)
     }
-
-    throw new ApiError('edgeone_zone_not_found', `EdgeOne zone ${zoneId} not found`, 404)
+    return zone
   }
 
   private async credentialProvider(providerId: string): Promise<DnsPodProvider> {

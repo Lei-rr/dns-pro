@@ -11,8 +11,8 @@ export async function edgeOneAccelerationDomainsIndex(
   const result = await request.server.ctx.edgeoneDomainService.accelerationDomains(
     request.params.providerId,
     request.params.zoneId,
-    q.offset ?? 0,
-    q.limit ?? 20,
+    Number(q.offset ?? 0),
+    Number(q.limit ?? 20),
     parseBool(q.refresh)
   )
   return reply.send(success(result))

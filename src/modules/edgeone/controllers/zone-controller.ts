@@ -10,8 +10,6 @@ export async function edgeOneZonesIndex(
   const q: any = request.query ?? {}
   const result = await request.server.ctx.edgeoneZoneService.zones(
     request.params.providerId,
-    q.offset ?? 0,
-    q.limit ?? 20,
     parseBool(q.refresh)
   )
   return reply.send(success(result))
