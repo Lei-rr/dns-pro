@@ -115,7 +115,7 @@ export class DnsPodZoneService {
         limit,
         total,
       },
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
       meta: offsetPaginationMeta({ offset, limit, total }),
     }
 
@@ -148,7 +148,7 @@ export class DnsPodZoneService {
       id: domainInfo.Id ?? 0,
       name: domainInfo.Domain ?? domain,
       name_servers: domainInfo.GradeNsList ?? [],
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
     }
   }
 
@@ -170,7 +170,7 @@ export class DnsPodZoneService {
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     return {
       name: domain,
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
     }
   }
 
