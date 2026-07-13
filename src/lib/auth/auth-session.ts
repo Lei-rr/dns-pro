@@ -13,8 +13,7 @@ export function signIn(request: FastifyRequest, username: string): void {
 }
 
 export function signOut(request: FastifyRequest): void {
-  request.session.set(SIGNED_IN_KEY, false)
-  request.session.set(USERNAME_KEY, null)
+  request.session.delete()
 }
 
 export function getUsername(request: FastifyRequest): string | null {

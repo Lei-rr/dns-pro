@@ -21,18 +21,6 @@ RUN npm ci --omit=dev --ignore-scripts \
   && node <<'NODE'
 const fs = require('node:fs')
 const path = require('node:path')
-const arch = process.arch === 'x64' ? 'x64' : process.arch
-const platformArch = `${process.platform}-${arch}`
-const prebuildsDir = path.join('/app/node_modules/sodium-native/prebuilds')
-
-if (fs.existsSync(prebuildsDir)) {
-  for (const entry of fs.readdirSync(prebuildsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue
-    if (entry.name !== platformArch) {
-      fs.rmSync(path.join(prebuildsDir, entry.name), { recursive: true, force: true })
-    }
-  }
-}
 
 const junkPatterns = [
   /(^|\/)(\.npmignore|\.eslintrc.*|\.prettierrc.*|tsconfig.*\.json|CHANGELOG.*|HISTORY.*|README.*|LICENSE.*|LICENCE.*|\.map)$/i,
@@ -70,7 +58,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Runtime only needs the Node binary, not npm/yarn tooling.
 RUN rm -rf \
       /usr/local/lib/node_modules \
       /usr/local/bin/npm \

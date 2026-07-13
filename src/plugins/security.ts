@@ -1,11 +1,10 @@
-import crypto from 'node:crypto'
-import type { FastifyReply, FastifyPluginAsync } from 'fastify'
+import type { FastifyReply, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import fastifyCookie from '@fastify/cookie'
-import fastifySecureSession from '@fastify/secure-session'
 import fastifyHelmet from '@fastify/helmet'
 import fastifySensible from '@fastify/sensible'
 import type { AppConfig } from '../config/app.js'
+import { attachAppSession, writeAppSessionCookie, type AppSession } from '../lib/auth/app-session.js'
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, must-revalidate',
@@ -18,6 +17,13 @@ export type SecurityPluginOptions = {
 
 const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app, opts) => {
   const { config } = opts
+  const sessionOptions = {
+    secret: config.sessionSecret,
+    cookieName: config.sessionCookieName,
+    maxAgeSeconds: config.sessionMaxAgeSeconds,
+    secure: config.cookieSecure,
+    sameSite: config.cookieSameSite,
+  }
 
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: false,
@@ -30,15 +36,13 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
   })
 
   await app.register(fastifyCookie)
-  await app.register(fastifySecureSession, {
-    cookieName: config.sessionCookieName,
-    key: crypto.createHash('sha256').update(config.sessionSecret).digest(),
-    cookie: {
-      secure: config.cookieSecure,
-      httpOnly: true,
-      sameSite: config.cookieSameSite,
-      maxAge: config.sessionMaxAgeSeconds,
-    },
+
+  app.decorateRequest('session', null as unknown as AppSession)
+  app.addHook('onRequest', async (request: FastifyRequest) => {
+    attachAppSession(request, sessionOptions)
+  })
+  app.addHook('onSend', async (request: FastifyRequest, reply: FastifyReply) => {
+    writeAppSessionCookie(request, reply, sessionOptions)
   })
 
   await app.register(fastifySensible)
@@ -49,3 +53,9 @@ export const securityPlugin = fp(securityPluginImpl, {
   name: 'security',
   fastify: '5.x',
 })
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    session: AppSession
+  }
+}
