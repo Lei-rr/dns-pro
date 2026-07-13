@@ -45,7 +45,7 @@ export class EdgeOneZoneService {
       const response = await gateway.call('DescribeZones', { Offset: pageOffset, Limit: pageLimit })
       const parsed = edgeoneZoneListResponseSchema.parse(response)
 
-      requestId = parsed.RequestId
+      requestId = parsed.RequestId ?? undefined
       const pageItems = (parsed.Zones ?? [])
         .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
         .filter((zone) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
@@ -104,14 +104,14 @@ export class EdgeOneZoneService {
     return {
       id: zone.ZoneId ?? '',
       name: zone.ZoneName ?? '',
-      area: zone.Area,
-      type: zone.Type,
-      status: zone.Status,
-      active_status: zone.ActiveStatus,
-      lock_status: zone.LockStatus,
-      paused: zone.Paused,
-      created_on: zone.CreatedOn,
-      modified_on: zone.ModifiedOn,
+      area: zone.Area ?? undefined,
+      type: zone.Type ?? undefined,
+      status: zone.Status ?? undefined,
+      active_status: zone.ActiveStatus ?? undefined,
+      lock_status: zone.LockStatus ?? undefined,
+      paused: zone.Paused ?? undefined,
+      created_on: zone.CreatedOn ?? undefined,
+      modified_on: zone.ModifiedOn ?? undefined,
     }
   }
 }
