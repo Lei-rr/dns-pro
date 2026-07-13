@@ -17,11 +17,66 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-RUN npm ci --omit=dev --ignore-scripts
+RUN npm ci --omit=dev --ignore-scripts \
+  && node <<'NODE'
+const fs = require('node:fs')
+const path = require('node:path')
+const arch = process.arch === 'x64' ? 'x64' : process.arch
+const platformArch = `${process.platform}-${arch}`
+const prebuildsDir = path.join('/app/node_modules/sodium-native/prebuilds')
+
+if (fs.existsSync(prebuildsDir)) {
+  for (const entry of fs.readdirSync(prebuildsDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    if (entry.name !== platformArch) {
+      fs.rmSync(path.join(prebuildsDir, entry.name), { recursive: true, force: true })
+    }
+  }
+}
+
+const junkPatterns = [
+  /(^|\/)(\.npmignore|\.eslintrc.*|\.prettierrc.*|tsconfig.*\.json|CHANGELOG.*|HISTORY.*|README.*|LICENSE.*|LICENCE.*|\.map)$/i,
+  /(^|\/)(test|tests|__tests__|docs|example|examples|coverage)(\/|$)/i,
+]
+
+function shouldRemove(relPath) {
+  return junkPatterns.some((pattern) => pattern.test(relPath))
+}
+
+function walk(dir, base = dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name)
+    const rel = path.relative(base, full)
+    if (entry.isDirectory()) {
+      if (shouldRemove(rel + '/')) {
+        fs.rmSync(full, { recursive: true, force: true })
+      } else {
+        walk(full, base)
+      }
+      continue
+    }
+    if (shouldRemove(rel)) {
+      fs.rmSync(full, { force: true })
+    }
+  }
+}
+
+walk('/app/node_modules')
+NODE
 
 FROM node:20-bookworm-slim AS runtime
 
 WORKDIR /app
+
+# Runtime only needs the Node binary, not npm/yarn tooling.
+RUN rm -rf \
+      /usr/local/lib/node_modules \
+      /usr/local/bin/npm \
+      /usr/local/bin/npx \
+      /usr/local/bin/yarn \
+      /usr/local/bin/yarnpkg \
+      /opt/yarn-v* \
+  && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
