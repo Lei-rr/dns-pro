@@ -3,7 +3,7 @@ import { ApiError } from '../../../lib/http/api-error.js'
 import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
 import { globalCache } from '../../../lib/cache/cache-service.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
-import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../cloudflare/schemas/response.js'
+import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
 import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js'
 import { CloudflaredDnsService } from './dns-service.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../provider/types.js'
@@ -200,7 +200,7 @@ export class CloudflaredRouteService {
     return { config: { ingress } }
   }
 
-  private presentConfig(config: import('../../cloudflare/schemas/response.js').CloudflareRouteConfig): { routes: CloudflaredRoute[]; catch_all: string; version: number } {
+  private presentConfig(config: import('../../../lib/providers/cloudflare-response.js').CloudflareRouteConfig): { routes: CloudflaredRoute[]; catch_all: string; version: number } {
     const ingress = config.config?.ingress
     const routes: CloudflaredRoute[] = []
     let catchAll = 'http_status:404'

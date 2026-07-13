@@ -4,10 +4,8 @@ import fp from 'fastify-plugin'
 import fastifyCookie from '@fastify/cookie'
 import fastifySecureSession from '@fastify/secure-session'
 import fastifyHelmet from '@fastify/helmet'
-import fastifyRateLimit from '@fastify/rate-limit'
 import fastifySensible from '@fastify/sensible'
 import type { AppConfig } from '../config/app.js'
-import { error } from '../lib/http/api-response.js'
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, must-revalidate',
@@ -41,16 +39,6 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
       sameSite: config.cookieSameSite,
       maxAge: config.sessionMaxAgeSeconds,
     },
-  })
-
-  await app.register(fastifyRateLimit, {
-    global: true,
-    max: config.rateLimitGlobalMax,
-    timeWindow: config.rateLimitTimeWindow,
-    hook: 'preHandler',
-    keyGenerator: (request) => request.ip,
-    allowList: (request) => !request.url.startsWith('/api/'),
-    errorResponseBuilder: () => error('请求过于频繁，请稍后再试', 429, 'rate_limited'),
   })
 
   await app.register(fastifySensible)

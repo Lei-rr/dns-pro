@@ -13,7 +13,7 @@ import {
   cloudflareIdResultSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
-} from '../schemas/response.js'
+} from '../../../lib/providers/cloudflare-response.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'

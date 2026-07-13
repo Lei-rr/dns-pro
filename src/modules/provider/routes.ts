@@ -1,10 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import {
-  providerStoreSchema,
-  providerUpdateSchema,
-  providerSortSchema,
-} from './schemas.js'
-import {
   definitionsIndex,
   providerIndex,
   providerShow,
@@ -17,9 +12,9 @@ import {
 export async function routes(app: FastifyInstance) {
   app.get('/definitions', definitionsIndex)
   app.get('/', providerIndex)
-  app.post('/', { schema: { body: providerStoreSchema } }, providerStore)
+  app.post('/', providerStore)
   app.get('/:id', providerShow)
-  app.put('/:id', { schema: { body: providerUpdateSchema } }, providerUpdate)
+  app.put('/:id', providerUpdate)
   app.delete('/:id', providerDelete)
-  app.put('/sort-order', { schema: { body: providerSortSchema } }, providerSort)
+  app.put('/sort-order', providerSort)
 }

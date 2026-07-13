@@ -1,9 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success, noContent } from '../../lib/http/api-response.js'
-import type { LoginInput } from './schemas.js'
 
-export async function sessionStore(request: FastifyRequest<{ Body: LoginInput }>, reply: FastifyReply) {
-  const { username, password } = request.body
+export async function sessionStore(request: FastifyRequest<{ Body: any }>, reply: FastifyReply) {
+  const body = (request.body ?? {}) as Record<string, any>
+  const username = String(body.username ?? '')
+  const password = String(body.password ?? '')
   const session = await request.server.ctx.sessionService.login(request, username, password)
   return reply.send(success(session))
 }

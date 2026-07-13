@@ -1,5 +1,4 @@
 import crypto from 'node:crypto'
-import { z } from 'zod'
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { globalCache } from '../../../lib/cache/cache-service.js'
@@ -8,7 +7,7 @@ import {
   cloudflareTunnelSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
-} from '../../cloudflare/schemas/response.js'
+} from '../../../lib/providers/cloudflare-response.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../provider/types.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -151,18 +150,20 @@ export class CloudflaredTunnelService {
   private async fetchToken(provider: CloudflareProvider, accountId: string, tunnelId: string): Promise<string> {
     const gateway = new CloudflareGateway(provider.api_token)
     const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/token`)
-    const parsed = parseCloudflareItemResponse(response, z.string())
-    return parsed.result
+    const result = (response as any)?.result
+    if (typeof result === 'string') return result
+    if (result && typeof result === 'object' && typeof result.token === 'string') return result.token
+    return String(result ?? '')
   }
 
-  private presentTunnel(tunnel: import('../../cloudflare/schemas/response.js').CloudflareTunnel): CloudflaredTunnel {
+  private presentTunnel(tunnel: import('../../../lib/providers/cloudflare-response.js').CloudflareTunnel): CloudflaredTunnel {
     return {
       id: tunnel.id ?? '',
       name: tunnel.name ?? '',
       status: tunnel.status ?? 'inactive',
       config_src: tunnel.config_src ?? undefined,
       remote_config: tunnel.remote_config ?? false,
-      connections: tunnel.connections?.map((conn) => this.presentConnection(conn)) ?? [],
+      connections: (tunnel.connections ?? []).map((conn: Record<string, unknown>) => this.presentConnection(conn)),
       conns_active_at: tunnel.conns_active_at ?? undefined,
       conns_inactive_at: tunnel.conns_inactive_at ?? undefined,
       created_at: tunnel.created_at ?? undefined,

@@ -5,7 +5,7 @@ import {
   cloudflareDnsRecordSchema,
   cloudflareTunnelSchema,
   cloudflareZoneSchema,
-} from '../src/modules/cloudflare/schemas/response.js'
+} from '../src/lib/providers/cloudflare-response.js'
 
 test('normalizes nullable Cloudflare zone presentation fields', () => {
   const zone = cloudflareZoneSchema.parse({

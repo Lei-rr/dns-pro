@@ -1,49 +1,38 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import type { CloudflaredRoute } from '../services/route-service.js'
 import { success } from '../../../lib/http/api-response.js'
-import type {
-  CloudflaredTunnelCreateInput,
-  CloudflaredRouteInput,
-  CloudflaredRouteDeleteQuery,
-  CloudflaredRouteUpdateQuery,
-} from '../schemas/request.js'
+import { parseBool } from '../../../lib/utils/parse-bool.js'
 
-function parseBool(value: unknown): boolean {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') return value === '1' || value.toLowerCase() === 'true'
-  return false
-}
 
 export async function cloudflaredTunnelsIndex(
-  request: FastifyRequest<{ Params: { providerId: string }; Querystring: Record<string, unknown> }>,
+  request: FastifyRequest<{ Params: { providerId: string }; Querystring: any }>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.cloudflaredTunnelService.list(
     request.params.providerId,
-    parseBool(request.query.refresh)
+    parseBool((request.query as any).refresh)
   )
   return reply.send(success(result))
 }
 
 export async function cloudflaredTunnelsStore(
-  request: FastifyRequest<{ Params: { providerId: string }; Body: CloudflaredTunnelCreateInput }>,
+  request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.cloudflaredTunnelService.create(
     request.params.providerId,
-    request.body.name.trim()
+    String(((request.body ?? {}) as any).name ?? "").trim()
   )
   return reply.status(201).send(success(result))
 }
 
 export async function cloudflaredTunnelShow(
-  request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Querystring: Record<string, unknown> }>,
+  request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Querystring: any }>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.cloudflaredTunnelService.show(
     request.params.providerId,
     request.params.tunnelId,
-    parseBool(request.query.refresh)
+    parseBool((request.query as any).refresh)
   )
   return reply.send(success(result))
 }
@@ -82,21 +71,21 @@ export async function cloudflaredTunnelTokenRotate(
 }
 
 export async function cloudflaredTunnelConfigShow(
-  request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Querystring: Record<string, unknown> }>,
+  request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Querystring: any }>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.cloudflaredRouteService.getConfig(
     request.params.providerId,
     request.params.tunnelId,
-    parseBool(request.query.refresh)
+    parseBool((request.query as any).refresh)
   )
   return reply.send(success(result))
 }
 
 function buildRoute(
   routeService: { buildServiceUrl: (protocol: string, address: string) => string },
-  body: CloudflaredRouteInput
-): CloudflaredRoute {
+  body: any
+): any {
   return {
     hostname: body.hostname,
     service: routeService.buildServiceUrl(body.protocol ?? 'http', body.address),
@@ -106,7 +95,7 @@ function buildRoute(
 }
 
 export async function cloudflaredTunnelRouteStore(
-  request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Body: CloudflaredRouteInput }>,
+  request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Body: any }>,
   reply: FastifyReply
 ) {
   const routeService = request.server.ctx.cloudflaredRouteService
@@ -121,18 +110,18 @@ export async function cloudflaredTunnelRouteStore(
 export async function cloudflaredTunnelRouteUpdate(
   request: FastifyRequest<{
     Params: { providerId: string; tunnelId: string }
-    Body: CloudflaredRouteInput
-    Querystring: CloudflaredRouteUpdateQuery
+    Body: any
+    Querystring: any
   }>,
   reply: FastifyReply
 ) {
   const routeService = request.server.ctx.cloudflaredRouteService
-  let originalHostname = (request.query.original_hostname ?? '').trim().toLowerCase()
-  let originalPath = request.query.original_path ?? ''
+  let originalHostname = ((request.query as any).original_hostname ?? '').trim().toLowerCase()
+  let originalPath = (request.query as any).original_path ?? ''
 
   if (originalHostname === '') {
-    originalHostname = request.body.hostname.toLowerCase().trim()
-    originalPath = request.body.path ?? ''
+    originalHostname = String(((request.body ?? {}) as any).hostname ?? "").toLowerCase().trim()
+    originalPath = ((request.body ?? {}) as any).path ?? ''
   }
 
   const result = await routeService.updateRoute(
@@ -148,27 +137,27 @@ export async function cloudflaredTunnelRouteUpdate(
 export async function cloudflaredTunnelRouteDelete(
   request: FastifyRequest<{
     Params: { providerId: string; tunnelId: string }
-    Querystring: CloudflaredRouteDeleteQuery
+    Querystring: any
   }>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.cloudflaredRouteService.deleteRoute(
     request.params.providerId,
     request.params.tunnelId,
-    request.query.hostname,
-    request.query.path ?? '',
-    request.query.zone_id
+    (request.query as any).hostname,
+    (request.query as any).path ?? '',
+    (request.query as any).zone_id
   )
   return reply.send(success(result))
 }
 
 export async function cloudflaredZonesIndex(
-  request: FastifyRequest<{ Params: { providerId: string }; Querystring: Record<string, unknown> }>,
+  request: FastifyRequest<{ Params: { providerId: string }; Querystring: any }>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.cloudflaredRouteService.listZones(
     request.params.providerId,
-    parseBool(request.query.refresh)
+    parseBool((request.query as any).refresh)
   )
   return reply.send(success(result))
 }

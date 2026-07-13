@@ -11,10 +11,11 @@
   },
   "scripts": {
     "dev": "npm run dev:server",
-    "dev:server": "tsx watch src/server.ts",
-    "dev:server:debug": "tsx watch src/server.ts --log-level info | pino-pretty",
+    "dev:server": "tsx watch src/server.ts --port 3022",
+    "dev:server:debug": "tsx watch src/server.ts --port 3022 --log-level info | pino-pretty",
     "dev:web": "npm --workspace dns-pro-web run dev",
     "start": "node dist/server.js",
+    "start:prod": "node dist/server.js --port 2022",
     "build": "npm run build:server && npm run build:web",
     "build:server": "tsup src/server.ts --format esm --out-dir dist --target node20 --clean",
     "build:web": "npm --workspace dns-pro-web run build",
@@ -29,15 +30,11 @@
     "@fastify/compress": "^9.0.0",
     "@fastify/cookie": "^11.0.0",
     "@fastify/helmet": "^13.1.0",
-    "@fastify/rate-limit": "^11.1.0",
     "@fastify/secure-session": "^8.3.0",
     "@fastify/sensible": "^6.0.4",
     "@fastify/static": "^9.0.0",
-    "@fastify/under-pressure": "^9.1.0",
     "fastify": "^5.2.1",
-    "fastify-plugin": "^5.1.0",
-    "fastify-type-provider-zod": "^7.0.0",
-    "zod": "^4.4.3"
+    "fastify-plugin": "^5.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",

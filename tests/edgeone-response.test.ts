@@ -4,7 +4,7 @@ import {
   edgeOneAccelerationDomainSchema,
   edgeOneZoneSchema,
   edgeoneZoneListResponseSchema,
-} from '../src/modules/edgeone/schemas/response.js'
+} from '../src/lib/providers/edgeone-response.js'
 
 test('normalizes nullable EdgeOne zone presentation fields', () => {
   const zone = edgeOneZoneSchema.parse({

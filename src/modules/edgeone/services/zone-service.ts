@@ -2,7 +2,7 @@ import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { globalCache } from '../../../lib/cache/cache-service.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
-import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../schemas/response.js'
+import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -47,8 +47,8 @@ export class EdgeOneZoneService {
 
       requestId = parsed.RequestId ?? undefined
       const pageItems = (parsed.Zones ?? [])
-        .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
-        .filter((zone) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
+        .map((zone: any) => this.presentZone(edgeOneZoneSchema.parse(zone)))
+        .filter((zone: any) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
       items.push(...pageItems)
 
       hasMore = pageItems.length >= pageLimit
@@ -100,7 +100,7 @@ export class EdgeOneZoneService {
     return dnspodProvider
   }
 
-  private presentZone(zone: import('../schemas/response.js').EdgeOneZone): EdgeOneZone {
+  private presentZone(zone: import('../../../lib/providers/edgeone-response.js').EdgeOneZone): EdgeOneZone {
     return {
       id: zone.ZoneId ?? '',
       name: zone.ZoneName ?? '',

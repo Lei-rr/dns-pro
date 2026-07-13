@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { BaseGateway } from './base-gateway.js'
 import { ApiError } from './api-error.js'
 import { signTencentTc3, TENCENT_CONTENT_TYPE } from './tencent-tc3.js'
@@ -6,16 +5,6 @@ import { signTencentTc3, TENCENT_CONTENT_TYPE } from './tencent-tc3.js'
 export interface TencentCloudCredentials {
   secretId: string
   secretKey: string
-}
-
-export interface TencentCloudResponse<T> {
-  Response: T & {
-    RequestId?: string
-    Error?: {
-      Code: string
-      Message: string
-    }
-  }
 }
 
 export interface TencentCloudGatewayOptions {
@@ -50,7 +39,7 @@ export class TencentCloudGateway extends BaseGateway {
     const timestamp = Math.floor(Date.now() / 1000)
     const body = JSON.stringify(payload)
 
-    const response = await this.request({
+    const response = (await this.request({
       method: 'POST',
       url: '/',
       headers: {
@@ -66,36 +55,22 @@ export class TencentCloudGateway extends BaseGateway {
         'X-TC-Version': this.options.version,
       },
       data: body,
-    })
+    })) as Record<string, any>
 
-    const parsed = tencentCloudResponseSchema.parse(response)
-    if (parsed.Response.Error) {
+    const Response = (response?.Response ?? response ?? {}) as Record<string, any>
+    if (Response.Error) {
       throw new ApiError(
         this.options.errorCode,
-        `${this.options.errorPrefix}: ${parsed.Response.Error.Code} ${parsed.Response.Error.Message}`,
+        `${this.options.errorPrefix}: ${Response.Error.Code ?? ''} ${Response.Error.Message ?? ''}`.trim(),
         502,
         {
-          code: parsed.Response.Error.Code,
-          message: parsed.Response.Error.Message,
-          request_id: parsed.Response.RequestId,
+          code: Response.Error.Code,
+          message: Response.Error.Message,
+          request_id: Response.RequestId,
         }
       )
     }
 
-    return parsed.Response
+    return Response
   }
 }
-
-const tencentCloudErrorSchema = z.object({
-  Code: z.string(),
-  Message: z.string(),
-})
-
-const tencentCloudResponseSchema = z.object({
-  Response: z.record(z.string(), z.unknown()).and(
-    z.object({
-      RequestId: z.string().optional(),
-      Error: tencentCloudErrorSchema.optional(),
-    })
-  ),
-})

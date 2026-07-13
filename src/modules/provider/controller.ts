@@ -1,11 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success, noContent } from '../../lib/http/api-response.js'
 import { ApiError } from '../../lib/http/api-error.js'
-import type {
-  ProviderStoreInput,
-  ProviderUpdateInput,
-  ProviderSortInput,
-} from './schemas.js'
 
 export async function definitionsIndex(request: FastifyRequest, reply: FastifyReply) {
   return reply.send(success(request.server.ctx.providerService.definitions()))
@@ -24,18 +19,18 @@ export async function providerShow(request: FastifyRequest<{ Params: { id: strin
   return reply.send(success(provider))
 }
 
-export async function providerStore(request: FastifyRequest<{ Body: ProviderStoreInput }>, reply: FastifyReply) {
-  const provider = await request.server.ctx.providerService.create(request.body as Record<string, unknown>)
+export async function providerStore(request: FastifyRequest<{ Body: any }>, reply: FastifyReply) {
+  const provider = await request.server.ctx.providerService.create(((request.body ?? {}) as any) as Record<string, unknown>)
   return reply.status(201).send(success(provider))
 }
 
 export async function providerUpdate(
-  request: FastifyRequest<{ Params: { id: string }; Body: ProviderUpdateInput }>,
+  request: FastifyRequest<{ Params: { id: string }; Body: any }>,
   reply: FastifyReply
 ) {
   const provider = await request.server.ctx.providerService.update(
     request.params.id,
-    request.body as Record<string, unknown>
+    ((request.body ?? {}) as any) as Record<string, unknown>
   )
   return reply.send(success(provider))
 }
@@ -45,7 +40,8 @@ export async function providerDelete(request: FastifyRequest<{ Params: { id: str
   return reply.status(204).send(noContent())
 }
 
-export async function providerSort(request: FastifyRequest<{ Body: ProviderSortInput }>, reply: FastifyReply) {
-  const providers = await request.server.ctx.providerService.sort(request.body.order)
+export async function providerSort(request: FastifyRequest<{ Body: any }>, reply: FastifyReply) {
+  const body: any = request.body ?? {}
+  const providers = await request.server.ctx.providerService.sort(body.order)
   return reply.send(success(providers))
 }

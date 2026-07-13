@@ -3,7 +3,7 @@ import test from 'node:test'
 import {
   dnspodDomainSchema,
   dnspodRecordSchema,
-} from '../src/modules/dnspod/schemas/response.js'
+} from '../src/lib/providers/dnspod-response.js'
 
 test('normalizes nullable DNSPod record presentation fields', () => {
   const record = dnspodRecordSchema.parse({

@@ -1,31 +1,25 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success, noContent } from '../../../lib/http/api-response.js'
-import type {
-  PreferredDomainStoreInput,
-  PreferredDomainUpdateInput,
-  PreferredDomainSortInput,
-} from '../schemas/request.js'
 
 export async function preferredDomainsIndex(request: FastifyRequest, reply: FastifyReply) {
   const items = await request.server.ctx.preferredDomainService.list()
   return reply.send(success({ items }))
 }
 
-export async function preferredDomainsStore(
-  request: FastifyRequest<{ Body: PreferredDomainStoreInput }>,
-  reply: FastifyReply
-) {
-  const result = await request.server.ctx.preferredDomainService.create(request.body.domain)
+export async function preferredDomainsStore(request: FastifyRequest<{ Body: any }>, reply: FastifyReply) {
+  const body: any = request.body ?? {}
+  const result = await request.server.ctx.preferredDomainService.create(body.domain)
   return reply.status(201).send(success(result))
 }
 
 export async function preferredDomainsUpdate(
-  request: FastifyRequest<{ Params: { domain: string }; Body: PreferredDomainUpdateInput }>,
+  request: FastifyRequest<{ Params: { domain: string }; Body: any }>,
   reply: FastifyReply
 ) {
+  const body: any = request.body ?? {}
   const result = await request.server.ctx.preferredDomainService.rename(
     decodeURIComponent(request.params.domain).trim(),
-    request.body.domain
+    body.domain
   )
   return reply.send(success(result))
 }
@@ -38,10 +32,8 @@ export async function preferredDomainsDelete(
   return reply.status(204).send(noContent())
 }
 
-export async function preferredDomainsSort(
-  request: FastifyRequest<{ Body: PreferredDomainSortInput }>,
-  reply: FastifyReply
-) {
-  const items = await request.server.ctx.preferredDomainService.reorder(request.body.domains)
+export async function preferredDomainsSort(request: FastifyRequest<{ Body: any }>, reply: FastifyReply) {
+  const body: any = request.body ?? {}
+  const items = await request.server.ctx.preferredDomainService.reorder(body.domains)
   return reply.send(success({ items }))
 }

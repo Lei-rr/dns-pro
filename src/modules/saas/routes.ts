@@ -1,16 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import {
-  saasListZonesQuerySchema,
-  saasListHostnamesQuerySchema,
-  saasShowQuerySchema,
-  saasStoreBodySchema,
-  saasUpdateBodySchema,
-  saasFallbackOriginBodySchema,
-  preferredDomainStoreSchema,
-  preferredDomainUpdateSchema,
-  preferredDomainSortSchema,
-} from './schemas/request.js'
-import {
   zonesIndex,
   hostnamesIndex,
   hostnamesStore,
@@ -32,22 +21,22 @@ import {
 
 async function preferredDomainRoutes(app: FastifyInstance) {
   app.get('/', preferredDomainsIndex)
-  app.post('/', { schema: { body: preferredDomainStoreSchema } }, preferredDomainsStore)
-  app.put('/sort', { schema: { body: preferredDomainSortSchema } }, preferredDomainsSort)
-  app.put('/:domain', { schema: { body: preferredDomainUpdateSchema } }, preferredDomainsUpdate)
+  app.post('/', preferredDomainsStore)
+  app.put('/sort', preferredDomainsSort)
+  app.put('/:domain', preferredDomainsUpdate)
   app.delete('/:domain', preferredDomainsDelete)
 }
 
 async function saasProviderRoutes(app: FastifyInstance) {
-  app.get('/zones', { schema: { querystring: saasListZonesQuerySchema } }, zonesIndex)
-  app.get('/zones/:zoneName/hostnames', { schema: { querystring: saasListHostnamesQuerySchema } }, hostnamesIndex)
-  app.post('/zones/:zoneName/hostnames', { schema: { body: saasStoreBodySchema } }, hostnamesStore)
-  app.get('/zones/:zoneName/hostnames/:hostnameFqdn', { schema: { querystring: saasShowQuerySchema } }, hostnamesShow)
-  app.put('/zones/:zoneName/hostnames/:hostnameFqdn', { schema: { body: saasUpdateBodySchema } }, hostnamesUpdate)
+  app.get('/zones', zonesIndex)
+  app.get('/zones/:zoneName/hostnames', hostnamesIndex)
+  app.post('/zones/:zoneName/hostnames', hostnamesStore)
+  app.get('/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesShow)
+  app.put('/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesUpdate)
   app.delete('/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesDelete)
   app.post('/zones/:zoneName/hostnames/:hostnameFqdn/refresh', hostnamesRefresh)
-  app.get('/zones/:zoneName/fallback-origin', { schema: { querystring: saasShowQuerySchema } }, fallbackOriginShow)
-  app.put('/zones/:zoneName/fallback-origin', { schema: { body: saasFallbackOriginBodySchema } }, fallbackOriginUpdate)
+  app.get('/zones/:zoneName/fallback-origin', fallbackOriginShow)
+  app.put('/zones/:zoneName/fallback-origin', fallbackOriginUpdate)
   app.delete('/zones/:zoneName/fallback-origin', fallbackOriginDelete)
 }
 

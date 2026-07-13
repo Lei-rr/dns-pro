@@ -7,7 +7,7 @@ import {
   edgeoneAccelerationDomainCreateResponseSchema,
   edgeoneAccelerationDomainListResponseSchema,
   edgeoneMutationResponseSchema,
-} from '../schemas/response.js'
+} from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -57,7 +57,7 @@ export class EdgeOneDomainService {
     const response = await gateway.call('DescribeAccelerationDomains', { ZoneId: zoneId, Offset: offset, Limit: limit })
     const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
 
-    const items = (parsed.AccelerationDomains ?? []).map((domain) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
+    const items = (parsed.AccelerationDomains ?? []).map((domain: any) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
     const total = parsed.TotalCount ?? items.length
     const result = {
       items,
@@ -231,7 +231,7 @@ export class EdgeOneDomainService {
   }
 
   private presentDomain(
-    domain: import('../schemas/response.js').EdgeOneAccelerationDomain,
+    domain: import('../../../lib/providers/edgeone-response.js').EdgeOneAccelerationDomain,
     zoneId: string
   ): EdgeOneAccelerationDomain {
     const origin = domain.OriginDetail ?? {}

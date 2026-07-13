@@ -1,4 +1,3 @@
-import { z } from 'zod'
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import { globalCache } from '../../../lib/cache/cache-service.js'
@@ -9,7 +8,7 @@ import {
   cloudflareResultInfoSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
-} from '../../cloudflare/schemas/response.js'
+} from '../../../lib/providers/cloudflare-response.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 
 const TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -255,9 +254,10 @@ export class CloudflareCustomHostnameGateway {
 
   private present(hostname: unknown): CloudflareCustomHostname {
     const parsed = cloudflareCustomHostnameSchema.parse(hostname)
-    const sslInput = parsed.ssl ?? {}
+    const sslInput = (parsed.ssl && typeof parsed.ssl === 'object' ? parsed.ssl : {}) as Record<string, any>
     const certificates = Array.isArray(sslInput.certificates) ? sslInput.certificates : []
-    const firstCert = z.record(z.string(), z.unknown()).safeParse(certificates[0]).data ?? {}
+    const firstCert =
+      certificates[0] && typeof certificates[0] === 'object' ? (certificates[0] as Record<string, any>) : {}
 
     const ssl: CloudflareCustomHostnameSsl = {
       ...sslInput,
@@ -277,7 +277,7 @@ export class CloudflareCustomHostnameGateway {
     }
   }
 
-  private presentFallbackOrigin(result: import('../../cloudflare/schemas/response.js').CloudflareFallbackOrigin): { origin?: string | null; status?: string | null } {
+  private presentFallbackOrigin(result: import('../../../lib/providers/cloudflare-response.js').CloudflareFallbackOrigin): { origin?: string | null; status?: string | null } {
     const origin = String(result.origin ?? '')
     return {
       origin: origin !== '' ? origin : null,

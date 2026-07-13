@@ -1,5 +1,4 @@
 import type { FastifyInstance } from 'fastify'
-import { ZodError } from 'zod'
 import { buildApp } from './app.js'
 import { loadAppConfig, type AppConfig } from './config/app.js'
 import { setDataRoot } from './lib/storage/json-store.js'
@@ -13,21 +12,21 @@ function parseCliOverrides(): Partial<AppConfig> {
     if (args[i] === '--log-level' && args[i + 1]) {
       overrides.logLevel = args[i + 1]
       i++
+      continue
+    }
+    if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
+      const port = Number(args[i + 1])
+      if (Number.isFinite(port) && port > 0) {
+        overrides.port = port
+      }
+      i++
     }
   }
   return overrides
 }
 
 function printConfigError(err: unknown): never {
-  if (err instanceof ZodError) {
-    console.error('配置校验失败：')
-    for (const issue of err.issues) {
-      const field = issue.path.length > 0 ? issue.path.join('.') : 'config'
-      console.error(`  - ${field}: ${issue.message}`)
-    }
-  } else {
-    console.error('加载配置失败：', err)
-  }
+  console.error('加载配置失败：', err)
   process.exit(1)
 }
 

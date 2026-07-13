@@ -6,7 +6,7 @@ import {
   dnspodRecordListResponseSchema,
   dnspodRecordMutationResponseSchema,
   dnspodRecordSchema,
-} from '../schemas/response.js'
+} from '../../../lib/providers/dnspod-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
 import {
   providerCacheTag,
@@ -296,7 +296,7 @@ export class DnsPodRecordService {
   }
 }
 
-function presentRecord(record: import('../schemas/response.js').DnspodRecord): RecordListItem {
+function presentRecord(record: import('../../../lib/providers/dnspod-response.js').DnspodRecord): RecordListItem {
   return {
     id: record.RecordId ?? 0,
     name: record.Name ?? '',

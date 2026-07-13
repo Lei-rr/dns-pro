@@ -14,7 +14,7 @@ import {
   dnspodDomainInfoSchema,
   dnspodDomainListResponseSchema,
   dnspodDomainSchema,
-} from '../schemas/response.js'
+} from '../../../lib/providers/dnspod-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
 
 const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
@@ -207,7 +207,7 @@ export class DnsPodZoneService {
   }
 }
 
-function presentZone(zone: import('../schemas/response.js').DnspodDomain): ZoneListItem {
+function presentZone(zone: import('../../../lib/providers/dnspod-response.js').DnspodDomain): ZoneListItem {
   return {
     id: zone.DomainId ?? 0,
     name: zone.Name ?? '',

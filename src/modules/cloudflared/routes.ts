@@ -1,11 +1,5 @@
 import type { FastifyInstance } from 'fastify'
 import {
-  cloudflaredTunnelCreateSchema,
-  cloudflaredRouteSchema,
-  cloudflaredRouteUpdateQuerySchema,
-  cloudflaredRouteDeleteQuerySchema,
-} from './schemas/request.js'
-import {
   cloudflaredTunnelsIndex,
   cloudflaredTunnelsStore,
   cloudflaredTunnelShow,
@@ -22,13 +16,13 @@ import {
 export async function routes(app: FastifyInstance) {
   app.get('/zones', cloudflaredZonesIndex)
   app.get('/tunnels', cloudflaredTunnelsIndex)
-  app.post('/tunnels', { schema: { body: cloudflaredTunnelCreateSchema } }, cloudflaredTunnelsStore)
+  app.post('/tunnels', cloudflaredTunnelsStore)
   app.get('/tunnels/:tunnelId', cloudflaredTunnelShow)
   app.delete('/tunnels/:tunnelId', cloudflaredTunnelDelete)
   app.get('/tunnels/:tunnelId/token', cloudflaredTunnelToken)
   app.post('/tunnels/:tunnelId/token/rotate', cloudflaredTunnelTokenRotate)
   app.get('/tunnels/:tunnelId/routes', cloudflaredTunnelConfigShow)
-  app.post('/tunnels/:tunnelId/routes', { schema: { body: cloudflaredRouteSchema } }, cloudflaredTunnelRouteStore)
-  app.put('/tunnels/:tunnelId/routes', { schema: { body: cloudflaredRouteSchema, querystring: cloudflaredRouteUpdateQuerySchema } }, cloudflaredTunnelRouteUpdate)
-  app.delete('/tunnels/:tunnelId/routes', { schema: { querystring: cloudflaredRouteDeleteQuerySchema } }, cloudflaredTunnelRouteDelete)
+  app.post('/tunnels/:tunnelId/routes', cloudflaredTunnelRouteStore)
+  app.put('/tunnels/:tunnelId/routes', cloudflaredTunnelRouteUpdate)
+  app.delete('/tunnels/:tunnelId/routes', cloudflaredTunnelRouteDelete)
 }
