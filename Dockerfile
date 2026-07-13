@@ -68,6 +68,8 @@ FROM node:20-bookworm-slim AS runtime
 
 WORKDIR /app
 
+ENV NODE_ENV=production
+
 # Runtime only needs the Node binary, not npm/yarn tooling.
 RUN rm -rf \
       /usr/local/lib/node_modules \
