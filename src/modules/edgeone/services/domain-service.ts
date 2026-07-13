@@ -63,7 +63,7 @@ export class EdgeOneDomainService {
       items,
       pagination: { offset, limit, total },
       meta: { page: limit > 0 ? Math.floor(offset / limit) + 1 : 1, per_page: limit, offset, limit, total, total_pages: limit > 0 ? Math.ceil(total / limit) : 1 },
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
     }
 
     globalCache.set(cacheKey, result, TTL_MS, [`edgeone:domains:${providerId}:${zoneId}`])
@@ -91,7 +91,7 @@ export class EdgeOneDomainService {
 
     globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
     const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
-    return { name: normalized.domain_name, request_id: parsed.RequestId, ownership_verification: parsed.OwnershipVerification ?? null }
+    return { name: normalized.domain_name, request_id: parsed.RequestId ?? undefined, ownership_verification: parsed.OwnershipVerification ?? null }
   }
 
   async updateAccelerationDomain(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -240,20 +240,20 @@ export class EdgeOneDomainService {
     return {
       zone_id: domain.ZoneId ?? zoneId,
       name: domain.DomainName ?? '',
-      status: domain.DomainStatus,
-      cname: domain.Cname,
-      ipv6_status: domain.IPv6Status,
-      identification_status: domain.IdentificationStatus,
-      origin_protocol: domain.OriginProtocol,
-      http_origin_port: domain.HttpOriginPort,
-      https_origin_port: domain.HttpsOriginPort,
+      status: domain.DomainStatus ?? undefined,
+      cname: domain.Cname ?? undefined,
+      ipv6_status: domain.IPv6Status ?? undefined,
+      identification_status: domain.IdentificationStatus ?? undefined,
+      origin_protocol: domain.OriginProtocol ?? undefined,
+      http_origin_port: domain.HttpOriginPort ?? undefined,
+      https_origin_port: domain.HttpsOriginPort ?? undefined,
       origin: {
         type: origin.OriginType,
         value: origin.Origin,
         host_header: origin.HostHeader,
       },
       certificate: {
-        mode: certificate.Mode ?? 'disable',
+        mode: (certificate.Mode as string | undefined) ?? 'disable',
         items: Array.isArray(certificate.List)
           ? certificate.List.map((item: Record<string, unknown>) => ({
               cert_id: item.CertId,
@@ -264,8 +264,8 @@ export class EdgeOneDomainService {
             }))
           : [],
       },
-      created_on: domain.CreatedOn,
-      modified_on: domain.ModifiedOn,
+      created_on: domain.CreatedOn ?? undefined,
+      modified_on: domain.ModifiedOn ?? undefined,
     }
   }
 }
