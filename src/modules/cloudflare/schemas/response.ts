@@ -4,15 +4,15 @@ export const cloudflareZoneSchema = z
   .object({
     id: z.string(),
     name: z.string(),
-    status: z.string().optional(),
-    type: z.string().optional(),
-    paused: z.boolean().optional(),
-    account: z.unknown().optional(),
-    name_servers: z.array(z.string()).optional(),
-    original_name_servers: z.array(z.string()).optional(),
-    created_on: z.string().optional(),
-    modified_on: z.string().optional(),
-    activated_on: z.string().optional(),
+    status: z.string().nullish(),
+    type: z.string().nullish(),
+    paused: z.boolean().nullish(),
+    account: z.unknown().nullish(),
+    name_servers: z.array(z.string()).nullish().transform((value) => value ?? []),
+    original_name_servers: z.array(z.string()).nullish().transform((value) => value ?? []),
+    created_on: z.string().nullish(),
+    modified_on: z.string().nullish(),
+    activated_on: z.string().nullish(),
   })
   .passthrough()
 
@@ -21,19 +21,19 @@ export type CloudflareZone = z.infer<typeof cloudflareZoneSchema>
 export const cloudflareDnsRecordSchema = z
   .object({
     id: z.string(),
-    zone_id: z.string(),
-    zone_name: z.string(),
+    zone_id: z.string().nullish(),
+    zone_name: z.string().nullish(),
     name: z.string(),
     type: z.string(),
     content: z.string(),
     ttl: z.number(),
-    proxied: z.boolean().optional(),
-    proxiable: z.boolean().optional(),
-    priority: z.number().optional(),
-    comment: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    created_on: z.string().optional(),
-    modified_on: z.string().optional(),
+    proxied: z.boolean().nullish(),
+    proxiable: z.boolean().nullish(),
+    priority: z.number().nullish(),
+    comment: z.string().nullish(),
+    tags: z.array(z.string()).nullish().transform((value) => value ?? []),
+    created_on: z.string().nullish(),
+    modified_on: z.string().nullish(),
   })
   .passthrough()
 
@@ -41,11 +41,11 @@ export type CloudflareDnsRecord = z.infer<typeof cloudflareDnsRecordSchema>
 
 export const cloudflareResultInfoSchema = z
   .object({
-    page: z.number().optional(),
-    per_page: z.number().optional(),
-    count: z.number().optional(),
-    total_count: z.number().optional(),
-    total_pages: z.number().optional(),
+    page: z.number().nullish(),
+    per_page: z.number().nullish(),
+    count: z.number().nullish(),
+    total_count: z.number().nullish(),
+    total_pages: z.number().nullish(),
   })
   .passthrough()
 
@@ -53,13 +53,13 @@ export type CloudflareResultInfo = z.infer<typeof cloudflareResultInfoSchema>
 
 export const cloudflareCustomHostnameSchema = z
   .object({
-    id: z.string().optional(),
-    hostname: z.string().optional(),
-    status: z.string().optional(),
-    custom_origin_server: z.string().nullable().optional(),
-    ssl: z.record(z.string(), z.unknown()).optional(),
-    ownership_verification: z.record(z.string(), z.unknown()).optional(),
-    custom_metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    id: z.string().nullish(),
+    hostname: z.string().nullish(),
+    status: z.string().nullish(),
+    custom_origin_server: z.string().nullish(),
+    ssl: z.record(z.string(), z.unknown()).nullish().transform((value) => value ?? {}),
+    ownership_verification: z.record(z.string(), z.unknown()).nullish().transform((value) => value ?? {}),
+    custom_metadata: z.record(z.string(), z.unknown()).nullish(),
   })
   .passthrough()
 
@@ -67,10 +67,10 @@ export type CloudflareCustomHostnameResponse = z.infer<typeof cloudflareCustomHo
 
 export const cloudflareApiResponseSchema = z.object({
   success: z.boolean(),
-  errors: z.array(z.unknown()),
-  messages: z.array(z.unknown()),
-  result: z.unknown(),
-  result_info: z.record(z.string(), z.unknown()).optional(),
+  errors: z.array(z.unknown()).nullish().transform((value) => value ?? []),
+  messages: z.array(z.unknown()).nullish().transform((value) => value ?? []),
+  result: z.unknown().nullish(),
+  result_info: z.record(z.string(), z.unknown()).nullish(),
 })
 
 export type CloudflareApiResponse = z.infer<typeof cloudflareApiResponseSchema>
@@ -104,8 +104,8 @@ export const cloudflareDcvDelegationSchema = z
 
 export const cloudflareFallbackOriginSchema = z
   .object({
-    origin: z.string().optional(),
-    status: z.string().optional(),
+    origin: z.string().nullish(),
+    status: z.string().nullish(),
   })
   .passthrough()
 
@@ -115,13 +115,13 @@ export const cloudflareTunnelSchema = z
   .object({
     id: z.string(),
     name: z.string(),
-    status: z.string(),
-    config_src: z.string().optional(),
-    remote_config: z.boolean().optional(),
-    connections: z.array(z.record(z.string(), z.unknown())).optional(),
-    conns_active_at: z.string().optional(),
-    conns_inactive_at: z.string().optional(),
-    created_at: z.string().optional(),
+    status: z.string().nullish(),
+    config_src: z.string().nullish(),
+    remote_config: z.boolean().nullish(),
+    connections: z.array(z.record(z.string(), z.unknown())).nullish().transform((value) => value ?? []),
+    conns_active_at: z.string().nullish(),
+    conns_inactive_at: z.string().nullish(),
+    created_at: z.string().nullish(),
   })
   .passthrough()
 
@@ -131,11 +131,18 @@ export const cloudflareRouteConfigSchema = z
   .object({
     config: z
       .object({
-        ingress: z.array(z.record(z.string(), z.unknown()).and(z.object({ hostname: z.string().optional(), service: z.string().optional() }))).optional(),
+        ingress: z
+          .array(
+            z.record(z.string(), z.unknown()).and(
+              z.object({ hostname: z.string().nullish(), service: z.string().nullish() })
+            )
+          )
+          .nullish()
+          .transform((value) => value ?? []),
       })
       .passthrough()
-      .optional(),
-    version: z.number().optional(),
+      .nullish(),
+    version: z.number().nullish(),
   })
   .passthrough()
 
