@@ -131,7 +131,7 @@ export class DnsPodRecordService {
         count: Number(countInfo?.ListCount ?? 0),
         total: Number(countInfo?.TotalCount ?? 0),
       },
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
       meta: offsetPaginationMeta({
         offset,
         limit,
@@ -166,7 +166,7 @@ export class DnsPodRecordService {
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
       id: parsed.RecordId ?? 0,
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
     }
   }
 
@@ -196,7 +196,7 @@ export class DnsPodRecordService {
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
       id: parsed.RecordId ?? 0,
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
     }
   }
 
@@ -221,7 +221,7 @@ export class DnsPodRecordService {
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
       id: Number(recordId),
-      request_id: parsed.RequestId,
+      request_id: parsed.RequestId ?? undefined,
     }
   }
 
