@@ -62,6 +62,7 @@ export function useSaasHostnames(
     { title: '到期日期', key: 'expires_on', width: 110 },
     { title: '主机名状态', key: 'status', width: 100 },
     { title: '源服务器', key: 'custom_origin_server', width: 200 },
+    { title: '优选域名', key: 'preferred_domain', width: 200 },
     { title: '操作', key: 'actions', width: 110, align: 'right' },
   ])
   const pagination = computed(() => tablePagination())

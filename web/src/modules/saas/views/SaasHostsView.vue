@@ -77,6 +77,18 @@
             </a-typography-text>
           </div>
         </template>
+        <template v-else-if="column.key === 'preferred_domain'">
+          <div class="origin-cell">
+            <a-typography-text type="secondary" v-if="!preferredDomainOf(record)">—</a-typography-text>
+            <a-typography-text
+              v-else
+              :ellipsis="{ tooltip: preferredDomainOf(record) }"
+              style="max-width: 160px; display: inline-block"
+            >
+              {{ preferredDomainOf(record) }}
+            </a-typography-text>
+          </div>
+        </template>
         <template v-else-if="column.key === 'actions'">
           <a-space size="small">
             <a-button
@@ -207,6 +219,10 @@ const {
   dnspodZones,
   cloudflareDnsZones,
 } = hostnamesApi
+
+function preferredDomainOf(record: SaaSHostname): string {
+  return String(record.custom_metadata?.preferred_domain || '').trim()
+}
 
 const {
   preferredDomains,
