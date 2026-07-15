@@ -86,15 +86,14 @@ export function useSaasHostnameCrud({
     try {
       const current = editingHostname.value || ({} as SaaSHostname)
       const preferred = String(formData.preferred_domain || '').trim()
-      const syncTarget = String(
-        formData.sync_target || current.sync_target || (current as any).effective_sync_target || '',
+
+      // Edit form currently does not expose sync linkage controls.
+      // Always keep the host's existing DNS linkage so preferred-domain edits update the correct DNS system.
+      const existingTarget = String(current.sync_target || (current as any).effective_sync_target || '').trim()
+      const existingProviderId = String(
+        current.sync_provider_id || (current as any).effective_sync_provider_id || '',
       ).trim()
-      const syncProviderId = String(
-        formData.sync_provider_id || current.sync_provider_id || (current as any).effective_sync_provider_id || '',
-      ).trim()
-      const syncZone = String(
-        formData.sync_zone || current.sync_zone || (current as any).effective_sync_zone || '',
-      ).trim()
+      const existingZone = String(current.sync_zone || (current as any).effective_sync_zone || '').trim()
 
       const payload: Record<string, unknown> = {
         method: String(formData.method || 'txt').trim(),
@@ -106,18 +105,15 @@ export function useSaasHostnameCrud({
         auto_preferred: !!formData.autoPreferred,
       }
 
-      // Never send empty sync_* on edit — empty would wipe existing DNS sync config.
-      if (syncTarget) payload.sync_target = syncTarget
-      if (syncProviderId) payload.sync_provider_id = syncProviderId
-      if (syncZone) payload.sync_zone = syncZone
+      if (existingTarget) payload.sync_target = existingTarget
+      if (existingProviderId) payload.sync_provider_id = existingProviderId
+      if (existingZone) payload.sync_zone = existingZone
 
-      // Preferred-domain edits must always resync DNS when the host is linked to DNSPod/CF DNS.
       const shouldAutoSync = !!(
-        syncTarget ||
-        current.sync_target ||
-        (current as any).effective_sync_target ||
+        existingTarget ||
         formData.autoPreferred ||
-        current.auto_preferred
+        current.auto_preferred ||
+        preferred
       )
 
       const response = await saasApi.updateHostname(

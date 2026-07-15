@@ -157,18 +157,11 @@ watch(
   () => props.cloudflareDnsZones,
   () => ensureSyncDefaults()
 )
-watch(
-  () => String(form.value.sync_target || ''),
-  (value) => {
-    if (!value) return
-    form.value.sync_provider_id = defaultSyncProviderId()
-    form.value.sync_zone = defaultSyncZone()
-  }
-)
+// Only auto-fill sync zone when creating. Editing must keep the host's stored DNS linkage.
 watch(
   () => String(form.value.sync_provider_id || ''),
-  (value) => {
-    if (!value) return
+  (value, previous) => {
+    if (!value || props.editing || value === previous) return
     form.value.sync_zone = defaultSyncZone(value)
   }
 )
@@ -261,7 +254,8 @@ function defaultSyncZone(providerId = ''): string {
   return zones[0]?.name || ''
 }
 function defaultSyncProviderId() {
-  return props.cloudflareDnsProviders?.[0]?.id || props.dnspodProviders?.[0]?.id || ''
+  // Prefer DNSPod for SaaS DNS sync (境内优选 CNAME). Cloudflare DNS is secondary.
+  return props.dnspodProviders?.[0]?.id || props.cloudflareDnsProviders?.[0]?.id || ''
 }
 function ensureSyncDefaults() {
   if (!props.open || props.editing) return

@@ -133,6 +133,17 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     }
     if (zoneName === '') throw new ApiError('saas_cloudflare_sync_zone_missing', 'Cloudflare DNS sync zone is required', 422)
 
+    // Guard: never try writing api.example.com into an unrelated zone like 100022.xyz.
+    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    if (fqdn !== zoneName && !fqdn.endsWith('.' + zoneName)) {
+      throw new ApiError(
+        'saas_cloudflare_sync_zone_mismatch',
+        `Cloudflare DNS sync zone ${zoneName} does not match hostname ${fqdn}`,
+        422,
+        { hostname: fqdn, sync_zone: zoneName },
+      )
+    }
+
     const zoneId = await this.zones.idByName(cloudflareProviderId, zoneName)
     return [cloudflareProviderId, zoneId, zoneName]
   }
@@ -226,32 +237,38 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
 
   private async syncRecord(cloudflareProviderId: string, zoneId: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const base = { type: record.type, name: record.name, value: record.value }
-    const matches = await this.exactMatches(cloudflareProviderId, zoneId, record.name, record.type)
-    const expectedValue = String(record.value ?? '').replace(/\.$/, '')
-    const expectedComment = String(record.comment ?? '')
+    try {
+      const matches = await this.exactMatches(cloudflareProviderId, zoneId, record.name, record.type)
+      const expectedValue = String(record.value ?? '').replace(/\.$/, '')
+      const expectedComment = String(record.comment ?? '')
 
-    for (const match of matches) {
-      const value = String(match.content ?? '').replace(/\.$/, '')
-      if (value === expectedValue) {
-        const comment = String(match.comment ?? '')
-        if (comment === expectedComment || comment === '') {
-          return { ...base, status: 'unchanged', record_id: String(match.id ?? '') }
+      for (const match of matches) {
+        const value = String(match.content ?? '').replace(/\.$/, '')
+        if (value === expectedValue) {
+          const comment = String(match.comment ?? '')
+          if (comment === expectedComment || comment === '') {
+            return { ...base, status: 'unchanged', record_id: String(match.id ?? '') }
+          }
         }
       }
-    }
 
-    for (const match of matches) {
-      if (String(match.comment ?? '') !== expectedComment) continue
-      const updated = await this.records.update(cloudflareProviderId, zoneId, String(match.id), this.recordPayload(record))
-      return { ...base, status: 'updated', record_id: String(updated.id ?? match.id ?? '') }
-    }
+      for (const match of matches) {
+        // Prefer updating the first matching type+name record when value differs.
+        // Comment matching is too strict and can force create against an existing CNAME → 400.
+        const updated = await this.records.update(cloudflareProviderId, zoneId, String(match.id), this.recordPayload(record))
+        return { ...base, status: 'updated', record_id: String(updated.id ?? match.id ?? '') }
+      }
 
-    if (matches.length > 0) {
-      throw new ApiError('cloudflare_dns_record_conflict', 'Cloudflare DNS record conflict', 409, { name: record.name, type: record.type })
+      const created = await this.records.create(cloudflareProviderId, zoneId, this.recordPayload(record))
+      return { ...base, status: 'created', record_id: String(created.id ?? '') }
+    } catch (error) {
+      return {
+        ...base,
+        status: 'failed',
+        record_id: '',
+        error: error instanceof Error ? error.message : String(error),
+      }
     }
-
-    const created = await this.records.create(cloudflareProviderId, zoneId, this.recordPayload(record))
-    return { ...base, status: 'created', record_id: String(created.id ?? '') }
   }
 
   private async deleteRecord(cloudflareProviderId: string, zoneId: string, record: SyncRecord): Promise<Record<string, unknown>> {
