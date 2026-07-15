@@ -23,15 +23,22 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  title?: string
-  subtitle?: string
-  backText?: string
-  keyword?: string
-  searchPlaceholder?: string
-  showSearch?: boolean
-  searchWidth?: string
-}>()
+withDefaults(
+  defineProps<{
+    title?: string
+    subtitle?: string
+    backText?: string
+    keyword?: string
+    searchPlaceholder?: string
+    showSearch?: boolean
+    searchWidth?: string
+  }>(),
+  {
+    // Records/Zones/EdgeOne toolbars rely on keyword search; keep the input visible by default.
+    showSearch: true,
+    searchPlaceholder: '搜索',
+  },
+)
 
 defineEmits<{
   (e: 'update:keyword', value: string): void
