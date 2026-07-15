@@ -202,9 +202,15 @@ const syncProviderOptions = computed(() => {
   ]
 })
 const selectedSyncTarget = computed(() => {
-  if ((props.cloudflareDnsProviders || []).some((provider) => provider.id === form.value.sync_provider_id))
-    return 'cloudflare_dns'
-  if ((props.dnspodProviders || []).some((provider) => provider.id === form.value.sync_provider_id)) return 'dnspod'
+  const providerId = String(form.value.sync_provider_id || '')
+  if ((props.cloudflareDnsProviders || []).some((provider) => provider.id === providerId)) return 'cloudflare_dns'
+  if ((props.dnspodProviders || []).some((provider) => provider.id === providerId)) return 'dnspod'
+  // Fallback for edit mode when provider lists are not ready yet.
+  const current = props.initialValue
+  const existingTarget = String(current?.sync_target || (current as any)?.effective_sync_target || '').trim()
+  if (existingTarget === 'dnspod' || existingTarget === 'cloudflare_dns') return existingTarget
+  if (providerId === 'dnspod') return 'dnspod'
+  if (providerId === 'cloudflare' || providerId.includes('cloudflare')) return 'cloudflare_dns'
   return ''
 })
 const activeSyncZones = computed(() => {
@@ -266,6 +272,10 @@ function ensureSyncDefaults() {
 function normalizeInitialValue(): Record<string, unknown> {
   const current = props.initialValue || ({} as SaaSHostname)
   const customOriginServer = String(current.custom_origin_server || '').trim()
+  const syncProviderId = String(
+    current.sync_provider_id || (current as any).effective_sync_provider_id || '',
+  ).trim()
+  const syncZone = String(current.sync_zone || (current as any).effective_sync_zone || '').trim()
 
   return {
     hostname: String(current.hostname || '').trim(),
@@ -276,8 +286,10 @@ function normalizeInitialValue(): Record<string, unknown> {
     use_custom_origin_server: customOriginServer !== '',
     autoPreferred: Boolean(current.auto_preferred),
     preferred_domain: String(current.custom_metadata?.preferred_domain || '').trim(),
-    sync_provider_id: String(current.sync_provider_id || '').trim(),
-    sync_zone: String(current.sync_zone || '').trim(),
+    sync_provider_id: syncProviderId,
+    sync_zone: syncZone,
+    // Keep existing target so submit/autoSync don't drop DNS linkage during edit.
+    sync_target: String(current.sync_target || (current as any).effective_sync_target || '').trim(),
   }
 }
 function defaultForm(): Record<string, unknown> {
@@ -306,9 +318,12 @@ function emitOpen(value: boolean) {
 function submit() {
   if (!canSubmit.value) return
   const hostname = usesGuidedHostname.value ? hostnamePreview.value : String(form.value.hostname || '').trim()
+  const syncTarget =
+    selectedSyncTarget.value ||
+    String(form.value.sync_target || props.initialValue?.sync_target || (props.initialValue as any)?.effective_sync_target || '').trim()
   emit('submit', {
     ...form.value,
-    sync_target: selectedSyncTarget.value,
+    sync_target: syncTarget,
     hostname,
   })
 }

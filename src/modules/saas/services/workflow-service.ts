@@ -78,14 +78,23 @@ export class SaasWorkflowService {
 
   async updateHostname(providerId: string, zoneName: string, hostnameFqdn: string, data: Record<string, unknown>, autoSync = false): Promise<Record<string, unknown>> {
     let beforeRecords: SyncRecord[] = []
-    if (autoSync) {
+    // Preference/DNS-linked edits should resync even if frontend forgot auto_sync.
+    const shouldAutoSync =
+      autoSync ||
+      'preferred_domain' in data ||
+      'auto_preferred' in data ||
+      'sync_target' in data ||
+      'sync_zone' in data ||
+      'sync_provider_id' in data
+
+    if (shouldAutoSync) {
       const collected = await (await this.syncDriverForHostname(providerId, zoneName, hostnameFqdn)).collectRecordsFor(providerId, zoneName, hostnameFqdn)
       beforeRecords = collected.records ?? []
     }
 
     const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data)
 
-    if (autoSync) {
+    if (shouldAutoSync) {
       const driver = await this.syncDriverForHostname(providerId, zoneName, hostnameFqdn)
       const sync = await this.safeSync(() => driver.resyncAfterUpdate(providerId, zoneName, hostnameFqdn, beforeRecords))
       return { ...result, side_effects: this.dnsSideEffects({ sync: this.normalizeSyncOperation(sync, '已执行 DNS 重同步') }) }

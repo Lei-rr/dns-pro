@@ -84,26 +84,48 @@ export function useSaasHostnameCrud({
 
     savingEdit.value = true
     try {
+      const current = editingHostname.value || ({} as SaaSHostname)
+      const preferred = String(formData.preferred_domain || '').trim()
+      const syncTarget = String(
+        formData.sync_target || current.sync_target || (current as any).effective_sync_target || '',
+      ).trim()
+      const syncProviderId = String(
+        formData.sync_provider_id || current.sync_provider_id || (current as any).effective_sync_provider_id || '',
+      ).trim()
+      const syncZone = String(
+        formData.sync_zone || current.sync_zone || (current as any).effective_sync_zone || '',
+      ).trim()
+
       const payload: Record<string, unknown> = {
         method: String(formData.method || 'txt').trim(),
         min_tls_version: String(formData.min_tls_version || '1.0').trim(),
         custom_origin_server: formData.use_custom_origin_server
           ? String(formData.custom_origin_server || '').trim()
           : '',
-        preferred_domain: String(formData.preferred_domain || '').trim(),
-        sync_target: String(formData.sync_target || '').trim(),
-        sync_provider_id: String(formData.sync_provider_id || '').trim(),
-        sync_zone: String(formData.sync_zone || '').trim(),
+        preferred_domain: preferred,
         auto_preferred: !!formData.autoPreferred,
       }
 
-      const options = { autoSync: !!formData.sync_target }
+      // Never send empty sync_* on edit — empty would wipe existing DNS sync config.
+      if (syncTarget) payload.sync_target = syncTarget
+      if (syncProviderId) payload.sync_provider_id = syncProviderId
+      if (syncZone) payload.sync_zone = syncZone
+
+      // Preferred-domain edits must always resync DNS when the host is linked to DNSPod/CF DNS.
+      const shouldAutoSync = !!(
+        syncTarget ||
+        current.sync_target ||
+        (current as any).effective_sync_target ||
+        formData.autoPreferred ||
+        current.auto_preferred
+      )
+
       const response = await saasApi.updateHostname(
         props.provider,
         decodedZoneName.value,
         editingHostname.value.hostname,
         payload,
-        options
+        { autoSync: shouldAutoSync },
       )
       const dnsSync = response.side_effects?.dns?.sync
       message.success(dnsOperationMessage(dnsSync, '自定义主机名已更新'))

@@ -265,6 +265,8 @@ export class DnsPodSync {
       subdomain,
       record_type: type,
       keyword: '',
+      // Always refresh during sync so preferred CNAME value updates are not matched against stale cache.
+      refresh: true,
     })
 
     return (listing.items ?? []).filter((record) => {

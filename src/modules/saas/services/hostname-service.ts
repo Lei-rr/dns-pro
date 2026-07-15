@@ -132,13 +132,28 @@ export class SaasHostnameService {
 
     if ('sync_target' in data || 'sync_zone' in data || 'sync_provider_id' in data || 'auto_preferred' in data) {
       const existing = (await this.preferences.get(cfId, hostnameId)) ?? ({} as HostnamePreference)
+      const nextTarget =
+        'sync_target' in data && String(data.sync_target ?? '').trim() !== ''
+          ? String(data.sync_target).trim()
+          : String(existing.sync_target ?? '')
+      const nextProviderId =
+        'sync_provider_id' in data && String(data.sync_provider_id ?? '').trim() !== ''
+          ? String(data.sync_provider_id).trim()
+          : String(existing.sync_provider_id ?? '')
+      const nextZone =
+        'sync_zone' in data && String(data.sync_zone ?? '').trim() !== ''
+          ? String(data.sync_zone).trim()
+          : String(existing.sync_zone ?? '')
+      const nextAutoPreferred =
+        'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false)
+
       await this.preferences.setSyncConfig(
         cfId,
         hostnameId,
-        'sync_target' in data ? String(data.sync_target ?? '') : String(existing.sync_target ?? ''),
-        'sync_provider_id' in data ? String(data.sync_provider_id ?? '') : String(existing.sync_provider_id ?? ''),
-        'sync_zone' in data ? String(data.sync_zone ?? '') : String(existing.sync_zone ?? ''),
-        'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false),
+        nextTarget,
+        nextProviderId,
+        nextZone,
+        nextAutoPreferred,
         String(hostname.hostname ?? hostnameFqdn),
       )
     }
