@@ -4,7 +4,7 @@
       <div class="app-container app-header-inner">
         <div class="app-brand-nav">
           <router-link to="/" class="app-brand">
-            <a-avatar shape="square" style="background: #1677ff">D</a-avatar>
+            <a-avatar shape="square" size="small" style="background: #1677ff">D</a-avatar>
             <a-typography-text strong style="font-size: 16px">DNS-PRO</a-typography-text>
           </router-link>
           <a-menu

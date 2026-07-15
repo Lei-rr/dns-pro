@@ -36,26 +36,67 @@ body {
   gap: 16px;
 }
 
+/* Ant Design header defaults to line-height: 64px; keep flex children optically centered. */
+.ant-layout-header {
+  height: 64px;
+  line-height: 64px;
+  padding: 0;
+}
+
 .app-brand-nav {
   display: flex;
   align-items: center;
   gap: 24px;
   min-width: 0;
   flex: 1;
+  height: 64px;
 }
 
 .app-brand {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 10px;
+  height: 64px;
   color: inherit;
   white-space: nowrap;
+  line-height: 1;
+}
+
+.app-brand .ant-avatar {
+  flex: 0 0 auto;
+  width: 28px !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  font-size: 14px;
+}
+
+.app-brand .ant-typography {
+  line-height: 1 !important;
+  margin: 0 !important;
+  display: inline-flex;
+  align-items: center;
 }
 
 .app-menu {
   flex: 1;
   min-width: 0;
-  border-bottom: 0;
+  border-bottom: 0 !important;
+  line-height: 62px;
+  height: 64px;
+}
+
+.app-menu.ant-menu-horizontal {
+  display: flex;
+  align-items: center;
+}
+
+.app-menu.ant-menu-horizontal > .ant-menu-item,
+.app-menu.ant-menu-horizontal > .ant-menu-submenu {
+  display: inline-flex;
+  align-items: center;
+  top: 0;
+  margin-top: 0;
+  line-height: 62px;
 }
 
 .page-toolbar {
