@@ -148,7 +148,7 @@ export class DnsPodRecordService {
   }
 
   async create(providerId: string, domain: string, input: RecordCreateInput): Promise<RecordMutationResult> {
-    const payload = this.buildRecordPayload(domain, input)
+    const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
     const provider = await this.requireProvider(providerId)
     const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
@@ -176,7 +176,7 @@ export class DnsPodRecordService {
     recordId: string,
     input: RecordCreateInput
   ): Promise<RecordMutationResult> {
-    const payload = this.buildRecordPayload(domain, input)
+    const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
     payload.RecordId = Number(recordId)
 
     const provider = await this.requireProvider(providerId)
@@ -236,6 +236,64 @@ export class DnsPodRecordService {
     }
   }
 
+  private normalizeRecordInput(raw: RecordCreateInput | Record<string, unknown>): RecordCreateInput {
+    const input = (raw ?? {}) as Record<string, unknown>
+    const recordType = String(input.record_type ?? '').trim().toUpperCase()
+    const recordLine = String(input.record_line ?? '').trim() || '默认'
+    const value = String(input.value ?? '').trim()
+    if (!recordType || !value) {
+      throw new ApiError('validation_error', 'record_type and value are required', 422)
+    }
+
+    const normalized: RecordCreateInput = {
+      record_type: recordType,
+      record_line: recordLine,
+      value,
+    }
+
+    const subdomain = this.optionalString(input.subdomain)
+    if (subdomain !== undefined) normalized.subdomain = subdomain
+
+    const recordLineId = this.optionalString(input.record_line_id)
+    if (recordLineId !== undefined) normalized.record_line_id = recordLineId
+
+    const status = this.optionalString(input.status)
+    if (status === 'ENABLE' || status === 'DISABLE') normalized.status = status
+
+    const remark = this.optionalString(input.remark)
+    if (remark !== undefined) normalized.remark = remark
+
+    const ttl = this.optionalUint(input.ttl)
+    if (ttl !== undefined) normalized.ttl = ttl
+
+    const weight = this.optionalUint(input.weight)
+    if (weight !== undefined) normalized.weight = weight
+
+    // DNSPod: MX must be uint64 when present. Empty string from frontend must be omitted.
+    // Only send MX for MX records (or when a valid number is explicitly provided).
+    const mx = this.optionalUint(input.mx)
+    if (recordType === 'MX') {
+      normalized.mx = mx ?? 0
+    } else if (mx !== undefined) {
+      normalized.mx = mx
+    }
+
+    return normalized
+  }
+
+  private optionalString(value: unknown): string | undefined {
+    if (value === undefined || value === null) return undefined
+    const text = String(value).trim()
+    return text === '' ? undefined : text
+  }
+
+  private optionalUint(value: unknown): number | undefined {
+    if (value === undefined || value === null || value === '') return undefined
+    const num = typeof value === 'number' ? value : Number(String(value).trim())
+    if (!Number.isFinite(num) || num < 0) return undefined
+    return Math.floor(num)
+  }
+
   private buildRecordPayload(domain: string, input: RecordCreateInput): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       Domain: domain,
@@ -255,9 +313,10 @@ export class DnsPodRecordService {
     ]
 
     for (const [key, property] of optionalFields) {
-      if (input[key] !== undefined) {
-        payload[property] = input[key]
-      }
+      const value = input[key]
+      // Skip undefined/null/empty-string so DNSPod does not receive invalid typed params.
+      if (value === undefined || value === null || value === '') continue
+      payload[property] = value
     }
 
     return payload
