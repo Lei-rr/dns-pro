@@ -35,6 +35,8 @@ export function useSaasHostnameCrud({
   const deleting = ref(false)
   const deletingText = ref('')
   const refreshing = ref<Record<string, boolean>>({})
+  const applyingPreferred = ref(false)
+  const applyingPreferredText = ref('')
 
   function dnsOperationMessage(operation: { message?: string } | undefined, fallback: string) {
     if (!operation) return fallback
@@ -247,17 +249,67 @@ export function useSaasHostnameCrud({
     if (index >= 0) hostnames.value.splice(index, 1, { ...hostnames.value[index], ...updated })
   }
 
+  async function applyPreferredDomainToList(domain: string) {
+    const preferred = String(domain || '').trim()
+    if (!preferred) {
+      message.warning('请选择优选域名')
+      return
+    }
+    const records = [...hostnames.value]
+    if (!records.length) {
+      message.warning('当前列表没有可切换的主机名')
+      return
+    }
+
+    applyingPreferred.value = true
+    applyingPreferredText.value = `正在切换 0/${records.length}`
+    const failed: string[] = []
+    try {
+      for (const [index, record] of records.entries()) {
+        applyingPreferredText.value = `正在切换 ${index + 1}/${records.length}：${record.hostname}`
+        try {
+          const response = await saasApi.updateHostname(
+            props.provider,
+            decodedZoneName.value,
+            record.hostname,
+            {
+              preferred_domain: preferred,
+              auto_preferred: true,
+            },
+            { autoSync: true },
+          )
+          mergeHostnameRecord(response.data)
+          if (selectedHostname.value?.id === response.data?.id) {
+            selectedHostname.value = { ...selectedHostname.value, ...response.data }
+          }
+        } catch (error) {
+          failed.push(`${record.hostname}: ${errorMessage(error)}`)
+        }
+      }
+
+      if (failed.length) showBatchFailures('一键切换优选域名完成', failed, '个')
+      else message.success(`已将当前列表 ${records.length} 个主机名切换为 ${preferred}`)
+      await load({ refresh: true })
+    } finally {
+      applyingPreferred.value = false
+      applyingPreferredText.value = ''
+    }
+  }
+
   return {
     creating,
     savingEdit,
     deleting,
     deletingText,
     refreshing,
+    applyingPreferred,
+    applyingPreferredText,
     create,
     update,
     refreshHostname,
     askDelete,
     askBatchDelete,
+    applyPreferredDomainToList,
     mergeHostnameRecord,
   }
 }

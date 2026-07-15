@@ -1,7 +1,10 @@
 <template>
-  <a-modal :open="open" @update:open="emitOpen" title="管理优选域名" width="560px" :footer="null">
+  <a-modal :open="open" @update:open="emitOpen" title="管理优选域名" width="720px" :footer="null">
     <a-typography-paragraph type="secondary">
-      创建/编辑自定义主机名时可从这里选择"境内优选 CNAME"目标。同步到 DNSPod 时会下发线路为「境内」的 CNAME。
+      创建/编辑自定义主机名时可从这里选择“境内优选 CNAME”目标。同步到 DNSPod 时会下发线路为「境内」的 CNAME。
+      <template v-if="hostCount > 0">
+        也可对当前列表 {{ hostCount }} 个主机名一键切换优选域名。
+      </template>
     </a-typography-paragraph>
     <a-form layout="inline" style="margin-bottom: 12px; width: 100%">
       <a-form-item style="flex: 1">
@@ -22,7 +25,7 @@
       :columns="[
         { title: '排序', key: 'sort', width: 60 },
         { title: '域名', dataIndex: 'domain', key: 'domain' },
-        { title: '操作', key: 'actions', width: 140, align: 'right' },
+        { title: '操作', key: 'actions', width: 220, align: 'right' },
       ]"
     >
       <template #bodyCell="{ column, record }">
@@ -42,8 +45,17 @@
               <a-button type="link" size="small" @click="cancelEdit">取消</a-button>
             </template>
             <template v-else>
-              <a-button type="link" size="small" :disabled="saving" @click="startEdit(record)">编辑</a-button>
-              <a-button type="link" size="small" danger :disabled="saving" @click="askDelete(record)">删除</a-button>
+              <a-button
+                type="link"
+                size="small"
+                :disabled="saving || applying || !hostCount"
+                :loading="applyingDomain === record.domain"
+                @click="askApply(record)"
+              >
+                应用到当前列表
+              </a-button>
+              <a-button type="link" size="small" :disabled="saving || applying" @click="startEdit(record)">编辑</a-button>
+              <a-button type="link" size="small" danger :disabled="saving || applying" @click="askDelete(record)">删除</a-button>
             </template>
           </a-space>
         </template>
@@ -56,18 +68,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { preferredDomainApi } from '../utils/api'
 import { message, modal } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
 
 const props = defineProps<{
   open?: boolean
+  hostCount?: number
+  applying?: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'update', items: Array<{ domain: string }>): void
+  (e: 'apply', domain: string): void
 }>()
 
 const items = ref<Array<{ domain: string }>>([])
@@ -77,6 +92,17 @@ const newDomain = ref('')
 const editingDomain = ref<string | null>(null)
 const editingValue = ref('')
 const draggingDomain = ref<string | null>(null)
+const applyingDomain = ref<string | null>(null)
+
+const hostCount = computed(() => Number(props.hostCount || 0))
+const applying = computed(() => Boolean(props.applying))
+
+watch(
+  () => props.applying,
+  (value) => {
+    if (!value) applyingDomain.value = null
+  }
+)
 
 watch(
   () => props.open,
@@ -168,6 +194,22 @@ function askDelete(item: { domain: string }) {
     onOk: () => removeItem(item),
   })
 }
+function askApply(item: { domain: string }) {
+  if (!hostCount.value) {
+    message.warning('当前列表没有可切换的主机名')
+    return
+  }
+  modal.confirm({
+    title: '一键切换优选域名',
+    content: `确认将当前列表 ${hostCount.value} 个自定义主机名的优选域名切换为 ${item.domain}？将逐个更新并同步 DNS。`,
+    okText: '开始切换',
+    cancelText: '取消',
+    onOk: () => {
+      applyingDomain.value = item.domain
+      emit('apply', item.domain)
+    },
+  })
+}
 async function removeItem(item: { domain: string }) {
   saving.value = true
   try {
@@ -184,8 +226,9 @@ async function removeItem(item: { domain: string }) {
 function rowProps(record: { domain: string }) {
   return {
     class: draggingDomain.value === record.domain ? 'preferred-domain-row-dragging' : '',
-    draggable: !saving.value,
+    draggable: !saving.value && !applying.value,
     onDragstart: (event: DragEvent) => {
+      if (applying.value) return
       draggingDomain.value = record.domain
       event.dataTransfer!.effectAllowed = 'move'
       event.dataTransfer!.setData('text/plain', record.domain)
@@ -193,7 +236,7 @@ function rowProps(record: { domain: string }) {
       if (row) event.dataTransfer!.setDragImage(row, 0, Math.floor(row.offsetHeight / 2))
     },
     onDragover: (event: DragEvent) => {
-      if (draggingDomain.value === null || saving.value) return
+      if (draggingDomain.value === null || saving.value || applying.value) return
       event.preventDefault()
       event.dataTransfer!.dropEffect = 'move'
     },

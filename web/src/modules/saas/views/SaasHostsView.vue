@@ -7,20 +7,38 @@
       @back="router.push(zonesPath)"
     >
       <template #actions>
-        <a-button :loading="loading" :disabled="creating || savingEdit || deleting" @click="handleRefresh"
+        <a-button
+          :loading="loading || applyingPreferred"
+          :disabled="creating || savingEdit || deleting || applyingPreferred"
+          @click="handleRefresh"
           >刷新</a-button
         >
-        <a-button :disabled="notFound || creating || savingEdit || deleting" @click="openFallbackOrigin"
+        <a-button
+          :disabled="notFound || creating || savingEdit || deleting || applyingPreferred"
+          @click="openFallbackOrigin"
           >默认回源</a-button
         >
-        <a-button v-if="dnspodLinked" :disabled="creating || savingEdit || deleting" @click="openPreferredManager"
+        <a-button
+          v-if="dnspodLinked"
+          :disabled="creating || savingEdit || deleting || applyingPreferred"
+          @click="openPreferredManager"
           >优选域名</a-button
         >
-        <a-button type="primary" :disabled="notFound || creating || savingEdit || deleting" @click="openCreate"
+        <a-button
+          type="primary"
+          :disabled="notFound || creating || savingEdit || deleting || applyingPreferred"
+          @click="openCreate"
           >新增主机名</a-button
         >
       </template>
     </ListToolbar>
+    <a-alert
+      v-if="applyingPreferred"
+      type="info"
+      show-icon
+      style="margin-bottom: 12px"
+      :message="applyingPreferredText || '正在一键切换优选域名...'"
+    />
     <BatchToolbar
       :count="selectedHostnames.length"
       :deleting="deleting"
@@ -144,7 +162,13 @@
       @edit="openEdit"
       @refresh="refreshHostname"
     />
-    <PreferredDomainsModal v-model:open="showPreferredManager" @update="onPreferredUpdate" />
+    <PreferredDomainsModal
+      v-model:open="showPreferredManager"
+      :host-count="hostnames.length"
+      :applying="applyingPreferred"
+      @update="onPreferredUpdate"
+      @apply="applyPreferredDomainToList"
+    />
     <SaasFallbackOriginModal
       v-model:open="showFallbackOrigin"
       :provider="provider"
@@ -249,7 +273,20 @@ const {
   resetModals,
 } = modals
 
-const { creating, savingEdit, deleting, refreshing, create, update, refreshHostname, askDelete, askBatchDelete } = crud
+const {
+  creating,
+  savingEdit,
+  deleting,
+  refreshing,
+  applyingPreferred,
+  applyingPreferredText,
+  create,
+  update,
+  refreshHostname,
+  askDelete,
+  askBatchDelete,
+  applyPreferredDomainToList,
+} = crud
 
 onMounted(async () => {
   await load()
