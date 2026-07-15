@@ -1,19 +1,19 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import type { SaasProvider } from '../../provider/types.js'
-import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
+import type { CloudflareCustomHostname } from '../../saas/gateways/custom-hostname-gateway.js'
 import { CloudflareDnsRecordService, type RecordPayload } from '../../cloudflare/services/dns-record-service.js'
 import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js'
-import { SaasHostnameService } from '../services/hostname-service.js'
-import { isHostnameActive } from '../utils/host-status.js'
-import type { SyncDriver, SyncRecord } from './sync-driver.js'
+import { SaasHostnameService } from '../../saas/services/hostname-service.js'
+import { isHostnameActive } from '../../saas/utils/host-status.js'
+import type { SyncDriver, SyncRecord } from '../types.js'
 
 export interface CloudflareDnsSyncRecord extends SyncRecord {
   zone_name?: string
   comment?: string
 }
 
-export class CloudflareDnsSyncDriver implements SyncDriver {
+export class CloudflareDnsSaasDriver implements SyncDriver {
   private readonly purposeLabels: Record<string, string> = {
     origin_cname: '业务接入',
     ownership_verification: '所有权验证',

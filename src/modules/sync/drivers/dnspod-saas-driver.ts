@@ -1,11 +1,11 @@
 import { ApiError } from '../../../lib/http/api-error.js'
-import { DnsPodSync, type DnsPodSyncRecord } from '../services/dns-pod-sync.js'
-import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
-import { SaasHostnameService } from '../services/hostname-service.js'
-import { isHostnameActive } from '../utils/host-status.js'
-import type { SyncDriver, SyncRecord } from './sync-driver.js'
+import { DnsPodRecordOps, type DnsPodSyncRecord } from '../services/dnspod-record-ops.js'
+import type { CloudflareCustomHostname } from '../../saas/gateways/custom-hostname-gateway.js'
+import { SaasHostnameService } from '../../saas/services/hostname-service.js'
+import { isHostnameActive } from '../../saas/utils/host-status.js'
+import type { SyncDriver, SyncRecord } from '../types.js'
 
-export class DnspodSyncDriver implements SyncDriver {
+export class DnspodSaasDriver implements SyncDriver {
   private readonly purposeLabels: Record<string, string> = {
     origin_cname: '默认回源',
     ownership_verification: '所有权验证',
@@ -17,7 +17,7 @@ export class DnspodSyncDriver implements SyncDriver {
 
   constructor(
     private readonly hostnames: SaasHostnameService,
-    private readonly support: DnsPodSync
+    private readonly support: DnsPodRecordOps
   ) {}
 
   async preflight(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}): Promise<Record<string, unknown>> {

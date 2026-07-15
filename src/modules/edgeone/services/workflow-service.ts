@@ -1,12 +1,12 @@
 import { ApiError } from '../../../lib/http/api-error.js'
 import { type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
-import { DnsPodSync } from '../../saas/services/dns-pod-sync.js'
+import { DnsPodRecordOps } from '../../sync/services/dnspod-record-ops.js'
 import { EdgeOneDomainService } from './domain-service.js'
 
 export class EdgeOneWorkflowService {
   constructor(
     private readonly edgeone: EdgeOneDomainService = new EdgeOneDomainService(),
-    private readonly support: DnsPodSync = new DnsPodSync()
+    private readonly support: DnsPodRecordOps = new DnsPodRecordOps()
   ) {}
 
   async createAccelerationDomain(providerId: string, zoneId: string, data: Record<string, unknown>, autoSync = false): Promise<Record<string, unknown>> {

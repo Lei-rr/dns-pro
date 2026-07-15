@@ -3,7 +3,7 @@ import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodZoneService } from '../../dnspod/services/zone-service.js'
 import { DnsPodRecordService, type RecordCreateInput } from '../../dnspod/services/record-service.js'
 import type { EdgeOneProvider, ProviderType, SaasProvider } from '../../provider/types.js'
-import type { SyncRecord } from '../sync-drivers/sync-driver.js'
+import type { SyncRecord } from '../types.js'
 
 export interface PrecleanedRecord {
   type: string
@@ -29,7 +29,7 @@ export interface DnsPodSyncRecord extends SyncRecord {
   dnspod_zone?: string
 }
 
-export class DnsPodSync {
+export class DnsPodRecordOps {
   constructor(
     private readonly providers: ProviderRepository = new ProviderRepository(),
     private readonly zones: DnsPodZoneService = new DnsPodZoneService(),

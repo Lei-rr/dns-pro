@@ -84,17 +84,10 @@ export function useSaasHostnameCrud({
 
     savingEdit.value = true
     try {
-      const current = editingHostname.value || ({} as SaaSHostname)
       const preferred = String(formData.preferred_domain || '').trim()
 
-      // Edit form currently does not expose sync linkage controls.
-      // Always keep the host's existing DNS linkage so preferred-domain edits update the correct DNS system.
-      const existingTarget = String(current.sync_target || (current as any).effective_sync_target || '').trim()
-      const existingProviderId = String(
-        current.sync_provider_id || (current as any).effective_sync_provider_id || '',
-      ).trim()
-      const existingZone = String(current.sync_zone || (current as any).effective_sync_zone || '').trim()
-
+      // Edit UI currently only changes certificate/origin/preferred fields.
+      // Do NOT send sync_* at all — backend keeps/repairs existing DNS linkage.
       const payload: Record<string, unknown> = {
         method: String(formData.method || 'txt').trim(),
         min_tls_version: String(formData.min_tls_version || '1.0').trim(),
@@ -105,23 +98,12 @@ export function useSaasHostnameCrud({
         auto_preferred: !!formData.autoPreferred,
       }
 
-      if (existingTarget) payload.sync_target = existingTarget
-      if (existingProviderId) payload.sync_provider_id = existingProviderId
-      if (existingZone) payload.sync_zone = existingZone
-
-      const shouldAutoSync = !!(
-        existingTarget ||
-        formData.autoPreferred ||
-        current.auto_preferred ||
-        preferred
-      )
-
       const response = await saasApi.updateHostname(
         props.provider,
         decodedZoneName.value,
         editingHostname.value.hostname,
         payload,
-        { autoSync: shouldAutoSync },
+        { autoSync: true },
       )
       const dnsSync = response.side_effects?.dns?.sync
       message.success(dnsOperationMessage(dnsSync, '自定义主机名已更新'))

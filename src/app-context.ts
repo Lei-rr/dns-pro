@@ -16,7 +16,8 @@ import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
 import { DnsPodRecordService } from './modules/dnspod/services/record-service.js'
 import { CloudflareCustomHostnameGateway } from './modules/saas/gateways/custom-hostname-gateway.js'
 import { SaasHostnameService } from './modules/saas/services/hostname-service.js'
-import { DnsPodSync } from './modules/saas/services/dns-pod-sync.js'
+import { DnsPodRecordOps } from './modules/sync/services/dnspod-record-ops.js'
+import { SyncOrchestrator } from './modules/sync/services/sync-orchestrator.js'
 import { SaasWorkflowService } from './modules/saas/services/workflow-service.js'
 import { EdgeOneZoneService } from './modules/edgeone/services/zone-service.js'
 import { EdgeOneDomainService } from './modules/edgeone/services/domain-service.js'
@@ -57,19 +58,23 @@ export function createAppContext(config: AppConfig) {
     preferredDomainService,
     saasPreferenceService
   )
-  const dnsPodSync = new DnsPodSync(providerRepository, dnspodZoneService, dnspodRecordService)
-  const saasWorkflowService = new SaasWorkflowService(
+  const dnsPodRecordOps = new DnsPodRecordOps(providerRepository, dnspodZoneService, dnspodRecordService)
+  const syncOrchestrator = new SyncOrchestrator(
     providerRepository,
     saasHostnameService,
-    saasPreferenceService,
-    dnsPodSync,
+    dnsPodRecordOps,
     cloudflareZoneService,
-    cloudflareDnsRecordService
+    cloudflareDnsRecordService,
+  )
+  const saasWorkflowService = new SaasWorkflowService(
+    saasHostnameService,
+    saasPreferenceService,
+    syncOrchestrator,
   )
 
   const edgeoneZoneService = new EdgeOneZoneService(providerRepository)
   const edgeoneDomainService = new EdgeOneDomainService(providerRepository)
-  const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, dnsPodSync)
+  const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, dnsPodRecordOps)
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -90,6 +95,7 @@ export function createAppContext(config: AppConfig) {
     preferredDomainService,
     saasHostnameService,
     saasWorkflowService,
+    syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,
     edgeoneWorkflowService,

@@ -116,6 +116,7 @@ export class SaasHostnameService {
   async updateHostname(providerId: string, zoneName: string, hostnameFqdn: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const preferred = 'preferred_domain' in data ? await this.extractPreferredDomain(data) : null
+    const existing = (await this.preferences.get(cfId, hostnameId)) ?? ({} as HostnamePreference)
 
     // Always load current CF hostname first so preference-only edits can skip PATCH.
     const current = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId)
@@ -130,30 +131,22 @@ export class SaasHostnameService {
       await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
     }
 
-    if ('sync_target' in data || 'sync_zone' in data || 'sync_provider_id' in data || 'auto_preferred' in data) {
-      const existing = (await this.preferences.get(cfId, hostnameId)) ?? ({} as HostnamePreference)
-      const nextTarget =
-        'sync_target' in data && String(data.sync_target ?? '').trim() !== ''
-          ? String(data.sync_target).trim()
-          : String(existing.sync_target ?? '')
-      const nextProviderId =
-        'sync_provider_id' in data && String(data.sync_provider_id ?? '').trim() !== ''
-          ? String(data.sync_provider_id).trim()
-          : String(existing.sync_provider_id ?? '')
-      const nextZone =
-        'sync_zone' in data && String(data.sync_zone ?? '').trim() !== ''
-          ? String(data.sync_zone).trim()
-          : String(existing.sync_zone ?? '')
-      const nextAutoPreferred =
-        'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false)
-
+    // Preference/preferred-domain edits must not let a broken frontend rewrite DNS linkage.
+    // Normalize requested sync config against existing config + hostname FQDN.
+    if ('sync_target' in data || 'sync_zone' in data || 'sync_provider_id' in data || 'auto_preferred' in data || preferred !== null) {
+      const normalized = await this.normalizeSyncPreference(
+        providerId,
+        String(hostname.hostname ?? hostnameFqdn),
+        existing,
+        data,
+      )
       await this.preferences.setSyncConfig(
         cfId,
         hostnameId,
-        nextTarget,
-        nextProviderId,
-        nextZone,
-        nextAutoPreferred,
+        normalized.sync_target,
+        normalized.sync_provider_id,
+        normalized.sync_zone,
+        normalized.auto_preferred,
         String(hostname.hostname ?? hostnameFqdn),
       )
     }
@@ -212,18 +205,44 @@ export class SaasHostnameService {
 
   async effectiveSyncConfig(providerId: string, hostnameFqdn: string, zoneName = ''): Promise<Record<string, unknown>> {
     const explicit = await this.syncConfig(providerId, hostnameFqdn, zoneName)
+    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
     let target = String(explicit.sync_target ?? '').trim()
+    let provider = String(explicit.sync_provider_id ?? '').trim()
+    let syncZone = String(explicit.sync_zone ?? '').trim().toLowerCase()
+
+    // Repair polluted configs: e.g. api.guolei.cc linked to cloudflare_dns + 100022.xyz.
+    if (target === 'cloudflare_dns' && syncZone !== '' && fqdn !== syncZone && !fqdn.endsWith('.' + syncZone)) {
+      const defaultTarget = await this.defaultSyncTarget(providerId)
+      if (defaultTarget === 'dnspod') {
+        target = 'dnspod'
+        provider = await this.effectiveSyncProviderId(providerId, 'dnspod', '')
+        syncZone = this.guessZoneFromFqdn(fqdn)
+      } else {
+        // Drop invalid zone so caller can fail clearly instead of writing to wrong zone.
+        syncZone = ''
+      }
+    }
+
     if (target === '') {
       target = await this.defaultSyncTarget(providerId)
+    }
+    if (provider === '') {
+      provider = await this.effectiveSyncProviderId(providerId, target, '')
+    }
+    if (syncZone === '' && target === 'dnspod') {
+      syncZone = this.guessZoneFromFqdn(fqdn)
     }
 
     return {
       hostname: explicit.hostname ?? '',
       sync_target: target,
-      sync_provider_id: await this.effectiveSyncProviderId(providerId, target, String(explicit.sync_provider_id ?? '')),
-      sync_zone: explicit.sync_zone ?? '',
+      sync_provider_id: provider,
+      sync_zone: syncZone,
       auto_preferred: explicit.auto_preferred ?? false,
-      explicit: String(explicit.sync_target ?? '') !== '' || String(explicit.sync_provider_id ?? '') !== '' || String(explicit.sync_zone ?? '') !== '',
+      explicit:
+        String(explicit.sync_target ?? '') !== '' ||
+        String(explicit.sync_provider_id ?? '') !== '' ||
+        String(explicit.sync_zone ?? '') !== '',
     }
   }
 
@@ -233,6 +252,77 @@ export class SaasHostnameService {
     if (provider.dnspod_provider !== '') return 'dnspod'
     if (provider.cloudflare_dns_provider !== '' || provider.cloudflare_provider !== '') return 'cloudflare_dns'
     return ''
+  }
+
+  /**
+   * Normalize/repair sync preference for updates.
+   * Preferred-domain only edits must keep valid linkage and never accept a CF zone that cannot host the FQDN.
+   */
+  private async normalizeSyncPreference(
+    providerId: string,
+    hostnameFqdn: string,
+    existing: HostnamePreference,
+    data: Record<string, unknown>,
+  ): Promise<{ sync_target: string; sync_provider_id: string; sync_zone: string; auto_preferred: boolean }> {
+    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const requestedTarget = 'sync_target' in data ? String(data.sync_target ?? '').trim() : ''
+    const requestedProvider = 'sync_provider_id' in data ? String(data.sync_provider_id ?? '').trim() : ''
+    const requestedZone = 'sync_zone' in data ? String(data.sync_zone ?? '').trim().toLowerCase() : ''
+
+    let target = requestedTarget || String(existing.sync_target ?? '').trim()
+    let provider = requestedProvider || String(existing.sync_provider_id ?? '').trim()
+    let zone = requestedZone || String(existing.sync_zone ?? '').trim().toLowerCase()
+    const autoPreferred =
+      'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false)
+
+    const zoneMatchesHost = (candidate: string) => candidate !== '' && (fqdn === candidate || fqdn.endsWith('.' + candidate))
+
+    // If frontend sends CF zone that cannot host this hostname, ignore and fall back.
+    if (target === 'cloudflare_dns' && zone !== '' && !zoneMatchesHost(zone)) {
+      target = String(existing.sync_target ?? '').trim()
+      provider = String(existing.sync_provider_id ?? '').trim()
+      zone = String(existing.sync_zone ?? '').trim().toLowerCase()
+    }
+
+    // Existing polluted config also needs repair.
+    if (target === 'cloudflare_dns' && zone !== '' && !zoneMatchesHost(zone)) {
+      target = ''
+      provider = ''
+      zone = ''
+    }
+
+    if (target === '') {
+      target = await this.defaultSyncTarget(providerId)
+    }
+    if (provider === '') {
+      provider = await this.effectiveSyncProviderId(providerId, target, '')
+    }
+    if (zone === '') {
+      zone = this.guessZoneFromFqdn(fqdn)
+    }
+
+    // Final safety: Cloudflare DNS only when zone can own the hostname.
+    if (target === 'cloudflare_dns' && !zoneMatchesHost(zone)) {
+      const fallback = await this.defaultSyncTarget(providerId)
+      if (fallback === 'dnspod') {
+        target = 'dnspod'
+        provider = await this.effectiveSyncProviderId(providerId, 'dnspod', '')
+        zone = this.guessZoneFromFqdn(fqdn)
+      }
+    }
+
+    return {
+      sync_target: target,
+      sync_provider_id: provider,
+      sync_zone: zone,
+      auto_preferred: autoPreferred,
+    }
+  }
+
+  private guessZoneFromFqdn(fqdn: string): string {
+    const parts = fqdn.toLowerCase().replace(/\.$/, '').split('.').filter(Boolean)
+    if (parts.length < 2) return fqdn
+    return parts.slice(-2).join('.')
   }
 
   private async cloudflareProviderId(providerId: string): Promise<string> {
