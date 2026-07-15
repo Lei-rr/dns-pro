@@ -76,6 +76,52 @@ export function unsealSession(token: string | undefined, secret: string): Sessio
   }
 }
 
+/** Collect every value for a cookie name. Browsers may send duplicates after session format changes. */
+export function readCookieValues(request: FastifyRequest, name: string): string[] {
+  const values: string[] = []
+  const raw = request.headers.cookie
+  if (typeof raw === 'string' && raw.length > 0) {
+    for (const part of raw.split(';')) {
+      const idx = part.indexOf('=')
+      if (idx === -1) continue
+      const key = part.slice(0, idx).trim()
+      if (key !== name) continue
+      const rawValue = part.slice(idx + 1).trim()
+      try {
+        values.push(decodeURIComponent(rawValue))
+      } catch {
+        values.push(rawValue)
+      }
+    }
+  }
+
+  if (values.length === 0) {
+    const single = request.cookies?.[name]
+    if (typeof single === 'string' && single) values.push(single)
+    else if (Array.isArray(single)) {
+      for (const item of single) {
+        if (typeof item === 'string' && item) values.push(item)
+      }
+    }
+  }
+
+  return values
+}
+
+export function resolveSessionData(request: FastifyRequest, options: SessionOptions): SessionData {
+  const tokens = readCookieValues(request, options.cookieName)
+  // Prefer the last valid token (usually the newest Set-Cookie after login).
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const data = unsealSession(tokens[i], options.secret)
+    if (data && data['auth.signed_in'] === true) return data
+  }
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    const data = unsealSession(tokens[i], options.secret)
+    if (data) return data
+  }
+  return {}
+}
+
 export function createAppSession(initial: SessionData = {}): AppSession {
   const data: SessionData = { ...initial }
   let dirty = false
@@ -110,10 +156,19 @@ export function createAppSession(initial: SessionData = {}): AppSession {
 }
 
 export function attachAppSession(request: FastifyRequest, options: SessionOptions) {
-  const current = unsealSession(request.cookies[options.cookieName], options.secret) || {}
+  const current = resolveSessionData(request, options)
   const session = createAppSession(current)
   ;(request as FastifyRequest & { session: AppSession }).session = session
   return session
+}
+
+function cookieBaseOptions(options: SessionOptions) {
+  return {
+    path: '/',
+    secure: options.secure,
+    httpOnly: true,
+    sameSite: options.sameSite,
+  } as const
 }
 
 export function writeAppSessionCookie(
@@ -124,22 +179,18 @@ export function writeAppSessionCookie(
   const session = (request as FastifyRequest & { session?: AppSession }).session
   if (!session || (!session.dirty && !session.deleted)) return
 
+  const base = cookieBaseOptions(options)
+
   if (session.deleted || !session.get('auth.signed_in')) {
-    reply.clearCookie(options.cookieName, {
-      path: '/',
-      secure: options.secure,
-      httpOnly: true,
-      sameSite: options.sameSite,
-    })
+    reply.clearCookie(options.cookieName, base)
     return
   }
 
   const token = sealSession(session.toJSON(), options.secret, options.maxAgeSeconds)
+  // Overwrite any stale duplicate cookie for the same name/path.
+  reply.clearCookie(options.cookieName, base)
   reply.setCookie(options.cookieName, token, {
-    path: '/',
-    secure: options.secure,
-    httpOnly: true,
-    sameSite: options.sameSite,
+    ...base,
     maxAge: options.maxAgeSeconds,
   })
 }
