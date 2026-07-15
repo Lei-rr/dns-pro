@@ -309,25 +309,25 @@ export class CloudflareDnsSyncDriver implements SyncDriver {
     beforeRecords: SyncRecord[],
     afterRecords: CloudflareDnsSyncRecord[]
   ): Promise<Record<string, unknown>[]> {
-    const afterMap = new Set(afterRecords.map((record) => this.recordSignature(record)))
+    // Identity is type+name. Value/comment changes are handled by syncRecord() as update.
+    const afterMap = new Set(afterRecords.map((record) => this.recordIdentity(record)))
     const deleted: Record<string, unknown>[] = []
     const seen = new Set<string>()
 
     for (const record of beforeRecords) {
-      const signature = this.recordSignature(record)
-      if (signature === '' || seen.has(signature) || afterMap.has(signature)) continue
-      seen.add(signature)
+      const identity = this.recordIdentity(record)
+      if (identity === '' || seen.has(identity) || afterMap.has(identity)) continue
+      seen.add(identity)
       deleted.push(await this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record)))
     }
 
     return deleted
   }
 
-  private recordSignature(record: SyncRecord): string {
+  private recordIdentity(record: SyncRecord): string {
     const type = String(record.type ?? '').toUpperCase().trim()
     const name = String(record.name ?? '').toLowerCase().replace(/\.$/, '').trim()
-    const value = String(record.value ?? '').toLowerCase().replace(/\.$/, '').trim()
-    if (type === '' || name === '' || value === '') return ''
-    return [type, name, value].join('|')
+    if (type === '' || name === '') return ''
+    return [type, name].join('|')
   }
 }

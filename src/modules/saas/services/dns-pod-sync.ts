@@ -226,7 +226,7 @@ export class DnsPodSync {
   async delete(providerId: string, zone: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const subdomain = this.subdomainFromFqdn(record.name, zone)
     const matches = await this.findMatching(providerId, zone, subdomain, record.type, String(record.line ?? '默认'))
-    const expected = record.value.replace(/\.$/, '')
+    const expected = String(record.value ?? '').replace(/\.$/, '')
 
     const base = { type: record.type, name: record.name }
     const match = matches.find((candidate) => {

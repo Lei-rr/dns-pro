@@ -117,25 +117,36 @@ export class SaasHostnameService {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const preferred = 'preferred_domain' in data ? await this.extractPreferredDomain(data) : null
 
-    const hostname = await this.cloudflareHostnames.update(cfId, zoneId, hostnameId, data)
+    // Always load current CF hostname first so preference-only edits can skip PATCH.
+    const current = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId)
+    const cfPayload = this.buildCloudflareUpdatePayload(current, data)
+
+    let hostname = current
+    if (Object.keys(cfPayload).length > 0) {
+      hostname = await this.cloudflareHostnames.update(cfId, zoneId, hostnameId, cfPayload)
+    }
 
     if (preferred !== null) {
       await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
     }
 
-    if ('sync_target' in data || 'sync_zone' in data) {
+    if ('sync_target' in data || 'sync_zone' in data || 'sync_provider_id' in data || 'auto_preferred' in data) {
+      const existing = (await this.preferences.get(cfId, hostnameId)) ?? ({} as HostnamePreference)
       await this.preferences.setSyncConfig(
         cfId,
         hostnameId,
-        String(data.sync_target ?? ''),
-        String(data.sync_provider_id ?? ''),
-        String(data.sync_zone ?? ''),
-        Boolean(data.auto_preferred ?? false),
-        String(hostname.hostname ?? hostnameFqdn)
+        'sync_target' in data ? String(data.sync_target ?? '') : String(existing.sync_target ?? ''),
+        'sync_provider_id' in data ? String(data.sync_provider_id ?? '') : String(existing.sync_provider_id ?? ''),
+        'sync_zone' in data ? String(data.sync_zone ?? '') : String(existing.sync_zone ?? ''),
+        'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false),
+        String(hostname.hostname ?? hostnameFqdn),
       )
     }
 
-    await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, String(hostname.hostname ?? hostnameFqdn))
+    // Only reset ownership cleanup marker when CF-side hostname/ssl fields actually change.
+    if (Object.keys(cfPayload).length > 0) {
+      await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, String(hostname.hostname ?? hostnameFqdn))
+    }
     return this.withPreference(hostname, cfId, hostnameId)
   }
 
@@ -259,6 +270,40 @@ export class SaasHostnameService {
     }
 
     return preferred
+  }
+
+  /**
+   * Build Cloudflare PATCH payload only when CF-managed fields actually change.
+   * Preferred domain / auto_preferred / sync_* are local preference fields and must not trigger CF updates.
+   */
+  private buildCloudflareUpdatePayload(current: CloudflareCustomHostname, data: Record<string, unknown>): Record<string, unknown> {
+    const payload: Record<string, unknown> = {}
+
+    if (Object.prototype.hasOwnProperty.call(data, 'custom_origin_server')) {
+      const next = String(data.custom_origin_server ?? '').trim()
+      const prev = String(current.custom_origin_server ?? '').trim()
+      if (next !== prev) {
+        payload.custom_origin_server = next
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'method')) {
+      const next = String(data.method ?? '').trim()
+      const prev = String(current.ssl?.method ?? '').trim()
+      if (next !== '' && next !== prev) {
+        payload.method = next
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'min_tls_version')) {
+      const next = String(data.min_tls_version ?? '').trim()
+      const prev = String((current.ssl?.settings as Record<string, unknown> | undefined)?.min_tls_version ?? '').trim()
+      if (next !== '' && next !== prev) {
+        payload.min_tls_version = next
+      }
+    }
+
+    return payload
   }
 
   private mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): CloudflareCustomHostname {

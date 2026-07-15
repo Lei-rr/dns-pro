@@ -272,26 +272,26 @@ export class DnspodSyncDriver implements SyncDriver {
     beforeRecords: SyncRecord[],
     afterRecords: DnsPodSyncRecord[]
   ): Promise<Record<string, unknown>[]> {
-    const afterMap = new Set(afterRecords.map((record) => this.recordSignature(record)))
+    // Identity is type+name+line. Value changes are handled by sync() as update, not delete+create.
+    const afterMap = new Set(afterRecords.map((record) => this.recordIdentity(record)))
     const deleted: Record<string, unknown>[] = []
     const seen = new Set<string>()
 
     for (const record of beforeRecords) {
-      const signature = this.recordSignature(record)
-      if (signature === '' || seen.has(signature) || afterMap.has(signature)) continue
-      seen.add(signature)
+      const identity = this.recordIdentity(record)
+      if (identity === '' || seen.has(identity) || afterMap.has(identity)) continue
+      seen.add(identity)
       deleted.push(await this.withPurpose(record, this.support.delete(dnspodProviderId, dnspodZone, record)))
     }
 
     return deleted
   }
 
-  private recordSignature(record: SyncRecord): string {
+  private recordIdentity(record: SyncRecord): string {
     const type = String(record.type ?? '').toUpperCase().trim()
     const name = String(record.name ?? '').toLowerCase().replace(/\.$/, '').trim()
-    const value = String(record.value ?? '').toLowerCase().replace(/\.$/, '').trim()
     const line = String(record.line ?? this.defaultLine).trim()
-    if (type === '' || name === '' || value === '') return ''
-    return [type, name, value, line].join('|')
+    if (type === '' || name === '') return ''
+    return [type, name, line].join('|')
   }
 }
