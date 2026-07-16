@@ -154,7 +154,7 @@ export class DnsPodRecordService {
       })
     }
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
@@ -184,7 +184,7 @@ export class DnsPodRecordService {
       })
     }
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
@@ -209,7 +209,7 @@ export class DnsPodRecordService {
       })
     }
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {

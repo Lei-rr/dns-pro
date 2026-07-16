@@ -1,4 +1,4 @@
-import { globalCache } from './cache-service.js'
+import { cacheManager, globalCache, type CacheResult } from './cache-manager.js'
 import {
   buildCacheKey,
   offsetPaginationMeta,
@@ -15,7 +15,8 @@ export type CacheReadMode = {
 export type CacheMeta = {
   cache: boolean
   cached: boolean
-  source: 'cache' | 'provider'
+  source: 'cache' | 'provider' | 'memory' | 'file' | 'loader' | 'miss'
+  store?: 'memory' | 'file' | 'layered'
 }
 
 export type CachedResult<T> = {
@@ -45,15 +46,32 @@ export function parseRefreshFlag(value: unknown): boolean {
   return false
 }
 
+function mapResult<T>(result: CacheResult<T>): CachedResult<T> {
+  const source =
+    result.meta.source === 'memory' || result.meta.source === 'file'
+      ? 'cache'
+      : result.meta.source === 'loader'
+        ? 'provider'
+        : (result.meta.source as CacheMeta['source'])
+
+  return {
+    value: result.value,
+    hit: result.hit,
+    meta: {
+      cache: result.meta.cache,
+      cached: result.meta.cached,
+      source,
+      store: result.meta.store,
+    },
+  }
+}
+
 /**
  * Unified cache helper for provider list/detail reads.
  *
- * Rules:
+ * Default store is layered (memory + file under data/cache/provider):
  * - refresh=false => return cache hit when present
- * - refresh=true  or cache miss => call loader, store, return fresh data
- *
- * Unlike aws-pro lookup caches, DNS list endpoints still fetch provider data on miss
- * so the panel remains usable without an explicit refresh on first open.
+ * - refresh=true or cache miss => call loader, store, return fresh data
  */
 export async function withProviderCache<T>(options: {
   key: string | { prefix: string; parts: Record<string, unknown> }
@@ -61,41 +79,30 @@ export async function withProviderCache<T>(options: {
   ttlMs?: number
   refresh?: boolean
   loader: () => Promise<T>
+  store?: 'memory' | 'file' | 'layered'
 }): Promise<CachedResult<T>> {
-  const refresh = Boolean(options.refresh)
-  const key =
-    typeof options.key === 'string'
-      ? options.key
-      : buildCacheKey(options.key.prefix, options.key.parts)
-  const ttlMs = options.ttlMs ?? CacheTtl.providerData
-  const tags = options.tags ?? []
-
-  if (!refresh) {
-    const cached = globalCache.get<T>(key)
-    if (cached !== undefined) {
-      return {
-        value: cached,
-        hit: true,
-        meta: { cache: true, cached: true, source: 'cache' },
-      }
-    }
-  }
-
-  const value = await options.loader()
-  globalCache.set(key, value, ttlMs, tags)
-  return {
-    value,
-    hit: false,
-    meta: { cache: false, cached: false, source: 'provider' },
-  }
+  const result = await cacheManager.getOrLoad<T>({
+    key: options.key,
+    tags: options.tags,
+    ttlMs: options.ttlMs ?? CacheTtl.providerData,
+    mode: {
+      refresh: Boolean(options.refresh),
+      cacheOnly: false,
+    },
+    loader: options.loader,
+    store: options.store ?? 'layered',
+    namespace: 'provider',
+  })
+  return mapResult(result)
 }
 
-export function invalidateProviderCache(tags: string[]): void {
-  globalCache.invalidateTags(tags)
+export async function invalidateProviderCache(tags: string[]): Promise<void> {
+  await cacheManager.invalidate({ tags, namespace: 'provider', store: 'all' })
 }
 
 export {
   buildCacheKey,
+  cacheManager,
   globalCache,
   offsetPaginationMeta,
   pagePaginationMeta,
