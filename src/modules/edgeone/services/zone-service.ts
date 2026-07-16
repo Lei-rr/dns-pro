@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, globalCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
@@ -25,56 +25,56 @@ export class EdgeOneZoneService {
 
   // 站点通常不多，直接全量拉取返回。
   async zones(providerId: string, refresh = false): Promise<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
-    const cacheKey = `edgeone:zones:${providerId}:all`
-    if (!refresh) {
-      const cached = globalCache.get<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown>; request_id?: string }>({
+      key: `edgeone:zones:${providerId}:all`,
+      tags: [`edgeone:zones:${providerId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.credentialProvider(providerId)
+        const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+        let pageOffset = 0
+        const pageLimit = 100
+        const items: EdgeOneZone[] = []
+        let requestId: string | undefined
+        let hasMore = true
 
-    let pageOffset = 0
-    const pageLimit = 100
-    const items: EdgeOneZone[] = []
-    let requestId: string | undefined
-    let hasMore = true
+        while (hasMore) {
+          const response = await gateway.call('DescribeZones', {
+            Offset: Number(pageOffset),
+            Limit: Number(pageLimit),
+          })
+          const parsed = edgeoneZoneListResponseSchema.parse(response)
 
-    while (hasMore) {
-      const response = await gateway.call('DescribeZones', {
-        Offset: Number(pageOffset),
-        Limit: Number(pageLimit),
-      })
-      const parsed = edgeoneZoneListResponseSchema.parse(response)
+          requestId = parsed.RequestId ?? undefined
+          const pageItems = (parsed.Zones ?? [])
+            .map((zone: any) => this.presentZone(edgeOneZoneSchema.parse(zone)))
+            .filter((zone: any) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
+          items.push(...pageItems)
 
-      requestId = parsed.RequestId ?? undefined
-      const pageItems = (parsed.Zones ?? [])
-        .map((zone: any) => this.presentZone(edgeOneZoneSchema.parse(zone)))
-        .filter((zone: any) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
-      items.push(...pageItems)
+          pageOffset += pageItems.length
+          const total = Number(parsed.TotalCount ?? items.length)
+          hasMore = pageItems.length >= pageLimit && pageOffset < total
+        }
 
-      pageOffset += pageItems.length
-      const total = Number(parsed.TotalCount ?? items.length)
-      hasMore = pageItems.length >= pageLimit && pageOffset < total
-    }
-
-    const total = items.length
-    const result = {
-      items,
-      pagination: { offset: 0, limit: total, total },
-      meta: {
-        page: 1,
-        per_page: total,
-        offset: 0,
-        limit: total,
-        total,
-        total_pages: 1,
+        const total = items.length
+        return {
+          items,
+          pagination: { offset: 0, limit: total, total },
+          meta: {
+            page: 1,
+            per_page: total,
+            offset: 0,
+            limit: total,
+            total,
+            total_pages: 1,
+          },
+          request_id: requestId,
+        }
       },
-      request_id: requestId,
-    }
-
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`edgeone:zones:${providerId}`])
-    return result
+    })
+    return cached.value
   }
 
   async zoneById(providerId: string, zoneId: string): Promise<EdgeOneZone> {

@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
-import { CacheTtl, buildCacheKey, globalCache, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, buildCacheKey, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
@@ -164,28 +164,23 @@ export class CloudflareZoneService {
   }
 
   async dcvDelegationUuid(providerId: string, zoneId: string, refresh = false): Promise<string> {
-    const cacheKey = buildCacheKey(`${PROVIDER_TYPE}:dcv_delegation`, {
-      provider_id: providerId,
-      zone_id: zoneId,
+    const cached = await withProviderCache<{ uuid: string }>({
+      key: {
+        prefix: `${PROVIDER_TYPE}:dcv_delegation`,
+        parts: { provider_id: providerId, zone_id: zoneId },
+      },
+      tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.requireProvider(providerId)
+        const gateway = this.gatewayFor(provider)
+        const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
+        const uuid = parseCloudflareItemResponse(response, cloudflareDcvDelegationSchema).result.uuid ?? ''
+        return { uuid }
+      },
     })
-
-    if (!refresh) {
-      const cached = globalCache.get<{ uuid: string }>(cacheKey)
-      if (cached) return cached.uuid
-    }
-
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
-    const uuid = parseCloudflareItemResponse(response, cloudflareDcvDelegationSchema).result.uuid ?? ''
-
-    globalCache.set(cacheKey, { uuid }, CacheTtl.providerData, [
-      providerCacheTag(providerId),
-      zoneCacheTag(PROVIDER_TYPE, providerId),
-    ])
-
-    return uuid
+    return cached.value.uuid
   }
 
   private async requireProvider(providerId: string): Promise<CloudflareProvider> {

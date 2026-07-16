@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
-import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import {
   cloudflareCustomHostnameSchema,
@@ -54,54 +54,57 @@ export class CloudflareCustomHostnameGateway {
 
   async list(cloudflareProviderId: string, zoneId: string, page = 1, perPage = 100, refresh = false): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }> {
     if (refresh) {
-      await invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+      invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     }
 
-    const cacheKey = `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`
-    const cached = globalCache.get<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }>(cacheKey)
-    if (cached) return cached
+    const cached = await withProviderCache<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }>({
+      key: `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`,
+      tags: [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+        const gateway = new CloudflareGateway(provider.api_token)
 
-    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
+        const response = await gateway.get(
+          `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
+          { page, per_page: perPage }
+        )
 
-    const response = await gateway.get(
-      `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
-      { page, per_page: perPage }
-    )
-
-    const parsed = parseCloudflareListResponse(response, cloudflareCustomHostnameSchema)
-    const resultInfo = parsed.result_info ?? cloudflareResultInfoSchema.parse({})
-    const items = parsed.result.map((hostname) => this.present(hostname))
-    const result = {
-      items,
-      pagination: {
-        page: resultInfo.page ?? page,
-        per_page: resultInfo.per_page ?? perPage,
-        total_count: resultInfo.total_count,
-        total_pages: resultInfo.total_pages,
+        const parsed = parseCloudflareListResponse(response, cloudflareCustomHostnameSchema)
+        const resultInfo = parsed.result_info ?? cloudflareResultInfoSchema.parse({})
+        const items = parsed.result.map((hostname) => this.present(hostname))
+        return {
+          items,
+          pagination: {
+            page: resultInfo.page ?? page,
+            per_page: resultInfo.per_page ?? perPage,
+            total_count: resultInfo.total_count,
+            total_pages: resultInfo.total_pages,
+          },
+        }
       },
-    }
-
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    return result
+    })
+    return cached.value
   }
 
   async show(cloudflareProviderId: string, zoneId: string, hostnameId: string, refresh = false): Promise<CloudflareCustomHostname> {
-    const cacheKey = `cloudflare:custom_hostname:${cloudflareProviderId}:${zoneId}:${hostnameId}`
-    if (!refresh) {
-      const cached = globalCache.get<CloudflareCustomHostname>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<CloudflareCustomHostname>({
+      key: `cloudflare:custom_hostname:${cloudflareProviderId}:${zoneId}:${hostnameId}`,
+      tags: [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+        const gateway = new CloudflareGateway(provider.api_token)
 
-    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
-
-    const response = await gateway.get(
-      `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
-    )
-    const result = this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    return result
+        const response = await gateway.get(
+          `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
+        )
+        return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
+      },
+    })
+    return cached.value
   }
 
   async idByHostname(cloudflareProviderId: string, zoneId: string, hostnameFqdn: string, refresh = false): Promise<string> {
@@ -180,31 +183,32 @@ export class CloudflareCustomHostnameGateway {
   }
 
   async fallbackOriginInfo(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<{ origin?: string | null; status?: string | null; [key: string]: unknown }> {
-    const cacheKey = `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`
-    if (!refresh) {
-      const cached = globalCache.get<{ origin?: string | null; status?: string | null }>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<{ origin?: string | null; status?: string | null }>({
+      key: `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`,
+      tags: [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
+        const gateway = new CloudflareGateway(provider.api_token)
 
-    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
-
-    let info: { origin?: string | null; status?: string | null }
-    try {
-      const response = await gateway.get(
-        `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`
-      )
-      info = this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
-    } catch (error) {
-      if (error instanceof ApiError && error.statusCode === 404) {
-        info = this.presentFallbackOrigin({})
-      } else {
-        throw error
-      }
-    }
-
-    globalCache.set(cacheKey, info, CacheTtl.providerData, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    return info
+        let info: { origin?: string | null; status?: string | null }
+        try {
+          const response = await gateway.get(
+            `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`
+          )
+          info = this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
+        } catch (error) {
+          if (error instanceof ApiError && error.statusCode === 404) {
+            info = this.presentFallbackOrigin({})
+          } else {
+            throw error
+          }
+        }
+        return info
+      },
+    })
+    return cached.value
   }
 
   async setFallbackOrigin(cloudflareProviderId: string, zoneId: string, origin: string): Promise<{ origin?: string | null; status?: string | null }> {

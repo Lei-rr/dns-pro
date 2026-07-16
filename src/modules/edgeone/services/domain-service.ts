@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import {
   edgeOneAccelerationDomainSchema,
@@ -46,42 +46,42 @@ export class EdgeOneDomainService {
     // 查询参数常为字符串，EdgeOne 要求 Offset/Limit 为 int64，这里强制转数字。
     const safeOffset = Math.max(0, Number(offset) || 0)
     const safeLimit = Math.max(1, Number(limit) || 20)
-    const cacheKey = `edgeone:domains:${providerId}:${zoneId}:${safeOffset}:${safeLimit}`
-    if (!refresh) {
-      const cached = globalCache.get<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown>; request_id?: string }>({
+      key: `edgeone:domains:${providerId}:${zoneId}:${safeOffset}:${safeLimit}`,
+      tags: [`edgeone:domains:${providerId}:${zoneId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.credentialProvider(providerId)
+        const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+        const response = await gateway.call('DescribeAccelerationDomains', {
+          ZoneId: zoneId,
+          Offset: safeOffset,
+          Limit: safeLimit,
+        })
+        const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
 
-    const response = await gateway.call('DescribeAccelerationDomains', {
-      ZoneId: zoneId,
-      Offset: safeOffset,
-      Limit: safeLimit,
-    })
-    const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
-
-    const items = (parsed.AccelerationDomains ?? []).map((domain: any) =>
-      this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId)
-    )
-    const total = Number(parsed.TotalCount ?? items.length)
-    const result = {
-      items,
-      pagination: { offset: safeOffset, limit: safeLimit, total },
-      meta: {
-        page: safeLimit > 0 ? Math.floor(safeOffset / safeLimit) + 1 : 1,
-        per_page: safeLimit,
-        offset: safeOffset,
-        limit: safeLimit,
-        total,
-        total_pages: safeLimit > 0 ? Math.ceil(total / safeLimit) : 1,
+        const items = (parsed.AccelerationDomains ?? []).map((domain: any) =>
+          this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId)
+        )
+        const total = Number(parsed.TotalCount ?? items.length)
+        return {
+          items,
+          pagination: { offset: safeOffset, limit: safeLimit, total },
+          meta: {
+            page: safeLimit > 0 ? Math.floor(safeOffset / safeLimit) + 1 : 1,
+            per_page: safeLimit,
+            offset: safeOffset,
+            limit: safeLimit,
+            total,
+            total_pages: safeLimit > 0 ? Math.ceil(total / safeLimit) : 1,
+          },
+          request_id: parsed.RequestId ?? undefined,
+        }
       },
-      request_id: parsed.RequestId ?? undefined,
-    }
-
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`edgeone:domains:${providerId}:${zoneId}`])
-    return result
+    })
+    return cached.value
   }
 
   async createAccelerationDomain(providerId: string, zoneId: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {

@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
-import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
 import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js'
@@ -23,19 +23,21 @@ export class CloudflaredRouteService {
   ) {}
 
   async getConfig(providerId: string, tunnelId: string, refresh = false): Promise<{ routes: CloudflaredRoute[]; catch_all: string; version: number }> {
-    const cacheKey = `cloudflared:tunnel_config:${providerId}:${tunnelId}`
-    if (!refresh) {
-      const cached = globalCache.get<{ routes: CloudflaredRoute[]; catch_all: string; version: number }>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<{ routes: CloudflaredRoute[]; catch_all: string; version: number }>({
+      key: `cloudflared:tunnel_config:${providerId}:${tunnelId}`,
+      tags: [`cloudflared:tunnel_config:${providerId}:${tunnelId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const [provider, accountId] = await this.requireProvider(providerId)
+        const gateway = new CloudflareGateway(provider.api_token)
 
-    const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
-
-    const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`)
-    const result = this.presentConfig(parseCloudflareItemResponse(response, cloudflareRouteConfigSchema).result)
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
-    return result
+        const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`)
+        const result = this.presentConfig(parseCloudflareItemResponse(response, cloudflareRouteConfigSchema).result)
+        return result
+      },
+    })
+    return cached.value
   }
 
   async addRoute(providerId: string, tunnelId: string, route: CloudflaredRoute): Promise<Record<string, unknown>> {

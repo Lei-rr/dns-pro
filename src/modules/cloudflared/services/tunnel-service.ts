@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
   cloudflareTunnelSchema,
@@ -26,51 +26,55 @@ export class CloudflaredTunnelService {
   constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
 
   async list(providerId: string, refresh = false): Promise<{ items: CloudflaredTunnel[] }> {
-    const cacheKey = `cloudflared:tunnels:${providerId}`
-    if (!refresh) {
-      const cached = globalCache.get<{ items: CloudflaredTunnel[] }>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<{ items: CloudflaredTunnel[] }>({
+      key: `cloudflared:tunnels:${providerId}`,
+      tags: [`cloudflared:tunnels:${providerId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const [provider, accountId] = await this.requireProvider(providerId)
+        const gateway = new CloudflareGateway(provider.api_token)
 
-    const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
+        const items: CloudflaredTunnel[] = []
+        let page = 1
+        let hasMore = true
+        while (hasMore) {
+          const response = await gateway.get(`accounts/${accountId}/cfd_tunnel`, {
+            is_deleted: 'false',
+            page,
+            per_page: 100,
+          })
+          const batch = parseCloudflareListResponse(response, cloudflareTunnelSchema).result
+          for (const tunnel of batch) {
+            items.push(this.presentTunnel(tunnel))
+          }
+          hasMore = batch.length >= 100
+          page++
+        }
 
-    const items: CloudflaredTunnel[] = []
-    let page = 1
-    let hasMore = true
-    while (hasMore) {
-      const response = await gateway.get(`accounts/${accountId}/cfd_tunnel`, {
-        is_deleted: 'false',
-        page,
-        per_page: 100,
-      })
-      const batch = parseCloudflareListResponse(response, cloudflareTunnelSchema).result
-      for (const tunnel of batch) {
-        items.push(this.presentTunnel(tunnel))
-      }
-      hasMore = batch.length >= 100
-      page++
-    }
-
-    const result = { items }
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflared:tunnels:${providerId}`])
-    return result
+        const result = { items }
+        return result
+      },
+    })
+    return cached.value
   }
 
   async show(providerId: string, tunnelId: string, refresh = false): Promise<CloudflaredTunnel> {
-    const cacheKey = `cloudflared:tunnel:${providerId}:${tunnelId}`
-    if (!refresh) {
-      const cached = globalCache.get<CloudflaredTunnel>(cacheKey)
-      if (cached) return cached
-    }
+    const cached = await withProviderCache<CloudflaredTunnel>({
+      key: `cloudflared:tunnel:${providerId}:${tunnelId}`,
+      tags: [`cloudflared:tunnels:${providerId}`],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const [provider, accountId] = await this.requireProvider(providerId)
+        const gateway = new CloudflareGateway(provider.api_token)
 
-    const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
-
-    const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
-    const result = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflared:tunnels:${providerId}`])
-    return result
+        const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+        const result = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
+        return result
+      },
+    })
+    return cached.value
   }
 
   async create(providerId: string, name: string): Promise<{ tunnel: CloudflaredTunnel; token: string }> {

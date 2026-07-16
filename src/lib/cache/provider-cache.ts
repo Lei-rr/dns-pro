@@ -15,8 +15,7 @@ export type CacheReadMode = {
 export type CacheMeta = {
   cache: boolean
   cached: boolean
-  source: 'cache' | 'provider' | 'memory' | 'file' | 'loader' | 'miss'
-  store?: 'memory' | 'file' | 'layered'
+  source: 'cache' | 'provider' | 'memory' | 'loader' | 'miss'
 }
 
 export type CachedResult<T> = {
@@ -48,7 +47,7 @@ export function parseRefreshFlag(value: unknown): boolean {
 
 function mapResult<T>(result: CacheResult<T>): CachedResult<T> {
   const source =
-    result.meta.source === 'memory' || result.meta.source === 'file'
+    result.meta.source === 'memory'
       ? 'cache'
       : result.meta.source === 'loader'
         ? 'provider'
@@ -61,18 +60,13 @@ function mapResult<T>(result: CacheResult<T>): CachedResult<T> {
       cache: result.meta.cache,
       cached: result.meta.cached,
       source,
-      store: result.meta.store,
     },
   }
 }
 
 /**
- * Unified cache helper for provider list/detail reads.
- *
- * Default store is memory-only for reconstructable provider data (zones/records/hostnames):
- * - refresh=false => return cache hit when present
- * - refresh=true or cache miss => call loader, store in memory, return fresh data
- * Restart simply refetches from provider; no file snapshot needed.
+ * Memory-only helper for reconstructable provider data (zones/records/hostnames/tunnels).
+ * Cold miss still loads from provider so first open works without explicit refresh.
  */
 export async function withProviderCache<T>(options: {
   key: string | { prefix: string; parts: Record<string, unknown> }
@@ -80,7 +74,6 @@ export async function withProviderCache<T>(options: {
   ttlMs?: number
   refresh?: boolean
   loader: () => Promise<T>
-  store?: 'memory' | 'file' | 'layered'
 }): Promise<CachedResult<T>> {
   const result = await cacheManager.getOrLoad<T>({
     key: options.key,
@@ -91,14 +84,12 @@ export async function withProviderCache<T>(options: {
       cacheOnly: false,
     },
     loader: options.loader,
-    store: options.store ?? 'memory',
-    namespace: 'provider',
   })
   return mapResult(result)
 }
 
-export async function invalidateProviderCache(tags: string[]): Promise<void> {
-  await cacheManager.invalidate({ tags, namespace: 'provider', store: 'all' })
+export function invalidateProviderCache(tags: string[]): void {
+  cacheManager.invalidate({ tags })
 }
 
 export {

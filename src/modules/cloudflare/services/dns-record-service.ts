@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
-import { CacheTtl, buildCacheKey, globalCache, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDnsRecordSchema,
@@ -72,55 +72,53 @@ export class CloudflareDnsRecordService {
 
   async list(providerId: string, zoneId: string, filters: RecordFilters = {}): Promise<RecordListResult> {
     const normalized = this.normalizeFilters(filters)
-    const cacheKey = buildCacheKey(`${PROVIDER_TYPE}:records`, {
-      provider_id: providerId,
-      zone_id: zoneId,
-      page: normalized.page,
-      per_page: normalized.per_page,
-      type: normalized.type,
-      search: normalized.search,
-    })
-
-    if (!normalized.refresh) {
-      const cached = globalCache.get<RecordListResult>(cacheKey)
-      if (cached) return cached
-    }
-
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    const query: Record<string, unknown> = {
-      page: normalized.page,
-      per_page: normalized.per_page,
-    }
-    if (normalized.type !== '') {
-      query.type = normalized.type
-    }
-    if (normalized.search !== '') {
-      query.search = normalized.search
-    }
-
-    const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
-    const parsed = parseCloudflareListResponse(response, cloudflareDnsRecordSchema)
-    const resultInfo = parsed.result_info
-    const result: RecordListResult = {
-      items: parsed.result.map((record) => this.presentRecord(record)),
-      pagination: {
-        page: Number(resultInfo?.page ?? normalized.page),
-        per_page: Number(resultInfo?.per_page ?? normalized.per_page),
-        count: resultInfo?.count ?? null,
-        total_count: resultInfo?.total_count ?? null,
-        total_pages: resultInfo?.total_pages ?? null,
+    const cached = await withProviderCache<RecordListResult>({
+      key: {
+        prefix: `${PROVIDER_TYPE}:records`,
+        parts: {
+          provider_id: providerId,
+          zone_id: zoneId,
+          page: normalized.page,
+          per_page: normalized.per_page,
+          type: normalized.type,
+          search: normalized.search,
+        },
       },
-      meta: pagePaginationMeta(resultInfo, normalized.page, normalized.per_page),
-    }
+      tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)],
+      ttlMs: CacheTtl.providerData,
+      refresh: normalized.refresh,
+      loader: async () => {
+        const provider = await this.requireProvider(providerId)
+        const gateway = this.gatewayFor(provider)
 
-    globalCache.set(cacheKey, result, CacheTtl.providerData, [
-      providerCacheTag(providerId),
-      recordCacheTag(PROVIDER_TYPE, providerId, zoneId),
-    ])
+        const query: Record<string, unknown> = {
+          page: normalized.page,
+          per_page: normalized.per_page,
+        }
+        if (normalized.type !== '') {
+          query.type = normalized.type
+        }
+        if (normalized.search !== '') {
+          query.search = normalized.search
+        }
 
-    return result
+        const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
+        const parsed = parseCloudflareListResponse(response, cloudflareDnsRecordSchema)
+        const resultInfo = parsed.result_info
+        return {
+          items: parsed.result.map((record) => this.presentRecord(record)),
+          pagination: {
+            page: Number(resultInfo?.page ?? normalized.page),
+            per_page: Number(resultInfo?.per_page ?? normalized.per_page),
+            count: resultInfo?.count ?? null,
+            total_count: resultInfo?.total_count ?? null,
+            total_pages: resultInfo?.total_pages ?? null,
+          },
+          meta: pagePaginationMeta(resultInfo, normalized.page, normalized.per_page),
+        }
+      },
+    })
+    return cached.value
   }
 
   async create(providerId: string, zoneId: string, data: RecordPayload): Promise<RecordPresentation> {
