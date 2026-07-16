@@ -69,9 +69,10 @@ function mapResult<T>(result: CacheResult<T>): CachedResult<T> {
 /**
  * Unified cache helper for provider list/detail reads.
  *
- * Default store is layered (memory + file under data/cache/provider):
+ * Default store is memory-only for reconstructable provider data (zones/records/hostnames):
  * - refresh=false => return cache hit when present
- * - refresh=true or cache miss => call loader, store, return fresh data
+ * - refresh=true or cache miss => call loader, store in memory, return fresh data
+ * Restart simply refetches from provider; no file snapshot needed.
  */
 export async function withProviderCache<T>(options: {
   key: string | { prefix: string; parts: Record<string, unknown> }
@@ -90,7 +91,7 @@ export async function withProviderCache<T>(options: {
       cacheOnly: false,
     },
     loader: options.loader,
-    store: options.store ?? 'layered',
+    store: options.store ?? 'memory',
     namespace: 'provider',
   })
   return mapResult(result)
