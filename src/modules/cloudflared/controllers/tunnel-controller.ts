@@ -2,7 +2,6 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import { parseBool } from '../../../lib/utils/parse-bool.js'
 
-
 export async function cloudflaredTunnelsIndex(
   request: FastifyRequest<{ Params: { providerId: string }; Querystring: any }>,
   reply: FastifyReply

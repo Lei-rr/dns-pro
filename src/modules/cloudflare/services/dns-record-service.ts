@@ -1,13 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, buildCacheKey, globalCache, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag } from '../../../lib/cache/provider-cache.js'
 import type { CloudflareProvider } from '../../provider/types.js'
-import {
-  buildCacheKey,
-  pagePaginationMeta,
-  providerCacheTag,
-  recordCacheTag,
-} from '../../../lib/cache/cache-helpers.js'
 import {
   cloudflareDnsRecordSchema,
   cloudflareIdResultSchema,
@@ -15,7 +9,6 @@ import {
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
 
-const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
 
 interface RecordPresentation {
@@ -122,7 +115,7 @@ export class CloudflareDnsRecordService {
       meta: pagePaginationMeta(resultInfo, normalized.page, normalized.per_page),
     }
 
-    globalCache.set(cacheKey, result, DEFAULT_TTL_MS, [
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [
       providerCacheTag(providerId),
       recordCacheTag(PROVIDER_TYPE, providerId, zoneId),
     ])
@@ -140,7 +133,7 @@ export class CloudflareDnsRecordService {
       this.recordPayload(normalized)
     )
 
-    globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
@@ -159,7 +152,7 @@ export class CloudflareDnsRecordService {
       this.recordPayload(normalized)
     )
 
-    globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
@@ -171,7 +164,7 @@ export class CloudflareDnsRecordService {
       `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`
     )
 
-    globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
     return { id: parsed.result.id ?? recordId }
   }

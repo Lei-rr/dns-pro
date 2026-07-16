@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import {
   cloudflareCustomHostnameSchema,
@@ -10,8 +10,6 @@ import {
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
 import type { CloudflareProvider } from '../../provider/types.js'
-
-const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
 export interface CloudflareCustomHostnameSslDcvDelegationRecord {
   cname: string
@@ -56,7 +54,7 @@ export class CloudflareCustomHostnameGateway {
 
   async list(cloudflareProviderId: string, zoneId: string, page = 1, perPage = 100, refresh = false): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }> {
     if (refresh) {
-      globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+      invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     }
 
     const cacheKey = `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`
@@ -84,7 +82,7 @@ export class CloudflareCustomHostnameGateway {
       },
     }
 
-    globalCache.set(cacheKey, result, TTL_MS, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return result
   }
 
@@ -102,7 +100,7 @@ export class CloudflareCustomHostnameGateway {
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
     )
     const result = this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
-    globalCache.set(cacheKey, result, TTL_MS, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return result
   }
 
@@ -138,7 +136,7 @@ export class CloudflareCustomHostnameGateway {
       payload
     )
 
-    globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
@@ -165,7 +163,7 @@ export class CloudflareCustomHostnameGateway {
       payload
     )
 
-    globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
@@ -177,7 +175,7 @@ export class CloudflareCustomHostnameGateway {
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
     )
 
-    globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return { id: hostnameId }
   }
 
@@ -205,7 +203,7 @@ export class CloudflareCustomHostnameGateway {
       }
     }
 
-    globalCache.set(cacheKey, info, TTL_MS, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    globalCache.set(cacheKey, info, CacheTtl.providerData, [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return info
   }
 
@@ -218,7 +216,7 @@ export class CloudflareCustomHostnameGateway {
       { origin }
     )
 
-    globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
   }
 
@@ -227,12 +225,12 @@ export class CloudflareCustomHostnameGateway {
     const gateway = new CloudflareGateway(provider.api_token)
 
     await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
-    globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.presentFallbackOrigin({})
   }
 
   invalidate(cloudflareProviderId: string, zoneId: string): void {
-    globalCache.invalidateTags([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
   }
 
   private async findIdInList(cloudflareProviderId: string, zoneId: string, fqdn: string, refresh: boolean): Promise<string | null> {

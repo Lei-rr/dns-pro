@@ -2,7 +2,6 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import { parseBool } from '../../../lib/utils/parse-bool.js'
 
-
 export async function edgeOneAccelerationDomainsIndex(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string }; Querystring: any }>,
   reply: FastifyReply

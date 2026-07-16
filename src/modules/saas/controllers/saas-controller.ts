@@ -2,7 +2,6 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success, noContent } from '../../../lib/http/api-response.js'
 import { parseBool } from '../../../lib/utils/parse-bool.js'
 
-
 function zoneNameParam(request: FastifyRequest<{ Params: { zoneName: string } }>): string {
   return decodeURIComponent(request.params.zoneName).trim()
 }

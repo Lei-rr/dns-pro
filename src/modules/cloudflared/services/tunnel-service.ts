@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
   cloudflareTunnelSchema,
@@ -9,8 +9,6 @@ import {
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../provider/types.js'
-
-const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
 export interface CloudflaredTunnel {
   id: string
@@ -55,7 +53,7 @@ export class CloudflaredTunnelService {
     }
 
     const result = { items }
-    globalCache.set(cacheKey, result, TTL_MS, [`cloudflared:tunnels:${providerId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflared:tunnels:${providerId}`])
     return result
   }
 
@@ -71,7 +69,7 @@ export class CloudflaredTunnelService {
 
     const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
     const result = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
-    globalCache.set(cacheKey, result, TTL_MS, [`cloudflared:tunnels:${providerId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflared:tunnels:${providerId}`])
     return result
   }
 
@@ -85,7 +83,7 @@ export class CloudflaredTunnelService {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
-    globalCache.invalidateTags([`cloudflared:tunnels:${providerId}`])
+    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
     const tunnel = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
     const token = await this.fetchToken(provider, accountId, tunnel.id)
     return { tunnel, token }
@@ -102,7 +100,7 @@ export class CloudflaredTunnelService {
     }
 
     await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
-    globalCache.invalidateTags([`cloudflared:tunnels:${providerId}`])
+    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
     return { id: tunnelId }
   }
 
@@ -120,7 +118,7 @@ export class CloudflaredTunnelService {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
-    globalCache.invalidateTags([`cloudflared:tunnels:${providerId}`])
+    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
     const token = await this.fetchToken(provider, accountId, tunnelId)
     return { token }
   }

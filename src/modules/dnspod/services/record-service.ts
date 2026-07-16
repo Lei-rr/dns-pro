@@ -1,5 +1,5 @@
 import { ProviderRepository } from '../../provider/repository.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, buildCacheKey, invalidateProviderCache, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
@@ -8,14 +8,7 @@ import {
   dnspodRecordSchema,
 } from '../../../lib/providers/dnspod-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
-import {
-  providerCacheTag,
-  recordCacheTag,
-  buildCacheKey,
-  offsetPaginationMeta,
-} from '../../../lib/cache/cache-helpers.js'
 
-const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'dnspod'
 
 export interface RecordListFilters {
@@ -81,7 +74,8 @@ export class DnsPodRecordService {
     const normalized = this.normalizeListFilters(filters)
     const { offset, limit, subdomain, record_type, keyword, refresh } = normalized
 
-    const cacheKey = buildCacheKey(`${PROVIDER_TYPE}:records`, {
+    const cached = await withProviderCache<RecordListResult>({
+      key: buildCacheKey(`${PROVIDER_TYPE}:records`, {
       provider_id: providerId,
       domain,
       offset,
@@ -89,62 +83,61 @@ export class DnsPodRecordService {
       subdomain,
       record_type,
       keyword,
-    })
-
-    if (!refresh) {
-      const cached = globalCache.get<RecordListResult>(cacheKey)
-      if (cached) return cached
-    }
-
-    const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
-
-    const payload: Record<string, unknown> = {
-      Domain: domain,
-      Offset: offset,
-      Limit: limit,
-      ErrorOnEmpty: 'no',
-    }
-    if (subdomain !== '') payload.Subdomain = subdomain
-    if (record_type !== '') payload.RecordType = record_type
-    if (keyword !== '') payload.Keyword = keyword
-
-    let response: unknown
-    try {
-      response = await gateway.call('DescribeRecordList', payload)
-    } catch (error) {
-      throw this.wrapError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
-        domain,
-      })
-    }
-
-    const parsed = dnspodRecordListResponseSchema.parse(response)
-    const rawRecordList = Array.isArray(parsed.RecordList) ? parsed.RecordList : []
-    const recordList = rawRecordList.map((record) => presentRecord(dnspodRecordSchema.parse(record)))
-    const countInfo = parsed.RecordCountInfo
-
-    const result: RecordListResult = {
-      items: recordList,
-      pagination: {
-        offset,
-        limit,
-        count: Number(countInfo?.ListCount ?? 0),
-        total: Number(countInfo?.TotalCount ?? 0),
-      },
-      request_id: parsed.RequestId ?? undefined,
-      meta: offsetPaginationMeta({
-        offset,
-        limit,
-        total: Number(countInfo?.TotalCount ?? 0),
-      }),
-    }
-
-    globalCache.set(cacheKey, result, DEFAULT_TTL_MS, [
+    }),
+      tags: [
       providerCacheTag(providerId),
       recordCacheTag(PROVIDER_TYPE, providerId, domain),
-    ])
+    ],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.requireProvider(providerId)
+        const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
 
-    return result
+        const payload: Record<string, unknown> = {
+          Domain: domain,
+          Offset: offset,
+          Limit: limit,
+          ErrorOnEmpty: 'no',
+        }
+        if (subdomain !== '') payload.Subdomain = subdomain
+        if (record_type !== '') payload.RecordType = record_type
+        if (keyword !== '') payload.Keyword = keyword
+
+        let response: unknown
+        try {
+          response = await gateway.call('DescribeRecordList', payload)
+        } catch (error) {
+          throw this.wrapError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
+            domain,
+          })
+        }
+
+        const parsed = dnspodRecordListResponseSchema.parse(response)
+        const rawRecordList = Array.isArray(parsed.RecordList) ? parsed.RecordList : []
+        const recordList = rawRecordList.map((record) => presentRecord(dnspodRecordSchema.parse(record)))
+        const countInfo = parsed.RecordCountInfo
+
+        const result: RecordListResult = {
+          items: recordList,
+          pagination: {
+            offset,
+            limit,
+            count: Number(countInfo?.ListCount ?? 0),
+            total: Number(countInfo?.TotalCount ?? 0),
+          },
+          request_id: parsed.RequestId ?? undefined,
+          meta: offsetPaginationMeta({
+            offset,
+            limit,
+            total: Number(countInfo?.TotalCount ?? 0),
+          }),
+        }
+        return result
+      },
+    })
+
+    return cached.value
   }
 
   async create(providerId: string, domain: string, input: RecordCreateInput): Promise<RecordMutationResult> {
@@ -161,7 +154,7 @@ export class DnsPodRecordService {
       })
     }
 
-    globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
@@ -191,7 +184,7 @@ export class DnsPodRecordService {
       })
     }
 
-    globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
@@ -216,7 +209,7 @@ export class DnsPodRecordService {
       })
     }
 
-    globalCache.invalidateTags([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {

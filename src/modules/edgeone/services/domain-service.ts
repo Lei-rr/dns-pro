@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import {
   edgeOneAccelerationDomainSchema,
@@ -9,8 +9,6 @@ import {
   edgeoneMutationResponseSchema,
 } from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
-
-const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
 export interface EdgeOneAccelerationDomain {
   zone_id: string
@@ -82,7 +80,7 @@ export class EdgeOneDomainService {
       request_id: parsed.RequestId ?? undefined,
     }
 
-    globalCache.set(cacheKey, result, TTL_MS, [`edgeone:domains:${providerId}:${zoneId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`edgeone:domains:${providerId}:${zoneId}`])
     return result
   }
 
@@ -105,7 +103,7 @@ export class EdgeOneDomainService {
         : {}),
     })
 
-    globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
     return { name: normalized.domain_name, request_id: parsed.RequestId ?? undefined, ownership_verification: parsed.OwnershipVerification ?? null }
   }
@@ -129,7 +127,7 @@ export class EdgeOneDomainService {
         : {}),
     })
 
-    globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: normalized.domain_name, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -143,7 +141,7 @@ export class EdgeOneDomainService {
       Force: false,
     })
 
-    globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: domainName, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -158,7 +156,7 @@ export class EdgeOneDomainService {
       Force: false,
     })
 
-    globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: domainName, status, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -182,7 +180,7 @@ export class EdgeOneDomainService {
     }
 
     const response = await gateway.call('ModifyHostsCertificate', payload)
-    globalCache.invalidateTags([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: domainName, https_mode: httpsMode, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 

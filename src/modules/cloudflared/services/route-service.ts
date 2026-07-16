@@ -1,14 +1,12 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, globalCache, invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
 import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js'
 import { CloudflaredDnsService } from './dns-service.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../provider/types.js'
-
-const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
 export interface CloudflaredRoute {
   hostname: string
@@ -36,7 +34,7 @@ export class CloudflaredRouteService {
 
     const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`)
     const result = this.presentConfig(parseCloudflareItemResponse(response, cloudflareRouteConfigSchema).result)
-    globalCache.set(cacheKey, result, TTL_MS, [`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
     return result
   }
 
@@ -55,7 +53,7 @@ export class CloudflaredRouteService {
 
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
-    globalCache.invalidateTags([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalized.hostname,
@@ -101,7 +99,7 @@ export class CloudflaredRouteService {
     }
 
     const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
-    globalCache.invalidateTags([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalized.hostname,
@@ -140,7 +138,7 @@ export class CloudflaredRouteService {
       dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, zoneId, normalizedHostname, tunnelId)
     }
 
-    globalCache.invalidateTags([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalizedHostname,

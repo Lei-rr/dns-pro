@@ -1,11 +1,9 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, globalCache } from '../../../lib/cache/provider-cache.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
-
-const TTL_MS = 3 * 24 * 60 * 60 * 1000
 
 export interface EdgeOneZone {
   id: string
@@ -75,7 +73,7 @@ export class EdgeOneZoneService {
       request_id: requestId,
     }
 
-    globalCache.set(cacheKey, result, TTL_MS, [`edgeone:zones:${providerId}`])
+    globalCache.set(cacheKey, result, CacheTtl.providerData, [`edgeone:zones:${providerId}`])
     return result
   }
 

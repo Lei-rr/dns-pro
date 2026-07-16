@@ -3,7 +3,7 @@ import path from 'node:path'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success, error } from '../../lib/http/api-response.js'
 import { getDataRoot } from '../../lib/storage/json-store.js'
-import { globalCache } from '../../lib/cache/cache-service.js'
+import { globalCache } from '../../lib/cache/provider-cache.js'
 
 async function isDirectoryWritable(dir: string): Promise<boolean> {
   const probe = path.join(dir, `.health-check-${Date.now()}`)

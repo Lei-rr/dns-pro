@@ -1,14 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, buildCacheKey, globalCache, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import {
-  buildCacheKey,
-  pagePaginationMeta,
-  providerCacheTag,
-  recordCacheTag,
-  zoneCacheTag,
-} from '../../../lib/cache/cache-helpers.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDcvDelegationSchema,
@@ -18,7 +11,6 @@ import {
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
 
-const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'cloudflare'
 
 interface ZonePresentation {
@@ -72,47 +64,47 @@ export class CloudflareZoneService {
     name = '',
     refresh = false
   ): Promise<ZoneListResult> {
-    const cacheKey = buildCacheKey(`${PROVIDER_TYPE}:zones`, {
+    const cached = await withProviderCache<ZoneListResult>({
+      key: buildCacheKey(`${PROVIDER_TYPE}:zones`, {
       provider_id: providerId,
       page,
       per_page: perPage,
       name,
-    })
-
-    if (!refresh) {
-      const cached = globalCache.get<ZoneListResult>(cacheKey)
-      if (cached) return cached
-    }
-
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    const query: Record<string, unknown> = { page, per_page: perPage }
-    if (name !== '') {
-      query.name = name
-    }
-
-    const response = await gateway.get('zones', query)
-    const parsed = parseCloudflareListResponse(response, cloudflareZoneSchema)
-    const resultInfo = parsed.result_info
-    const result: ZoneListResult = {
-      items: parsed.result.map((zone) => this.presentZone(zone)),
-      pagination: {
-        page: Number(resultInfo?.page ?? page),
-        per_page: Number(resultInfo?.per_page ?? perPage),
-        count: resultInfo?.count ?? null,
-        total_count: resultInfo?.total_count ?? null,
-        total_pages: resultInfo?.total_pages ?? null,
-      },
-      meta: pagePaginationMeta(resultInfo, page, perPage),
-    }
-
-    globalCache.set(cacheKey, result, DEFAULT_TTL_MS, [
+    }),
+      tags: [
       providerCacheTag(providerId),
       zoneCacheTag(PROVIDER_TYPE, providerId),
-    ])
+    ],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.requireProvider(providerId)
+        const gateway = this.gatewayFor(provider)
 
-    return result
+        const query: Record<string, unknown> = { page, per_page: perPage }
+        if (name !== '') {
+          query.name = name
+        }
+
+        const response = await gateway.get('zones', query)
+        const parsed = parseCloudflareListResponse(response, cloudflareZoneSchema)
+        const resultInfo = parsed.result_info
+        const result: ZoneListResult = {
+          items: parsed.result.map((zone) => this.presentZone(zone)),
+          pagination: {
+            page: Number(resultInfo?.page ?? page),
+            per_page: Number(resultInfo?.per_page ?? perPage),
+            count: resultInfo?.count ?? null,
+            total_count: resultInfo?.total_count ?? null,
+            total_pages: resultInfo?.total_pages ?? null,
+          },
+          meta: pagePaginationMeta(resultInfo, page, perPage),
+        }
+        return result
+      },
+    })
+
+    return cached.value
   }
 
   async create(providerId: string, name: string, type = 'full'): Promise<ZonePresentation> {
@@ -131,7 +123,7 @@ export class CloudflareZoneService {
     }
 
     const response = await gateway.post('zones', body)
-    globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId)])
 
     return this.presentZone(parseCloudflareItemResponse(response, cloudflareZoneSchema).result)
   }
@@ -141,7 +133,7 @@ export class CloudflareZoneService {
     const gateway = this.gatewayFor(provider)
 
     const response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}`)
-    globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
 
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
     return { id: parsed.result.id ?? zoneId }
@@ -188,7 +180,7 @@ export class CloudflareZoneService {
     const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
     const uuid = parseCloudflareItemResponse(response, cloudflareDcvDelegationSchema).result.uuid ?? ''
 
-    globalCache.set(cacheKey, { uuid }, DEFAULT_TTL_MS, [
+    globalCache.set(cacheKey, { uuid }, CacheTtl.providerData, [
       providerCacheTag(providerId),
       zoneCacheTag(PROVIDER_TYPE, providerId),
     ])

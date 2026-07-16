@@ -1,13 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
-import { globalCache } from '../../../lib/cache/cache-service.js'
+import { CacheTtl, invalidateProviderCache, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import {
-  buildCacheKey,
-  offsetPaginationMeta,
-  providerCacheTag,
-  recordCacheTag,
-  zoneCacheTag,
-} from '../../../lib/cache/cache-helpers.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
   dnspodDomainCreateResponseSchema,
@@ -17,7 +10,6 @@ import {
 } from '../../../lib/providers/dnspod-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
 
-const DEFAULT_TTL_MS = 3 * 24 * 60 * 60 * 1000
 const PROVIDER_TYPE = 'dnspod'
 
 export interface ZoneListFilters {
@@ -76,55 +68,50 @@ export class DnsPodZoneService {
     const keyword = (filters.keyword ?? '').trim()
     const refresh = filters.refresh ?? false
 
-    const cacheKey = buildCacheKey(`${PROVIDER_TYPE}:zones`, {
-      provider_id: providerId,
-      offset,
-      limit,
-      keyword,
+    const cached = await withProviderCache({
+      key: {
+        prefix: `${PROVIDER_TYPE}:zones`,
+        parts: { provider_id: providerId, offset, limit, keyword },
+      },
+      tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
+      ttlMs: CacheTtl.providerData,
+      refresh,
+      loader: async () => {
+        const provider = await this.requireProvider(providerId)
+        const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+
+        const payload: Record<string, unknown> = { Offset: offset, Limit: limit }
+        if (keyword !== '') {
+          payload.Keyword = keyword
+        }
+
+        let response: unknown
+        try {
+          response = await gateway.call('DescribeDomainList', payload)
+        } catch (error) {
+          throw this.wrapError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
+        }
+
+        const parsed = dnspodDomainListResponseSchema.parse(response)
+        const rawDomainList = Array.isArray(parsed.DomainList) ? parsed.DomainList : []
+        const domainList = rawDomainList.map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
+        const total = Number(parsed.DomainCountInfo?.DomainTotal ?? 0)
+
+        const result: ZoneListResult = {
+          items: domainList,
+          pagination: {
+            offset,
+            limit,
+            total,
+          },
+          request_id: parsed.RequestId ?? undefined,
+          meta: offsetPaginationMeta({ offset, limit, total }),
+        }
+        return result
+      },
     })
 
-    if (!refresh) {
-      const cached = globalCache.get<ZoneListResult>(cacheKey)
-      if (cached) return cached
-    }
-
-    const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
-
-    const payload: Record<string, unknown> = { Offset: offset, Limit: limit }
-    if (keyword !== '') {
-      payload.Keyword = keyword
-    }
-
-    let response: unknown
-    try {
-      response = await gateway.call('DescribeDomainList', payload)
-    } catch (error) {
-      throw this.wrapError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
-    }
-
-    const parsed = dnspodDomainListResponseSchema.parse(response)
-    const rawDomainList = Array.isArray(parsed.DomainList) ? parsed.DomainList : []
-    const domainList = rawDomainList.map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
-    const total = Number(parsed.DomainCountInfo?.DomainTotal ?? 0)
-
-    const result: ZoneListResult = {
-      items: domainList,
-      pagination: {
-        offset,
-        limit,
-        total,
-      },
-      request_id: parsed.RequestId ?? undefined,
-      meta: offsetPaginationMeta({ offset, limit, total }),
-    }
-
-    globalCache.set(cacheKey, result, DEFAULT_TTL_MS, [
-      providerCacheTag(providerId),
-      zoneCacheTag(PROVIDER_TYPE, providerId),
-    ])
-
-    return result
+    return cached.value
   }
 
   async create(providerId: string, zone: string): Promise<ZoneCreateResult> {
@@ -140,7 +127,7 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
     }
 
-    globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     const domainInfo = dnspodDomainInfoSchema.parse(parsed.DomainInfo ?? {})
@@ -165,7 +152,7 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
     }
 
-    globalCache.invalidateTags([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     return {
