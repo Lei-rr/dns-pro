@@ -123,7 +123,7 @@ export class CloudflareZoneService {
     }
 
     const response = await gateway.post('zones', body)
-    await invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId)])
 
     return this.presentZone(parseCloudflareItemResponse(response, cloudflareZoneSchema).result)
   }
@@ -133,7 +133,7 @@ export class CloudflareZoneService {
     const gateway = this.gatewayFor(provider)
 
     const response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}`)
-    await invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
 
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
     return { id: parsed.result.id ?? zoneId }

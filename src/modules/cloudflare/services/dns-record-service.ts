@@ -131,7 +131,7 @@ export class CloudflareDnsRecordService {
       this.recordPayload(normalized)
     )
 
-    await invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
@@ -150,7 +150,7 @@ export class CloudflareDnsRecordService {
       this.recordPayload(normalized)
     )
 
-    await invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
@@ -162,7 +162,7 @@ export class CloudflareDnsRecordService {
       `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`
     )
 
-    await invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
     return { id: parsed.result.id ?? recordId }
   }

@@ -139,7 +139,7 @@ export class CloudflareCustomHostnameGateway {
       payload
     )
 
-    await invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
@@ -166,7 +166,7 @@ export class CloudflareCustomHostnameGateway {
       payload
     )
 
-    await invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
@@ -178,7 +178,7 @@ export class CloudflareCustomHostnameGateway {
       `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
     )
 
-    await invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return { id: hostnameId }
   }
 
@@ -220,7 +220,7 @@ export class CloudflareCustomHostnameGateway {
       { origin }
     )
 
-    await invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
   }
 
@@ -229,7 +229,7 @@ export class CloudflareCustomHostnameGateway {
     const gateway = new CloudflareGateway(provider.api_token)
 
     await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
-    await invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.presentFallbackOrigin({})
   }
 

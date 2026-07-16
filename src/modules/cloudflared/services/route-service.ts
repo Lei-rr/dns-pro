@@ -55,7 +55,7 @@ export class CloudflaredRouteService {
 
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
-    await invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalized.hostname,
@@ -101,7 +101,7 @@ export class CloudflaredRouteService {
     }
 
     const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
-    await invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalized.hostname,
@@ -140,7 +140,7 @@ export class CloudflaredRouteService {
       dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, zoneId, normalizedHostname, tunnelId)
     }
 
-    await invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
 
     return {
       hostname: normalizedHostname,

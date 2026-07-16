@@ -127,7 +127,7 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
     }
 
-    await invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     const domainInfo = dnspodDomainInfoSchema.parse(parsed.DomainInfo ?? {})
@@ -152,7 +152,7 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
     }
 
-    await invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
 
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     return {

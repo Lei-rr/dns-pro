@@ -87,7 +87,7 @@ export class CloudflaredTunnelService {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
-    await invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
+    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
     const tunnel = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
     const token = await this.fetchToken(provider, accountId, tunnel.id)
     return { tunnel, token }
@@ -104,7 +104,7 @@ export class CloudflaredTunnelService {
     }
 
     await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
-    await invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
+    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
     return { id: tunnelId }
   }
 
@@ -122,7 +122,7 @@ export class CloudflaredTunnelService {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
-    await invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
+    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
     const token = await this.fetchToken(provider, accountId, tunnelId)
     return { token }
   }

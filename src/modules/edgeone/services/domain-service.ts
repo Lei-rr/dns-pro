@@ -103,7 +103,7 @@ export class EdgeOneDomainService {
         : {}),
     })
 
-    await invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
     return { name: normalized.domain_name, request_id: parsed.RequestId ?? undefined, ownership_verification: parsed.OwnershipVerification ?? null }
   }
@@ -127,7 +127,7 @@ export class EdgeOneDomainService {
         : {}),
     })
 
-    await invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: normalized.domain_name, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -141,7 +141,7 @@ export class EdgeOneDomainService {
       Force: false,
     })
 
-    await invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: domainName, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -156,7 +156,7 @@ export class EdgeOneDomainService {
       Force: false,
     })
 
-    await invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: domainName, status, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -180,7 +180,7 @@ export class EdgeOneDomainService {
     }
 
     const response = await gateway.call('ModifyHostsCertificate', payload)
-    await invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
     return { name: domainName, https_mode: httpsMode, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
