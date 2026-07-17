@@ -84,6 +84,20 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   preferred_domain_not_found: '优选域名不存在',
   preferred_domain_not_allowed: '该域名不在优选域名列表中',
 
+  // Preferred apply / jobs
+  preferred_apply_running: '已有优选切换任务在执行，请稍后再试',
+  preferred_apply_empty: '没有匹配的主机名可切换',
+  preferred_apply_not_found: '优选切换任务不存在',
+  preferred_apply_no_failed: '没有失败项可重试',
+  backup_not_found: '备份不存在',
+
+  // 常见厂商错误补充
+  saas_cloudflare_sync_zone_mismatch: 'Cloudflare DNS 同步域名与主机名不匹配，请检查同步目标',
+  cloudflare_permission_denied: 'Cloudflare 权限不足，请检查 API Token 权限',
+  dnspod_permission_denied: 'DNSPod 权限不足，请检查密钥权限',
+  dnspod_record_not_found: 'DNSPod 记录不存在或已被删除',
+  provider_api_error: '服务商接口返回错误，请稍后重试或检查配置',
+
   // Fallback origin
   fallback_origin_zone_mismatch: '默认回源必须是该站点的子域名',
 

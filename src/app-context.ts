@@ -10,6 +10,7 @@ import { PreferredDomainRepository } from './modules/saas/repositories/preferred
 import { SaasPreferenceRepository } from './modules/saas/repositories/preference-repository.js'
 import { PreferredDomainService } from './modules/saas/services/preferred-domain-service.js'
 import { SaasPreferenceService } from './modules/saas/services/preference-service.js'
+import { SaasPreferredApplyService } from './modules/saas/services/preferred-apply-service.js'
 import { CloudflareZoneService } from './modules/cloudflare/services/zone-service.js'
 import { CloudflareDnsRecordService } from './modules/cloudflare/services/dns-record-service.js'
 import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
@@ -74,7 +75,13 @@ export function createAppContext(config: AppConfig) {
 
   const edgeoneZoneService = new EdgeOneZoneService(providerRepository)
   const edgeoneDomainService = new EdgeOneDomainService(providerRepository)
-  const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, dnsPodRecordOps)
+  const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, syncOrchestrator)
+
+  const saasPreferredApplyService = new SaasPreferredApplyService(
+    undefined,
+    saasWorkflowService,
+    saasHostnameService,
+  )
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -95,6 +102,7 @@ export function createAppContext(config: AppConfig) {
     preferredDomainService,
     saasHostnameService,
     saasWorkflowService,
+    saasPreferredApplyService,
     syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,

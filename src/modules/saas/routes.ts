@@ -10,6 +10,11 @@ import {
   fallbackOriginShow,
   fallbackOriginUpdate,
   fallbackOriginDelete,
+  preferredApplyPreview,
+  preferredApplyStore,
+  preferredApplyShow,
+  preferredApplyActive,
+  preferredApplyRetry,
 } from './controllers/saas-controller.js'
 import {
   preferredDomainsIndex,
@@ -38,9 +43,19 @@ async function saasProviderRoutes(app: FastifyInstance) {
   app.get('/zones/:zoneName/fallback-origin', fallbackOriginShow)
   app.put('/zones/:zoneName/fallback-origin', fallbackOriginUpdate)
   app.delete('/zones/:zoneName/fallback-origin', fallbackOriginDelete)
+
+  app.get('/zones/:zoneName/preferred-apply/active', preferredApplyActive)
+  app.post('/zones/:zoneName/preferred-apply/preview', preferredApplyPreview)
+  app.post('/zones/:zoneName/preferred-apply', preferredApplyStore)
+}
+
+async function preferredApplyJobRoutes(app: FastifyInstance) {
+  app.get('/:jobId', preferredApplyShow)
+  app.post('/:jobId/retry', preferredApplyRetry)
 }
 
 export async function routes(app: FastifyInstance) {
   app.register(preferredDomainRoutes, { prefix: '/preferred-domains' })
   app.register(saasProviderRoutes, { prefix: '/providers/:providerId' })
+  app.register(preferredApplyJobRoutes, { prefix: '/preferred-apply' })
 }

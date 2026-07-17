@@ -16,6 +16,11 @@ const endpoints = {
   preferredDomains: () => `/saas/preferred-domains`,
   preferredDomain: (domain: string) => `/saas/preferred-domains/${path(domain)}`,
   preferredDomainsSort: () => `/saas/preferred-domains/sort`,
+  preferredApply: (provider: string, zone: string) => `${zoneBase(provider, zone)}/preferred-apply`,
+  preferredApplyPreview: (provider: string, zone: string) => `${zoneBase(provider, zone)}/preferred-apply/preview`,
+  preferredApplyActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/preferred-apply/active`,
+  preferredApplyJob: (jobId: string) => `/saas/preferred-apply/${path(jobId)}`,
+  preferredApplyRetry: (jobId: string) => `/saas/preferred-apply/${path(jobId)}/retry`,
 }
 
 export const saasApi = {
@@ -75,6 +80,19 @@ export const saasApi = {
   setFallbackOrigin: (provider: string, zone: string, origin: string): Promise<ApiResponse<SaaSFallbackOrigin>> =>
     http.put(endpoints.fallbackOrigin(provider, zone), { origin }),
   deleteFallbackOrigin: (provider: string, zone: string) => http.delete(endpoints.fallbackOrigin(provider, zone)),
+  preferredApplyPreview: (
+    provider: string,
+    zone: string,
+    data: Record<string, unknown>,
+  ) => http.post(endpoints.preferredApplyPreview(provider, zone), data),
+  preferredApply: (
+    provider: string,
+    zone: string,
+    data: Record<string, unknown>,
+  ) => http.post(endpoints.preferredApply(provider, zone), data),
+  preferredApplyActive: (provider: string, zone: string) => http.get(endpoints.preferredApplyActive(provider, zone)),
+  preferredApplyJob: (jobId: string) => http.get(endpoints.preferredApplyJob(jobId)),
+  preferredApplyRetry: (jobId: string) => http.post(endpoints.preferredApplyRetry(jobId)),
 }
 
 export const preferredDomainApi = {

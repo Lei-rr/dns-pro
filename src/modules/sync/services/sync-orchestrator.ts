@@ -11,8 +11,7 @@ import type { SyncDriver, SyncRecord } from '../types.js'
 
 /**
  * Unified DNS sync orchestrator.
- * SaaS / EdgeOne / future modules should request sync through this service
- * instead of embedding driver selection and side-effect handling themselves.
+ * SaaS / EdgeOne / future modules request sync through this service.
  */
 export class SyncOrchestrator {
   constructor(
@@ -74,18 +73,85 @@ export class SyncOrchestrator {
     return this.safe(() => driver.cleanupStaleRecords(providerId, zoneName, hostnameFqdn))
   }
 
-  /**
-   * EdgeOne currently only needs DNSPod CNAME upsert/delete helpers.
-   * Keep the shared record ops accessible without leaking SaaS drivers.
-   */
-  dnspodOps(): DnsPodRecordOps {
-    return this.support
+  /** EdgeOne: upsert default-line CNAME on linked DNSPod. */
+  async syncEdgeOneCname(edgeoneProviderId: string, domainName: string, cname: string) {
+    return this.safe(async () => {
+      const dnspodProviderId = await this.support.requireDnspodProviderId(edgeoneProviderId, 'edgeone', 'EdgeOne')
+      const fqdn = domainName.toLowerCase().trim()
+      const dnspodZone = await this.support.resolveDnspodZone(dnspodProviderId, fqdn, 'edgeone')
+      if (cname === '') throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME is empty', 422)
+
+      const record = {
+        type: 'CNAME',
+        name: fqdn,
+        value: cname,
+        line: '默认',
+        purpose: 'edgeone_cname',
+        provider_id: dnspodProviderId,
+        remark: `EdgeOne 加速丨${fqdn}`,
+      }
+      const precleaned = await this.support.precleanConflicts(dnspodProviderId, dnspodZone, fqdn)
+      const result = await this.support.sync(dnspodProviderId, dnspodZone, record)
+      return { domain_name: fqdn, dnspod_zone: dnspodZone, precleaned, record: result }
+    })
+  }
+
+  /** EdgeOne: delete default-line CNAME on linked DNSPod. */
+  async cleanupEdgeOneCname(edgeoneProviderId: string, domainName: string, cname = '') {
+    return this.safe(async () => {
+      const dnspodProviderId = await this.support.lookupDnspodProviderId(edgeoneProviderId, 'edgeone', 'EdgeOne')
+      if (dnspodProviderId === '') return { cleaned: 0, records: [], reason: 'dnspod_provider_missing' }
+
+      const fqdn = domainName.toLowerCase().trim()
+      let dnspodZone = ''
+      try {
+        dnspodZone = await this.support.resolveDnspodZone(dnspodProviderId, fqdn, 'edgeone')
+      } catch {
+        return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
+      }
+
+      if (cname !== '') {
+        const record = {
+          type: 'CNAME',
+          name: fqdn,
+          value: cname,
+          line: '默认',
+          purpose: 'edgeone_cname',
+          provider_id: dnspodProviderId,
+          remark: `EdgeOne 加速丨${fqdn}`,
+        }
+        const result = await this.support.delete(dnspodProviderId, dnspodZone, record)
+        return { cleaned: result.status === 'deleted' ? 1 : 0, dnspod_zone: dnspodZone, records: [result] }
+      }
+
+      const results = await this.support.deleteRecordsByNameType(dnspodProviderId, dnspodZone, fqdn, 'CNAME', '默认')
+      return {
+        cleaned: results.filter((r) => r.status === 'deleted').length,
+        dnspod_zone: dnspodZone,
+        records: results,
+      }
+    })
+  }
+
+  async preflightEdgeOne(edgeoneProviderId: string, domainName: string) {
+    const dnspodProviderId = await this.support.requireDnspodProviderId(edgeoneProviderId, 'edgeone', 'EdgeOne')
+    const fqdn = domainName.toLowerCase().trim()
+    if (fqdn === '') throw new ApiError('validation_failed', 'Domain name is required', 422)
+    const dnspodZone = await this.support.resolveDnspodZone(dnspodProviderId, fqdn, 'edgeone')
+    return { dnspod_provider_id: dnspodProviderId, dnspod_zone: dnspodZone, domain_name: fqdn }
   }
 
   normalizeSyncSideEffect(result: unknown, defaultMessage: string): DnsSideEffect {
     const r = (result ?? {}) as Record<string, unknown>
     let status = String(r.status ?? '')
     if (status === '') status = this.deriveSyncStatus(r)
+    // EdgeOne style nested record.status
+    const record = (r.record as Record<string, unknown>) ?? {}
+    if (status === '' || status === 'completed') {
+      const action = String(record.status ?? '')
+      if (action === 'failed') status = 'failed'
+      else if (action !== '') status = 'completed'
+    }
     return {
       status: status as DnsSideEffect['status'],
       message: String(r.message ?? defaultMessage),
@@ -96,7 +162,7 @@ export class SyncOrchestrator {
   normalizeCleanupSideEffect(result: unknown, defaultMessage: string): DnsSideEffect {
     const r = (result ?? {}) as Record<string, unknown>
     const cleaned = Number(r.cleaned ?? 0)
-    const status = r.status === 'skipped' ? 'skipped' : cleaned > 0 ? 'completed' : 'skipped'
+    const status = r.status === 'skipped' || r.reason ? 'skipped' : cleaned > 0 ? 'completed' : 'skipped'
     let message = String(r.message ?? '')
     if (message === '') {
       message =

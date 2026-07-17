@@ -25,7 +25,7 @@
       :columns="[
         { title: '排序', key: 'sort', width: 60 },
         { title: '域名', dataIndex: 'domain', key: 'domain' },
-        { title: '操作', key: 'actions', width: 220, align: 'right' },
+        { title: '操作', key: 'actions', width: 360, align: 'right' },
       ]"
     >
       <template #bodyCell="{ column, record }">
@@ -53,6 +53,12 @@
                 @click="askApply(record)"
               >
                 应用到当前列表
+              </a-button>
+              <a-button type="link" size="small" :disabled="saving || applying || !hostCount" @click="askApplyOnlyAuto(record)">
+                仅自动优选
+              </a-button>
+              <a-button type="link" size="small" :disabled="saving || applying || !hostCount" @click="askPreview(record)">
+                预览
               </a-button>
               <a-button type="link" size="small" :disabled="saving || applying" @click="startEdit(record)">编辑</a-button>
               <a-button type="link" size="small" danger :disabled="saving || applying" @click="askDelete(record)">删除</a-button>
@@ -82,7 +88,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'update', items: Array<{ domain: string }>): void
-  (e: 'apply', domain: string): void
+  (e: 'apply', domain: string, options?: { onlyAutoPreferred?: boolean; dryRun?: boolean }): void
 }>()
 
 const items = ref<Array<{ domain: string }>>([])
@@ -201,14 +207,34 @@ function askApply(item: { domain: string }) {
   }
   modal.confirm({
     title: '一键切换优选域名',
-    content: `确认将当前列表 ${hostCount.value} 个自定义主机名的优选域名切换为 ${item.domain}？将逐个更新并同步 DNS。`,
-    okText: '开始切换',
+    content: `确认将当前列表 ${hostCount.value} 个自定义主机名的优选域名切换为 ${item.domain}？将创建后台任务逐个更新并同步 DNS。`,
+    okText: '切换全部',
     cancelText: '取消',
     onOk: () => {
       applyingDomain.value = item.domain
       emit('apply', item.domain)
     },
   })
+}
+
+function askApplyOnlyAuto(item: { domain: string }) {
+  if (!hostCount.value) {
+    message.warning('当前列表没有可切换的主机名')
+    return
+  }
+  modal.confirm({
+    title: '只切换自动优选主机',
+    content: `仅对“自动优选=开”的主机切换为 ${item.domain}？`,
+    okText: '开始切换',
+    onOk: () => {
+      applyingDomain.value = item.domain
+      emit('apply', item.domain, { onlyAutoPreferred: true })
+    },
+  })
+}
+
+function askPreview(item: { domain: string }) {
+  emit('apply', item.domain, { dryRun: true })
 }
 async function removeItem(item: { domain: string }) {
   saving.value = true

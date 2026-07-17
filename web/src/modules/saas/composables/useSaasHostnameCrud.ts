@@ -100,6 +100,23 @@ export function useSaasHostnameCrud({
         auto_preferred: !!formData.autoPreferred,
       }
 
+      // optimistic local patch first
+      const hostname = editingHostname.value.hostname
+      const idx = hostnames.value.findIndex((h) => h.hostname === hostname)
+      const previous = idx >= 0 ? { ...hostnames.value[idx] } : null
+      if (idx >= 0) {
+        hostnames.value.splice(idx, 1, {
+          ...hostnames.value[idx],
+          preferred_domain: preferred,
+          auto_preferred: !!formData.autoPreferred,
+          custom_origin_server: String(payload.custom_origin_server || ''),
+          custom_metadata: {
+            ...(hostnames.value[idx].custom_metadata || {}),
+            preferred_domain: preferred,
+          },
+        })
+      }
+
       const response = await saasApi.updateHostname(
         props.provider,
         decodedZoneName.value,
@@ -112,12 +129,13 @@ export function useSaasHostnameCrud({
       showCreateForm.value = false
       editingHostname.value = null
       mergeHostnameRecord(response.data)
-      await load({ refresh: true })
       if (showDetails.value && selectedHostname.value?.id === response.data?.id) {
-        await openDetails(response.data)
+        selectedHostname.value = { ...selectedHostname.value, ...response.data }
       }
     } catch (error) {
+      // rollback optimistic patch on failure
       message.error(errorMessage(error))
+      await load()
     } finally {
       savingEdit.value = false
     }
@@ -249,47 +267,107 @@ export function useSaasHostnameCrud({
     if (index >= 0) hostnames.value.splice(index, 1, { ...hostnames.value[index], ...updated })
   }
 
-  async function applyPreferredDomainToList(domain: string) {
+  async function applyPreferredDomainToList(domain: string, options: { onlyAutoPreferred?: boolean; dryRun?: boolean } = {}) {
     const preferred = String(domain || '').trim()
     if (!preferred) {
       message.warning('请选择优选域名')
       return
     }
-    const records = [...hostnames.value]
-    if (!records.length) {
+    if (!hostnames.value.length) {
       message.warning('当前列表没有可切换的主机名')
       return
     }
 
     applyingPreferred.value = true
-    applyingPreferredText.value = `正在切换 0/${records.length}`
-    const failed: string[] = []
+    applyingPreferredText.value = options.dryRun ? '正在预览...' : '正在创建后台任务...'
     try {
-      for (const [index, record] of records.entries()) {
-        applyingPreferredText.value = `正在切换 ${index + 1}/${records.length}：${record.hostname}`
-        try {
-          const response = await saasApi.updateHostname(
-            props.provider,
-            decodedZoneName.value,
-            record.hostname,
-            {
-              preferred_domain: preferred,
-              auto_preferred: true,
-            },
-            { autoSync: true },
-          )
-          mergeHostnameRecord(response.data)
-          if (selectedHostname.value?.id === response.data?.id) {
-            selectedHostname.value = { ...selectedHostname.value, ...response.data }
-          }
-        } catch (error) {
-          failed.push(`${record.hostname}: ${errorMessage(error)}`)
-        }
+      if (options.dryRun) {
+        const preview = await saasApi.preferredApplyPreview(props.provider, decodedZoneName.value, {
+          preferred_domain: preferred,
+          only_auto_preferred: !!options.onlyAutoPreferred,
+        })
+        const data: any = preview.data || {}
+        const will = Number(data.items?.filter?.((i: any) => i.will_change)?.length ?? data.total ?? 0)
+        message.info(`预览：共 ${data.total ?? 0} 个主机，将切换 ${will} 个`)
+        return
       }
 
-      if (failed.length) showBatchFailures('一键切换优选域名完成', failed, '个')
-      else message.success(`已将当前列表 ${records.length} 个主机名切换为 ${preferred}`)
+      const created = await saasApi.preferredApply(props.provider, decodedZoneName.value, {
+        preferred_domain: preferred,
+        only_auto_preferred: !!options.onlyAutoPreferred,
+      })
+      const jobId = String((created.data as any)?.id || '')
+      if (!jobId) {
+        message.error('创建任务失败')
+        return
+      }
+
+      // poll job until finished
+      let job: any = created.data
+      while (job && (job.status === 'pending' || job.status === 'running')) {
+        applyingPreferredText.value = job.current
+          ? `后台切换 ${job.done}/${job.total}：${job.current}`
+          : `后台切换 ${job.done || 0}/${job.total || 0}`
+        await new Promise((r) => setTimeout(r, 1000))
+        const polled = await saasApi.preferredApplyJob(jobId)
+        job = polled.data as any
+      }
+
+      const failedItems = ((job?.items || []) as any[]).filter((i: any) => i.status === 'failed')
+      if (failedItems.length) {
+        showBatchFailures(
+          job?.message || '一键切换优选域名完成',
+          failedItems.map((i: any) => `${i.hostname}: ${i.message || '失败'}`),
+          '个',
+        )
+        // allow retry failed from UI via second confirm
+        modal.confirm({
+          title: '重试失败项？',
+          content: `有 ${failedItems.length} 个主机切换失败，是否仅重试失败项？`,
+          okText: '重试失败项',
+          onOk: async () => {
+            applyingPreferred.value = true
+            try {
+              let retryJob: any = (await saasApi.preferredApplyRetry(jobId)).data
+              while (retryJob && (retryJob.status === 'pending' || retryJob.status === 'running')) {
+                applyingPreferredText.value = `重试 ${retryJob.done || 0}/${retryJob.total || 0}`
+                await new Promise((r) => setTimeout(r, 1000))
+                retryJob = (await saasApi.preferredApplyJob(jobId)).data as any
+              }
+              message.success(retryJob?.message || '重试完成')
+              await load({ refresh: true })
+            } catch (error) {
+              message.error(errorMessage(error))
+            } finally {
+              applyingPreferred.value = false
+              applyingPreferredText.value = ''
+            }
+          },
+        })
+      } else {
+        message.success(job?.message || `已将当前列表切换为 ${preferred}`)
+      }
+
+      // optimistic local patch for success items, then soft refresh
+      for (const item of (job?.items || []) as any[]) {
+        if (item.status === 'success') {
+          const idx = hostnames.value.findIndex((h) => h.hostname === item.hostname)
+          if (idx >= 0) {
+            hostnames.value.splice(idx, 1, {
+              ...hostnames.value[idx],
+              preferred_domain: preferred,
+              auto_preferred: true,
+              custom_metadata: {
+                ...(hostnames.value[idx].custom_metadata || {}),
+                preferred_domain: preferred,
+              },
+            })
+          }
+        }
+      }
       await load({ refresh: true })
+    } catch (error) {
+      message.error(errorMessage(error))
     } finally {
       applyingPreferred.value = false
       applyingPreferredText.value = ''

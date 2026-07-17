@@ -4,6 +4,10 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success, error } from '../../lib/http/api-response.js'
 import { getDataRoot } from '../../lib/storage/json-store.js'
 import { globalCache } from '../../lib/cache/provider-cache.js'
+import { auditService } from '../../lib/utils/audit.js'
+import { backupService } from '../../lib/utils/backup.js'
+import { queryInt, queryRecord } from '../../lib/utils/request-parse.js'
+import { bodyRecord } from '../../lib/utils/request-parse.js'
 
 async function isDirectoryWritable(dir: string): Promise<boolean> {
   const probe = path.join(dir, `.health-check-${Date.now()}`)
@@ -44,4 +48,39 @@ export async function healthShow(_request: FastifyRequest, reply: FastifyReply) 
   }
 
   return reply.send(success(payload))
+}
+
+export async function auditIndex(request: FastifyRequest, reply: FastifyReply) {
+  const q = queryRecord(request)
+  const items = await auditService.list(queryInt(q, 'limit', 100, 1, 1000))
+  return reply.send(success({ items }))
+}
+
+export async function backupsIndex(_request: FastifyRequest, reply: FastifyReply) {
+  const items = await backupService.list()
+  return reply.send(success({ items }))
+}
+
+export async function backupsStore(_request: FastifyRequest, reply: FastifyReply) {
+  const result = await backupService.create()
+  await auditService.write({
+    ts: Date.now(),
+    action: 'system.backup.create',
+    result: 'success',
+    meta: result,
+  })
+  return reply.status(201).send(success(result))
+}
+
+export async function backupsRestore(request: FastifyRequest, reply: FastifyReply) {
+  const body = bodyRecord(request)
+  const id = String(body.id ?? '').trim()
+  const result = await backupService.restore(id)
+  await auditService.write({
+    ts: Date.now(),
+    action: 'system.backup.restore',
+    result: 'success',
+    meta: result,
+  })
+  return reply.send(success(result))
 }
