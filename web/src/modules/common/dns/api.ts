@@ -11,6 +11,11 @@ const endpoints = {
   zone: (provider: string, zone: string) => zoneBase(provider, zone),
   records: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records`,
   record: (provider: string, zone: string, record: string) => `${zoneBase(provider, zone)}/records/${path(record)}`,
+  recordsBatchDelete: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-delete`,
+  recordsBatchActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch/active`,
+  recordsBatchJob: (provider: string, jobId: string) => `${providerBase(provider)}/records/batch/${path(jobId)}`,
+  recordsBatchRetry: (provider: string, jobId: string) =>
+    `${providerBase(provider)}/records/batch/${path(jobId)}/retry`,
 }
 
 function normalizedPaging(options: Record<string, unknown> = {}, defaultPerPage = 20) {
@@ -196,4 +201,12 @@ export const dnsApi = {
     http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
   deleteRecord: (provider: string, domain: string, recordId: string) =>
     http.delete(endpoints.record(provider, domain, recordId)),
+  batchDeleteRecords: (
+    provider: string,
+    domain: string,
+    data: { records: Array<{ id: string; name?: string; type?: string }> },
+  ) => http.post(endpoints.recordsBatchDelete(provider, domain), data),
+  batchJob: (provider: string, jobId: string) => http.get(endpoints.recordsBatchJob(provider, jobId)),
+  batchRetry: (provider: string, jobId: string) => http.post(endpoints.recordsBatchRetry(provider, jobId)),
+  batchActive: (provider: string, domain: string) => http.get(endpoints.recordsBatchActive(provider, domain)),
 }

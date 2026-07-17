@@ -39,11 +39,21 @@
       style="margin-bottom: 12px"
       :message="applyingPreferredText || '正在一键切换优选域名...'"
     />
+    <!-- JobProgressAlert is available for future multi-job UIs; preferred-apply reuses toolbar text for now -->
+    <a-alert
+      v-if="deleting && deletingText"
+      type="warning"
+      show-icon
+      style="margin-bottom: 12px"
+      :message="deletingText"
+    />
     <BatchToolbar
       :count="selectedHostnames.length"
-      :deleting="deleting"
+      :deleting="deleting || applyingPreferred"
       delete-text="批量删除"
+      :actions="batchActions"
       @delete="askBatchDelete"
+      @action="onBatchAction"
       @clear="clearSelection"
     />
     <a-result v-if="notFound" status="404" title="站点不存在或不可访问" :sub-title="decodedZoneName">
@@ -179,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { statusColor, statusLabel, formatDate } from '../utils/saas'
 import ListToolbar from '@/shared/components/ListToolbar.vue'
@@ -277,6 +287,7 @@ const {
   creating,
   savingEdit,
   deleting,
+  deletingText,
   refreshing,
   applyingPreferred,
   applyingPreferredText,
@@ -285,8 +296,21 @@ const {
   refreshHostname,
   askDelete,
   askBatchDelete,
+  askBatchUpdatePreferred,
   applyPreferredDomainToList,
 } = crud
+
+const batchActions = computed(() => [
+  {
+    key: 'preferred',
+    label: '批量改优选',
+    disabled: !dnspodLinked.value,
+  },
+])
+
+function onBatchAction(key: string) {
+  if (key === 'preferred') askBatchUpdatePreferred()
+}
 
 onMounted(async () => {
   await load()

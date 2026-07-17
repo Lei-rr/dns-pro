@@ -120,4 +120,9 @@ export const ServiceTokens = {
   JobPort: 'port.job',
   Audit: 'svc.audit',
   Backup: 'svc.backup',
+  EventBus: 'svc.events',
+  DnsPodZonePort: 'port.zone.dnspod',
+  DnsPodRecordPort: 'port.record.dnspod',
+  CloudflareZonePort: 'port.zone.cloudflare',
+  CloudflareRecordPort: 'port.record.cloudflare',
 } as const

@@ -111,6 +111,7 @@ import RecordForm from '../components/RecordForm.vue'
 import RecordTable from '../components/RecordTable.vue'
 import { defaultProviderHook } from '../hook'
 import { showBatchFailures } from '@/shared/utils/batch'
+import { useJobProgress } from '@/shared/composables/useJobProgress'
 import type { DnsRecord, Provider, ProviderHook } from '@/types'
 
 const props = defineProps<{
@@ -137,6 +138,7 @@ const loading = ref(true)
 const saving = ref(false)
 const deleting = ref(false)
 const deletingText = ref('')
+const jobProgress = useJobProgress()
 const importMode = ref('create')
 const showImportConfirm = ref(false)
 const pendingImportRecords = ref<DnsRecord[]>([])
@@ -356,24 +358,43 @@ async function remove(record: DnsRecord) {
 }
 async function batchRemove(dialog: ReturnType<typeof modal.confirm> | null, total: number) {
   deleting.value = true
-  const failed: string[] = []
   try {
-    deletingText.value = '正在删除 0/' + total
+    deletingText.value = `正在创建批量删除任务 0/${total}`
     updateBatchRemoveDialog(dialog, total)
-    const records = [...selectedRecords.value]
-    for (const [index, record] of records.entries()) {
-      deletingText.value = `正在删除 ${index + 1}/${records.length}`
-      updateBatchRemoveDialog(dialog, total)
-      try {
-        await dnsApi.deleteRecord(props.provider, recordsTarget.value, record.id || '')
-      } catch (error) {
-        failed.push(`${record.name} ${record.type}: ${errorMessage(error)}`)
-      }
+    const records = selectedRecords.value
+      .map((record) => ({
+        id: String(record.id || ''),
+        name: String(record.name || ''),
+        type: String(record.type || ''),
+      }))
+      .filter((item) => item.id)
+    const created = await dnsApi.batchDeleteRecords(props.provider, recordsTarget.value, { records })
+    const jobId = String((created.data as any)?.id || '')
+    if (!jobId) throw new Error('创建批量删除任务失败')
+
+    const job = await jobProgress.pollJob(jobId, {
+      fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as any) || {},
+      onTick: (current) => {
+        deletingText.value = current.current
+          ? `后台删除 ${current.done || 0}/${current.total || total}：${current.current}`
+          : `后台删除 ${current.done || 0}/${current.total || total}`
+        updateBatchRemoveDialog(dialog, total)
+      },
+    })
+
+    const failedItems = jobProgress.failedItems(job)
+    if (failedItems.length) {
+      showBatchFailures(
+        job?.message || '批量删除完成',
+        failedItems.map((i: any) => `${i.name || ''} ${i.type || ''} ${i.record_id || ''}: ${i.message || '失败'}`),
+      )
+    } else {
+      message.success(job?.message || '批量删除完成')
     }
-    if (failed.length) showBatchFailures('批量删除完成', failed)
-    else message.success('批量删除完成')
     clearSelection()
     await load({ refresh: true })
+  } catch (error) {
+    message.error(errorMessage(error))
   } finally {
     deleting.value = false
     deletingText.value = ''

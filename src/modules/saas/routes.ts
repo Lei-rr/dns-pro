@@ -15,6 +15,11 @@ import {
   preferredApplyShow,
   preferredApplyActive,
   preferredApplyRetry,
+  batchDeleteStore,
+  batchUpdateStore,
+  batchJobShow,
+  batchJobActive,
+  batchJobRetry,
 } from './controllers/saas-controller.js'
 import {
   preferredDomainsIndex,
@@ -47,6 +52,10 @@ async function saasProviderRoutes(app: FastifyInstance) {
   app.get('/zones/:zoneName/preferred-apply/active', preferredApplyActive)
   app.post('/zones/:zoneName/preferred-apply/preview', preferredApplyPreview)
   app.post('/zones/:zoneName/preferred-apply', preferredApplyStore)
+
+  app.get('/zones/:zoneName/batch/active', batchJobActive)
+  app.post('/zones/:zoneName/batch/delete', batchDeleteStore)
+  app.post('/zones/:zoneName/batch/update', batchUpdateStore)
 }
 
 async function preferredApplyJobRoutes(app: FastifyInstance) {
@@ -54,8 +63,14 @@ async function preferredApplyJobRoutes(app: FastifyInstance) {
   app.post('/:jobId/retry', preferredApplyRetry)
 }
 
+async function batchJobRoutes(app: FastifyInstance) {
+  app.get('/:jobId', batchJobShow)
+  app.post('/:jobId/retry', batchJobRetry)
+}
+
 export async function routes(app: FastifyInstance) {
   app.register(preferredDomainRoutes, { prefix: '/preferred-domains' })
   app.register(saasProviderRoutes, { prefix: '/providers/:providerId' })
   app.register(preferredApplyJobRoutes, { prefix: '/preferred-apply' })
+  app.register(batchJobRoutes, { prefix: '/batch' })
 }

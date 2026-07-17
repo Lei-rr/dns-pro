@@ -1,5 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
-import { CacheTtl, buildCacheKey, invalidateProviderCache, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, buildCacheKey, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { emitDnsPodRecordMutated } from '../adapters/ports.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
@@ -154,7 +155,7 @@ export class DnsPodRecordService {
       })
     }
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await emitDnsPodRecordMutated(providerId, domain, 'create')
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
@@ -184,7 +185,7 @@ export class DnsPodRecordService {
       })
     }
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await emitDnsPodRecordMutated(providerId, domain, 'update')
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {
@@ -209,7 +210,7 @@ export class DnsPodRecordService {
       })
     }
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await emitDnsPodRecordMutated(providerId, domain, 'delete')
 
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
     return {

@@ -5,6 +5,7 @@ import { isHostnameActive } from '../utils/host-status.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
 import { SaasHostnameService } from './hostname-service.js'
 import { SaasPreferenceService } from './preference-service.js'
+import { eventBus } from '../../../platform/events/event-bus.js'
 
 /**
  * SaaS host lifecycle workflow.
@@ -65,6 +66,13 @@ export class SaasWorkflowService {
     }
 
     const result = await this.hostnames.createHostname(providerId, zoneName, data)
+    await eventBus.emit({
+      type: 'saas.hostname.mutated',
+      provider_id: providerId,
+      zone: zoneName,
+      hostname: String(result.hostname ?? data.hostname ?? ''),
+      action: 'saas.hostname.create',
+    })
 
     if (autoSync && result.hostname) {
       const sync = await this.sync.syncSaasHostname(providerId, zoneName, String(result.hostname))
@@ -102,6 +110,14 @@ export class SaasWorkflowService {
     }
 
     const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data)
+    await eventBus.emit({
+      type: 'saas.hostname.mutated',
+      provider_id: providerId,
+      zone: zoneName,
+      hostname: hostnameFqdn,
+      action: 'saas.hostname.update',
+      target: data.preferred_domain ? String(data.preferred_domain) : undefined,
+    })
 
     if (shouldAutoSync) {
       const sync = await this.sync.resyncSaasHostname(providerId, zoneName, hostnameFqdn, beforeRecords)
@@ -142,6 +158,13 @@ export class SaasWorkflowService {
   ): Promise<Record<string, unknown>> {
     const collected = autoCleanup ? await this.sync.collectSaasRecords(providerId, zoneName, hostnameFqdn) : null
     const result = await this.hostnames.deleteHostname(providerId, zoneName, hostnameFqdn)
+    await eventBus.emit({
+      type: 'saas.hostname.mutated',
+      provider_id: providerId,
+      zone: zoneName,
+      hostname: hostnameFqdn,
+      action: 'saas.hostname.delete',
+    })
 
     if (collected && collected.records.length > 0 && String(collected.hostname_fqdn ?? '') !== '') {
       const cleanup = await this.sync.cleanupSaasRecords(

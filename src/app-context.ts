@@ -11,6 +11,8 @@ import { SaasPreferenceRepository } from './modules/saas/repositories/preference
 import { PreferredDomainService } from './modules/saas/services/preferred-domain-service.js'
 import { SaasPreferenceService } from './modules/saas/services/preference-service.js'
 import { SaasPreferredApplyService } from './modules/saas/services/preferred-apply-service.js'
+import { SaasBatchJobService } from './modules/saas/services/batch-job-service.js'
+import { DnsBatchJobService } from './modules/common/services/dns-batch-job-service.js'
 import { CloudflareZoneService } from './modules/cloudflare/services/zone-service.js'
 import { CloudflareDnsRecordService } from './modules/cloudflare/services/dns-record-service.js'
 import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
@@ -31,6 +33,15 @@ import { createPlatformPlugin } from './platform/plugin.js'
 import { createSyncPlugin } from './modules/sync/plugin.js'
 import { JobService } from './platform/job/job-service.js'
 import type { SyncPort } from './contracts/index.js'
+import { ServiceTokens } from './contracts/index.js'
+import {
+  CloudflareRecordPortAdapter,
+  CloudflareZonePortAdapter,
+} from './modules/cloudflare/adapters/ports.js'
+import {
+  DnsPodRecordPortAdapter,
+  DnsPodZonePortAdapter,
+} from './modules/dnspod/adapters/ports.js'
 
 /**
  * Compose application services and load platform plugins.
@@ -91,6 +102,11 @@ export function createAppContext(config: AppConfig) {
     saasWorkflowService,
     saasHostnameService,
   )
+  const saasBatchJobService = new SaasBatchJobService(jobService, saasWorkflowService)
+  const dnsBatchJobService = new DnsBatchJobService(jobService, {
+    dnspod: dnspodRecordService,
+    cloudflare: cloudflareDnsRecordService,
+  })
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -101,11 +117,14 @@ export function createAppContext(config: AppConfig) {
   )
 
   // Plugin registration — ports available via registry for new code paths.
-  // SyncOrchestrator is structurally compatible with SyncPort.
   void registry.load([
     createPlatformPlugin(jobService),
     createSyncPlugin(syncOrchestrator as unknown as SyncPort),
   ])
+  registry.set(ServiceTokens.DnsPodZonePort, new DnsPodZonePortAdapter(dnspodZoneService))
+  registry.set(ServiceTokens.DnsPodRecordPort, new DnsPodRecordPortAdapter(dnspodRecordService))
+  registry.set(ServiceTokens.CloudflareZonePort, new CloudflareZonePortAdapter(cloudflareZoneService))
+  registry.set(ServiceTokens.CloudflareRecordPort, new CloudflareRecordPortAdapter(cloudflareDnsRecordService))
 
   return {
     config,
@@ -121,6 +140,8 @@ export function createAppContext(config: AppConfig) {
     saasHostnameService,
     saasWorkflowService,
     saasPreferredApplyService,
+    saasBatchJobService,
+    dnsBatchJobService,
     syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,

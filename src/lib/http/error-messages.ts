@@ -18,6 +18,12 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   service_not_registered: '服务未注册（平台模块装载异常）',
   job_not_found: '任务不存在',
   job_running: '任务仍在执行中',
+  batch_empty: '未选择任何目标',
+  batch_patch_empty: '没有可修改的字段',
+  batch_job_running: '该站点已有批量任务在执行',
+  batch_job_not_found: '批量任务不存在',
+  batch_no_failed: '没有失败项可重试',
+  batch_provider_unsupported: '当前服务商不支持该批量操作',
 
   // Provider 通用
   provider_not_found: '服务商不存在',

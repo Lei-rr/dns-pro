@@ -1,6 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
-import { CacheTtl, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { emitCloudflareRecordMutated } from '../adapters/ports.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDnsRecordSchema,
@@ -131,7 +132,7 @@ export class CloudflareDnsRecordService {
       this.recordPayload(normalized)
     )
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    await emitCloudflareRecordMutated(providerId, zoneId, 'create')
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
@@ -150,7 +151,7 @@ export class CloudflareDnsRecordService {
       this.recordPayload(normalized)
     )
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    await emitCloudflareRecordMutated(providerId, zoneId, 'update')
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
   }
 
@@ -162,7 +163,7 @@ export class CloudflareDnsRecordService {
       `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`
     )
 
-    invalidateProviderCache([recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    await emitCloudflareRecordMutated(providerId, zoneId, 'delete')
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
     return { id: parsed.result.id ?? recordId }
   }

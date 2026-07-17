@@ -21,6 +21,11 @@ const endpoints = {
   preferredApplyActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/preferred-apply/active`,
   preferredApplyJob: (jobId: string) => `/saas/preferred-apply/${path(jobId)}`,
   preferredApplyRetry: (jobId: string) => `/saas/preferred-apply/${path(jobId)}/retry`,
+  batchDelete: (provider: string, zone: string) => `${zoneBase(provider, zone)}/batch/delete`,
+  batchUpdate: (provider: string, zone: string) => `${zoneBase(provider, zone)}/batch/update`,
+  batchActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/batch/active`,
+  batchJob: (jobId: string) => `/saas/batch/${path(jobId)}`,
+  batchRetry: (jobId: string) => `/saas/batch/${path(jobId)}/retry`,
 }
 
 export const saasApi = {
@@ -93,6 +98,13 @@ export const saasApi = {
   preferredApplyActive: (provider: string, zone: string) => http.get(endpoints.preferredApplyActive(provider, zone)),
   preferredApplyJob: (jobId: string) => http.get(endpoints.preferredApplyJob(jobId)),
   preferredApplyRetry: (jobId: string) => http.post(endpoints.preferredApplyRetry(jobId)),
+  batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
+    http.post(endpoints.batchDelete(provider, zone), data),
+  batchUpdate: (provider: string, zone: string, data: Record<string, unknown>) =>
+    http.post(endpoints.batchUpdate(provider, zone), data),
+  batchActive: (provider: string, zone: string) => http.get(endpoints.batchActive(provider, zone)),
+  batchJob: (jobId: string) => http.get(endpoints.batchJob(jobId)),
+  batchRetry: (jobId: string) => http.post(endpoints.batchRetry(jobId)),
 }
 
 export const preferredDomainApi = {

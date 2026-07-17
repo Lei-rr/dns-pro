@@ -1,8 +1,9 @@
 import { ref, h } from 'vue'
-import { saasApi } from '../utils/api'
+import { saasApi, preferredDomainApi } from '../utils/api'
 import { message, modal } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
 import { showBatchFailures } from '@/shared/utils/batch'
+import { useJobProgress } from '@/shared/composables/useJobProgress'
 import type { SaaSHostname } from '@/types'
 
 export function useSaasHostnameCrud({
@@ -37,6 +38,7 @@ export function useSaasHostnameCrud({
   const refreshing = ref<Record<string, boolean>>({})
   const applyingPreferred = ref(false)
   const applyingPreferredText = ref('')
+  const jobProgress = useJobProgress()
 
   function dnsOperationMessage(operation: { message?: string } | undefined, fallback: string) {
     if (!operation) return fallback
@@ -230,31 +232,154 @@ export function useSaasHostnameCrud({
     })
   }
 
-  async function batchDeleteHostnames(dialog: ReturnType<typeof modal.confirm> | null, total: number) {
-    deleting.value = true
-    const failed: string[] = []
-    const deletingCurrent = selectedHostnames.value.some((record) => isCurrentHostname(record))
+  async function askBatchUpdatePreferred() {
+    if (!selectedHostnames.value.length) {
+      message.warning('请先选择主机名')
+      return
+    }
+    // reuse preferred list from API
+    let domains: Array<{ domain: string }> = []
     try {
-      deletingText.value = '正在删除 0/' + total
-      updateBatchDeleteDialog(dialog, total)
-      const records = [...selectedHostnames.value]
-      for (const [index, record] of records.entries()) {
-        deletingText.value = `正在删除 ${index + 1}/${records.length}`
-        updateBatchDeleteDialog(dialog, total)
-        try {
-          await saasApi.deleteHostname(props.provider, decodedZoneName.value, record.hostname)
-        } catch (error) {
-          failed.push(`${record.hostname}: ${errorMessage(error)}`)
+      const res = await preferredDomainApi.list()
+      domains = (res.data || []) as Array<{ domain: string }>
+    } catch {
+      domains = []
+    }
+    if (!domains.length) {
+      message.warning('还没有优选域名，请先在优选域名里添加')
+      return
+    }
+
+    let selected = String(domains[0]?.domain || '')
+    modal.confirm({
+      title: '批量修改优选域名',
+      content: h('div', { style: 'display:flex;flex-direction:column;gap:8px' }, [
+        h('div', `将把已选 ${selectedHostnames.value.length} 个主机名的优选域名改为：`),
+        h(
+          'select',
+          {
+            style: 'width:100%;padding:6px 8px',
+            onChange: (e: Event) => {
+              selected = String((e.target as HTMLSelectElement).value || '')
+            },
+          },
+          domains.map((item) => h('option', { value: item.domain, selected: item.domain === selected }, item.domain)),
+        ),
+      ]),
+      okText: '开始修改',
+      cancelText: '取消',
+      onOk: async () => {
+        if (!selected) {
+          message.warning('请选择优选域名')
+          return Promise.reject()
+        }
+        await batchUpdatePreferred(selected)
+      },
+    })
+  }
+
+  async function batchUpdatePreferred(preferred: string) {
+    deleting.value = true
+    deletingText.value = '正在创建批量修改任务...'
+    try {
+      const selected = selectedHostnames.value.map((item) => item.hostname).filter(Boolean)
+      const created = await saasApi.batchUpdate(props.provider, decodedZoneName.value, {
+        hostnames: selected,
+        patch: {
+          preferred_domain: preferred,
+          auto_preferred: true,
+        },
+        auto_sync: true,
+      })
+      const jobId = String((created.data as any)?.id || '')
+      if (!jobId) throw new Error('创建批量修改任务失败')
+
+      const job = await jobProgress.pollJob(jobId, {
+        fetchJob: async (id) => ((await saasApi.batchJob(id)).data as any) || {},
+        onTick: (current) => {
+          deletingText.value = current.current
+            ? `后台修改 ${current.done || 0}/${current.total || 0}：${current.current}`
+            : `后台修改 ${current.done || 0}/${current.total || 0}`
+        },
+      })
+
+      const failedItems = jobProgress.failedItems(job)
+      if (failedItems.length) {
+        showBatchFailures(
+          job?.message || '批量修改完成',
+          failedItems.map((i: any) => `${i.hostname}: ${i.message || '失败'}`),
+          '个',
+        )
+      } else {
+        message.success(job?.message || '批量修改完成')
+      }
+
+      for (const item of (job?.items || []) as any[]) {
+        if (item.status === 'success') {
+          const idx = hostnames.value.findIndex((h: SaaSHostname) => h.hostname === item.hostname)
+          if (idx >= 0) {
+            hostnames.value.splice(idx, 1, {
+              ...hostnames.value[idx],
+              preferred_domain: preferred,
+              auto_preferred: true,
+              custom_metadata: {
+                ...(hostnames.value[idx].custom_metadata || {}),
+                preferred_domain: preferred,
+              },
+            })
+          }
         }
       }
-      if (failed.length) showBatchFailures('批量删除完成', failed, '个')
-      else message.success('批量删除完成')
+      clearSelection()
+      await load({ refresh: true })
+    } catch (error) {
+      message.error(errorMessage(error))
+    } finally {
+      deleting.value = false
+      deletingText.value = ''
+    }
+  }
+
+  async function batchDeleteHostnames(dialog: ReturnType<typeof modal.confirm> | null, total: number) {
+    deleting.value = true
+    const deletingCurrent = selectedHostnames.value.some((record) => isCurrentHostname(record))
+    try {
+      deletingText.value = `正在创建批量删除任务 0/${total}`
+      updateBatchDeleteDialog(dialog, total)
+      const hostnames = selectedHostnames.value.map((item) => item.hostname).filter(Boolean)
+      const created = await saasApi.batchDelete(props.provider, decodedZoneName.value, { hostnames })
+      const jobId = String((created.data as any)?.id || '')
+      if (!jobId) throw new Error('创建批量删除任务失败')
+
+      const job = await jobProgress.pollJob(jobId, {
+        fetchJob: async (id) => ((await saasApi.batchJob(id)).data as any) || {},
+        onTick: (current) => {
+          deletingText.value = current.current
+            ? `后台删除 ${current.done || 0}/${current.total || total}：${current.current}`
+            : `后台删除 ${current.done || 0}/${current.total || total}`
+          updateBatchDeleteDialog(dialog, total)
+        },
+      })
+
+      const failedItems = jobProgress.failedItems(job)
+      if (failedItems.length) {
+        showBatchFailures(
+          job?.message || '批量删除完成',
+          failedItems.map((i: any) => `${i.hostname}: ${i.message || '失败'}`),
+          '个',
+        )
+      } else {
+        message.success(job?.message || '批量删除完成')
+      }
+
       if (deletingCurrent) {
         selectedHostname.value = null
         showDetails.value = false
       }
       clearSelection()
       await load({ refresh: true })
+    } catch (error) {
+      message.error(errorMessage(error))
     } finally {
       deleting.value = false
       deletingText.value = ''
@@ -302,25 +427,23 @@ export function useSaasHostnameCrud({
         return
       }
 
-      // poll job until finished
-      let job: any = created.data
-      while (job && (job.status === 'pending' || job.status === 'running')) {
-        applyingPreferredText.value = job.current
-          ? `后台切换 ${job.done}/${job.total}：${job.current}`
-          : `后台切换 ${job.done || 0}/${job.total || 0}`
-        await new Promise((r) => setTimeout(r, 1000))
-        const polled = await saasApi.preferredApplyJob(jobId)
-        job = polled.data as any
-      }
+      // poll job until finished via shared helper
+      let job = await jobProgress.pollJob(jobId, {
+        fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+        onTick: (current) => {
+          applyingPreferredText.value = current.current
+            ? `后台切换 ${current.done || 0}/${current.total || 0}：${current.current}`
+            : `后台切换 ${current.done || 0}/${current.total || 0}`
+        },
+      })
 
-      const failedItems = ((job?.items || []) as any[]).filter((i: any) => i.status === 'failed')
+      const failedItems = jobProgress.failedItems(job)
       if (failedItems.length) {
         showBatchFailures(
           job?.message || '一键切换优选域名完成',
           failedItems.map((i: any) => `${i.hostname}: ${i.message || '失败'}`),
           '个',
         )
-        // allow retry failed from UI via second confirm
         modal.confirm({
           title: '重试失败项？',
           content: `有 ${failedItems.length} 个主机切换失败，是否仅重试失败项？`,
@@ -328,13 +451,14 @@ export function useSaasHostnameCrud({
           onOk: async () => {
             applyingPreferred.value = true
             try {
-              let retryJob: any = (await saasApi.preferredApplyRetry(jobId)).data
-              while (retryJob && (retryJob.status === 'pending' || retryJob.status === 'running')) {
-                applyingPreferredText.value = `重试 ${retryJob.done || 0}/${retryJob.total || 0}`
-                await new Promise((r) => setTimeout(r, 1000))
-                retryJob = (await saasApi.preferredApplyJob(jobId)).data as any
-              }
-              message.success(retryJob?.message || '重试完成')
+              await saasApi.preferredApplyRetry(jobId)
+              job = await jobProgress.pollJob(jobId, {
+                fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+                onTick: (current) => {
+                  applyingPreferredText.value = `重试 ${current.done || 0}/${current.total || 0}`
+                },
+              })
+              message.success(job?.message || '重试完成')
               await load({ refresh: true })
             } catch (error) {
               message.error(errorMessage(error))
@@ -387,6 +511,7 @@ export function useSaasHostnameCrud({
     refreshHostname,
     askDelete,
     askBatchDelete,
+    askBatchUpdatePreferred,
     applyPreferredDomainToList,
     mergeHostnameRecord,
   }

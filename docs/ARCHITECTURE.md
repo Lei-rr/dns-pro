@@ -45,20 +45,29 @@ Service tokens live in `src/contracts` (`ServiceTokens.*`).
 
 Migrations only move forward. No downgrade path.
 
+## Events
+
+- Bus: `src/platform/events/event-bus.ts`
+- Subscribers: audit log + cache tag invalidation
+- Publishers today:
+  - DNSPod/Cloudflare record create/update/delete
+  - SaaS hostname create/update/delete
+
+## Ports
+
+- DNSPod/Cloudflare `ZonePort` / `RecordPort` adapters registered in `app-context`
+- New code should prefer `registry.require(ServiceTokens.*Port)` over concrete services when practical
+
 ## Jobs
 
 - Generic store: `src/platform/job/job-service.ts` → `data/jobs/jobs.json`
-- Domain runner example: `saas.preferred_apply` registered by `SaasPreferredApplyService`
-- Preferred-apply no longer uses a separate jobs file; API response shape stays stable via `present()`
-
-## Sync
-
-- All cross-provider DNS side effects should go through `SyncOrchestrator` / `SyncPort`
-- SaaS + EdgeOne already do
+- Domain runner: `saas.preferred_apply`
+- Frontend helper: `web/src/shared/composables/useJobProgress.ts`
+- Alert component: `web/src/shared/components/JobProgressAlert.vue`
 
 ## Next incremental steps
 
-1. Split large services behind ports (`ZonePort` / `RecordPort` adapters)
-2. Event bus for audit + cache invalidation
-3. Extract `platform` as shared package for aws-pro
-4. Generic frontend Job progress component
+1. Route more module mutations through EventBus (zone/provider/tunnel)
+2. Consume Zone/Record ports from controllers/usecases
+3. Extract `platform` package for aws-pro
+4. Expand JobProgressAlert usage beyond preferred-apply
