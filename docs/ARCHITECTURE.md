@@ -5,12 +5,16 @@
 - Modular monolith: single deployable, plugin-ready internals
 - Versioned API only: `/api/v1`
 - Forward-only data schema via `data/meta.json` + migrations
-- Ports/plugins for Sync / Job / DNS / SaaS / EdgeOne / Tunnel
+- Ports/plugins/usecases for Sync / Job / DNS / SaaS / EdgeOne / Tunnel
 
 ## Layers
 
 ```text
-web (Vue) → /api/v1 → modules (auth/provider/dns/saas/edge/tunnel/system)
+web (Vue) → /api/v1 → controllers
+                         ↓
+                   usecases (mutation entry)
+                         ↓
+                   modules / workflows / services
                          ↓
                    contracts (ports)
                          ↓
@@ -22,7 +26,7 @@ web (Vue) → /api/v1 → modules (auth/provider/dns/saas/edge/tunnel/system)
 ## Boot path
 
 1. `runMigrations(dataDir)`
-2. `createAppContext()` builds concrete services
+2. `createAppContext()` builds concrete services + usecases
 3. `ServiceRegistry.load([...plugins])`
 4. Fastify mounts modules under `/api/v1`
 
@@ -35,47 +39,35 @@ web (Vue) → /api/v1 → modules (auth/provider/dns/saas/edge/tunnel/system)
 | dnspod | ZonePort / RecordPort |
 | cloudflare | ZonePort / RecordPort |
 | saas | preferred-apply + batch-job |
-| edgeone | zones / domains / workflow services |
-| cloudflared | tunnels / routes services |
+| edgeone | zones / domains / workflow / batch-job |
+| cloudflared | tunnels / routes |
 
-Port helpers: `src/platform/port-resolve.ts`
+## Usecase layer (started)
 
-## Controllers resolution style
+- `DnsRecordMutationUseCase` — DNSPod/CF record create/update/delete
+- `SaasHostnameMutationUseCase` — SaaS hostname create/update/delete/refresh
 
-- DNS list: `resolveZonePort` / `resolveRecordPort`
-- EdgeOne / Tunnel: `registry.require(ServiceTokens.*)`
-- Mutations still use concrete domain services, but emit events
-
-## Events
-
-Bus: `src/platform/events/event-bus.ts`  
-All mutation events auto-audit; cache events invalidate tags.
-
-Publishers:
-
-- DNSPod/Cloudflare record + zone mutations
-- SaaS hostname + batch jobs
-- Provider create/update/delete
-- EdgeOne domain create/update/delete/status/certificate
-- Tunnel create/delete/token + route create/update/delete
+Controllers should call usecases for mutations; list reads continue via ports/registry.
 
 ## Jobs
 
-- Store: `data/jobs/jobs.json`
-- Runners:
-  - `saas.preferred_apply`
-  - `saas.batch_delete`
-  - `saas.batch_update`
-  - `dns.batch_delete`
+Store: `data/jobs/jobs.json`
 
-## Data schema
+Runners:
 
-- `data/meta.json` schema_version **1**
-- Forward-only migrations only
+- `saas.preferred_apply`
+- `saas.batch_delete`
+- `saas.batch_update`
+- `dns.batch_delete`
+- `edgeone.batch_disable`
+- `edgeone.batch_delete`
+
+## Events
+
+All major mutations emit domain events → audit + optional cache invalidation.
 
 ## Next incremental steps
 
-1. Introduce thin usecase layer for mutations (create/update/delete)
-2. EdgeOne batch jobs (disable/delete) on JobService
-3. Feature flags for new runners
-4. Later: extract `platform` package (when aws-pro needs it)
+1. Expand usecases to zone/provider/edge/tunnel mutations
+2. Optional feature flags for runners
+3. Later: extract `platform` package (when aws-pro needs it)

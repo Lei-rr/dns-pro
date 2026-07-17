@@ -18,6 +18,11 @@ const endpoints = {
     `${accelerationDomainBase(provider, zone, domain)}/certificate`,
   accelerationDomainCnameSyncs: (provider: string, zone: string, domain: string) =>
     `${accelerationDomainBase(provider, zone, domain)}/cname-sync`,
+  batchDisable: (provider: string, zone: string) => `${zoneBase(provider, zone)}/batch/disable`,
+  batchDelete: (provider: string, zone: string) => `${zoneBase(provider, zone)}/batch/delete`,
+  batchActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/batch/active`,
+  batchJob: (provider: string, jobId: string) => `${providerBase(provider)}/batch/${path(jobId)}`,
+  batchRetry: (provider: string, jobId: string) => `${providerBase(provider)}/batch/${path(jobId)}/retry`,
 }
 
 function normalizedPaging(options: Record<string, unknown> = {}, defaultPerPage = 20) {
@@ -77,6 +82,13 @@ export const edgeOneApi = {
   deleteAccelerationDomain: (provider: string, zone: string, domain: string, options: Record<string, unknown> = {}) =>
     http.delete(
       endpoints.accelerationDomain(provider, zone, domain),
-      options.skipCleanup ? { params: { auto_cleanup: 0 } } : {}
+      options.skipCleanup ? { params: { auto_cleanup: 0 } } : {},
     ),
+  batchDisable: (provider: string, zone: string, data: { domains: string[] }) =>
+    http.post(endpoints.batchDisable(provider, zone), data),
+  batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
+    http.post(endpoints.batchDelete(provider, zone), data),
+  batchActive: (provider: string, zone: string) => http.get(endpoints.batchActive(provider, zone)),
+  batchJob: (provider: string, jobId: string) => http.get(endpoints.batchJob(provider, jobId)),
+  batchRetry: (provider: string, jobId: string) => http.post(endpoints.batchRetry(provider, jobId)),
 }

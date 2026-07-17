@@ -36,6 +36,9 @@ import { createCloudflarePlugin } from './modules/cloudflare/plugin.js'
 import { createSaasPlugin } from './modules/saas/plugin.js'
 import { createEdgeOnePlugin } from './modules/edgeone/plugin.js'
 import { createCloudflaredPlugin } from './modules/cloudflared/plugin.js'
+import { EdgeOneBatchJobService } from './modules/edgeone/services/batch-job-service.js'
+import { DnsRecordMutationUseCase } from './modules/common/usecases/dns-record-mutation-usecase.js'
+import { SaasHostnameMutationUseCase } from './modules/common/usecases/saas-hostname-mutation-usecase.js'
 import { JobService } from './platform/job/job-service.js'
 import type { SyncPort } from './contracts/index.js'
 
@@ -106,6 +109,17 @@ export function createAppContext(config: AppConfig) {
     dnspod: dnspodRecordService,
     cloudflare: cloudflareDnsRecordService,
   })
+  const edgeoneBatchJobService = new EdgeOneBatchJobService(
+    jobService,
+    edgeoneDomainService,
+    edgeoneWorkflowService,
+  )
+  const dnsRecordMutationUseCase = new DnsRecordMutationUseCase(
+    dnspodRecordService,
+    cloudflareDnsRecordService,
+    cloudflareZoneService,
+  )
+  const saasHostnameMutationUseCase = new SaasHostnameMutationUseCase(saasWorkflowService)
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -131,6 +145,7 @@ export function createAppContext(config: AppConfig) {
       zones: edgeoneZoneService,
       domains: edgeoneDomainService,
       workflow: edgeoneWorkflowService,
+      batchJob: edgeoneBatchJobService,
     }),
     createCloudflaredPlugin({
       tunnels: cloudflaredTunnelService,
@@ -154,6 +169,9 @@ export function createAppContext(config: AppConfig) {
     saasPreferredApplyService,
     saasBatchJobService,
     dnsBatchJobService,
+    edgeoneBatchJobService,
+    dnsRecordMutationUseCase,
+    saasHostnameMutationUseCase,
     syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,

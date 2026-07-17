@@ -8,6 +8,7 @@ import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
 import { tablePagination } from '@/shared/utils/pagination'
 import { showBatchFailures } from '@/shared/utils/batch'
+import { useJobProgress } from '@/shared/composables/useJobProgress'
 import type { EdgeOneAccelerationDomain, EdgeOneZone, Provider } from '@/types'
 
 export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
@@ -28,6 +29,7 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
   const statusUpdating = ref(false)
   const deletingText = ref('')
   const statusUpdatingText = ref('')
+  const jobProgress = useJobProgress()
   const providerMeta = ref<Provider | null>(null)
   const zoneMeta = ref<EdgeOneZone | null>(null)
   const loadTask = useLatestTask()
@@ -332,28 +334,35 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
 
   async function batchDisable(dialog: ReturnType<typeof modal.confirm> | null, records: EdgeOneAccelerationDomain[]) {
     statusUpdating.value = true
-    const failed: string[] = []
     const total = records.length
     try {
-      statusUpdatingText.value = '正在停用 0/' + total
+      statusUpdatingText.value = `正在创建批量停用任务 0/${total}`
       updateBatchStatusDialog(dialog, total)
-      for (const [index, record] of records.entries()) {
-        statusUpdatingText.value = `正在停用 ${index + 1}/${total}`
-        updateBatchStatusDialog(dialog, total)
-        try {
-          await edgeOneApi.updateAccelerationDomainStatus(
-            props.provider,
-            decodedZoneId.value,
-            record.name || '',
-            'offline'
-          )
-        } catch (error) {
-          failed.push(`${record.name}: ${errorMessage(error)}`)
-        }
-      }
+      const domains = records.map((item) => item.name || '').filter(Boolean)
+      const created = await edgeOneApi.batchDisable(props.provider, decodedZoneId.value, { domains })
+      const jobId = String((created.data as any)?.id || '')
+      if (!jobId) throw new Error('创建批量停用任务失败')
 
-      if (failed.length) showBatchFailures('批量停用完成', failed, '个')
-      else message.success('批量停用完成')
+      const job = await jobProgress.pollJob(jobId, {
+        fetchJob: async (id) => ((await edgeOneApi.batchJob(props.provider, id)).data as any) || {},
+        onTick: (current) => {
+          statusUpdatingText.value = current.current
+            ? `后台停用 ${current.done || 0}/${current.total || total}：${current.current}`
+            : `后台停用 ${current.done || 0}/${current.total || total}`
+          updateBatchStatusDialog(dialog, total)
+        },
+      })
+
+      const failedItems = jobProgress.failedItems(job)
+      if (failedItems.length) {
+        showBatchFailures(
+          job?.message || '批量停用完成',
+          failedItems.map((i: any) => `${i.domain}: ${i.message || '失败'}`),
+          '个',
+        )
+      } else {
+        message.success(job?.message || '批量停用完成')
+      }
 
       clearSelection()
       await load({ refresh: true })
@@ -367,22 +376,34 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
 
   async function batchRemove(dialog: ReturnType<typeof modal.confirm> | null, total: number, base: string) {
     deleting.value = true
-    const failed: string[] = []
     try {
-      deletingText.value = '正在删除 0/' + total
+      deletingText.value = `正在创建批量删除任务 0/${total}`
       updateBatchRemoveDialog(dialog, base)
-      const items = [...selectedRecords.value]
-      for (const [index, record] of items.entries()) {
-        deletingText.value = `正在删除 ${index + 1}/${items.length}`
-        updateBatchRemoveDialog(dialog, base)
-        try {
-          await edgeOneApi.deleteAccelerationDomain(props.provider, decodedZoneId.value, record.name || '')
-        } catch (error) {
-          failed.push(`${record.name}: ${errorMessage(error)}`)
-        }
+      const domains = selectedRecords.value.map((item) => item.name || '').filter(Boolean)
+      const created = await edgeOneApi.batchDelete(props.provider, decodedZoneId.value, { domains })
+      const jobId = String((created.data as any)?.id || '')
+      if (!jobId) throw new Error('创建批量删除任务失败')
+
+      const job = await jobProgress.pollJob(jobId, {
+        fetchJob: async (id) => ((await edgeOneApi.batchJob(props.provider, id)).data as any) || {},
+        onTick: (current) => {
+          deletingText.value = current.current
+            ? `后台删除 ${current.done || 0}/${current.total || total}：${current.current}`
+            : `后台删除 ${current.done || 0}/${current.total || total}`
+          updateBatchRemoveDialog(dialog, base)
+        },
+      })
+
+      const failedItems = jobProgress.failedItems(job)
+      if (failedItems.length) {
+        showBatchFailures(
+          job?.message || '批量删除完成',
+          failedItems.map((i: any) => `${i.domain}: ${i.message || '失败'}`),
+          '个',
+        )
+      } else {
+        message.success(job?.message || '批量删除完成')
       }
-      if (failed.length) showBatchFailures('批量删除完成', failed, '个')
-      else message.success('批量删除完成')
       clearSelection()
       await load({ refresh: true })
     } catch (error) {

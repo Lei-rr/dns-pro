@@ -2,12 +2,14 @@ import type { AppPlugin, PluginContext } from '../../contracts/index.js'
 import type { EdgeOneZoneService } from './services/zone-service.js'
 import type { EdgeOneDomainService } from './services/domain-service.js'
 import type { EdgeOneWorkflowService } from './services/workflow-service.js'
+import type { EdgeOneBatchJobService } from './services/batch-job-service.js'
 import { eventBus } from '../../platform/events/event-bus.js'
 
 export const EdgeOneServiceTokens = {
   Zones: 'svc.edgeone.zones',
   Domains: 'svc.edgeone.domains',
   Workflow: 'svc.edgeone.workflow',
+  BatchJob: 'svc.edgeone.batch_job',
 } as const
 
 export async function emitEdgeDomainMutated(input: {
@@ -30,6 +32,7 @@ export function createEdgeOnePlugin(input: {
   zones: EdgeOneZoneService
   domains: EdgeOneDomainService
   workflow: EdgeOneWorkflowService
+  batchJob?: EdgeOneBatchJobService
 }): AppPlugin {
   return {
     name: 'edgeone',
@@ -39,6 +42,7 @@ export function createEdgeOnePlugin(input: {
       ctx.set(EdgeOneServiceTokens.Zones, input.zones)
       ctx.set(EdgeOneServiceTokens.Domains, input.domains)
       ctx.set(EdgeOneServiceTokens.Workflow, input.workflow)
+      if (input.batchJob) ctx.set(EdgeOneServiceTokens.BatchJob, input.batchJob)
     },
   }
 }

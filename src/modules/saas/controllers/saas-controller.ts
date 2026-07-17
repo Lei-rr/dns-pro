@@ -47,7 +47,7 @@ export async function hostnamesStore(
 ) {
   const q = queryRecord(request)
   const body = bodyRecord(request)
-  const result = await request.server.ctx.saasWorkflowService.createHostname(
+  const result = await request.server.ctx.saasHostnameMutationUseCase.create(
     request.params.providerId,
     zoneNameParam(request),
     body,
@@ -84,7 +84,7 @@ export async function hostnamesUpdate(
 ) {
   const q = queryRecord(request)
   const body = bodyRecord(request)
-  const result = await request.server.ctx.saasWorkflowService.updateHostname(
+  const result = await request.server.ctx.saasHostnameMutationUseCase.update(
     request.params.providerId,
     zoneNameParam(request),
     hostnameFqdnParam(request),
@@ -107,7 +107,7 @@ export async function hostnamesRefresh(
   request: FastifyRequest<{ Params: { providerId: string; zoneName: string; hostnameFqdn: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.saasWorkflowService.refreshHostname(
+  const result = await request.server.ctx.saasHostnameMutationUseCase.refresh(
     request.params.providerId,
     zoneNameParam(request),
     hostnameFqdnParam(request),
@@ -120,7 +120,7 @@ export async function hostnamesDelete(
   reply: FastifyReply,
 ) {
   const q = queryRecord(request)
-  const result = await request.server.ctx.saasWorkflowService.deleteHostname(
+  const result = await request.server.ctx.saasHostnameMutationUseCase.delete(
     request.params.providerId,
     zoneNameParam(request),
     hostnameFqdnParam(request),
