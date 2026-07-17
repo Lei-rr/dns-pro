@@ -22,7 +22,6 @@ const migrations: Migration[] = [
     async up(dataRoot) {
       // Ensure canonical data directories exist for modular features.
       await fs.mkdir(path.join(dataRoot, 'saas'), { recursive: true })
-      await fs.mkdir(path.join(dataRoot, 'backups'), { recursive: true })
       await fs.mkdir(path.join(dataRoot, 'jobs'), { recursive: true })
     },
   },

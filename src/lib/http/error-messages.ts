@@ -98,7 +98,6 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   preferred_apply_empty: '没有匹配的主机名可切换',
   preferred_apply_not_found: '优选切换任务不存在',
   preferred_apply_no_failed: '没有失败项可重试',
-  backup_not_found: '备份不存在',
 
   // 常见厂商错误补充
   saas_cloudflare_sync_zone_mismatch: 'Cloudflare DNS 同步域名与主机名不匹配，请检查同步目标',

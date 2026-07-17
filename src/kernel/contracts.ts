@@ -172,7 +172,6 @@ export const ServiceTokens = {
   SyncPort: 'port.sync',
   JobPort: 'port.job',
   Audit: 'svc.audit',
-  Backup: 'svc.backup',
   EventBus: 'svc.events',
   DnsPodZonePort: 'port.zone.dnspod',
   DnsPodRecordPort: 'port.record.dnspod',
