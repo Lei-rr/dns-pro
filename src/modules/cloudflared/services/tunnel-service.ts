@@ -1,7 +1,8 @@
 import crypto from 'node:crypto'
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { emitTunnelMutated } from '../plugin.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
   cloudflareTunnelSchema,
@@ -87,7 +88,7 @@ export class CloudflaredTunnelService {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
-    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
+    await emitTunnelMutated({ providerId, action: 'create' })
     const tunnel = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
     const token = await this.fetchToken(provider, accountId, tunnel.id)
     return { tunnel, token }
@@ -104,7 +105,7 @@ export class CloudflaredTunnelService {
     }
 
     await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
-    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
+    await emitTunnelMutated({ providerId, tunnelId, action: 'delete' })
     return { id: tunnelId }
   }
 
@@ -122,7 +123,7 @@ export class CloudflaredTunnelService {
       tunnel_secret: crypto.randomBytes(32).toString('base64'),
     })
 
-    invalidateProviderCache([`cloudflared:tunnels:${providerId}`])
+    await emitTunnelMutated({ providerId, tunnelId, action: 'token' })
     const token = await this.fetchToken(provider, accountId, tunnelId)
     return { token }
   }

@@ -1,7 +1,8 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
-import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { emitTunnelRouteMutated } from '../plugin.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
 import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js'
@@ -55,7 +56,7 @@ export class CloudflaredRouteService {
 
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
-    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    await emitTunnelRouteMutated({ providerId, tunnelId, hostname: String(route.hostname || ''), action: 'create' })
 
     return {
       hostname: normalized.hostname,
@@ -101,7 +102,7 @@ export class CloudflaredRouteService {
     }
 
     const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
-    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    await emitTunnelRouteMutated({ providerId, tunnelId, hostname: String(route.hostname || originalHostname || ''), action: 'update' })
 
     return {
       hostname: normalized.hostname,
@@ -140,7 +141,7 @@ export class CloudflaredRouteService {
       dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, zoneId, normalizedHostname, tunnelId)
     }
 
-    invalidateProviderCache([`cloudflared:tunnel_config:${providerId}:${tunnelId}`])
+    await emitTunnelRouteMutated({ providerId, tunnelId, hostname: String(hostname || ''), action: 'delete' })
 
     return {
       hostname: normalizedHostname,

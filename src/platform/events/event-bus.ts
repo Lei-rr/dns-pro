@@ -4,6 +4,9 @@ export type DomainEventType =
   | 'saas.hostname.mutated'
   | 'saas.preferred_apply.finished'
   | 'provider.mutated'
+  | 'edge.domain.mutated'
+  | 'tunnel.mutated'
+  | 'tunnel.route.mutated'
   | 'job.updated'
 
 export type DomainEvent = {

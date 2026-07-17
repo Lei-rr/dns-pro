@@ -1,6 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { emitEdgeDomainMutated } from '../plugin.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import {
   edgeOneAccelerationDomainSchema,
@@ -103,7 +104,7 @@ export class EdgeOneDomainService {
         : {}),
     })
 
-    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'create' })
     const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
     return { name: normalized.domain_name, request_id: parsed.RequestId ?? undefined, ownership_verification: parsed.OwnershipVerification ?? null }
   }
@@ -127,7 +128,7 @@ export class EdgeOneDomainService {
         : {}),
     })
 
-    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'update' })
     return { name: normalized.domain_name, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -141,7 +142,7 @@ export class EdgeOneDomainService {
       Force: false,
     })
 
-    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'delete' })
     return { name: domainName, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -156,7 +157,7 @@ export class EdgeOneDomainService {
       Force: false,
     })
 
-    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'status' })
     return { name: domainName, status, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
@@ -180,7 +181,7 @@ export class EdgeOneDomainService {
     }
 
     const response = await gateway.call('ModifyHostsCertificate', payload)
-    invalidateProviderCache([`edgeone:domains:${providerId}:${zoneId}`])
+    await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'certificate' })
     return { name: domainName, https_mode: httpsMode, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 

@@ -2,6 +2,16 @@ import { eventBus, type DomainEvent } from './event-bus.js'
 import { auditService } from '../../lib/utils/audit.js'
 import { invalidateProviderCache } from '../../lib/cache/provider-cache.js'
 
+const CACHE_EVENTS = new Set([
+  'record.mutated',
+  'zone.mutated',
+  'saas.hostname.mutated',
+  'edge.domain.mutated',
+  'tunnel.mutated',
+  'tunnel.route.mutated',
+  'provider.mutated',
+])
+
 /**
  * Wire platform side-effects to domain events.
  * Call once during app context bootstrap.
@@ -19,17 +29,9 @@ export function registerEventSubscribers(): void {
       message: event.message,
       meta: { type: event.type, ...(event.meta || {}) },
     })
-  })
 
-  eventBus.on('record.mutated', async (event) => {
-    if (event.cache_tags?.length) invalidateProviderCache(event.cache_tags)
-  })
-
-  eventBus.on('zone.mutated', async (event) => {
-    if (event.cache_tags?.length) invalidateProviderCache(event.cache_tags)
-  })
-
-  eventBus.on('saas.hostname.mutated', async (event) => {
-    if (event.cache_tags?.length) invalidateProviderCache(event.cache_tags)
+    if (CACHE_EVENTS.has(event.type) && event.cache_tags?.length) {
+      invalidateProviderCache(event.cache_tags)
+    }
   })
 }

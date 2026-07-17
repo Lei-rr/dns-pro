@@ -34,6 +34,8 @@ import { createSyncPlugin } from './modules/sync/plugin.js'
 import { createDnsPodPlugin } from './modules/dnspod/plugin.js'
 import { createCloudflarePlugin } from './modules/cloudflare/plugin.js'
 import { createSaasPlugin } from './modules/saas/plugin.js'
+import { createEdgeOnePlugin } from './modules/edgeone/plugin.js'
+import { createCloudflaredPlugin } from './modules/cloudflared/plugin.js'
 import { JobService } from './platform/job/job-service.js'
 import type { SyncPort } from './contracts/index.js'
 
@@ -124,6 +126,15 @@ export function createAppContext(config: AppConfig) {
       hostnames: saasHostnameService,
       preferredApply: saasPreferredApplyService,
       batchJob: saasBatchJobService,
+    }),
+    createEdgeOnePlugin({
+      zones: edgeoneZoneService,
+      domains: edgeoneDomainService,
+      workflow: edgeoneWorkflowService,
+    }),
+    createCloudflaredPlugin({
+      tunnels: cloudflaredTunnelService,
+      routes: cloudflaredRouteService,
     }),
   ])
 
