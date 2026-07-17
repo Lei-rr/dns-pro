@@ -5,7 +5,6 @@ import { setDataRoot } from './lib/storage/json-store.js'
 import { setDefaultHttpTimeout } from './lib/http/base-gateway.js'
 import { globalCache } from './lib/cache/cache-service.js'
 import { runMigrations } from './platform/migration.js'
-import { featureFlags } from './platform/features/feature-flags.js'
 
 function parseCliOverrides(): Partial<AppConfig> {
   const overrides: Partial<AppConfig> = {}
@@ -60,7 +59,6 @@ setDataRoot(config.dataDir)
 setDefaultHttpTimeout(config.httpTimeoutMs)
 globalCache.updateOptions({ maxEntries: config.cacheMaxEntries, sweepIntervalMs: config.cacheSweepIntervalMs })
 await runMigrations(config.dataDir)
-await featureFlags.load(config.dataDir)
 
 const app = await buildApp(config)
 

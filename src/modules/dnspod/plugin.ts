@@ -1,5 +1,5 @@
-import type { AppPlugin, PluginContext } from '../../contracts/index.js'
-import { ServiceTokens } from '../../contracts/index.js'
+import type { AppPlugin, PluginContext } from '../../kernel/index.js'
+import { ServiceTokens } from '../../kernel/index.js'
 import type { DnsPodZoneService } from './services/zone-service.js'
 import type { DnsPodRecordService } from './services/record-service.js'
 import { DnsPodRecordPortAdapter, DnsPodZonePortAdapter } from './adapters/ports.js'

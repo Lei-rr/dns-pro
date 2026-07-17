@@ -28,7 +28,7 @@ export async function cloudflaredTunnelsStore(
   request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.tunnelMutationUseCase.createTunnel(
+  const result = await tunnelsOf(request).create(
     request.params.providerId,
     String(((request.body ?? {}) as any).name ?? '').trim(),
   )
@@ -51,10 +51,7 @@ export async function cloudflaredTunnelDelete(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.tunnelMutationUseCase.deleteTunnel(
-    request.params.providerId,
-    request.params.tunnelId,
-  )
+  const result = await tunnelsOf(request).delete(request.params.providerId, request.params.tunnelId)
   return reply.send(success(result))
 }
 
@@ -62,10 +59,7 @@ export async function cloudflaredTunnelToken(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.tunnelMutationUseCase.token(
-    request.params.providerId,
-    request.params.tunnelId,
-  )
+  const result = await tunnelsOf(request).token(request.params.providerId, request.params.tunnelId)
   return reply.send(success(result))
 }
 
@@ -73,10 +67,7 @@ export async function cloudflaredTunnelTokenRotate(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.tunnelMutationUseCase.rotateToken(
-    request.params.providerId,
-    request.params.tunnelId,
-  )
+  const result = await tunnelsOf(request).rotateToken(request.params.providerId, request.params.tunnelId)
   return reply.send(success(result))
 }
 
@@ -92,16 +83,10 @@ export async function cloudflaredTunnelConfigShow(
   return reply.send(success(result))
 }
 
-function buildRoute(
-  request: FastifyRequest,
-  body: any,
-): Record<string, unknown> {
+function buildRoute(routeService: CloudflaredRouteService, body: any): Record<string, unknown> {
   return {
     hostname: body.hostname,
-    service: request.server.ctx.tunnelMutationUseCase.buildServiceUrl(
-      body.protocol ?? 'http',
-      body.address,
-    ),
+    service: routeService.buildServiceUrl(body.protocol ?? 'http', body.address),
     zone_id: body.zone_id,
     path: body.path ?? '',
   }
@@ -111,10 +96,11 @@ export async function cloudflaredTunnelRouteStore(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.tunnelMutationUseCase.addRoute(
+  const routeService = routesOf(request)
+  const result = await routeService.addRoute(
     request.params.providerId,
     request.params.tunnelId,
-    buildRoute(request, request.body),
+    buildRoute(routeService, request.body) as any,
   )
   return reply.status(201).send(success(result))
 }
@@ -135,12 +121,13 @@ export async function cloudflaredTunnelRouteUpdate(
     originalPath = ((request.body ?? {}) as any).path ?? ''
   }
 
-  const result = await request.server.ctx.tunnelMutationUseCase.updateRoute(
+  const routeService = routesOf(request)
+  const result = await routeService.updateRoute(
     request.params.providerId,
     request.params.tunnelId,
     originalHostname,
     originalPath,
-    buildRoute(request, request.body),
+    buildRoute(routeService, request.body) as any,
   )
   return reply.send(success(result))
 }
@@ -152,7 +139,7 @@ export async function cloudflaredTunnelRouteDelete(
   }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.tunnelMutationUseCase.deleteRoute(
+  const result = await routesOf(request).deleteRoute(
     request.params.providerId,
     request.params.tunnelId,
     (request.query as any).hostname,

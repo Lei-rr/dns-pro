@@ -1,4 +1,4 @@
-import type { PageQuery, PageResult, RecordPort, ZonePort } from '../../../contracts/index.js'
+import type { PageQuery, PageResult, RecordPort, ZonePort } from '../../../kernel/index.js'
 import type { DnsPodZoneService } from '../services/zone-service.js'
 import type { DnsPodRecordService } from '../services/record-service.js'
 import { eventBus } from '../../../platform/events/event-bus.js'

@@ -15,6 +15,15 @@ export type SecurityPluginOptions = {
   config: AppConfig
 }
 
+/**
+ * Official security stack:
+ * - @fastify/helmet
+ * - @fastify/cookie
+ * - @fastify/sensible
+ * + app-session cookie (domain-specific AES-GCM; no sodium/secure-session)
+ *
+ * fp: session decoration must be root-visible.
+ */
 const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app, opts) => {
   const { config } = opts
   const sessionOptions = {
@@ -29,8 +38,8 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
     contentSecurityPolicy: false,
   })
 
-  app.addHook('onSend', async (_request, reply: FastifyReply, _payload) => {
-    if (_request.url.startsWith('/api/')) {
+  app.addHook('onSend', async (request, reply: FastifyReply) => {
+    if (request.url.startsWith('/api/')) { // covers /api/v1 and future /api/*
       void reply.headers(NO_STORE_HEADERS)
     }
   })
@@ -48,14 +57,7 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
   await app.register(fastifySensible)
 }
 
-/** Breaks encapsulation so session/cookie decorations are available on the root app. */
 export const securityPlugin = fp(securityPluginImpl, {
   name: 'security',
   fastify: '5.x',
 })
-
-declare module 'fastify' {
-  interface FastifyRequest {
-    session: AppSession
-  }
-}

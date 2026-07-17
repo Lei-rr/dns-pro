@@ -21,13 +21,13 @@ export async function zoneIndex(
 }
 
 export async function zoneStore(
-  request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
+  request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsZoneMutationUseCase.create(
-    PROVIDER_TYPE,
+  const body = bodyRecord(request)
+  const result = await request.server.ctx.dnspodZoneService.create(
     request.params.providerId,
-    bodyRecord(request),
+    String(body.domain ?? body.name ?? ''),
   )
   return reply.status(201).send(success(result))
 }
@@ -36,8 +36,7 @@ export async function zoneDelete(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsZoneMutationUseCase.delete(
-    PROVIDER_TYPE,
+  const result = await request.server.ctx.dnspodZoneService.delete(
     request.params.providerId,
     request.params.zone,
   )

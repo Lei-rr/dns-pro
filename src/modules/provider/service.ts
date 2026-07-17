@@ -1,7 +1,7 @@
 import { ProviderRepository } from './repository.js'
 import { ApiError } from '../../lib/http/api-error.js'
 import type { PresentedProvider, Provider, ProviderInput, ProviderType } from './types.js'
-import { getProviderDefinition, getProviderDefinitionsList } from '../../config/providers.js'
+import { getProviderDefinition, getProviderDefinitionsList } from './definitions.js'
 import { ProviderNormalizer } from './normalizer.js'
 import { ProviderPresenter } from './presenter.js'
 import { SaasPreferenceService } from '../saas/services/preference-service.js'

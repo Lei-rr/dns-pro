@@ -1,5 +1,5 @@
-import type { AppPlugin } from '../../contracts/index.js'
-import { ServiceTokens, type SyncPort, type PluginContext } from '../../contracts/index.js'
+import type { AppPlugin } from '../../kernel/index.js'
+import { ServiceTokens, type SyncPort, type PluginContext } from '../../kernel/index.js'
 
 /**
  * Sync domain plugin — registers the unified SyncPort implementation.

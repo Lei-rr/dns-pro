@@ -7,7 +7,7 @@ export async function recordBatchDeleteStore(
   reply: FastifyReply,
 ) {
   const body = bodyRecord(request)
-  const providerType = String((request as any).dnsProviderType || 'dnspod')
+  const providerType = String(request.dnsProviderType || 'dnspod')
   const records = Array.isArray(body.records)
     ? body.records.map((item) => {
         if (item && typeof item === 'object') {

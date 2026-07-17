@@ -6,10 +6,14 @@ import fastifyCompress from '@fastify/compress'
 
 const distDir = path.resolve(process.cwd(), 'web/dist')
 
+/**
+ * Official: @fastify/compress + @fastify/static.
+ * fp so reply.sendFile is visible to error-handler SPA fallback.
+ */
 const staticPluginImpl: FastifyPluginAsync = async (app) => {
   await app.register(fastifyCompress)
 
-  // Hashed Vite assets: always resolve from disk so rebuilds work without process restart.
+  // Hashed Vite assets — long cache + disk wildcard (rebuild without restart)
   await app.register(fastifyStatic, {
     root: path.join(distDir, 'assets'),
     prefix: '/assets/',
@@ -19,23 +23,26 @@ const staticPluginImpl: FastifyPluginAsync = async (app) => {
     immutable: true,
   })
 
-  // App shell and other root files (index.html / favicon).
+  // App shell files — decorateReply once for sendFile; index.html never long-cached
   await app.register(fastifyStatic, {
     root: distDir,
     prefix: '/',
     wildcard: false,
     index: false,
-    maxAge: '1y',
-    immutable: true,
+    decorateReply: true,
     setHeaders(res, filePath) {
       if (filePath.endsWith('index.html')) {
         res.setHeader('Cache-Control', 'no-store, must-revalidate')
+      } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+      } else {
+        // favicon / manifest etc.
+        res.setHeader('Cache-Control', 'public, max-age=3600')
       }
     },
   })
 }
 
-/** Breaks encapsulation so reply.sendFile is available for SPA fallback. */
 export const staticPlugin = fp(staticPluginImpl, {
   name: 'static',
   fastify: '5.x',

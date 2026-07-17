@@ -1,4 +1,4 @@
-import type { AppPlugin, PluginContext } from '../../contracts/index.js'
+import type { AppPlugin, PluginContext } from '../../kernel/index.js'
 import type { CloudflaredTunnelService } from './services/tunnel-service.js'
 import type { CloudflaredRouteService } from './services/route-service.js'
 import { eventBus } from '../../platform/events/event-bus.js'

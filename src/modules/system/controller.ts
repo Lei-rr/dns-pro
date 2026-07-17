@@ -6,9 +6,7 @@ import { getDataRoot } from '../../lib/storage/json-store.js'
 import { globalCache } from '../../lib/cache/provider-cache.js'
 import { auditService } from '../../lib/utils/audit.js'
 import { backupService } from '../../lib/utils/backup.js'
-import { queryInt, queryRecord } from '../../lib/utils/request-parse.js'
-import { bodyRecord } from '../../lib/utils/request-parse.js'
-import { featureFlags } from '../../platform/features/feature-flags.js'
+import { queryInt, queryRecord, bodyRecord } from '../../lib/utils/request-parse.js'
 
 async function isDirectoryWritable(dir: string): Promise<boolean> {
   const probe = path.join(dir, `.health-check-${Date.now()}`)
@@ -31,18 +29,19 @@ async function isFileReadable(filePath: string): Promise<boolean> {
   }
 }
 
-export async function healthShow(_request: FastifyRequest, reply: FastifyReply) {
+export async function healthShow(request: FastifyRequest, reply: FastifyReply) {
   const dataRoot = getDataRoot()
-  const [writable, configReadable] = await Promise.all([
+  const [writable, configReadable, jobs] = await Promise.all([
     isDirectoryWritable(dataRoot),
     isFileReadable(path.resolve(dataRoot, 'config.json')),
+    request.server.ctx.jobService.stats().catch(() => ({ total: 0, active: 0, finished: 0 })),
   ])
 
   const payload = {
     status: 'ok',
     data_dir: { path: dataRoot, writable, config_readable: configReadable },
     cache: globalCache.stats(),
-    features: featureFlags.snapshot(),
+    jobs,
   }
 
   if (!writable) {
@@ -50,10 +49,6 @@ export async function healthShow(_request: FastifyRequest, reply: FastifyReply) 
   }
 
   return reply.send(success(payload))
-}
-
-export async function featuresShow(_request: FastifyRequest, reply: FastifyReply) {
-  return reply.send(success(featureFlags.snapshot()))
 }
 
 export async function auditIndex(request: FastifyRequest, reply: FastifyReply) {

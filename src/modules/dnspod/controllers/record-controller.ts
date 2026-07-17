@@ -23,28 +23,26 @@ export async function recordIndex(
 }
 
 export async function recordStore(
-  request: FastifyRequest<{ Params: { providerId: string; zone: string }; Body: any }>,
+  request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsRecordMutationUseCase.create(
-    PROVIDER_TYPE,
+  const result = await request.server.ctx.dnspodRecordService.create(
     request.params.providerId,
     request.params.zone,
-    bodyRecord(request),
+    bodyRecord(request) as any,
   )
   return reply.status(201).send(success(result))
 }
 
 export async function recordUpdate(
-  request: FastifyRequest<{ Params: { providerId: string; zone: string; recordId: string }; Body: any }>,
+  request: FastifyRequest<{ Params: { providerId: string; zone: string; recordId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsRecordMutationUseCase.update(
-    PROVIDER_TYPE,
+  const result = await request.server.ctx.dnspodRecordService.update(
     request.params.providerId,
     request.params.zone,
     request.params.recordId,
-    bodyRecord(request),
+    bodyRecord(request) as any,
   )
   return reply.send(success(result))
 }
@@ -53,8 +51,7 @@ export async function recordDelete(
   request: FastifyRequest<{ Params: { providerId: string; zone: string; recordId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsRecordMutationUseCase.delete(
-    PROVIDER_TYPE,
+  const result = await request.server.ctx.dnspodRecordService.delete(
     request.params.providerId,
     request.params.zone,
     request.params.recordId,

@@ -1,5 +1,5 @@
-import type { PluginContext, RecordPort, ZonePort } from '../contracts/index.js'
-import { ServiceTokens } from '../contracts/index.js'
+import type { PluginContext, RecordPort, ZonePort } from '../kernel/index.js'
+import { ServiceTokens } from '../kernel/index.js'
 import { ApiError } from '../lib/http/api-error.js'
 
 export function zonePortToken(providerType: string): string {

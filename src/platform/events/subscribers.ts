@@ -12,11 +12,16 @@ const CACHE_EVENTS = new Set([
   'provider.mutated',
 ])
 
+let registered = false
+
 /**
  * Wire platform side-effects to domain events.
- * Call once during app context bootstrap.
+ * Idempotent: safe to call multiple times in the same process.
  */
 export function registerEventSubscribers(): void {
+  if (registered) return
+  registered = true
+
   eventBus.on('*', async (event: DomainEvent) => {
     await auditService.write({
       ts: event.ts,

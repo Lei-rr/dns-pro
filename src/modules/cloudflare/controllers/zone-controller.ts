@@ -21,13 +21,14 @@ export async function zoneIndex(
 }
 
 export async function zoneStore(
-  request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
+  request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsZoneMutationUseCase.create(
-    PROVIDER_TYPE,
+  const body = bodyRecord(request)
+  const result = await request.server.ctx.cloudflareZoneService.create(
     request.params.providerId,
-    bodyRecord(request),
+    String(body.name ?? body.domain ?? ''),
+    String(body.type ?? 'full'),
   )
   return reply.status(201).send(success(result))
 }
@@ -36,10 +37,13 @@ export async function zoneDelete(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.dnsZoneMutationUseCase.delete(
-    PROVIDER_TYPE,
+  const zoneId = await request.server.ctx.cloudflareZoneService.idByName(
     request.params.providerId,
     request.params.zone,
+  )
+  const result = await request.server.ctx.cloudflareZoneService.delete(
+    request.params.providerId,
+    zoneId,
   )
   return reply.send(success(result))
 }

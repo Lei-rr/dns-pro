@@ -1,5 +1,5 @@
 import type { Provider, PresentedProvider, ProviderType } from './types.js'
-import { getProviderDefinition } from '../../config/providers.js'
+import { getProviderDefinition } from './definitions.js'
 
 export class ProviderPresenter {
   present(provider: Provider, allProviders?: Provider[]): PresentedProvider {

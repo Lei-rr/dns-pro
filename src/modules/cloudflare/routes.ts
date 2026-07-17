@@ -6,11 +6,12 @@ import {
   recordBatchJobShow,
   recordBatchJobActive,
   recordBatchJobRetry,
-} from '../common/controllers/dns-batch-controller.js'
+} from '../dns-batch/controllers/batch-controller.js'
 
 export async function routes(app: FastifyInstance) {
+  app.decorateRequest('dnsProviderType', '')
   app.addHook('onRequest', async (request) => {
-    ;(request as any).dnsProviderType = 'cloudflare'
+    request.dnsProviderType = 'cloudflare'
   })
 
   app.get('/zones', zoneIndex)

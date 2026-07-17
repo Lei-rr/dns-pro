@@ -1,4 +1,4 @@
-import type { PageQuery, PageResult, RecordPort, ZonePort } from '../../../contracts/index.js'
+import type { PageQuery, PageResult, RecordPort, ZonePort } from '../../../kernel/index.js'
 import type { CloudflareZoneService } from '../services/zone-service.js'
 import type { CloudflareDnsRecordService } from '../services/dns-record-service.js'
 import { eventBus } from '../../../platform/events/event-bus.js'
@@ -22,14 +22,19 @@ export class CloudflareZonePortAdapter implements ZonePort {
 }
 
 export class CloudflareRecordPortAdapter implements RecordPort {
-  constructor(private readonly records: CloudflareDnsRecordService) {}
+  constructor(
+    private readonly records: CloudflareDnsRecordService,
+    private readonly zones: CloudflareZoneService,
+  ) {}
 
   async list(
     providerId: string,
     zone: string,
     query: PageQuery & Record<string, unknown> = {},
   ): Promise<PageResult<Record<string, unknown>>> {
-    const result = await this.records.list(providerId, zone, {
+    // API path uses zone name; vendor APIs need zone id.
+    const zoneId = await this.zones.idByName(providerId, zone)
+    const result = await this.records.list(providerId, zoneId, {
       page: Number(query.page ?? 1),
       per_page: Number(query.perPage ?? query.limit ?? 20),
       type: query.type ? String(query.type) : undefined,

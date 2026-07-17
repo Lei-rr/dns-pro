@@ -1,18 +1,22 @@
 import type { FastifyInstance } from 'fastify'
 import {
   healthShow,
-  featuresShow,
   auditIndex,
   backupsIndex,
   backupsStore,
   backupsRestore,
 } from './controller.js'
+import { authRequired } from '../auth/hooks/auth-required.js'
 
+/** Public: health. Auth: audit / backups. */
 export async function routes(app: FastifyInstance) {
   app.get('/health', healthShow)
-  app.get('/features', featuresShow)
-  app.get('/audit', auditIndex)
-  app.get('/backups', backupsIndex)
-  app.post('/backups', backupsStore)
-  app.post('/backups/restore', backupsRestore)
+
+  await app.register(async (protectedApp) => {
+    protectedApp.addHook('preHandler', authRequired)
+    protectedApp.get('/audit', auditIndex)
+    protectedApp.get('/backups', backupsIndex)
+    protectedApp.post('/backups', backupsStore)
+    protectedApp.post('/backups/restore', backupsRestore)
+  })
 }

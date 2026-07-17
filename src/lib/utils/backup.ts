@@ -1,21 +1,46 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { getDataRoot } from '../storage/json-store.js'
+import { clearJsonStoreMemory, getDataRoot } from '../storage/json-store.js'
 import { ApiError } from '../http/api-error.js'
 
 /**
  * Lightweight data backup helper.
- * Creates a gzipped tar-like archive is overkill without deps; we zip via simple directory snapshot listing
- * and copy into data/backups as a timestamped folder + optional tgz via system tar if available.
+ * Creates a timestamped directory snapshot under data/backups.
  */
 export class BackupService {
   private backupsDir(): string {
     return path.join(getDataRoot(), 'backups')
   }
 
+  /**
+   * Backup ids are only allowed to be a single path segment under backupsDir.
+   * Reject traversal (`..`), absolute paths, and nested paths.
+   */
+  private resolveBackupPath(id: string): string {
+    const raw = String(id ?? '').trim()
+    if (!raw) {
+      throw new ApiError('backup_not_found', 'Backup id is required', 404)
+    }
+    if (raw.includes('\0')) {
+      throw new ApiError('backup_not_found', `Invalid backup id: ${raw}`, 404)
+    }
+    // single segment only: no slashes, no `.` / `..`
+    if (raw === '.' || raw === '..' || raw.includes('/') || raw.includes('\\')) {
+      throw new ApiError('backup_not_found', `Invalid backup id: ${raw}`, 404)
+    }
+
+    const root = path.resolve(this.backupsDir())
+    const target = path.resolve(root, raw)
+    const relative = path.relative(root, target)
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new ApiError('backup_not_found', `Invalid backup id: ${raw}`, 404)
+    }
+    return target
+  }
+
   async create(): Promise<{ id: string; path: string; files: number }> {
     const id = new Date().toISOString().replace(/[:.]/g, '-')
-    const target = path.join(this.backupsDir(), id)
+    const target = this.resolveBackupPath(id)
     await fs.mkdir(target, { recursive: true })
 
     const root = getDataRoot()
@@ -34,10 +59,13 @@ export class BackupService {
       }
     }
 
-    // optional compressed marker file for human operators
     try {
       const note = path.join(target, 'BACKUP.txt')
-      await fs.writeFile(note, `dns-pro backup\nid=${id}\ncreated_at=${new Date().toISOString()}\n`, 'utf-8')
+      await fs.writeFile(
+        note,
+        `dns-pro backup\nid=${id}\ncreated_at=${new Date().toISOString()}\n`,
+        'utf-8',
+      )
     } catch {
       // ignore
     }
@@ -58,8 +86,8 @@ export class BackupService {
     }
   }
 
-  async restore(id: string): Promise<{ id: string; restored: number }> {
-    const source = path.join(this.backupsDir(), id)
+  async restore(id: string): Promise<{ id: string; restored: number; memory_cleared: boolean }> {
+    const source = this.resolveBackupPath(id)
     try {
       await fs.access(source)
     } catch {
@@ -71,6 +99,10 @@ export class BackupService {
     let restored = 0
     for (const entry of entries) {
       if (entry.name === 'BACKUP.txt') continue
+      // never restore outside data root; only top-level names
+      if (entry.name === '.' || entry.name === '..' || entry.name.includes('/') || entry.name.includes('\\')) {
+        continue
+      }
       const from = path.join(source, entry.name)
       const to = path.join(root, entry.name)
       if (entry.isDirectory()) {
@@ -81,7 +113,10 @@ export class BackupService {
         restored += 1
       }
     }
-    return { id, restored }
+
+    // Drop process-local JsonStore views so subsequent reads hit disk after restore.
+    clearJsonStoreMemory()
+    return { id, restored, memory_cleared: true }
   }
 
   private async copyDir(from: string, to: string): Promise<void> {

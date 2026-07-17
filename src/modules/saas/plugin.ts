@@ -1,4 +1,4 @@
-import type { AppPlugin, PluginContext } from '../../contracts/index.js'
+import type { AppPlugin, PluginContext } from '../../kernel/index.js'
 import type { JobService } from '../../platform/job/job-service.js'
 import type { SaasWorkflowService } from './services/workflow-service.js'
 import type { SaasHostnameService } from './services/hostname-service.js'

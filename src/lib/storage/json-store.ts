@@ -19,6 +19,11 @@ export function getDataRoot(): string {
   return dataRoot
 }
 
+/** Drop all process-local JsonStore views (e.g. after backup restore). */
+export function clearJsonStoreMemory(): void {
+  memoryStore.clear()
+}
+
 export class JsonStore<T extends object = Record<string, unknown>> {
   private readonly relativePath: string
   private readonly dataRoot: string | undefined

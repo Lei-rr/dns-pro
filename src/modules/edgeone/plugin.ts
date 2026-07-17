@@ -1,4 +1,4 @@
-import type { AppPlugin, PluginContext } from '../../contracts/index.js'
+import type { AppPlugin, PluginContext } from '../../kernel/index.js'
 import type { EdgeOneZoneService } from './services/zone-service.js'
 import type { EdgeOneDomainService } from './services/domain-service.js'
 import type { EdgeOneWorkflowService } from './services/workflow-service.js'

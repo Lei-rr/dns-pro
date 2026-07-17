@@ -1,3 +1,14 @@
+/**
+ * Composition root — WIRING ONLY (not business rules).
+ *
+ * Allowed changes when adding features:
+ * - construct a service
+ * - register a module plugin / runner
+ * - expose on ctx if controllers still use ctx.*
+ *
+ * Forbidden: redesign foundation, add frameworks, put domain logic here.
+ * See docs/FOUNDATION.md
+ */
 import type { AppConfig } from './config/app.js'
 import { AppConfigRepository } from './lib/auth/app-config-repository.js'
 import { AuthConfig } from './lib/auth/auth-config.js'
@@ -12,7 +23,7 @@ import { PreferredDomainService } from './modules/saas/services/preferred-domain
 import { SaasPreferenceService } from './modules/saas/services/preference-service.js'
 import { SaasPreferredApplyService } from './modules/saas/services/preferred-apply-service.js'
 import { SaasBatchJobService } from './modules/saas/services/batch-job-service.js'
-import { DnsBatchJobService } from './modules/common/services/dns-batch-job-service.js'
+import { DnsBatchJobService } from './modules/dns-batch/services/batch-job-service.js'
 import { CloudflareZoneService } from './modules/cloudflare/services/zone-service.js'
 import { CloudflareDnsRecordService } from './modules/cloudflare/services/dns-record-service.js'
 import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
@@ -28,7 +39,7 @@ import { EdgeOneWorkflowService } from './modules/edgeone/services/workflow-serv
 import { CloudflaredTunnelService } from './modules/cloudflared/services/tunnel-service.js'
 import { CloudflaredDnsService } from './modules/cloudflared/services/dns-service.js'
 import { CloudflaredRouteService } from './modules/cloudflared/services/route-service.js'
-import { ServiceRegistry } from './platform/registry.js'
+import { ServiceRegistry } from './kernel/index.js'
 import { createPlatformPlugin } from './platform/plugin.js'
 import { createSyncPlugin } from './modules/sync/plugin.js'
 import { createDnsPodPlugin } from './modules/dnspod/plugin.js'
@@ -37,24 +48,10 @@ import { createSaasPlugin } from './modules/saas/plugin.js'
 import { createEdgeOnePlugin } from './modules/edgeone/plugin.js'
 import { createCloudflaredPlugin } from './modules/cloudflared/plugin.js'
 import { EdgeOneBatchJobService } from './modules/edgeone/services/batch-job-service.js'
-import { DnsRecordMutationUseCase } from './modules/common/usecases/dns-record-mutation-usecase.js'
-import { SaasHostnameMutationUseCase } from './modules/common/usecases/saas-hostname-mutation-usecase.js'
-import { DnsZoneMutationUseCase } from './modules/common/usecases/dns-zone-mutation-usecase.js'
-import { ProviderMutationUseCase } from './modules/common/usecases/provider-mutation-usecase.js'
-import { EdgeOneDomainMutationUseCase } from './modules/common/usecases/edgeone-domain-mutation-usecase.js'
-import { TunnelMutationUseCase } from './modules/common/usecases/tunnel-mutation-usecase.js'
 import { JobService } from './platform/job/job-service.js'
-import type { SyncPort } from './contracts/index.js'
+import type { SyncPort } from './kernel/index.js'
 
-/**
- * Compose application services and load platform plugins.
- *
- * Progressive modularization:
- * - concrete services still assembled here for Fastify ctx compatibility
- * - ports / job runners / events are registered via plugins
- * - new read paths should resolve ports from registry
- */
-export function createAppContext(config: AppConfig) {
+export async function createAppContext(config: AppConfig) {
   const registry = new ServiceRegistry()
 
   const appConfigRepository = new AppConfigRepository()
@@ -118,18 +115,6 @@ export function createAppContext(config: AppConfig) {
     edgeoneDomainService,
     edgeoneWorkflowService,
   )
-  const dnsRecordMutationUseCase = new DnsRecordMutationUseCase(
-    dnspodRecordService,
-    cloudflareDnsRecordService,
-    cloudflareZoneService,
-  )
-  const saasHostnameMutationUseCase = new SaasHostnameMutationUseCase(saasWorkflowService)
-  const dnsZoneMutationUseCase = new DnsZoneMutationUseCase(dnspodZoneService, cloudflareZoneService)
-  const providerMutationUseCase = new ProviderMutationUseCase(providerService)
-  const edgeOneDomainMutationUseCase = new EdgeOneDomainMutationUseCase(
-    edgeoneDomainService,
-    edgeoneWorkflowService,
-  )
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -138,9 +123,8 @@ export function createAppContext(config: AppConfig) {
     cloudflareZoneService,
     cloudflaredDnsService,
   )
-  const tunnelMutationUseCase = new TunnelMutationUseCase(cloudflaredTunnelService, cloudflaredRouteService)
 
-  void registry.load([
+  await registry.load([
     createPlatformPlugin(jobService),
     createSyncPlugin(syncOrchestrator as unknown as SyncPort),
     createDnsPodPlugin(dnspodZoneService, dnspodRecordService),
@@ -164,6 +148,8 @@ export function createAppContext(config: AppConfig) {
     }),
   ])
 
+  await jobService.resumeActiveJobs()
+
   return {
     config,
     registry,
@@ -181,12 +167,6 @@ export function createAppContext(config: AppConfig) {
     saasBatchJobService,
     dnsBatchJobService,
     edgeoneBatchJobService,
-    dnsRecordMutationUseCase,
-    saasHostnameMutationUseCase,
-    dnsZoneMutationUseCase,
-    providerMutationUseCase,
-    edgeOneDomainMutationUseCase,
-    tunnelMutationUseCase,
     syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,
@@ -196,7 +176,7 @@ export function createAppContext(config: AppConfig) {
   }
 }
 
-export type AppContext = ReturnType<typeof createAppContext>
+export type AppContext = Awaited<ReturnType<typeof createAppContext>>
 
 declare module 'fastify' {
   interface FastifyInstance {

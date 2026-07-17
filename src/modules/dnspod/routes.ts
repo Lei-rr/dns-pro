@@ -6,11 +6,12 @@ import {
   recordBatchJobShow,
   recordBatchJobActive,
   recordBatchJobRetry,
-} from '../common/controllers/dns-batch-controller.js'
+} from '../dns-batch/controllers/batch-controller.js'
 
 async function withProviderType(app: FastifyInstance, providerType: string) {
+  app.decorateRequest('dnsProviderType', '')
   app.addHook('onRequest', async (request) => {
-    ;(request as any).dnsProviderType = providerType
+    request.dnsProviderType = providerType
   })
 }
 

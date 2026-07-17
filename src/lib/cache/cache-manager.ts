@@ -45,7 +45,7 @@ export class CacheManager {
       cacheOnly:
         options.mode?.cacheOnly !== undefined
           ? Boolean(options.mode.cacheOnly)
-          : !Boolean(options.mode?.refresh),
+          : !options.mode?.refresh,
     }
     const key = resolveKey(options.key)
     const tags = options.tags ?? []

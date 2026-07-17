@@ -1,20 +1,40 @@
 import * as crypto from 'node:crypto'
 import { JsonStore } from '../../lib/storage/json-store.js'
-import type { JobPort, JobRecord, JobStatus } from '../../contracts/index.js'
+import type { JobPort, JobRecord, JobStatus } from '../../kernel/index.js'
 import { ApiError } from '../../lib/http/api-error.js'
-import { featureFlags } from '../features/feature-flags.js'
 
 type StoreShape = { items: JobRecord[] }
 
 const ACTIVE: JobStatus[] = ['pending', 'running']
+const TERMINAL: JobStatus[] = ['completed', 'failed', 'cancelled']
+
+/** Keep at most this many finished jobs in durable store. */
+const FINISHED_RETENTION = 100
+/** Progress disk flush coalesce window (ms). Terminal/status changes flush immediately. */
+const PROGRESS_FLUSH_MS = 250
 
 /**
  * Generic durable job store (JSON + memory via JsonStore).
  * Domain jobs register runners and share progress/retry semantics.
+ *
+ * Write model (mainstream small-monolith practice):
+ * - durable create / terminal transitions flush immediately
+ * - item-level progress is coalesced to reduce O(n) full-file rewrites
+ * - finished history is compacted to a retention window
  */
 export class JobService implements JobPort {
   private readonly runners = new Map<string, (job: JobRecord) => Promise<void>>()
   private readonly inflight = new Map<string, Promise<void>>()
+  private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly pendingProgress = new Map<
+    string,
+    {
+      match: (item: Record<string, unknown>) => boolean
+      itemPatch: Record<string, unknown>
+      jobPatch: Partial<JobRecord>
+    }[]
+  >()
+  private resumeStarted = false
 
   constructor(private readonly store = new JsonStore<StoreShape>('jobs/jobs.json', { items: [] })) {}
 
@@ -28,8 +48,6 @@ export class JobService implements JobPort {
     items: Array<Record<string, unknown>>,
     options: { start?: boolean; message?: string } = {},
   ): Promise<JobRecord> {
-    featureFlags.requireJobType(type)
-
     const now = Date.now()
     const job: JobRecord = {
       id: crypto.randomBytes(8).toString('hex'),
@@ -48,7 +66,7 @@ export class JobService implements JobPort {
     }
 
     await this.store.transaction((current) => ({
-      next: { items: [...(current.items ?? []), job] },
+      next: { items: this.compactList([...(current.items ?? []), job]) },
     }))
 
     if (options.start !== false) this.ensureBackground(job.id)
@@ -56,6 +74,7 @@ export class JobService implements JobPort {
   }
 
   async get(id: string): Promise<JobRecord | null> {
+    await this.flushProgress(id)
     const job = (await this.all()).find((item) => item.id === id) ?? null
     if (job && ACTIVE.includes(job.status)) this.ensureBackground(job.id)
     return job
@@ -72,22 +91,48 @@ export class JobService implements JobPort {
       .slice(0, limit)
   }
 
-  async patch(id: string, patch: Partial<JobRecord>): Promise<JobRecord | null> {
-    let updated: JobRecord | null = null
+  /**
+   * Resume pending/running jobs after process restart.
+   * Call only after all runners are registered.
+   */
+  async resumeActiveJobs(): Promise<number> {
+    if (this.resumeStarted) return 0
+    this.resumeStarted = true
+
+    // One compact pass on boot keeps store size bounded.
     await this.store.transaction((current) => ({
-      next: {
-        items: (current.items ?? []).map((item) => {
-          if (item.id !== id) return item
-          updated = {
-            ...item,
-            ...patch,
-            updated_at: Date.now(),
-            items: patch.items ?? item.items,
-          }
-          return updated
-        }),
-      },
+      next: { items: this.compactList(current.items ?? []) },
     }))
+
+    const actives = await this.listActive()
+    for (const job of actives) {
+      if (job.status === 'running') {
+        await this.patch(job.id, {
+          status: 'pending',
+          message: 'resuming after restart',
+        })
+      }
+      this.ensureBackground(job.id)
+    }
+    return actives.length
+  }
+
+  async patch(id: string, patch: Partial<JobRecord>): Promise<JobRecord | null> {
+    await this.flushProgress(id)
+    let updated: JobRecord | null = null
+    await this.store.transaction((current) => {
+      const items = (current.items ?? []).map((item) => {
+        if (item.id !== id) return item
+        updated = {
+          ...item,
+          ...patch,
+          updated_at: Date.now(),
+          items: patch.items ?? item.items,
+        }
+        return updated
+      })
+      return { next: { items: this.maybeCompact(items, patch.status) } }
+    })
     return updated
   }
 
@@ -97,35 +142,29 @@ export class JobService implements JobPort {
     itemPatch: Record<string, unknown>,
     jobPatch: Partial<JobRecord> = {},
   ): Promise<JobRecord | null> {
-    let updated: JobRecord | null = null
-    await this.store.transaction((current) => ({
-      next: {
-        items: (current.items ?? []).map((job) => {
-          if (job.id !== id) return job
-          const items = job.items.map((item) => (match(item) ? { ...item, ...itemPatch } : item))
-          const done = items.filter((i) => ['success', 'failed', 'skipped'].includes(String(i.status))).length
-          const success = items.filter((i) => i.status === 'success').length
-          const failed = items.filter((i) => i.status === 'failed').length
-          const skipped = items.filter((i) => i.status === 'skipped').length
-          updated = {
-            ...job,
-            ...jobPatch,
-            items,
-            done,
-            success,
-            failed,
-            skipped,
-            updated_at: Date.now(),
-          }
-          return updated
-        }),
-      },
-    }))
-    return updated
+    // Terminal item results still go through the coalesced writer, but flush soon.
+    const queue = this.pendingProgress.get(id) ?? []
+    queue.push({ match, itemPatch, jobPatch })
+    this.pendingProgress.set(id, queue)
+
+    const immediate =
+      TERMINAL.includes(String(jobPatch.status || '') as JobStatus) ||
+      ['success', 'failed', 'skipped'].includes(String(itemPatch.status || ''))
+
+    if (immediate) {
+      // Coalesce a short burst of item updates then flush.
+      this.scheduleProgressFlush(id, 0)
+    } else {
+      this.scheduleProgressFlush(id, PROGRESS_FLUSH_MS)
+    }
+
+    // Return best-effort latest snapshot from memory after applying pending patches in-memory.
+    return this.previewWithPending(id)
   }
 
   /** Re-queue a finished job (e.g. retry failed items already rewritten as pending). */
   async requeue(id: string, patch: Partial<JobRecord> = {}): Promise<JobRecord> {
+    await this.flushProgress(id)
     const job = await this.get(id)
     if (!job) throw new ApiError('job_not_found', `Job ${id} not found`, 404)
     if (ACTIVE.includes(job.status)) {
@@ -145,6 +184,106 @@ export class JobService implements JobPort {
     this.ensureBackground(id)
   }
 
+  /** Stats for health / ops. */
+  async stats(): Promise<{ total: number; active: number; finished: number }> {
+    const items = await this.all()
+    const active = items.filter((j) => ACTIVE.includes(j.status)).length
+    return {
+      total: items.length,
+      active,
+      finished: items.length - active,
+    }
+  }
+
+  private scheduleProgressFlush(id: string, delayMs: number): void {
+    const existing = this.progressTimers.get(id)
+    if (existing) {
+      if (delayMs === 0) {
+        clearTimeout(existing)
+      } else {
+        return
+      }
+    }
+    const timer = setTimeout(() => {
+      this.progressTimers.delete(id)
+      void this.flushProgress(id)
+    }, delayMs)
+    // Don't keep process alive solely for progress timers.
+    if (typeof timer.unref === 'function') timer.unref()
+    this.progressTimers.set(id, timer)
+  }
+
+  private async flushProgress(id: string): Promise<void> {
+    const timer = this.progressTimers.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      this.progressTimers.delete(id)
+    }
+    const queue = this.pendingProgress.get(id)
+    if (!queue?.length) return
+    this.pendingProgress.delete(id)
+
+    let updated: JobRecord | null = null
+    await this.store.transaction((current) => {
+      const items = (current.items ?? []).map((job) => {
+        if (job.id !== id) return job
+        let nextItems = job.items
+        let nextJob: JobRecord = { ...job }
+        for (const entry of queue) {
+          nextItems = nextItems.map((item) => (entry.match(item) ? { ...item, ...entry.itemPatch } : item))
+          nextJob = {
+            ...nextJob,
+            ...entry.jobPatch,
+            items: nextItems,
+          }
+        }
+        const done = nextItems.filter((i) => ['success', 'failed', 'skipped'].includes(String(i.status))).length
+        const success = nextItems.filter((i) => i.status === 'success').length
+        const failed = nextItems.filter((i) => i.status === 'failed').length
+        const skipped = nextItems.filter((i) => i.status === 'skipped').length
+        updated = {
+          ...nextJob,
+          items: nextItems,
+          done,
+          success,
+          failed,
+          skipped,
+          updated_at: Date.now(),
+        }
+        return updated
+      })
+      return { next: { items } }
+    })
+    return
+  }
+
+  private async previewWithPending(id: string): Promise<JobRecord | null> {
+    const base = (await this.all()).find((item) => item.id === id) ?? null
+    if (!base) return null
+    const queue = this.pendingProgress.get(id)
+    if (!queue?.length) return base
+
+    let nextItems = base.items
+    let nextJob: JobRecord = { ...base }
+    for (const entry of queue) {
+      nextItems = nextItems.map((item) => (entry.match(item) ? { ...item, ...entry.itemPatch } : item))
+      nextJob = { ...nextJob, ...entry.jobPatch, items: nextItems }
+    }
+    const done = nextItems.filter((i) => ['success', 'failed', 'skipped'].includes(String(i.status))).length
+    const success = nextItems.filter((i) => i.status === 'success').length
+    const failed = nextItems.filter((i) => i.status === 'failed').length
+    const skipped = nextItems.filter((i) => i.status === 'skipped').length
+    return {
+      ...nextJob,
+      items: nextItems,
+      done,
+      success,
+      failed,
+      skipped,
+      updated_at: Date.now(),
+    }
+  }
+
   private ensureBackground(jobId: string): void {
     if (this.inflight.has(jobId)) return
     const promise = this.run(jobId)
@@ -154,6 +293,7 @@ export class JobService implements JobPort {
   }
 
   private async run(jobId: string): Promise<void> {
+    await this.flushProgress(jobId)
     const job = await this.get(jobId)
     if (!job) return
     if (!ACTIVE.includes(job.status)) return
@@ -172,6 +312,7 @@ export class JobService implements JobPort {
     try {
       const latest = (await this.get(jobId))!
       await runner(latest)
+      await this.flushProgress(jobId)
       const after = await this.get(jobId)
       if (after && ACTIVE.includes(after.status)) {
         await this.patch(jobId, {
@@ -180,14 +321,38 @@ export class JobService implements JobPort {
           finished_at: Date.now(),
           message: after.message || 'completed',
         })
+      } else {
+        // Ensure finished jobs still go through compaction.
+        await this.store.transaction((current) => ({
+          next: { items: this.compactList(current.items ?? []) },
+        }))
       }
     } catch (error) {
+      await this.flushProgress(jobId)
       await this.patch(jobId, {
         status: 'failed',
         message: error instanceof Error ? error.message : String(error),
         finished_at: Date.now(),
       })
     }
+  }
+
+  private maybeCompact(items: JobRecord[], status?: JobStatus | string): JobRecord[] {
+    if (status && TERMINAL.includes(status as JobStatus)) return this.compactList(items)
+    return items
+  }
+
+  private compactList(items: JobRecord[]): JobRecord[] {
+    const active = items.filter((job) => ACTIVE.includes(job.status))
+    const finished = items
+      .filter((job) => !ACTIVE.includes(job.status))
+      .sort((a, b) => (b.finished_at || b.updated_at || b.created_at) - (a.finished_at || a.updated_at || a.created_at))
+      .slice(0, FINISHED_RETENTION)
+    // Preserve roughly chronological order: finished (oldest first among retained) then active.
+    const finishedAsc = [...finished].sort(
+      (a, b) => (a.finished_at || a.updated_at || a.created_at) - (b.finished_at || b.updated_at || b.created_at),
+    )
+    return [...finishedAsc, ...active]
   }
 
   private async all(): Promise<JobRecord[]> {

@@ -1,5 +1,5 @@
 import { ApiError } from '../../../lib/http/api-error.js'
-import type { JobRecord } from '../../../contracts/index.js'
+import type { JobRecord } from '../../../kernel/index.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
 import { SaasWorkflowService } from './workflow-service.js'

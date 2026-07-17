@@ -1,9 +1,9 @@
 import { ApiError } from '../lib/http/api-error.js'
-import type { AppPlugin, PluginContext } from '../contracts/index.js'
+import type { AppPlugin, ModuleDefinition, PluginContext } from './contracts.js'
 
 /**
  * Lightweight service registry for modular plugin loading.
- * Progressive step toward full DI without rewriting every module.
+ * Kernel-stable: modules register tokens here; consumers use require/get.
  */
 export class ServiceRegistry implements PluginContext {
   private readonly services = new Map<string, unknown>()
@@ -28,11 +28,11 @@ export class ServiceRegistry implements PluginContext {
     return this.services.has(token)
   }
 
-  async load(plugins: AppPlugin[]): Promise<void> {
+  async load(plugins: Array<AppPlugin | ModuleDefinition>): Promise<void> {
     for (const plugin of plugins) {
-      await plugin.register(this)
+      if ('register' in plugin && plugin.register) {
+        await plugin.register(this)
+      }
     }
   }
 }
-
-export const registry = new ServiceRegistry()
