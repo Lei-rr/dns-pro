@@ -1,7 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
-import { auditService } from '../../../lib/utils/audit.js'
 
 function zoneNameParam(request: FastifyRequest<{ Params: { zoneName: string } }>): string {
   return decodeURIComponent(request.params.zoneName).trim()
@@ -53,14 +52,6 @@ export async function hostnamesStore(
     body,
     queryBool(q, 'auto_sync'),
   )
-  await auditService.write({
-    ts: Date.now(),
-    action: 'saas.hostname.create',
-    provider_id: request.params.providerId,
-    zone: zoneNameParam(request),
-    hostname: String(body.hostname ?? result.hostname ?? ''),
-    result: 'success',
-  })
   return reply.status(201).send(success(result))
 }
 
@@ -91,15 +82,6 @@ export async function hostnamesUpdate(
     body,
     queryBool(q, 'auto_sync'),
   )
-  await auditService.write({
-    ts: Date.now(),
-    action: 'saas.hostname.update',
-    provider_id: request.params.providerId,
-    zone: zoneNameParam(request),
-    hostname: hostnameFqdnParam(request),
-    target: String(body.preferred_domain ?? ''),
-    result: 'success',
-  })
   return reply.send(success(result))
 }
 
@@ -126,14 +108,6 @@ export async function hostnamesDelete(
     hostnameFqdnParam(request),
     queryBool(q, 'auto_cleanup', true),
   )
-  await auditService.write({
-    ts: Date.now(),
-    action: 'saas.hostname.delete',
-    provider_id: request.params.providerId,
-    zone: zoneNameParam(request),
-    hostname: hostnameFqdnParam(request),
-    result: 'success',
-  })
   return reply.send(success(result))
 }
 
@@ -201,15 +175,6 @@ export async function preferredApplyStore(
     hostnames: Array.isArray(body.hostnames) ? body.hostnames.map(String) : undefined,
     onlyAutoPreferred: Boolean(body.only_auto_preferred),
     dryRun: Boolean(body.dry_run),
-  })
-  await auditService.write({
-    ts: Date.now(),
-    action: 'saas.preferred_apply.create',
-    provider_id: request.params.providerId,
-    zone: zoneNameParam(request),
-    target: String(body.preferred_domain ?? ''),
-    result: 'success',
-    meta: { job_id: result.id, dry_run: result.dry_run, total: result.total },
   })
   return reply.status(201).send(success(result))
 }

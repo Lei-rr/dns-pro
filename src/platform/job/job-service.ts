@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto'
 import { JsonStore } from '../../lib/storage/json-store.js'
 import type { JobPort, JobRecord, JobStatus } from '../../contracts/index.js'
 import { ApiError } from '../../lib/http/api-error.js'
+import { featureFlags } from '../features/feature-flags.js'
 
 type StoreShape = { items: JobRecord[] }
 
@@ -27,6 +28,8 @@ export class JobService implements JobPort {
     items: Array<Record<string, unknown>>,
     options: { start?: boolean; message?: string } = {},
   ): Promise<JobRecord> {
+    featureFlags.requireJobType(type)
+
     const now = Date.now()
     const job: JobRecord = {
       id: crypto.randomBytes(8).toString('hex'),

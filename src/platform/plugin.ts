@@ -5,6 +5,7 @@ import { auditService } from '../lib/utils/audit.js'
 import { backupService } from '../lib/utils/backup.js'
 import { eventBus } from './events/event-bus.js'
 import { registerEventSubscribers } from './events/subscribers.js'
+import { featureFlags } from './features/feature-flags.js'
 
 export function createPlatformPlugin(jobService: JobService): AppPlugin {
   return {
@@ -16,6 +17,7 @@ export function createPlatformPlugin(jobService: JobService): AppPlugin {
       ctx.set(ServiceTokens.Audit, auditService)
       ctx.set(ServiceTokens.Backup, backupService)
       ctx.set(ServiceTokens.EventBus, eventBus)
+      ctx.set(ServiceTokens.FeatureFlags, featureFlags)
     },
   }
 }

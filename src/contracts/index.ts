@@ -121,6 +121,7 @@ export const ServiceTokens = {
   Audit: 'svc.audit',
   Backup: 'svc.backup',
   EventBus: 'svc.events',
+  FeatureFlags: 'svc.features',
   DnsPodZonePort: 'port.zone.dnspod',
   DnsPodRecordPort: 'port.record.dnspod',
   CloudflareZonePort: 'port.zone.cloudflare',

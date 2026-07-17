@@ -8,6 +8,7 @@ import { auditService } from '../../lib/utils/audit.js'
 import { backupService } from '../../lib/utils/backup.js'
 import { queryInt, queryRecord } from '../../lib/utils/request-parse.js'
 import { bodyRecord } from '../../lib/utils/request-parse.js'
+import { featureFlags } from '../../platform/features/feature-flags.js'
 
 async function isDirectoryWritable(dir: string): Promise<boolean> {
   const probe = path.join(dir, `.health-check-${Date.now()}`)
@@ -41,6 +42,7 @@ export async function healthShow(_request: FastifyRequest, reply: FastifyReply) 
     status: 'ok',
     data_dir: { path: dataRoot, writable, config_readable: configReadable },
     cache: globalCache.stats(),
+    features: featureFlags.snapshot(),
   }
 
   if (!writable) {
@@ -48,6 +50,10 @@ export async function healthShow(_request: FastifyRequest, reply: FastifyReply) 
   }
 
   return reply.send(success(payload))
+}
+
+export async function featuresShow(_request: FastifyRequest, reply: FastifyReply) {
+  return reply.send(success(featureFlags.snapshot()))
 }
 
 export async function auditIndex(request: FastifyRequest, reply: FastifyReply) {
