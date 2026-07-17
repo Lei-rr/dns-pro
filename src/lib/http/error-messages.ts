@@ -16,6 +16,8 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   service_unavailable: '服务暂时不可用，请稍后重试',
   health_check_failed: '健康检查失败',
   service_not_registered: '服务未注册（平台模块装载异常）',
+  job_not_found: '任务不存在',
+  job_running: '任务仍在执行中',
 
   // Provider 通用
   provider_not_found: '服务商不存在',

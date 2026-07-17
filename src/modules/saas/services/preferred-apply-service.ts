@@ -1,53 +1,45 @@
-import * as crypto from 'node:crypto'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { JsonStore } from '../../../lib/storage/json-store.js'
+import type { JobRecord } from '../../../contracts/index.js'
+import type { JobService } from '../../../platform/job/job-service.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
 import { SaasWorkflowService } from './workflow-service.js'
 import { SaasHostnameService } from './hostname-service.js'
 
-export type PreferredApplyJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+export const PREFERRED_APPLY_JOB_TYPE = 'saas.preferred_apply'
 
-export type PreferredApplyItemResult = {
-  hostname: string
-  status: 'pending' | 'running' | 'success' | 'failed' | 'skipped'
-  message?: string
-  preferred_domain?: string
-}
-
+/** API-facing job shape (keeps frontend fields stable). */
 export type PreferredApplyJob = {
   id: string
   provider_id: string
   zone_name: string
   preferred_domain: string
-  /** only hosts with auto_preferred=true */
   only_auto_preferred: boolean
   dry_run: boolean
-  status: PreferredApplyJobStatus
+  status: string
   total: number
   done: number
   success: number
   failed: number
   skipped: number
   current?: string
-  items: PreferredApplyItemResult[]
+  items: Array<Record<string, unknown>>
   created_at: number
   updated_at: number
   finished_at?: number
   message?: string
 }
 
-type StoreShape = { items: PreferredApplyJob[] }
-
-const ACTIVE = new Set<PreferredApplyJobStatus>(['pending', 'running'])
-
+/**
+ * SaaS preferred-domain apply built on the generic JobService.
+ */
 export class SaasPreferredApplyService {
-  private readonly running = new Map<string, Promise<void>>()
-
   constructor(
-    private readonly store = new JsonStore<StoreShape>('saas/preferred-apply-jobs.json', { items: [] }),
-    private readonly workflow = new SaasWorkflowService(),
-    private readonly hostnames = new SaasHostnameService(),
-  ) {}
+    private readonly jobs: JobService,
+    private readonly workflow: SaasWorkflowService,
+    private readonly hostnames: SaasHostnameService,
+  ) {
+    this.jobs.registerRunner(PREFERRED_APPLY_JOB_TYPE, (job) => this.runJob(job))
+  }
 
   async preview(input: {
     providerId: string
@@ -64,12 +56,15 @@ export class SaasPreferredApplyService {
       preferred_domain: preferred,
       only_auto_preferred: !!input.onlyAutoPreferred,
       total: list.length,
-      items: list.map((item) => ({
-        hostname: item.hostname,
-        current_preferred: String((item as any).preferred_domain ?? item.custom_metadata?.preferred_domain ?? ''),
-        auto_preferred: !!(item as any).auto_preferred,
-        will_change: String((item as any).preferred_domain ?? item.custom_metadata?.preferred_domain ?? '') !== preferred,
-      })),
+      items: list.map((item) => {
+        const current = this.currentPreferred(item)
+        return {
+          hostname: item.hostname,
+          current_preferred: current,
+          auto_preferred: !!(item as any).auto_preferred,
+          will_change: current !== preferred,
+        }
+      }),
     }
   }
 
@@ -101,48 +96,59 @@ export class SaasPreferredApplyService {
       throw new ApiError('preferred_apply_empty', 'No hostnames matched for preferred-domain apply', 422)
     }
 
-    const now = Date.now()
-    const job: PreferredApplyJob = {
-      id: crypto.randomBytes(8).toString('hex'),
+    const payload = {
       provider_id: input.providerId,
       zone_name: input.zoneName,
       preferred_domain: preferred,
       only_auto_preferred: !!input.onlyAutoPreferred,
       dry_run: !!input.dryRun,
-      status: 'pending',
-      total: targets.length,
-      done: 0,
-      success: 0,
-      failed: 0,
-      skipped: 0,
-      items: targets.map((t) => ({
-        hostname: t.hostname,
-        status: 'pending',
-        preferred_domain: preferred,
-      })),
-      created_at: now,
-      updated_at: now,
-      message: input.dryRun ? '预览任务已创建' : '任务已创建，等待后台执行',
     }
 
-    await this.store.transaction((current) => ({
-      next: { items: [...(current.items ?? []).filter((j) => !ACTIVE.has(j.status) || j.id === job.id), job] },
-      result: job,
+    const items = targets.map((t) => ({
+      hostname: t.hostname,
+      preferred_domain: preferred,
+      current_preferred: this.currentPreferred(t),
+      auto_preferred: !!(t as any).auto_preferred,
     }))
 
-    if (!job.dry_run) this.ensureBackground(job.id)
-    else {
-      // dry-run completes immediately with will_change markers
-      await this.completeDryRun(job.id, targets, preferred)
+    if (input.dryRun) {
+      const job = await this.jobs.create(PREFERRED_APPLY_JOB_TYPE, payload, items, {
+        start: false,
+        message: '预览任务已创建',
+      })
+      const dryItems = items.map((item) => {
+        const willChange = String(item.current_preferred || '') !== preferred
+        return {
+          ...item,
+          status: willChange ? 'success' : 'skipped',
+          message: willChange ? `将切换为 ${preferred}` : '已是目标优选域名',
+        }
+      })
+      const success = dryItems.filter((i) => i.status === 'success').length
+      const skipped = dryItems.filter((i) => i.status === 'skipped').length
+      const updated = await this.jobs.patch(job.id, {
+        status: 'completed',
+        items: dryItems,
+        done: dryItems.length,
+        success,
+        skipped,
+        failed: 0,
+        finished_at: Date.now(),
+        message: `预览完成：将切换 ${success} 个，跳过 ${skipped} 个`,
+      })
+      return this.present(updated!)
     }
 
-    return (await this.find(job.id)) ?? job
+    const job = await this.jobs.create(PREFERRED_APPLY_JOB_TYPE, payload, items, {
+      message: '任务已创建，等待后台执行',
+    })
+    return this.present(job)
   }
 
   async find(id: string): Promise<PreferredApplyJob | null> {
-    const job = (await this.all()).find((j) => j.id === id) ?? null
-    if (job && (job.status === 'pending' || job.status === 'running')) this.ensureBackground(job.id)
-    return job
+    const job = await this.jobs.get(id)
+    if (!job || job.type !== PREFERRED_APPLY_JOB_TYPE) return null
+    return this.present(job)
   }
 
   async active(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
@@ -151,118 +157,83 @@ export class SaasPreferredApplyService {
 
   async retryFailed(jobId: string): Promise<PreferredApplyJob> {
     const job = await this.require(jobId)
-    if (job.status === 'running' || job.status === 'pending') {
-      throw new ApiError('preferred_apply_running', 'Job is still running', 409, { job_id: jobId })
-    }
     const failed = job.items.filter((i) => i.status === 'failed')
     if (!failed.length) throw new ApiError('preferred_apply_no_failed', 'No failed items to retry', 422)
 
-    const now = Date.now()
-    const next: PreferredApplyJob = {
-      ...job,
-      status: 'pending',
-      done: job.items.filter((i) => i.status === 'success' || i.status === 'skipped').length,
-      failed: 0,
-      message: '失败项重试中',
-      finished_at: undefined,
-      updated_at: now,
-      items: job.items.map((item) =>
-        item.status === 'failed' ? { ...item, status: 'pending', message: undefined } : item,
-      ),
-    }
-    await this.save(next)
-    this.ensureBackground(next.id)
-    return (await this.find(next.id)) ?? next
-  }
-
-  private async completeDryRun(
-    jobId: string,
-    targets: CloudflareCustomHostname[],
-    preferred: string,
-  ): Promise<void> {
-    const job = await this.require(jobId)
-    const items: PreferredApplyItemResult[] = targets.map((t) => {
-      const current = String((t as any).preferred_domain ?? t.custom_metadata?.preferred_domain ?? '')
-      const willChange = current !== preferred
-      return {
-        hostname: t.hostname,
-        status: willChange ? 'success' : 'skipped',
-        preferred_domain: preferred,
-        message: willChange ? `将切换为 ${preferred}` : '已是目标优选域名',
-      }
-    })
-    const success = items.filter((i) => i.status === 'success').length
-    const skipped = items.filter((i) => i.status === 'skipped').length
-    await this.save({
-      ...job,
-      status: 'completed',
+    const items = job.items.map((item) =>
+      item.status === 'failed' ? { ...item, status: 'pending', message: undefined } : item,
+    )
+    const done = items.filter((i) => ['success', 'skipped'].includes(String(i.status))).length
+    const requeued = await this.jobs.requeue(jobId, {
       items,
-      done: items.length,
-      success,
-      skipped,
+      done,
       failed: 0,
-      finished_at: Date.now(),
-      updated_at: Date.now(),
-      message: `预览完成：将切换 ${success} 个，跳过 ${skipped} 个`,
+      success: items.filter((i) => i.status === 'success').length,
+      skipped: items.filter((i) => i.status === 'skipped').length,
+      message: '失败项重试中',
     })
+    return this.present(requeued)
   }
 
-  private ensureBackground(jobId: string) {
-    if (this.running.has(jobId)) return
-    const promise = this.run(jobId)
-      .catch(() => undefined)
-      .finally(() => this.running.delete(jobId))
-    this.running.set(jobId, promise)
-  }
+  private async runJob(job: JobRecord): Promise<void> {
+    const payload = (job.payload || {}) as Record<string, unknown>
+    if (payload.dry_run) return
 
-  private async run(jobId: string): Promise<void> {
-    const job = await this.require(jobId)
-    if (job.dry_run) return
-    if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') return
+    const providerId = String(payload.provider_id || '')
+    const zoneName = String(payload.zone_name || '')
+    const preferred = String(payload.preferred_domain || '')
 
-    await this.patch(jobId, { status: 'running', message: '后台执行中', updated_at: Date.now() })
-
-    for (let i = 0; i < job.items.length; i++) {
-      const current = await this.require(jobId)
-      if (current.status === 'cancelled') return
-      const item = current.items[i]!
+    for (const raw of job.items) {
+      const item = raw as Record<string, unknown>
+      const hostname = String(item.hostname || '')
+      if (!hostname) continue
       if (item.status === 'success' || item.status === 'skipped') continue
 
-      await this.patchItem(jobId, item.hostname, {
-        status: 'running',
-        message: '处理中',
-      }, { current: item.hostname })
+      await this.jobs.patchItem(
+        job.id,
+        (row) => String(row.hostname || '') === hostname,
+        { status: 'running', message: '处理中' },
+        { current: hostname, message: '后台执行中' },
+      )
 
       try {
         await this.workflow.updateHostname(
-          current.provider_id,
-          current.zone_name,
-          item.hostname,
+          providerId,
+          zoneName,
+          hostname,
           {
-            preferred_domain: current.preferred_domain,
+            preferred_domain: preferred,
             auto_preferred: true,
           },
           true,
         )
-        await this.patchItem(jobId, item.hostname, {
-          status: 'success',
-          message: `已切换为 ${current.preferred_domain}`,
-          preferred_domain: current.preferred_domain,
-        })
+        await this.jobs.patchItem(
+          job.id,
+          (row) => String(row.hostname || '') === hostname,
+          {
+            status: 'success',
+            message: `已切换为 ${preferred}`,
+            preferred_domain: preferred,
+          },
+        )
       } catch (error) {
-        await this.patchItem(jobId, item.hostname, {
-          status: 'failed',
-          message: error instanceof Error ? error.message : String(error),
-        })
+        await this.jobs.patchItem(
+          job.id,
+          (row) => String(row.hostname || '') === hostname,
+          {
+            status: 'failed',
+            message: error instanceof Error ? error.message : String(error),
+          },
+        )
       }
     }
 
-    const finalJob = await this.require(jobId)
+    const finalJob = await this.jobs.get(job.id)
+    if (!finalJob) return
     const success = finalJob.items.filter((i) => i.status === 'success').length
     const failed = finalJob.items.filter((i) => i.status === 'failed').length
     const skipped = finalJob.items.filter((i) => i.status === 'skipped').length
-    await this.save({
-      ...finalJob,
+    await this.jobs.patch(job.id, {
       status: failed > 0 && success === 0 ? 'failed' : 'completed',
       success,
       failed,
@@ -270,7 +241,6 @@ export class SaasPreferredApplyService {
       done: finalJob.items.length,
       current: undefined,
       finished_at: Date.now(),
-      updated_at: Date.now(),
       message: failed
         ? `完成：成功 ${success}，失败 ${failed}，跳过 ${skipped}`
         : `完成：成功 ${success}，跳过 ${skipped}`,
@@ -283,7 +253,6 @@ export class SaasPreferredApplyService {
     hostnames?: string[],
     onlyAutoPreferred = false,
   ): Promise<CloudflareCustomHostname[]> {
-    // Pull a reasonably large page; SaaS zones for personal use are usually small.
     const listing = await this.hostnames.hostnames(providerId, zoneName, 1, 200, false)
     let items = listing.items ?? []
     if (hostnames?.length) {
@@ -296,17 +265,17 @@ export class SaasPreferredApplyService {
     return items
   }
 
-  private async findActive(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
-    return (
-      (await this.all()).find(
-        (j) => j.provider_id === providerId && j.zone_name === zoneName && ACTIVE.has(j.status),
-      ) ?? null
-    )
+  private currentPreferred(item: CloudflareCustomHostname): string {
+    return String((item as any).preferred_domain ?? item.custom_metadata?.preferred_domain ?? '')
   }
 
-  private async all(): Promise<PreferredApplyJob[]> {
-    const data = await this.store.read()
-    return data.items ?? []
+  private async findActive(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
+    const actives = await this.jobs.listActive(PREFERRED_APPLY_JOB_TYPE)
+    const hit = actives.find((job) => {
+      const payload = job.payload || {}
+      return payload.provider_id === providerId && payload.zone_name === zoneName
+    })
+    return hit ? this.present(hit) : null
   }
 
   private async require(id: string): Promise<PreferredApplyJob> {
@@ -315,51 +284,27 @@ export class SaasPreferredApplyService {
     return job
   }
 
-  private async save(job: PreferredApplyJob): Promise<void> {
-    await this.store.transaction((current) => ({
-      next: {
-        items: (current.items ?? []).map((item) => (item.id === job.id ? job : item)),
-      },
-    }))
-  }
-
-  private async patch(jobId: string, patch: Partial<PreferredApplyJob>): Promise<void> {
-    await this.store.transaction((current) => ({
-      next: {
-        items: (current.items ?? []).map((item) =>
-          item.id === jobId ? { ...item, ...patch, updated_at: Date.now() } : item,
-        ),
-      },
-    }))
-  }
-
-  private async patchItem(
-    jobId: string,
-    hostname: string,
-    itemPatch: Partial<PreferredApplyItemResult>,
-    jobPatch: Partial<PreferredApplyJob> = {},
-  ): Promise<void> {
-    await this.store.transaction((current) => ({
-      next: {
-        items: (current.items ?? []).map((job) => {
-          if (job.id !== jobId) return job
-          const items = job.items.map((item) => (item.hostname === hostname ? { ...item, ...itemPatch } : item))
-          const done = items.filter((i) => i.status === 'success' || i.status === 'failed' || i.status === 'skipped').length
-          const success = items.filter((i) => i.status === 'success').length
-          const failed = items.filter((i) => i.status === 'failed').length
-          const skipped = items.filter((i) => i.status === 'skipped').length
-          return {
-            ...job,
-            ...jobPatch,
-            items,
-            done,
-            success,
-            failed,
-            skipped,
-            updated_at: Date.now(),
-          }
-        }),
-      },
-    }))
+  private present(job: JobRecord): PreferredApplyJob {
+    const payload = (job.payload || {}) as Record<string, unknown>
+    return {
+      id: job.id,
+      provider_id: String(payload.provider_id || ''),
+      zone_name: String(payload.zone_name || ''),
+      preferred_domain: String(payload.preferred_domain || ''),
+      only_auto_preferred: Boolean(payload.only_auto_preferred),
+      dry_run: Boolean(payload.dry_run),
+      status: job.status,
+      total: job.total,
+      done: job.done,
+      success: job.success,
+      failed: job.failed,
+      skipped: job.skipped,
+      current: job.current,
+      items: job.items,
+      created_at: job.created_at,
+      updated_at: job.updated_at,
+      finished_at: job.finished_at,
+      message: job.message,
+    }
   }
 }

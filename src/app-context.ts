@@ -85,7 +85,12 @@ export function createAppContext(config: AppConfig) {
   const edgeoneDomainService = new EdgeOneDomainService(providerRepository)
   const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, syncOrchestrator)
 
-  const saasPreferredApplyService = new SaasPreferredApplyService(undefined, saasWorkflowService, saasHostnameService)
+  const jobService = new JobService()
+  const saasPreferredApplyService = new SaasPreferredApplyService(
+    jobService,
+    saasWorkflowService,
+    saasHostnameService,
+  )
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -94,8 +99,6 @@ export function createAppContext(config: AppConfig) {
     cloudflareZoneService,
     cloudflaredDnsService,
   )
-
-  const jobService = new JobService()
 
   // Plugin registration — ports available via registry for new code paths.
   // SyncOrchestrator is structurally compatible with SyncPort.

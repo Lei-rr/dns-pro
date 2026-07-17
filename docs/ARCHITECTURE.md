@@ -48,7 +48,8 @@ Migrations only move forward. No downgrade path.
 ## Jobs
 
 - Generic store: `src/platform/job/job-service.ts` → `data/jobs/jobs.json`
-- Domain job example: SaaS preferred-apply (existing specialized store still works; new jobs should prefer JobService)
+- Domain runner example: `saas.preferred_apply` registered by `SaasPreferredApplyService`
+- Preferred-apply no longer uses a separate jobs file; API response shape stays stable via `present()`
 
 ## Sync
 
@@ -57,7 +58,7 @@ Migrations only move forward. No downgrade path.
 
 ## Next incremental steps
 
-1. Move preferred-apply runner onto `JobService.registerRunner`
-2. Split large services behind ports (`ZonePort` / `RecordPort` adapters)
-3. Event bus for audit + cache invalidation
-4. Extract `platform` as shared package for aws-pro
+1. Split large services behind ports (`ZonePort` / `RecordPort` adapters)
+2. Event bus for audit + cache invalidation
+3. Extract `platform` as shared package for aws-pro
+4. Generic frontend Job progress component

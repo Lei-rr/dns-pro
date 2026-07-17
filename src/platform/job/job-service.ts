@@ -9,7 +9,7 @@ const ACTIVE: JobStatus[] = ['pending', 'running']
 
 /**
  * Generic durable job store (JSON + memory via JsonStore).
- * Domain jobs (preferred-apply, future batch sync) should build on this.
+ * Domain jobs register runners and share progress/retry semantics.
  */
 export class JobService implements JobPort {
   private readonly runners = new Map<string, (job: JobRecord) => Promise<void>>()
@@ -17,12 +17,16 @@ export class JobService implements JobPort {
 
   constructor(private readonly store = new JsonStore<StoreShape>('jobs/jobs.json', { items: [] })) {}
 
-  /** Register a runner for a job type. */
   registerRunner(type: string, runner: (job: JobRecord) => Promise<void>): void {
     this.runners.set(type, runner)
   }
 
-  async create(type: string, payload: Record<string, unknown>, items: Array<Record<string, unknown>>): Promise<JobRecord> {
+  async create(
+    type: string,
+    payload: Record<string, unknown>,
+    items: Array<Record<string, unknown>>,
+    options: { start?: boolean; message?: string } = {},
+  ): Promise<JobRecord> {
     const now = Date.now()
     const job: JobRecord = {
       id: crypto.randomBytes(8).toString('hex'),
@@ -37,13 +41,14 @@ export class JobService implements JobPort {
       items: items.map((item) => ({ status: 'pending', ...item })),
       created_at: now,
       updated_at: now,
-      message: 'pending',
+      message: options.message || 'pending',
     }
 
     await this.store.transaction((current) => ({
       next: { items: [...(current.items ?? []), job] },
     }))
-    this.ensureBackground(job.id)
+
+    if (options.start !== false) this.ensureBackground(job.id)
     return job
   }
 
@@ -57,18 +62,84 @@ export class JobService implements JobPort {
     return (await this.all()).filter((job) => ACTIVE.includes(job.status) && (!type || job.type === type))
   }
 
+  async listByType(type: string, limit = 50): Promise<JobRecord[]> {
+    return (await this.all())
+      .filter((job) => job.type === type)
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, limit)
+  }
+
   async patch(id: string, patch: Partial<JobRecord>): Promise<JobRecord | null> {
     let updated: JobRecord | null = null
     await this.store.transaction((current) => ({
       next: {
         items: (current.items ?? []).map((item) => {
           if (item.id !== id) return item
-          updated = { ...item, ...patch, updated_at: Date.now() }
+          updated = {
+            ...item,
+            ...patch,
+            updated_at: Date.now(),
+            items: patch.items ?? item.items,
+          }
           return updated
         }),
       },
     }))
     return updated
+  }
+
+  async patchItem(
+    id: string,
+    match: (item: Record<string, unknown>) => boolean,
+    itemPatch: Record<string, unknown>,
+    jobPatch: Partial<JobRecord> = {},
+  ): Promise<JobRecord | null> {
+    let updated: JobRecord | null = null
+    await this.store.transaction((current) => ({
+      next: {
+        items: (current.items ?? []).map((job) => {
+          if (job.id !== id) return job
+          const items = job.items.map((item) => (match(item) ? { ...item, ...itemPatch } : item))
+          const done = items.filter((i) => ['success', 'failed', 'skipped'].includes(String(i.status))).length
+          const success = items.filter((i) => i.status === 'success').length
+          const failed = items.filter((i) => i.status === 'failed').length
+          const skipped = items.filter((i) => i.status === 'skipped').length
+          updated = {
+            ...job,
+            ...jobPatch,
+            items,
+            done,
+            success,
+            failed,
+            skipped,
+            updated_at: Date.now(),
+          }
+          return updated
+        }),
+      },
+    }))
+    return updated
+  }
+
+  /** Re-queue a finished job (e.g. retry failed items already rewritten as pending). */
+  async requeue(id: string, patch: Partial<JobRecord> = {}): Promise<JobRecord> {
+    const job = await this.get(id)
+    if (!job) throw new ApiError('job_not_found', `Job ${id} not found`, 404)
+    if (ACTIVE.includes(job.status)) {
+      throw new ApiError('job_running', 'Job is still running', 409, { job_id: id })
+    }
+    const updated = await this.patch(id, {
+      status: 'pending',
+      finished_at: undefined,
+      message: patch.message || 'requeued',
+      ...patch,
+    })
+    this.ensureBackground(id)
+    return updated!
+  }
+
+  ensure(id: string): void {
+    this.ensureBackground(id)
   }
 
   private ensureBackground(jobId: string): void {
@@ -113,7 +184,6 @@ export class JobService implements JobPort {
         message: error instanceof Error ? error.message : String(error),
         finished_at: Date.now(),
       })
-      if (error instanceof ApiError) throw error
     }
   }
 
