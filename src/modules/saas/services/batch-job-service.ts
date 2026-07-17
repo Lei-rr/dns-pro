@@ -1,5 +1,5 @@
 import { ApiError } from '../../../lib/http/api-error.js'
-import type { JobRecord } from '../../../kernel/index.js'
+import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import { eventBus } from '../../../platform/events/event-bus.js'
 import { SaasWorkflowService } from './workflow-service.js'
@@ -302,7 +302,7 @@ export class SaasBatchJobService {
       success: job.success,
       failed: job.failed,
       skipped: job.skipped,
-      current: job.current,
+      current: job.current == null ? undefined : String(job.current),
       message: job.message,
       payload,
       items: job.items,

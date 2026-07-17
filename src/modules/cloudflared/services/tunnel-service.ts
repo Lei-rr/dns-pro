@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
-import { emitTunnelMutated } from '../plugin.js'
+import { emitTunnelMutated } from '../events.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
   cloudflareTunnelSchema,
@@ -153,9 +153,12 @@ export class CloudflaredTunnelService {
   private async fetchToken(provider: CloudflareProvider, accountId: string, tunnelId: string): Promise<string> {
     const gateway = new CloudflareGateway(provider.api_token)
     const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/token`)
-    const result = (response as any)?.result
+    const result = parseCloudflareItemResponse(response).result
     if (typeof result === 'string') return result
-    if (result && typeof result === 'object' && typeof result.token === 'string') return result.token
+    if (result && typeof result === 'object') {
+      const token = (result as Record<string, unknown>).token
+      if (typeof token === 'string') return token
+    }
     return String(result ?? '')
   }
 

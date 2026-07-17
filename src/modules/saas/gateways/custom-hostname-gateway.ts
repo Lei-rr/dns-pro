@@ -46,6 +46,8 @@ export interface CloudflareCustomHostname {
   ownership_verification?: CloudflareCustomHostnameOwnership | null
   custom_metadata?: Record<string, unknown> | null
   previous_status?: string
+  preferred_domain?: string
+  auto_preferred?: boolean
   [key: string]: unknown
 }
 
@@ -256,10 +258,13 @@ export class CloudflareCustomHostnameGateway {
 
   private present(hostname: unknown): CloudflareCustomHostname {
     const parsed = cloudflareCustomHostnameSchema.parse(hostname)
-    const sslInput = (parsed.ssl && typeof parsed.ssl === 'object' ? parsed.ssl : {}) as Record<string, any>
+    const sslInput =
+      parsed.ssl && typeof parsed.ssl === 'object' ? (parsed.ssl as Record<string, unknown>) : {}
     const certificates = Array.isArray(sslInput.certificates) ? sslInput.certificates : []
     const firstCert =
-      certificates[0] && typeof certificates[0] === 'object' ? (certificates[0] as Record<string, any>) : {}
+      certificates[0] && typeof certificates[0] === 'object'
+        ? (certificates[0] as Record<string, unknown>)
+        : {}
 
     const ssl: CloudflareCustomHostnameSsl = {
       ...sslInput,

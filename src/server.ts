@@ -4,7 +4,7 @@ import { loadAppConfig, type AppConfig } from './config/app.js'
 import { setDataRoot } from './lib/storage/json-store.js'
 import { setDefaultHttpTimeout } from './lib/http/base-gateway.js'
 import { globalCache } from './lib/cache/cache-service.js'
-import { runMigrations } from './platform/migration.js'
+import { ensureDataDirs } from './platform/ensure-data-dirs.js'
 
 function parseCliOverrides(): Partial<AppConfig> {
   const overrides: Partial<AppConfig> = {}
@@ -58,7 +58,7 @@ const config = (() => {
 setDataRoot(config.dataDir)
 setDefaultHttpTimeout(config.httpTimeoutMs)
 globalCache.updateOptions({ maxEntries: config.cacheMaxEntries, sweepIntervalMs: config.cacheSweepIntervalMs })
-await runMigrations(config.dataDir)
+await ensureDataDirs(config.dataDir)
 
 const app = await buildApp(config)
 

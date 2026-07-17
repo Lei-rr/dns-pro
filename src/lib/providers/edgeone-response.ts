@@ -1,3 +1,6 @@
+/* Vendor payloads are intentionally loose — presenters coerce fields. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 export type EdgeOneZone = Record<string, any>
 export type EdgeOneAccelerationDomain = Record<string, any>
 export type EdgeoneResponse = { Response: Record<string, any>; RequestId?: string }

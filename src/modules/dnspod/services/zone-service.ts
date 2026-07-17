@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CacheTtl, offsetPaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
-import { emitDnsPodZoneMutated } from '../adapters/ports.js'
+import { emitDnsPodZoneMutated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {

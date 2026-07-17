@@ -55,19 +55,23 @@ export class TencentCloudGateway extends BaseGateway {
         'X-TC-Version': this.options.version,
       },
       data: body,
-    })) as Record<string, any>
+    })) as Record<string, unknown>
 
-    const Response = (response?.Response ?? response ?? {}) as Record<string, any>
-    if (Response.Error) {
+    const Response = (response.Response ?? response ?? {}) as Record<string, unknown>
+    const err =
+      Response.Error && typeof Response.Error === 'object'
+        ? (Response.Error as Record<string, unknown>)
+        : null
+    if (err) {
       throw new ApiError(
         this.options.errorCode,
-        `${this.options.errorPrefix}: ${Response.Error.Code ?? ''} ${Response.Error.Message ?? ''}`.trim(),
+        `${this.options.errorPrefix}: ${err.Code ?? ''} ${err.Message ?? ''}`.trim(),
         502,
         {
-          code: Response.Error.Code,
-          message: Response.Error.Message,
+          code: err.Code,
+          message: err.Message,
           request_id: Response.RequestId,
-        }
+        },
       )
     }
 

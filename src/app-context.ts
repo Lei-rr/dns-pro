@@ -1,13 +1,10 @@
 /**
- * Composition root — WIRING ONLY (not business rules).
+ * Composition root — WIRING ONLY.
  *
- * Allowed changes when adding features:
- * - construct a service
- * - register a module plugin / runner
- * - expose on ctx if controllers still use ctx.*
- *
- * Forbidden: redesign foundation, add frameworks, put domain logic here.
- * See docs/FOUNDATION.md
+ * Rules:
+ * - new services here; no business rules
+ * - controllers use request.server.ctx.* only (no registry/DI tokens)
+ * - Fastify plugins live in src/plugins/* only
  */
 import type { AppConfig } from './config/app.js'
 import { AppConfigRepository } from './lib/auth/app-config-repository.js'
@@ -39,20 +36,13 @@ import { EdgeOneWorkflowService } from './modules/edgeone/services/workflow-serv
 import { CloudflaredTunnelService } from './modules/cloudflared/services/tunnel-service.js'
 import { CloudflaredDnsService } from './modules/cloudflared/services/dns-service.js'
 import { CloudflaredRouteService } from './modules/cloudflared/services/route-service.js'
-import { ServiceRegistry } from './kernel/index.js'
-import { createPlatformPlugin } from './platform/plugin.js'
-import { createSyncPlugin } from './modules/sync/plugin.js'
-import { createDnsPodPlugin } from './modules/dnspod/plugin.js'
-import { createCloudflarePlugin } from './modules/cloudflare/plugin.js'
-import { createSaasPlugin } from './modules/saas/plugin.js'
-import { createEdgeOnePlugin } from './modules/edgeone/plugin.js'
-import { createCloudflaredPlugin } from './modules/cloudflared/plugin.js'
 import { EdgeOneBatchJobService } from './modules/edgeone/services/batch-job-service.js'
 import { JobService } from './platform/job/job-service.js'
-import type { SyncPort } from './kernel/index.js'
+import { registerEventSubscribers } from './platform/events/subscribers.js'
 
 export async function createAppContext(config: AppConfig) {
-  const registry = new ServiceRegistry()
+  // Side-effect bus (audit + cache invalidate)
+  registerEventSubscribers()
 
   const appConfigRepository = new AppConfigRepository()
   const authConfig = new AuthConfig(appConfigRepository)
@@ -100,6 +90,7 @@ export async function createAppContext(config: AppConfig) {
   const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, syncOrchestrator)
 
   const jobService = new JobService()
+  // Constructing batch services registers Job runners
   const saasPreferredApplyService = new SaasPreferredApplyService(
     jobService,
     saasWorkflowService,
@@ -124,35 +115,10 @@ export async function createAppContext(config: AppConfig) {
     cloudflaredDnsService,
   )
 
-  await registry.load([
-    createPlatformPlugin(jobService),
-    createSyncPlugin(syncOrchestrator as unknown as SyncPort),
-    createDnsPodPlugin(dnspodZoneService, dnspodRecordService),
-    createCloudflarePlugin(cloudflareZoneService, cloudflareDnsRecordService),
-    createSaasPlugin({
-      jobs: jobService,
-      workflow: saasWorkflowService,
-      hostnames: saasHostnameService,
-      preferredApply: saasPreferredApplyService,
-      batchJob: saasBatchJobService,
-    }),
-    createEdgeOnePlugin({
-      zones: edgeoneZoneService,
-      domains: edgeoneDomainService,
-      workflow: edgeoneWorkflowService,
-      batchJob: edgeoneBatchJobService,
-    }),
-    createCloudflaredPlugin({
-      tunnels: cloudflaredTunnelService,
-      routes: cloudflaredRouteService,
-    }),
-  ])
-
   await jobService.resumeActiveJobs()
 
   return {
     config,
-    registry,
     jobService,
     sessionService,
     providerService,
@@ -167,7 +133,6 @@ export async function createAppContext(config: AppConfig) {
     saasBatchJobService,
     dnsBatchJobService,
     edgeoneBatchJobService,
-    syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,
     edgeoneWorkflowService,

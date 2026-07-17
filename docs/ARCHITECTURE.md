@@ -1,27 +1,13 @@
 # Architecture
 
-**Foundation frozen** — see [FOUNDATION.md](./FOUNDATION.md).
-
-## Tree (current)
+见 [FOUNDATION.md](./FOUNDATION.md)（权威）。
 
 ```text
-src/
-  app.ts server.ts app-context.ts
-  compose/http-modules.ts      # append-only route catalog
-  kernel/                      # registry + contracts
-  platform/                    # job, events, migration
-  plugins/                     # official Fastify root plugins
-  lib/                         # shared utils
-  modules/
-    auth/ provider/ system/
-    dnspod/ cloudflare/ saas/ edgeone/ cloudflared/
-    sync/                      # cross-provider DNS sync
-    dns-batch/                 # shared DNS record batch jobs
-  config/app.ts
+Fastify plugins (src/plugins)  →  HTTP shell
+app-context                    →  wire services on ctx
+modules/*                      →  product features
+platform/job+events            →  bulk jobs + audit/cache side-effects
 ```
 
-## Extend
-
-1. `modules/<name>/`
-2. wire in `app-context.ts` if needed
-3. one entry in `compose/http-modules.ts`
+扩展：modules + app-context 接线 + compose 一行。  
+**插件 ≠ 模块。** 插件只在 `src/plugins`。

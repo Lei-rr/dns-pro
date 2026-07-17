@@ -1,5 +1,5 @@
 import { ApiError } from '../../../lib/http/api-error.js'
-import type { JobRecord } from '../../../kernel/index.js'
+import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
 import { SaasWorkflowService } from './workflow-service.js'
@@ -61,7 +61,7 @@ export class SaasPreferredApplyService {
         return {
           hostname: item.hostname,
           current_preferred: current,
-          auto_preferred: !!(item as any).auto_preferred,
+          auto_preferred: !!(item as CloudflareCustomHostname).auto_preferred,
           will_change: current !== preferred,
         }
       }),
@@ -108,7 +108,7 @@ export class SaasPreferredApplyService {
       hostname: t.hostname,
       preferred_domain: preferred,
       current_preferred: this.currentPreferred(t),
-      auto_preferred: !!(t as any).auto_preferred,
+      auto_preferred: !!(t as CloudflareCustomHostname).auto_preferred,
     }))
 
     if (input.dryRun) {
@@ -260,13 +260,13 @@ export class SaasPreferredApplyService {
       items = items.filter((item) => set.has(String(item.hostname || '').toLowerCase()))
     }
     if (onlyAutoPreferred) {
-      items = items.filter((item) => !!(item as any).auto_preferred)
+      items = items.filter((item) => !!item.auto_preferred)
     }
     return items
   }
 
   private currentPreferred(item: CloudflareCustomHostname): string {
-    return String((item as any).preferred_domain ?? item.custom_metadata?.preferred_domain ?? '')
+    return String(item.preferred_domain ?? item.custom_metadata?.preferred_domain ?? '')
   }
 
   private async findActive(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
@@ -299,7 +299,7 @@ export class SaasPreferredApplyService {
       success: job.success,
       failed: job.failed,
       skipped: job.skipped,
-      current: job.current,
+      current: job.current == null ? undefined : String(job.current),
       items: job.items,
       created_at: job.created_at,
       updated_at: job.updated_at,

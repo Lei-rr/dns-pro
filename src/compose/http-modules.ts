@@ -1,8 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import type { ModuleDefinition } from '../kernel/index.js'
-import { defineModule } from '../kernel/index.js'
 import { authRequired } from '../modules/auth/hooks/auth-required.js'
-import { routes as systemRoutes } from '../modules/system/routes.js'
+import { routes as systemPublicRoutes, protectedRoutes as systemProtectedRoutes } from '../modules/system/routes.js'
 import { routes as authRoutes } from '../modules/auth/routes.js'
 import { routes as providerRoutes } from '../modules/provider/routes.js'
 import { routes as cloudflareRoutes } from '../modules/cloudflare/routes.js'
@@ -12,72 +10,29 @@ import { routes as edgeoneRoutes } from '../modules/edgeone/routes.js'
 import { routes as cloudflaredRoutes } from '../modules/cloudflared/routes.js'
 
 /**
- * APPEND-ONLY feature route catalog.
- * New feature = modules/<name> + wire (if needed) + one entry here.
- * Native app.register only — never wrap routes in fastify-plugin.
+ * HTTP route catalog (append-only).
+ *
+ * Module = business folder under src/modules/* with routes.ts
+ * Plugin  = ONLY src/plugins/* (official Fastify shell)
+ *
+ * Auth model:
+ * - public: health + session
+ * - one authenticated envelope for all business APIs (including audit)
  */
-export function buildHttpModules(): ModuleDefinition[] {
-  return [
-    defineModule({
-      name: 'system',
-      publicRoutes: async (app) => {
-        await app.register(systemRoutes)
-      },
-    }),
-    defineModule({
-      name: 'auth',
-      publicRoutes: async (app) => {
-        await app.register(authRoutes)
-      },
-    }),
-    defineModule({
-      name: 'provider',
-      routes: async (app) => {
-        await app.register(providerRoutes, { prefix: '/providers' })
-      },
-    }),
-    defineModule({
-      name: 'cloudflare',
-      routes: async (app) => {
-        await app.register(cloudflareRoutes, { prefix: '/cloudflare/providers/:providerId' })
-      },
-    }),
-    defineModule({
-      name: 'dnspod',
-      routes: async (app) => {
-        await app.register(dnspodRoutes, { prefix: '/dnspod/providers/:providerId' })
-      },
-    }),
-    defineModule({
-      name: 'saas',
-      routes: async (app) => {
-        await app.register(saasRoutes, { prefix: '/saas' })
-      },
-    }),
-    defineModule({
-      name: 'edgeone',
-      routes: async (app) => {
-        await app.register(edgeoneRoutes, { prefix: '/edgeone/providers/:providerId' })
-      },
-    }),
-    defineModule({
-      name: 'cloudflared',
-      routes: async (app) => {
-        await app.register(cloudflaredRoutes, { prefix: '/cloudflared/providers/:providerId' })
-      },
-    }),
-  ]
-}
+export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
+  // Public
+  await app.register(systemPublicRoutes)
+  await app.register(authRoutes)
 
-export async function mountHttpModules(app: FastifyInstance, modules: ModuleDefinition[]): Promise<void> {
-  for (const mod of modules) {
-    if (mod.publicRoutes) await mod.publicRoutes(app)
-  }
-
+  // Authenticated envelope — single place for authRequired
   await app.register(async function authenticatedApi(scope) {
     scope.addHook('preHandler', authRequired)
-    for (const mod of modules) {
-      if (mod.routes) await mod.routes(scope)
-    }
+    await scope.register(systemProtectedRoutes)
+    await scope.register(providerRoutes, { prefix: '/providers' })
+    await scope.register(cloudflareRoutes, { prefix: '/cloudflare/providers/:providerId' })
+    await scope.register(dnspodRoutes, { prefix: '/dnspod/providers/:providerId' })
+    await scope.register(saasRoutes, { prefix: '/saas' })
+    await scope.register(edgeoneRoutes, { prefix: '/edgeone/providers/:providerId' })
+    await scope.register(cloudflaredRoutes, { prefix: '/cloudflared/providers/:providerId' })
   })
 }

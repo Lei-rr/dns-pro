@@ -1,22 +1,20 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
-import { resolveZonePort } from '../../../platform/port-resolve.js'
-
-const PROVIDER_TYPE = 'cloudflare'
 
 export async function zoneIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
   const q = queryRecord(request)
-  const port = resolveZonePort(request.server.ctx.registry, PROVIDER_TYPE)
-  const result = await port.list(request.params.providerId, {
-    page: queryInt(q, 'page', 1),
-    perPage: queryInt(q, 'per_page', 20),
-    keyword: queryString(q, 'name') || queryString(q, 'keyword') || undefined,
-    refresh: queryBool(q, 'refresh'),
-  })
+  const keyword = queryString(q, 'name') || queryString(q, 'keyword') || ''
+  const result = await request.server.ctx.cloudflareZoneService.list(
+    request.params.providerId,
+    queryInt(q, 'page', 1),
+    queryInt(q, 'per_page', 20),
+    keyword,
+    queryBool(q, 'refresh'),
+  )
   return reply.send(success(result))
 }
 

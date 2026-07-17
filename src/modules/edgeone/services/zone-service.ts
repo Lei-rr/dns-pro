@@ -48,9 +48,9 @@ export class EdgeOneZoneService {
           const parsed = edgeoneZoneListResponseSchema.parse(response)
 
           requestId = parsed.RequestId ?? undefined
-          const pageItems = (parsed.Zones ?? [])
-            .map((zone: any) => this.presentZone(edgeOneZoneSchema.parse(zone)))
-            .filter((zone: any) => !['pages', 'ai'].includes(zone.type?.toLowerCase() ?? ''))
+          const pageItems = (Array.isArray(parsed.Zones) ? parsed.Zones : [])
+            .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
+            .filter((zone) => !['pages', 'ai'].includes(String(zone.type ?? '').toLowerCase()))
           items.push(...pageItems)
 
           pageOffset += pageItems.length

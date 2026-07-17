@@ -1,3 +1,6 @@
+/* Vendor payloads are intentionally loose — presenters coerce fields. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 export type CloudflareZone = Record<string, any>
 export type CloudflareDnsRecord = Record<string, any>
 export type CloudflareResultInfo = Record<string, any>
@@ -23,7 +26,7 @@ function asArray(value: unknown): any[] {
 
 export function parseCloudflareListResponse<T = Record<string, any>>(
   response: unknown,
-  _itemSchema?: unknown
+  _itemSchema?: unknown,
 ): { result: T[]; result_info: CloudflareResultInfo | undefined } {
   const parsed = asRecord(response)
   const resultInfo = parsed.result_info ? asRecord(parsed.result_info) : undefined
@@ -35,7 +38,7 @@ export function parseCloudflareListResponse<T = Record<string, any>>(
 
 export function parseCloudflareItemResponse<T = any>(
   response: unknown,
-  _itemSchema?: unknown
+  _itemSchema?: unknown,
 ): { result: T } {
   const parsed = asRecord(response)
   const result = parsed.result

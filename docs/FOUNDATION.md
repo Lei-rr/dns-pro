@@ -1,71 +1,72 @@
-# Foundation (FROZEN)
+# Foundation (clear & frozen)
 
-> 老大要求：底座简单、稳定、可靠；尽量用 Fastify 官方插件。  
-> **后续功能扩展/修改只改 `modules/*`（和接线清单），不要再动本文件列出的底层。**
+> 底座简单稳定；业务扩展只动 modules。  
+> **只有 `src/plugins/*` 叫「插件」（Fastify 官方）。业务不叫插件。**
 
-## What is foundation
+## 两个词，不要混
 
-| Path | Role | May change later? |
+| 词 | 是什么 | 目录 |
 |---|---|---|
-| `src/server.ts` | process entry, listen/shutdown | No |
-| `src/app.ts` | Fastify shell: official plugins + `/api/v1` | No |
-| `src/plugins/*` | Official `@fastify/*` + `fastify-plugin` only | Rare (security/static only) |
-| `src/kernel/*` | Tiny registry + module list types | No (additive tokens only) |
-| `src/platform/job` | Background jobs store | Rare |
-| `src/platform/events` | In-process audit/cache side-effects | Rare |
-| `src/platform/migration` | Forward-only data schema | Add migration versions only |
-| `src/lib/*` | Shared utils (http/storage/cache/auth cookie) | Shared bugfix only |
-| `src/compose/http-modules.ts` | **Append-only** route catalog | Yes — **add one line** for new module |
-| `src/app-context.ts` | Wire services into registry/ctx | Yes — **wire only**, no business rules |
+| **插件 Plugin** | Fastify HTTP 能力 | `src/plugins/*` + `@fastify/*` |
+| **模块 Module** | 业务功能（路由+服务） | `src/modules/*` |
 
-## Official Fastify only (HTTP shell)
+**什么时候做模块：** 有 API/页面的业务（dnspod、saas…）  
+**什么时候做插件：** 只碰 HTTP 壳（安全、静态、session、错误处理）  
+**禁止：** 再写 `modules/*/plugin.ts` / 自研 DI registry / Nest
+
+## 目录
 
 ```text
-fastify
-fastify-plugin          # ONLY for root plugins that must break encapsulation
-@fastify/cookie
-@fastify/helmet
-@fastify/sensible
-@fastify/static
-@fastify/compress
+src/
+  app.ts              # Fastify 组装
+  server.ts           # 进程入口 + ensureDataDirs
+  app-context.ts      # 接线：new 服务 → ctx（只暴露控制器需要的）
+  compose/
+    http-modules.ts   # 路由表（追加一行）
+  plugins/            # 唯一叫「插件」：官方 Fastify
+  platform/           # job / events / ensure-data-dirs
+  lib/
+  modules/
+    auth provider system
+    dnspod cloudflare saas edgeone cloudflared
+    sync              # 内部 DNS 同步（无 HTTP、不进 ctx）
+    dns-batch         # DNS 批量（挂 dnspod/cf 路由）
+  types/fastify.d.ts
+  config/app.ts
 ```
 
-Core patterns (not libraries):
-
-- `app.register(..., { prefix })` for scopes
-- `preHandler` for auth envelope
-- `decorate` / `decorateRequest` via root `fp` plugins
-- `requestIdHeader` / `genReqId`
-
-**Not foundation:** Nest, Awilix, autoload, BullMQ, feature-flag frameworks, usecase frameworks.
-
-## What is NOT foundation (change freely)
+## 请求路径
 
 ```text
-src/modules/**     all product features (dnspod/cf/saas/edgeone/tunnel/…)
-web/**             frontend
+Controller → request.server.ctx.<service>
+Bulk       → JobService（batch service 构造时 registerRunner）
+Side effect→ eventBus（真实在用的事件类型才保留）
+API        → /api/v1 only
 ```
 
-## How to add a feature (do not touch foundation)
+## 鉴权
 
-1. Implement under `src/modules/<name>/`
-2. If needs DI: construct + `registry` in `app-context.ts` (wire only)
-3. Append one entry in `compose/http-modules.ts`
-4. Controller → service (or `registry.require` for EdgeOne/Tunnel)
-5. Long work → existing `JobService.registerRunner`
-6. Side effects → existing `eventBus.emit` (or keep service-level emit)
+- 公开：`GET /health`、`POST/GET/DELETE /session`
+- 其余业务 API + `GET /audit`：统一走 compose 里一层 `authRequired`
+- `/audit` 有后端、当前无前端页面（运维接口）
 
-## Boot order (do not reorder)
+## 加功能 3 步
 
-1. `loadAppConfig` + `setDataRoot`
-2. `runMigrations`
-3. `createAppContext` (services + plugins + resume jobs)
-4. `buildApp` (Fastify official plugins + routes)
-5. `listen` + graceful close
+1. `src/modules/<name>/`
+2. `app-context.ts` new 服务并放进 return（仅控制器要用的）
+3. `compose/http-modules.ts` 加一行
 
-## Forbidden
+## 已删除（勿再引入）
 
-- Rewriting architecture “for cleanliness”
-- Dual `/api` + `/api/v1`
-- Wrapping every route module in `fastify-plugin` (breaks encapsulation)
-- Introducing a second DI / module framework
+- AppPlugin / ServiceRegistry / ServiceTokens / port adapters
+- Usecase / Feature Flags / Backup API
+- 未使用事件：`job.updated`、`saas.preferred_apply.finished`
+- 把内部编排对象（如 SyncOrchestrator）挂到 ctx
+
+## Boot
+
+1. config + dataRoot  
+2. ensureDataDirs（建 `saas/` `jobs/`，无 meta 版本）  
+3. createAppContext（subscribers + services + resume jobs）  
+4. buildApp（plugins + routes）  
+5. listen  

@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { bodyRecord, queryBool, queryInt, queryRecord, queryString, asRecord } from '../../../lib/utils/request-parse.js'
 
 function zoneNameParam(request: FastifyRequest<{ Params: { zoneName: string } }>): string {
   return decodeURIComponent(request.params.zoneName).trim()
@@ -214,7 +214,10 @@ export async function batchDeleteStore(
   const hostnames = Array.isArray(body.hostnames)
     ? body.hostnames.map(String)
     : Array.isArray(body.items)
-      ? body.items.map((item) => String((item as any)?.hostname ?? item))
+      ? body.items.map((item) => {
+          if (item && typeof item === 'object') return String(asRecord(item).hostname ?? '')
+          return String(item ?? '')
+        }).filter(Boolean)
       : []
   const result = await request.server.ctx.saasBatchJobService.createDelete({
     providerId: request.params.providerId,
@@ -233,7 +236,10 @@ export async function batchUpdateStore(
   const hostnames = Array.isArray(body.hostnames)
     ? body.hostnames.map(String)
     : Array.isArray(body.items)
-      ? body.items.map((item) => String((item as any)?.hostname ?? item))
+      ? body.items.map((item) => {
+          if (item && typeof item === 'object') return String(asRecord(item).hostname ?? '')
+          return String(item ?? '')
+        }).filter(Boolean)
       : []
   const patchSource =
     body.patch && typeof body.patch === 'object' && !Array.isArray(body.patch)

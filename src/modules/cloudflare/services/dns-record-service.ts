@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
 import { CacheTtl, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
-import { emitCloudflareRecordMutated } from '../adapters/ports.js'
+import { emitCloudflareRecordMutated } from '../events.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDnsRecordSchema,
@@ -122,7 +122,7 @@ export class CloudflareDnsRecordService {
     return cached.value
   }
 
-  async create(providerId: string, zoneId: string, data: RecordPayload): Promise<RecordPresentation> {
+  async create(providerId: string, zoneId: string, data: RecordPayload | Record<string, unknown>): Promise<RecordPresentation> {
     const normalized = this.normalizeRecordData(data)
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
@@ -140,7 +140,7 @@ export class CloudflareDnsRecordService {
     providerId: string,
     zoneId: string,
     recordId: string,
-    data: RecordPayload
+    data: RecordPayload | Record<string, unknown>
   ): Promise<RecordPresentation> {
     const normalized = this.normalizeRecordData(data)
     const provider = await this.requireProvider(providerId)
@@ -178,15 +178,15 @@ export class CloudflareDnsRecordService {
     }
   }
 
-  private normalizeRecordData(data: RecordPayload): RecordPayload {
+  private normalizeRecordData(data: RecordPayload | Record<string, unknown>): RecordPayload {
     return {
       type: String(data.type).toUpperCase().trim(),
       name: String(data.name),
       content: String(data.content),
       ttl: Number(data.ttl ?? 1),
-      proxied: data.proxied,
+      proxied: data.proxied === undefined ? undefined : Boolean(data.proxied),
       priority: data.priority !== undefined ? Number(data.priority) : undefined,
-      comment: data.comment,
+      comment: data.comment === undefined ? undefined : String(data.comment),
     }
   }
 

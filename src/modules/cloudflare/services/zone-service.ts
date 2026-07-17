@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
 import { CacheTtl, buildCacheKey, pagePaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
-import { emitCloudflareZoneMutated } from '../adapters/ports.js'
+import { emitCloudflareZoneMutated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {

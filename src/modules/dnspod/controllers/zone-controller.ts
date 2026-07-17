@@ -1,17 +1,13 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
-import { resolveZonePort } from '../../../platform/port-resolve.js'
-
-const PROVIDER_TYPE = 'dnspod'
 
 export async function zoneIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
   const q = queryRecord(request)
-  const port = resolveZonePort(request.server.ctx.registry, PROVIDER_TYPE)
-  const result = await port.list(request.params.providerId, {
+  const result = await request.server.ctx.dnspodZoneService.list(request.params.providerId, {
     offset: queryInt(q, 'offset', 0),
     limit: queryInt(q, 'limit', 20),
     keyword: queryString(q, 'keyword') || undefined,

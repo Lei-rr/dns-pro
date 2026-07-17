@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
-import { emitEdgeDomainMutated } from '../plugin.js'
+import { emitEdgeDomainMutated } from '../events.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import {
   edgeOneAccelerationDomainSchema,
@@ -63,7 +63,7 @@ export class EdgeOneDomainService {
         })
         const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
 
-        const items = (parsed.AccelerationDomains ?? []).map((domain: any) =>
+        const items = (Array.isArray(parsed.AccelerationDomains) ? parsed.AccelerationDomains : []).map((domain) =>
           this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId)
         )
         const total = Number(parsed.TotalCount ?? items.length)

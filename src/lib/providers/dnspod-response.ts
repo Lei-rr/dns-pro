@@ -1,3 +1,6 @@
+/* Vendor payloads are intentionally loose — presenters coerce fields. */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 export type DnspodDomain = Record<string, any>
 export type DnspodRecord = Record<string, any>
 export type DnspodDomainInfo = Record<string, any>

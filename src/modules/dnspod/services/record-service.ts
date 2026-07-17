@@ -1,6 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CacheTtl, buildCacheKey, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
-import { emitDnsPodRecordMutated } from '../adapters/ports.js'
+import { emitDnsPodRecordMutated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
@@ -141,7 +141,7 @@ export class DnsPodRecordService {
     return cached.value
   }
 
-  async create(providerId: string, domain: string, input: RecordCreateInput): Promise<RecordMutationResult> {
+  async create(providerId: string, domain: string, input: RecordCreateInput | Record<string, unknown>): Promise<RecordMutationResult> {
     const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
     const provider = await this.requireProvider(providerId)
     const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
@@ -168,7 +168,7 @@ export class DnsPodRecordService {
     providerId: string,
     domain: string,
     recordId: string,
-    input: RecordCreateInput
+    input: RecordCreateInput | Record<string, unknown>
   ): Promise<RecordMutationResult> {
     const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
     payload.RecordId = Number(recordId)

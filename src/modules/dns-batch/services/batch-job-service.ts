@@ -1,5 +1,5 @@
 import { ApiError } from '../../../lib/http/api-error.js'
-import type { JobRecord } from '../../../kernel/index.js'
+import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import { eventBus } from '../../../platform/events/event-bus.js'
 import { providerCacheTag, recordCacheTag } from '../../../lib/cache/provider-cache.js'
@@ -215,7 +215,7 @@ export class DnsBatchJobService {
       success: job.success,
       failed: job.failed,
       skipped: job.skipped,
-      current: job.current,
+      current: job.current == null ? undefined : String(job.current),
       message: job.message,
       items: job.items,
       created_at: job.created_at,

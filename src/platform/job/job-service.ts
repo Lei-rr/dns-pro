@@ -1,7 +1,9 @@
 import * as crypto from 'node:crypto'
 import { JsonStore } from '../../lib/storage/json-store.js'
-import type { JobPort, JobRecord, JobStatus } from '../../kernel/index.js'
+import type { JobRecord, JobStatus } from './types.js'
 import { ApiError } from '../../lib/http/api-error.js'
+
+export type { JobRecord, JobStatus } from './types.js'
 
 type StoreShape = { items: JobRecord[] }
 
@@ -22,7 +24,7 @@ const PROGRESS_FLUSH_MS = 250
  * - item-level progress is coalesced to reduce O(n) full-file rewrites
  * - finished history is compacted to a retention window
  */
-export class JobService implements JobPort {
+export class JobService {
   private readonly runners = new Map<string, (job: JobRecord) => Promise<void>>()
   private readonly inflight = new Map<string, Promise<void>>()
   private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>()

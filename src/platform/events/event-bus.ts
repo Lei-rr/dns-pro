@@ -2,12 +2,10 @@ export type DomainEventType =
   | 'record.mutated'
   | 'zone.mutated'
   | 'saas.hostname.mutated'
-  | 'saas.preferred_apply.finished'
   | 'provider.mutated'
   | 'edge.domain.mutated'
   | 'tunnel.mutated'
   | 'tunnel.route.mutated'
-  | 'job.updated'
 
 export type DomainEvent = {
   type: DomainEventType
@@ -40,9 +38,11 @@ export class EventBus {
 
   async emit(event: Omit<DomainEvent, 'ts'> & { ts?: number }): Promise<void> {
     const full: DomainEvent = { ...event, ts: event.ts ?? Date.now() }
+    const typed = this.handlers.get(full.type)
+    const wildcard = this.handlers.get('*')
     const list = [
-      ...(this.handlers.get(full.type) ?? []),
-      ...(this.handlers.get('*') ?? []),
+      ...(typed ? Array.from(typed) : []),
+      ...(wildcard ? Array.from(wildcard) : []),
     ]
     for (const handler of list) {
       try {

@@ -6,18 +6,16 @@ import { appContextPlugin } from './plugins/app-context.js'
 import { securityPlugin } from './plugins/security.js'
 import { staticPlugin } from './plugins/static.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
-import { buildHttpModules, mountHttpModules } from './compose/http-modules.js'
+import { registerApiRoutes } from './compose/http-modules.js'
 import './types/fastify.d.ts'
 
 /**
- * FOUNDATION — do not redesign.
+ * HTTP shell — official Fastify only.
  *
- * Official Fastify composition only:
- * 1) createAppContext (wire services)
- * 2) root plugins: fastify-plugin + @fastify/*
- * 3) encapsulating /api/v1 + module catalog
+ * plugins/*  = Fastify plugins (cookie/helmet/static/session/ctx)
+ * modules/*  = business features (routes + services)
+ * platform/* = job store + event bus + data dirs
  *
- * Feature work goes in src/modules/* and compose/http-modules.ts (append).
  * See docs/FOUNDATION.md
  */
 export async function buildApp(config: AppConfig) {
@@ -40,14 +38,12 @@ export async function buildApp(config: AppConfig) {
 
   const ctx = await createAppContext(config)
 
-  // Root-visible decorations → official fastify-plugin
   await app.register(appContextPlugin, { ctx })
-  await app.register(securityPlugin, { config }) // @fastify/cookie helmet sensible
-  await app.register(staticPlugin) // @fastify/static compress
+  await app.register(securityPlugin, { config })
+  await app.register(staticPlugin)
 
-  // Core register + prefix — not a custom router
   await app.register(async function apiV1(api) {
-    await mountHttpModules(api, buildHttpModules())
+    await registerApiRoutes(api)
   }, { prefix: '/api/v1' })
 
   await app.register(errorHandlerPlugin)

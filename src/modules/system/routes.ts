@@ -1,13 +1,12 @@
 import type { FastifyInstance } from 'fastify'
 import { healthShow, auditIndex } from './controller.js'
-import { authRequired } from '../auth/hooks/auth-required.js'
 
-/** Public: health. Auth: audit. */
+/** Public system routes (no auth). */
 export async function routes(app: FastifyInstance) {
   app.get('/health', healthShow)
+}
 
-  await app.register(async (protectedApp) => {
-    protectedApp.addHook('preHandler', authRequired)
-    protectedApp.get('/audit', auditIndex)
-  })
+/** Authenticated system routes — mounted inside compose auth envelope. */
+export async function protectedRoutes(app: FastifyInstance) {
+  app.get('/audit', auditIndex)
 }
