@@ -30,7 +30,6 @@ export default defineConfig({
             if (id.includes('ant-design-vue') || id.includes('@ant-design')) return 'vendor-antd'
             if (id.includes('vue-router')) return 'vendor-router'
             if (id.includes('pinia')) return 'vendor-pinia'
-            if (id.includes('axios')) return 'vendor-axios'
             if (id.includes('@vue') || id.includes('/vue/')) return 'vendor-vue'
             return 'vendor-others'
           }

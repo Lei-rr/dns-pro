@@ -41,7 +41,7 @@ src/
 Controller → request.server.ctx.<service>
 Bulk       → JobService（batch service 构造时 registerRunner）
 Side effect→ eventBus（真实在用的事件类型才保留）
-API        → /api/v1 only
+API        → /api only
 ```
 
 ## 鉴权

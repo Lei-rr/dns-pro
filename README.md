@@ -264,7 +264,7 @@ cloudflared -> cloudflare
 ### 请求链路
 
 ```text
-HTTP /api/v1
+HTTP /api
   → public: health + session
   → authRequired envelope
   → controller
@@ -344,10 +344,10 @@ JSON 写入通过文件锁保护，避免并发写坏。
 
 公开接口：
 
-- `GET /api/v1/health`
-- `POST|GET|DELETE /api/v1/session`
+- `GET /api/health`
+- `POST|GET|DELETE /api/session`
 
-其余业务 API 与 `GET /api/v1/audit` 需登录。
+其余业务 API 与 `GET /api/audit` 需登录。
 
 ## 贡献
 

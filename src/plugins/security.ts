@@ -39,7 +39,7 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
   })
 
   app.addHook('onSend', async (request, reply: FastifyReply) => {
-    if (request.url.startsWith('/api/')) { // covers /api/v1 and future /api/*
+    if (request.url.startsWith('/api/')) {
       void reply.headers(NO_STORE_HEADERS)
     }
   })

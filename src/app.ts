@@ -42,9 +42,10 @@ export async function buildApp(config: AppConfig) {
   await app.register(securityPlugin, { config })
   await app.register(staticPlugin)
 
-  await app.register(async function apiV1(api) {
-    await registerApiRoutes(api)
-  }, { prefix: '/api/v1' })
+  // Keep /api — no version prefix (personal panel, no public API versioning)
+  await app.register(async function api(scope) {
+    await registerApiRoutes(scope)
+  }, { prefix: '/api' })
 
   await app.register(errorHandlerPlugin)
 
