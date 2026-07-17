@@ -28,7 +28,7 @@ export async function cloudflaredTunnelsStore(
   request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const result = await tunnelsOf(request).create(
+  const result = await request.server.ctx.tunnelMutationUseCase.createTunnel(
     request.params.providerId,
     String(((request.body ?? {}) as any).name ?? '').trim(),
   )
@@ -51,7 +51,10 @@ export async function cloudflaredTunnelDelete(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await tunnelsOf(request).delete(request.params.providerId, request.params.tunnelId)
+  const result = await request.server.ctx.tunnelMutationUseCase.deleteTunnel(
+    request.params.providerId,
+    request.params.tunnelId,
+  )
   return reply.send(success(result))
 }
 
@@ -59,7 +62,10 @@ export async function cloudflaredTunnelToken(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await tunnelsOf(request).token(request.params.providerId, request.params.tunnelId)
+  const result = await request.server.ctx.tunnelMutationUseCase.token(
+    request.params.providerId,
+    request.params.tunnelId,
+  )
   return reply.send(success(result))
 }
 
@@ -67,7 +73,10 @@ export async function cloudflaredTunnelTokenRotate(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await tunnelsOf(request).rotateToken(request.params.providerId, request.params.tunnelId)
+  const result = await request.server.ctx.tunnelMutationUseCase.rotateToken(
+    request.params.providerId,
+    request.params.tunnelId,
+  )
   return reply.send(success(result))
 }
 
@@ -84,12 +93,15 @@ export async function cloudflaredTunnelConfigShow(
 }
 
 function buildRoute(
-  routeService: { buildServiceUrl: (protocol: string, address: string) => string },
+  request: FastifyRequest,
   body: any,
-): any {
+): Record<string, unknown> {
   return {
     hostname: body.hostname,
-    service: routeService.buildServiceUrl(body.protocol ?? 'http', body.address),
+    service: request.server.ctx.tunnelMutationUseCase.buildServiceUrl(
+      body.protocol ?? 'http',
+      body.address,
+    ),
     zone_id: body.zone_id,
     path: body.path ?? '',
   }
@@ -99,11 +111,10 @@ export async function cloudflaredTunnelRouteStore(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const routeService = routesOf(request)
-  const result = await routeService.addRoute(
+  const result = await request.server.ctx.tunnelMutationUseCase.addRoute(
     request.params.providerId,
     request.params.tunnelId,
-    buildRoute(routeService, request.body),
+    buildRoute(request, request.body),
   )
   return reply.status(201).send(success(result))
 }
@@ -116,7 +127,6 @@ export async function cloudflaredTunnelRouteUpdate(
   }>,
   reply: FastifyReply,
 ) {
-  const routeService = routesOf(request)
   let originalHostname = ((request.query as any).original_hostname ?? '').trim().toLowerCase()
   let originalPath = (request.query as any).original_path ?? ''
 
@@ -125,12 +135,12 @@ export async function cloudflaredTunnelRouteUpdate(
     originalPath = ((request.body ?? {}) as any).path ?? ''
   }
 
-  const result = await routeService.updateRoute(
+  const result = await request.server.ctx.tunnelMutationUseCase.updateRoute(
     request.params.providerId,
     request.params.tunnelId,
     originalHostname,
     originalPath,
-    buildRoute(routeService, request.body),
+    buildRoute(request, request.body),
   )
   return reply.send(success(result))
 }
@@ -142,7 +152,7 @@ export async function cloudflaredTunnelRouteDelete(
   }>,
   reply: FastifyReply,
 ) {
-  const result = await routesOf(request).deleteRoute(
+  const result = await request.server.ctx.tunnelMutationUseCase.deleteRoute(
     request.params.providerId,
     request.params.tunnelId,
     (request.query as any).hostname,

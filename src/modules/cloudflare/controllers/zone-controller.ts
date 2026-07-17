@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
 import { resolveZonePort } from '../../../platform/port-resolve.js'
 
 const PROVIDER_TYPE = 'cloudflare'
@@ -24,11 +24,10 @@ export async function zoneStore(
   request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const body: any = request.body ?? {}
-  const result = await request.server.ctx.cloudflareZoneService.create(
+  const result = await request.server.ctx.dnsZoneMutationUseCase.create(
+    PROVIDER_TYPE,
     request.params.providerId,
-    String(body.name ?? ''),
-    String(body.type ?? 'full'),
+    bodyRecord(request),
   )
   return reply.status(201).send(success(result))
 }
@@ -37,10 +36,10 @@ export async function zoneDelete(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
-  const zoneId = await request.server.ctx.cloudflareZoneService.idByName(
+  const result = await request.server.ctx.dnsZoneMutationUseCase.delete(
+    PROVIDER_TYPE,
     request.params.providerId,
     request.params.zone,
   )
-  const result = await request.server.ctx.cloudflareZoneService.delete(request.params.providerId, zoneId)
   return reply.send(success(result))
 }

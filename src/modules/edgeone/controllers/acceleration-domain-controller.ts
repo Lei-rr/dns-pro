@@ -3,14 +3,9 @@ import { success } from '../../../lib/http/api-response.js'
 import { parseBool } from '../../../lib/utils/parse-bool.js'
 import { EdgeOneServiceTokens } from '../plugin.js'
 import type { EdgeOneDomainService } from '../services/domain-service.js'
-import type { EdgeOneWorkflowService } from '../services/workflow-service.js'
 
 function domainsOf(request: FastifyRequest): EdgeOneDomainService {
   return request.server.ctx.registry.require<EdgeOneDomainService>(EdgeOneServiceTokens.Domains)
-}
-
-function workflowOf(request: FastifyRequest): EdgeOneWorkflowService {
-  return request.server.ctx.registry.require<EdgeOneWorkflowService>(EdgeOneServiceTokens.Workflow)
 }
 
 export async function edgeOneAccelerationDomainsIndex(
@@ -32,7 +27,7 @@ export async function edgeOneAccelerationDomainStore(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string }; Body: any; Querystring: any }>,
   reply: FastifyReply,
 ) {
-  const result = await workflowOf(request).createAccelerationDomain(
+  const result = await request.server.ctx.edgeOneDomainMutationUseCase.create(
     request.params.providerId,
     request.params.zoneId,
     ((request.body ?? {}) as any) as Record<string, unknown>,
@@ -45,7 +40,7 @@ export async function edgeOneAccelerationDomainUpdate(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const result = await domainsOf(request).updateAccelerationDomain(
+  const result = await request.server.ctx.edgeOneDomainMutationUseCase.update(
     request.params.providerId,
     request.params.zoneId,
     decodeURIComponent(request.params.domainName).trim(),
@@ -58,7 +53,7 @@ export async function edgeOneAccelerationDomainDelete(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string }; Querystring: any }>,
   reply: FastifyReply,
 ) {
-  const result = await workflowOf(request).deleteAccelerationDomain(
+  const result = await request.server.ctx.edgeOneDomainMutationUseCase.delete(
     request.params.providerId,
     request.params.zoneId,
     decodeURIComponent(request.params.domainName).trim(),
@@ -72,7 +67,7 @@ export async function edgeOneAccelerationDomainStatusUpdate(
   reply: FastifyReply,
 ) {
   const body: any = request.body ?? {}
-  const result = await domainsOf(request).updateAccelerationDomainStatus(
+  const result = await request.server.ctx.edgeOneDomainMutationUseCase.updateStatus(
     request.params.providerId,
     request.params.zoneId,
     decodeURIComponent(request.params.domainName).trim(),
@@ -85,7 +80,7 @@ export async function edgeOneAccelerationDomainCertificateUpdate(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string }; Body: any }>,
   reply: FastifyReply,
 ) {
-  const result = await domainsOf(request).updateCertificate(
+  const result = await request.server.ctx.edgeOneDomainMutationUseCase.updateCertificate(
     request.params.providerId,
     request.params.zoneId,
     decodeURIComponent(request.params.domainName).trim(),
@@ -98,7 +93,7 @@ export async function edgeOneAccelerationDomainCnameSync(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await workflowOf(request).syncCname(
+  const result = await request.server.ctx.edgeOneDomainMutationUseCase.syncCname(
     request.params.providerId,
     request.params.zoneId,
     decodeURIComponent(request.params.domainName).trim(),

@@ -39,6 +39,10 @@ import { createCloudflaredPlugin } from './modules/cloudflared/plugin.js'
 import { EdgeOneBatchJobService } from './modules/edgeone/services/batch-job-service.js'
 import { DnsRecordMutationUseCase } from './modules/common/usecases/dns-record-mutation-usecase.js'
 import { SaasHostnameMutationUseCase } from './modules/common/usecases/saas-hostname-mutation-usecase.js'
+import { DnsZoneMutationUseCase } from './modules/common/usecases/dns-zone-mutation-usecase.js'
+import { ProviderMutationUseCase } from './modules/common/usecases/provider-mutation-usecase.js'
+import { EdgeOneDomainMutationUseCase } from './modules/common/usecases/edgeone-domain-mutation-usecase.js'
+import { TunnelMutationUseCase } from './modules/common/usecases/tunnel-mutation-usecase.js'
 import { JobService } from './platform/job/job-service.js'
 import type { SyncPort } from './contracts/index.js'
 
@@ -120,6 +124,12 @@ export function createAppContext(config: AppConfig) {
     cloudflareZoneService,
   )
   const saasHostnameMutationUseCase = new SaasHostnameMutationUseCase(saasWorkflowService)
+  const dnsZoneMutationUseCase = new DnsZoneMutationUseCase(dnspodZoneService, cloudflareZoneService)
+  const providerMutationUseCase = new ProviderMutationUseCase(providerService)
+  const edgeOneDomainMutationUseCase = new EdgeOneDomainMutationUseCase(
+    edgeoneDomainService,
+    edgeoneWorkflowService,
+  )
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
@@ -128,6 +138,7 @@ export function createAppContext(config: AppConfig) {
     cloudflareZoneService,
     cloudflaredDnsService,
   )
+  const tunnelMutationUseCase = new TunnelMutationUseCase(cloudflaredTunnelService, cloudflaredRouteService)
 
   void registry.load([
     createPlatformPlugin(jobService),
@@ -172,6 +183,10 @@ export function createAppContext(config: AppConfig) {
     edgeoneBatchJobService,
     dnsRecordMutationUseCase,
     saasHostnameMutationUseCase,
+    dnsZoneMutationUseCase,
+    providerMutationUseCase,
+    edgeOneDomainMutationUseCase,
+    tunnelMutationUseCase,
     syncOrchestrator,
     edgeoneZoneService,
     edgeoneDomainService,
