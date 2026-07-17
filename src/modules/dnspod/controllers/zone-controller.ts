@@ -1,24 +1,47 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
+import { queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { resolveZonePort } from '../../../platform/port-resolve.js'
+
+const PROVIDER_TYPE = 'dnspod'
 
 export async function zoneIndex(
-  request: FastifyRequest<{ Params: { providerId: string }; Querystring: any }>,
-  reply: FastifyReply
+  request: FastifyRequest<{ Params: { providerId: string } }>,
+  reply: FastifyReply,
 ) {
-  return reply.send(success(await request.server.ctx.dnspodZoneService.list(request.params.providerId, (request.query ?? {}) as any)))
+  const q = queryRecord(request)
+  const port = resolveZonePort(request.server.ctx.registry, PROVIDER_TYPE)
+  const result = await port.list(request.params.providerId, {
+    offset: queryInt(q, 'offset', 0),
+    limit: queryInt(q, 'limit', 20),
+    keyword: queryString(q, 'keyword') || undefined,
+    refresh: queryBool(q, 'refresh'),
+  })
+  return reply.send(success(result))
 }
 
 export async function zoneStore(
   request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
   const body: any = request.body ?? {}
-  return reply.status(201).send(success(await request.server.ctx.dnspodZoneService.create(request.params.providerId, String(body.domain ?? body.name ?? ''))))
+  return reply
+    .status(201)
+    .send(
+      success(
+        await request.server.ctx.dnspodZoneService.create(
+          request.params.providerId,
+          String(body.domain ?? body.name ?? ''),
+        ),
+      ),
+    )
 }
 
 export async function zoneDelete(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
-  return reply.send(success(await request.server.ctx.dnspodZoneService.delete(request.params.providerId, request.params.zone)))
+  return reply.send(
+    success(await request.server.ctx.dnspodZoneService.delete(request.params.providerId, request.params.zone)),
+  )
 }

@@ -1,6 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
-import { CacheTtl, buildCacheKey, invalidateProviderCache, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, buildCacheKey, pagePaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
+import { emitCloudflareZoneMutated } from '../adapters/ports.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
@@ -123,7 +124,7 @@ export class CloudflareZoneService {
     }
 
     const response = await gateway.post('zones', body)
-    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId)])
+    await emitCloudflareZoneMutated(providerId, name, 'create')
 
     return this.presentZone(parseCloudflareItemResponse(response, cloudflareZoneSchema).result)
   }
@@ -133,7 +134,7 @@ export class CloudflareZoneService {
     const gateway = this.gatewayFor(provider)
 
     const response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}`)
-    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)])
+    await emitCloudflareZoneMutated(providerId, zoneId, 'delete')
 
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
     return { id: parsed.result.id ?? zoneId }

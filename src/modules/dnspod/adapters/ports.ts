@@ -64,6 +64,10 @@ export async function emitDnsPodZoneMutated(providerId: string, zone: string, ac
     provider_id: providerId,
     zone,
     action: `dnspod.zone.${action}`,
-    cache_tags: [zoneCacheTag(PROVIDER_TYPE, providerId), providerCacheTag(providerId)],
+    cache_tags: [
+      zoneCacheTag(PROVIDER_TYPE, providerId),
+      recordCacheTag(PROVIDER_TYPE, providerId, zone),
+      providerCacheTag(providerId),
+    ],
   })
 }

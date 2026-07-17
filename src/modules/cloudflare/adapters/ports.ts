@@ -60,6 +60,10 @@ export async function emitCloudflareZoneMutated(providerId: string, zone: string
     provider_id: providerId,
     zone,
     action: `cloudflare.zone.${action}`,
-    cache_tags: [zoneCacheTag(PROVIDER_TYPE, providerId), providerCacheTag(providerId)],
+    cache_tags: [
+      zoneCacheTag(PROVIDER_TYPE, providerId),
+      recordCacheTag(PROVIDER_TYPE, providerId, zone),
+      providerCacheTag(providerId),
+    ],
   })
 }

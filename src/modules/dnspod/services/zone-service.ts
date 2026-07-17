@@ -1,5 +1,6 @@
 import { ProviderRepository } from '../../provider/repository.js'
-import { CacheTtl, invalidateProviderCache, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, offsetPaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
+import { emitDnsPodZoneMutated } from '../adapters/ports.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
@@ -127,7 +128,7 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
     }
 
-    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await emitDnsPodZoneMutated(providerId, domain, 'create')
 
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     const domainInfo = dnspodDomainInfoSchema.parse(parsed.DomainInfo ?? {})
@@ -152,7 +153,7 @@ export class DnsPodZoneService {
       throw this.wrapError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
     }
 
-    invalidateProviderCache([zoneCacheTag(PROVIDER_TYPE, providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)])
+    await emitDnsPodZoneMutated(providerId, domain, 'delete')
 
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     return {

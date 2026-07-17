@@ -31,22 +31,19 @@ import { CloudflaredRouteService } from './modules/cloudflared/services/route-se
 import { ServiceRegistry } from './platform/registry.js'
 import { createPlatformPlugin } from './platform/plugin.js'
 import { createSyncPlugin } from './modules/sync/plugin.js'
+import { createDnsPodPlugin } from './modules/dnspod/plugin.js'
+import { createCloudflarePlugin } from './modules/cloudflare/plugin.js'
+import { createSaasPlugin } from './modules/saas/plugin.js'
 import { JobService } from './platform/job/job-service.js'
 import type { SyncPort } from './contracts/index.js'
-import { ServiceTokens } from './contracts/index.js'
-import {
-  CloudflareRecordPortAdapter,
-  CloudflareZonePortAdapter,
-} from './modules/cloudflare/adapters/ports.js'
-import {
-  DnsPodRecordPortAdapter,
-  DnsPodZonePortAdapter,
-} from './modules/dnspod/adapters/ports.js'
 
 /**
  * Compose application services and load platform plugins.
- * Progressive modularization: concrete services still assembled here,
- * but ports are published via the plugin registry for future adapters.
+ *
+ * Progressive modularization:
+ * - concrete services still assembled here for Fastify ctx compatibility
+ * - ports / job runners / events are registered via plugins
+ * - new read paths should resolve ports from registry
  */
 export function createAppContext(config: AppConfig) {
   const registry = new ServiceRegistry()
@@ -116,15 +113,19 @@ export function createAppContext(config: AppConfig) {
     cloudflaredDnsService,
   )
 
-  // Plugin registration — ports available via registry for new code paths.
   void registry.load([
     createPlatformPlugin(jobService),
     createSyncPlugin(syncOrchestrator as unknown as SyncPort),
+    createDnsPodPlugin(dnspodZoneService, dnspodRecordService),
+    createCloudflarePlugin(cloudflareZoneService, cloudflareDnsRecordService),
+    createSaasPlugin({
+      jobs: jobService,
+      workflow: saasWorkflowService,
+      hostnames: saasHostnameService,
+      preferredApply: saasPreferredApplyService,
+      batchJob: saasBatchJobService,
+    }),
   ])
-  registry.set(ServiceTokens.DnsPodZonePort, new DnsPodZonePortAdapter(dnspodZoneService))
-  registry.set(ServiceTokens.DnsPodRecordPort, new DnsPodRecordPortAdapter(dnspodRecordService))
-  registry.set(ServiceTokens.CloudflareZonePort, new CloudflareZonePortAdapter(cloudflareZoneService))
-  registry.set(ServiceTokens.CloudflareRecordPort, new CloudflareRecordPortAdapter(cloudflareDnsRecordService))
 
   return {
     config,

@@ -1,39 +1,46 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
+import { queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { resolveZonePort } from '../../../platform/port-resolve.js'
+
+const PROVIDER_TYPE = 'cloudflare'
 
 export async function zoneIndex(
-  request: FastifyRequest<{ Params: { providerId: string }; Querystring: any }>,
-  reply: FastifyReply
+  request: FastifyRequest<{ Params: { providerId: string } }>,
+  reply: FastifyReply,
 ) {
-  const q: any = request.query ?? {}
-  const result = await request.server.ctx.cloudflareZoneService.list(
-    request.params.providerId,
-    Number(q.page ?? 1),
-    Number(q.per_page ?? 20),
-    String(q.name ?? ''),
-    Boolean(q.refresh === true || q.refresh === '1' || q.refresh === 'true')
-  )
+  const q = queryRecord(request)
+  const port = resolveZonePort(request.server.ctx.registry, PROVIDER_TYPE)
+  const result = await port.list(request.params.providerId, {
+    page: queryInt(q, 'page', 1),
+    perPage: queryInt(q, 'per_page', 20),
+    keyword: queryString(q, 'name') || queryString(q, 'keyword') || undefined,
+    refresh: queryBool(q, 'refresh'),
+  })
   return reply.send(success(result))
 }
 
 export async function zoneStore(
   request: FastifyRequest<{ Params: { providerId: string }; Body: any }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
   const body: any = request.body ?? {}
   const result = await request.server.ctx.cloudflareZoneService.create(
     request.params.providerId,
     String(body.name ?? ''),
-    String(body.type ?? 'full')
+    String(body.type ?? 'full'),
   )
   return reply.status(201).send(success(result))
 }
 
 export async function zoneDelete(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) {
-  const zoneId = await request.server.ctx.cloudflareZoneService.idByName(request.params.providerId, request.params.zone)
+  const zoneId = await request.server.ctx.cloudflareZoneService.idByName(
+    request.params.providerId,
+    request.params.zone,
+  )
   const result = await request.server.ctx.cloudflareZoneService.delete(request.params.providerId, zoneId)
   return reply.send(success(result))
 }

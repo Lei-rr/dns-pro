@@ -5,6 +5,7 @@ import { getProviderDefinition, getProviderDefinitionsList } from '../../config/
 import { ProviderNormalizer } from './normalizer.js'
 import { ProviderPresenter } from './presenter.js'
 import { SaasPreferenceService } from '../saas/services/preference-service.js'
+import { eventBus } from '../../platform/events/event-bus.js'
 
 interface DependencyInfo {
   kind: string
@@ -52,7 +53,14 @@ export class ProviderService {
       return [...providers, normalized as Provider]
     })
 
-    return this.presenter.present(normalized as Provider)
+    const presented = this.presenter.present(normalized as Provider)
+    await eventBus.emit({
+      type: 'provider.mutated',
+      provider_id: presented.id,
+      action: 'provider.create',
+      target: presented.type,
+    })
+    return presented
   }
 
   async update(id: string, data: Record<string, unknown>): Promise<PresentedProvider> {
@@ -77,7 +85,14 @@ export class ProviderService {
     if (!updated) {
       throw new ApiError('server_error', 'Provider update failed', 500)
     }
-    return this.presenter.present(updated as Provider)
+    const presented = this.presenter.present(updated as Provider)
+    await eventBus.emit({
+      type: 'provider.mutated',
+      provider_id: presented.id,
+      action: 'provider.update',
+      target: presented.type,
+    })
+    return presented
   }
 
   async delete(id: string): Promise<void> {
@@ -93,6 +108,11 @@ export class ProviderService {
         throw new ApiError('provider_not_found', 'Provider not found', 404)
       }
       return next
+    })
+    await eventBus.emit({
+      type: 'provider.mutated',
+      provider_id: id,
+      action: 'provider.delete',
     })
   }
 
