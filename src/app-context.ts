@@ -26,8 +26,20 @@ import { EdgeOneWorkflowService } from './modules/edgeone/services/workflow-serv
 import { CloudflaredTunnelService } from './modules/cloudflared/services/tunnel-service.js'
 import { CloudflaredDnsService } from './modules/cloudflared/services/dns-service.js'
 import { CloudflaredRouteService } from './modules/cloudflared/services/route-service.js'
+import { ServiceRegistry } from './platform/registry.js'
+import { createPlatformPlugin } from './platform/plugin.js'
+import { createSyncPlugin } from './modules/sync/plugin.js'
+import { JobService } from './platform/job/job-service.js'
+import type { SyncPort } from './contracts/index.js'
 
+/**
+ * Compose application services and load platform plugins.
+ * Progressive modularization: concrete services still assembled here,
+ * but ports are published via the plugin registry for future adapters.
+ */
 export function createAppContext(config: AppConfig) {
+  const registry = new ServiceRegistry()
+
   const appConfigRepository = new AppConfigRepository()
   const authConfig = new AuthConfig(appConfigRepository)
   const sessionService = new SessionService(authConfig)
@@ -43,7 +55,7 @@ export function createAppContext(config: AppConfig) {
     providerRepository,
     new ProviderNormalizer(),
     new ProviderPresenter(),
-    saasPreferenceService
+    saasPreferenceService,
   )
 
   const cloudflareZoneService = new CloudflareZoneService(providerRepository)
@@ -57,7 +69,7 @@ export function createAppContext(config: AppConfig) {
     cloudflareZoneService,
     customHostnameGateway,
     preferredDomainService,
-    saasPreferenceService
+    saasPreferenceService,
   )
   const dnsPodRecordOps = new DnsPodRecordOps(providerRepository, dnspodZoneService, dnspodRecordService)
   const syncOrchestrator = new SyncOrchestrator(
@@ -67,32 +79,35 @@ export function createAppContext(config: AppConfig) {
     cloudflareZoneService,
     cloudflareDnsRecordService,
   )
-  const saasWorkflowService = new SaasWorkflowService(
-    saasHostnameService,
-    saasPreferenceService,
-    syncOrchestrator,
-  )
+  const saasWorkflowService = new SaasWorkflowService(saasHostnameService, saasPreferenceService, syncOrchestrator)
 
   const edgeoneZoneService = new EdgeOneZoneService(providerRepository)
   const edgeoneDomainService = new EdgeOneDomainService(providerRepository)
   const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, syncOrchestrator)
 
-  const saasPreferredApplyService = new SaasPreferredApplyService(
-    undefined,
-    saasWorkflowService,
-    saasHostnameService,
-  )
+  const saasPreferredApplyService = new SaasPreferredApplyService(undefined, saasWorkflowService, saasHostnameService)
 
   const cloudflaredTunnelService = new CloudflaredTunnelService(providerRepository)
   const cloudflaredDnsService = new CloudflaredDnsService(cloudflareZoneService, cloudflareDnsRecordService)
   const cloudflaredRouteService = new CloudflaredRouteService(
     providerRepository,
     cloudflareZoneService,
-    cloudflaredDnsService
+    cloudflaredDnsService,
   )
+
+  const jobService = new JobService()
+
+  // Plugin registration — ports available via registry for new code paths.
+  // SyncOrchestrator is structurally compatible with SyncPort.
+  void registry.load([
+    createPlatformPlugin(jobService),
+    createSyncPlugin(syncOrchestrator as unknown as SyncPort),
+  ])
 
   return {
     config,
+    registry,
+    jobService,
     sessionService,
     providerService,
     cloudflareZoneService,

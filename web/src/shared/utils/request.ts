@@ -10,7 +10,7 @@ export function setUnauthorizedHandler(handler: () => void) {
 }
 
 const axiosClient = axios.create({
-  baseURL: '/api',
+  baseURL: '/api/v1',
   timeout: 120000,
   withCredentials: true,
 })

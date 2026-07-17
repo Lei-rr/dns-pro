@@ -26,6 +26,9 @@ async function protectedModules(app: FastifyInstance) {
   await app.register(cloudflaredModule)
 }
 
+/**
+ * HTTP API is versioned at /api/v1 only (no legacy /api mount).
+ */
 export async function buildApp(config: AppConfig) {
   const DEFAULT_SESSION_SECRET = 'dns-pro-secure-session'
 
@@ -42,9 +45,13 @@ export async function buildApp(config: AppConfig) {
 
   await app.register(securityPlugin, { config })
   await app.register(staticPlugin)
-  await app.register(systemModule, { prefix: '/api' })
-  await app.register(authModule, { prefix: '/api' })
-  await app.register(protectedModules, { prefix: '/api' })
+
+  await app.register(async (api) => {
+    await api.register(systemModule)
+    await api.register(authModule)
+    await api.register(protectedModules)
+  }, { prefix: '/api/v1' })
+
   await app.register(errorHandlerPlugin)
 
   return app
