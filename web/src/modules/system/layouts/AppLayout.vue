@@ -1,6 +1,6 @@
 <template>
   <a-layout style="min-height: 100vh; background: #fff">
-    <a-layout-header class="app-header">
+    <a-layout-header class="app-header" style="background: #fff">
       <div class="app-container app-header-inner">
         <div class="app-header-top">
           <router-link to="/" class="app-brand">
@@ -21,6 +21,7 @@
         <a-menu
           class="app-menu"
           mode="horizontal"
+          theme="light"
           :selected-keys="selectedKeys"
           :items="menuItems"
           @click="openMenu"
