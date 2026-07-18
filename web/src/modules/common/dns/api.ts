@@ -11,6 +11,7 @@ const endpoints = {
   zone: (provider: string, zone: string) => zoneBase(provider, zone),
   records: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records`,
   record: (provider: string, zone: string, record: string) => `${zoneBase(provider, zone)}/records/${path(record)}`,
+  recordsBatchCreate: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-create`,
   recordsBatchDelete: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-delete`,
   recordsBatchUpdate: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-update`,
   recordsBatchActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch/active`,
@@ -202,6 +203,11 @@ export const dnsApi = {
     http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
   deleteRecord: (provider: string, domain: string, recordId: string) =>
     http.delete(endpoints.record(provider, domain, recordId)),
+  batchCreateRecords: (
+    provider: string,
+    domain: string,
+    data: { zone_name?: string; records: Array<Record<string, unknown>> },
+  ) => http.post(endpoints.recordsBatchCreate(provider, domain), data),
   batchDeleteRecords: (
     provider: string,
     domain: string,

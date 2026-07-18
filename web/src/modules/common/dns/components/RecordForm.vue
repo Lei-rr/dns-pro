@@ -2,8 +2,8 @@
   <a-form layout="vertical">
     <a-row :gutter="16">
       <a-col :xs="24" :sm="12">
-        <a-form-item label="主机记录" required>
-          <a-input v-model:value="form.name" placeholder="@ / www / api" />
+        <a-form-item label="主机记录" required extra="新增时可用逗号批量填写；根记录请填 @">
+          <a-input v-model:value="form.name" placeholder="例如：www,ggg" />
         </a-form-item>
       </a-col>
       <a-col :xs="24" :sm="12">
@@ -71,6 +71,7 @@ import { ref, computed, watch } from 'vue'
 import { message } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
 import { defaultProviderHook } from '../hook'
+import { parseRecordNames } from '../utils/record-names'
 import type { DnsRecord, ProviderHook } from '@/types'
 
 const props = defineProps<{
@@ -88,7 +89,7 @@ const emit = defineEmits<{
 
 const form = ref<DnsRecord>({
   id: '',
-  name: '@',
+  name: '',
   type: 'A',
   value: '',
   ttl: 600,
@@ -117,7 +118,7 @@ watch(
   (value) => {
     form.value = {
       id: '',
-      name: '@',
+      name: '',
       type: 'A',
       value: '',
       ttl: 600,
@@ -144,13 +145,15 @@ function submit() {
 
 function validate(): string {
   const type = String(form.value.type || '').toUpperCase()
-  const name = String(form.value.name || '').trim()
+  const names = parseRecordNames(form.value.name)
   const value = String(form.value.value || '').trim()
 
-  if (!name) return '主机记录不能为空'
+  if (!names.length) return '主机记录不能为空'
   if (!type) return '记录类型不能为空'
   if (!value) return '记录值不能为空'
-  if (!validRecordName(name)) return '主机记录格式不正确'
+  if (form.value.id && names.length !== 1) return '编辑记录时只能填写一个主机记录'
+  const invalidName = names.find((item) => !validRecordName(item))
+  if (invalidName) return `主机记录格式不正确：${invalidName}`
 
   if (showTtl.value) {
     const ttl = Number(form.value.ttl)

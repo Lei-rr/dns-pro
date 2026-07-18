@@ -37,6 +37,24 @@ function parseRecords(body: Record<string, unknown>) {
   return []
 }
 
+export async function recordBatchCreateStore(
+  request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
+  reply: FastifyReply,
+) {
+  const body = bodyRecord(request)
+  const providerType = String(request.dnsProviderType || 'dnspod')
+  const records = parseRecords(body)
+
+  const result = await request.server.ctx.dnsBatchJobService.createCreate({
+    providerType,
+    providerId: request.params.providerId,
+    zone: request.params.zone,
+    zoneName: String(body.zone_name || request.params.zone),
+    records,
+  })
+  return reply.status(201).send(success(result))
+}
+
 export async function recordBatchDeleteStore(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,

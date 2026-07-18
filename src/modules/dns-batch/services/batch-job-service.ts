@@ -4,10 +4,15 @@ import type { JobService } from '../../../platform/job/job-service.js'
 import { eventBus } from '../../../platform/events/event-bus.js'
 import { providerCacheTag, recordCacheTag } from '../../../lib/cache/provider-cache.js'
 
+export const DNS_BATCH_CREATE_JOB = 'dns.batch_create'
 export const DNS_BATCH_DELETE_JOB = 'dns.batch_delete'
 export const DNS_BATCH_UPDATE_JOB = 'dns.batch_update'
 
-const DNS_BATCH_JOB_TYPES = new Set([DNS_BATCH_DELETE_JOB, DNS_BATCH_UPDATE_JOB])
+const DNS_BATCH_JOB_TYPES = new Set([DNS_BATCH_CREATE_JOB, DNS_BATCH_DELETE_JOB, DNS_BATCH_UPDATE_JOB])
+
+type RecordCreator = {
+  create(providerId: string, zone: string, data: Record<string, unknown>): Promise<unknown>
+}
 
 type RecordDeleter = {
   delete(providerId: string, zone: string, recordId: string): Promise<unknown>
@@ -44,7 +49,7 @@ export type DnsBatchJobView = {
 }
 
 type BatchRecordInput = {
-  id: string
+  id?: string
   name?: string
   type?: string
   value?: string
@@ -71,10 +76,41 @@ type BatchRecordInput = {
 export class DnsBatchJobService {
   constructor(
     private readonly jobs: JobService,
-    private readonly services: Record<string, RecordDeleter & RecordUpdater>,
+    private readonly services: Record<string, RecordCreator & RecordDeleter & RecordUpdater>,
   ) {
+    this.jobs.registerRunner(DNS_BATCH_CREATE_JOB, (job) => this.runCreate(job))
     this.jobs.registerRunner(DNS_BATCH_DELETE_JOB, (job) => this.runDelete(job))
     this.jobs.registerRunner(DNS_BATCH_UPDATE_JOB, (job) => this.runUpdate(job))
+  }
+
+  async createCreate(input: {
+    providerType: string
+    providerId: string
+    zone: string
+    zoneName?: string
+    records: BatchRecordInput[]
+  }): Promise<DnsBatchJobView> {
+    const records = this.normalizeCreateRecords(input.records)
+    if (!records.length) throw new ApiError('batch_empty', 'No records to create', 422)
+    this.requireService(input.providerType)
+
+    const active = await this.findActive(input.providerId, input.zone)
+    if (active) {
+      throw new ApiError('batch_job_running', 'A batch job is already running for this zone', 409, { job_id: active.id })
+    }
+
+    const job = await this.jobs.create(
+      DNS_BATCH_CREATE_JOB,
+      {
+        provider_type: input.providerType,
+        provider_id: input.providerId,
+        zone: input.zone,
+        zone_name: input.zoneName || input.zone,
+      },
+      records.map((record) => ({ ...record, status: 'pending' })),
+      { message: '批量添加 DNS 记录任务已创建' },
+    )
+    return this.present(job)
   }
 
   async createDelete(input: {
@@ -195,6 +231,47 @@ export class DnsBatchJobService {
       message: '失败项重试中',
     })
     return this.present(requeued)
+  }
+
+  private async runCreate(job: JobRecord): Promise<void> {
+    const payload = job.payload || {}
+    const providerType = String(payload.provider_type || '')
+    const providerId = String(payload.provider_id || '')
+    const zone = String(payload.zone || '')
+    const zoneName = String(payload.zone_name || zone)
+    const service = this.services[providerType]
+    if (!service) {
+      await this.failJob(job.id, `Unsupported provider type: ${providerType}`)
+      return
+    }
+
+    for (const raw of job.items) {
+      const item = raw as Record<string, unknown>
+      const itemKey = String(item.item_key || '')
+      const name = String(item.name || '')
+      if (!itemKey || !name || item.status === 'success' || item.status === 'skipped') continue
+      const label = [name, item.type].filter(Boolean).join(' ')
+      await this.jobs.patchItem(
+        job.id,
+        (row) => String(row.item_key || '') === itemKey,
+        { status: 'running', message: '添加中' },
+        { current: label, message: '批量添加 DNS 记录执行中' },
+      )
+      try {
+        const created = await service.create(providerId, zone, this.buildCreateBody(providerType, zoneName, item))
+        const recordId = created && typeof created === 'object' && 'id' in created
+          ? String((created as Record<string, unknown>).id ?? '')
+          : ''
+        await this.jobs.patchItem(job.id, (row) => String(row.item_key || '') === itemKey, {
+          status: 'success', message: '已添加', record_id: recordId,
+        })
+      } catch (error) {
+        await this.jobs.patchItem(job.id, (row) => String(row.item_key || '') === itemKey, {
+          status: 'failed', message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    await this.finish(job.id, '批量添加', providerType, providerId, zone, 'dns.record.batch_create')
   }
 
   private async runDelete(job: JobRecord): Promise<void> {
@@ -361,6 +438,57 @@ export class DnsBatchJobService {
     return body
   }
 
+  private buildCreateBody(providerType: string, zone: string, item: Record<string, unknown>): Record<string, unknown> {
+    if (providerType === 'cloudflare') {
+      const nameRaw = String(item.name || '@')
+      const name = nameRaw === '@'
+        ? zone
+        : nameRaw.toLowerCase().endsWith('.' + zone.toLowerCase()) ? nameRaw : `${nameRaw}.${zone}`
+      const body: Record<string, unknown> = {
+        type: String(item.type || 'A').toUpperCase(),
+        name,
+        content: String(item.value ?? item.content ?? ''),
+        ttl: Number(item.ttl ?? 1) || 1,
+      }
+      if (item.priority !== undefined && item.priority !== '') body.priority = Number(item.priority)
+      if (item.comment !== undefined || item.remark !== undefined) body.comment = String(item.comment ?? item.remark ?? '')
+      if (item.proxied !== undefined) body.proxied = Boolean(item.proxied)
+      return body
+    }
+
+    const body: Record<string, unknown> = {
+      record_type: String(item.type || 'A').toUpperCase(),
+      record_line: String(item.line || item.record_line || '默认'),
+      value: String(item.value ?? item.content ?? ''),
+      subdomain: String(item.name || item.subdomain || '@'),
+    }
+    if (item.ttl !== undefined && item.ttl !== '') body.ttl = Number(item.ttl)
+    if (item.priority !== undefined && item.priority !== '') body.mx = Number(item.priority)
+    else if (item.mx !== undefined && item.mx !== '') body.mx = Number(item.mx)
+    if (item.remark !== undefined || item.comment !== undefined) body.remark = String(item.remark ?? item.comment ?? '')
+    if (item.record_line_id !== undefined && item.record_line_id !== '') body.record_line_id = String(item.record_line_id)
+    if (item.weight !== undefined && item.weight !== '') body.weight = Number(item.weight)
+    return body
+  }
+
+  private normalizeCreateRecords(records: BatchRecordInput[]): Array<BatchRecordInput & { item_key: string }> {
+    const seen = new Set<string>()
+    return (records || [])
+      .map((item) => ({
+        ...item,
+        name: String(item.name || item.subdomain || '').trim(),
+        type: String(item.type || '').trim().toUpperCase(),
+        value: item.value !== undefined ? String(item.value) : item.content !== undefined ? String(item.content) : '',
+      }))
+      .filter((item) => item.name && item.type && item.value)
+      .flatMap((item) => {
+        const key = `${item.name}\u0000${item.type}\u0000${item.line || item.record_line || ''}`
+        if (seen.has(key)) return []
+        seen.add(key)
+        return [{ ...item, item_key: key }]
+      })
+  }
+
   private normalizeRecords(records: BatchRecordInput[]): BatchRecordInput[] {
     return (records || [])
       .map((item) => ({
@@ -466,6 +594,7 @@ export class DnsBatchJobService {
 
   private async findActive(providerId: string, zone: string): Promise<DnsBatchJobView | null> {
     const actives = [
+      ...(await this.jobs.listActive(DNS_BATCH_CREATE_JOB)),
       ...(await this.jobs.listActive(DNS_BATCH_DELETE_JOB)),
       ...(await this.jobs.listActive(DNS_BATCH_UPDATE_JOB)),
     ]

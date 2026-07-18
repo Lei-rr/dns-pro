@@ -142,6 +142,7 @@ import JobProgressAlert from '@/shared/components/JobProgressAlert.vue'
 import RecordForm from '../components/RecordForm.vue'
 import RecordTable from '../components/RecordTable.vue'
 import { defaultProviderHook } from '../hook'
+import { parseRecordNames } from '../utils/record-names'
 import { showBatchFailures } from '@/shared/utils/batch'
 import { useJobProgress } from '@/shared/composables/useJobProgress'
 import type { DnsRecord, Provider, ProviderHook } from '@/types'
@@ -356,15 +357,97 @@ async function save(form: DnsRecord) {
   saving.value = true
   try {
     const recordOptions = { zoneName: displayDomain.value }
-    if (form.id) await dnsApi.updateRecord(props.provider, recordsTarget.value, form.id, form, recordOptions)
-    else await dnsApi.createRecord(props.provider, recordsTarget.value, form, recordOptions)
-    message.success(form.id ? '记录已更新' : '记录已添加')
-    showForm.value = false
-    await load({ refresh: true })
+    if (form.id) {
+      await dnsApi.updateRecord(props.provider, recordsTarget.value, form.id, form, recordOptions)
+      message.success('记录已更新')
+      showForm.value = false
+      await load({ refresh: true })
+      return
+    }
+
+    const names = parseRecordNames(form.name)
+    if (names.length === 1) {
+      await dnsApi.createRecord(props.provider, recordsTarget.value, { ...form, name: names[0] }, recordOptions)
+      message.success('记录已添加')
+      showForm.value = false
+      await load({ refresh: true })
+      return
+    }
+
+    await batchCreate(form, names)
   } catch (error) {
     message.error(errorMessage(error))
   } finally {
     saving.value = false
+  }
+}
+
+async function batchCreate(form: DnsRecord, names: string[]) {
+  const total = names.length
+  deleting.value = true
+  deletingText.value = `正在创建批量添加任务 0/${total}`
+  try {
+    const records = names.map((name) => ({
+      ...form,
+      id: undefined,
+      name,
+      subdomain: name,
+      content: form.value,
+      mx: form.priority,
+      comment: form.remark,
+    }))
+    const created = await dnsApi.batchCreateRecords(props.provider, recordsTarget.value, {
+      zone_name: displayDomain.value,
+      records,
+    })
+    const jobId = String((created.data as any)?.id || '')
+    if (!jobId) throw new Error('创建批量添加任务失败')
+    showForm.value = false
+
+    const poll = async (label: string) =>
+      jobProgress.pollJob(jobId, {
+        fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as any) || {},
+        label,
+        onTick: (current) => {
+          deletingText.value = jobProgress.progressText(current, label)
+        },
+      })
+
+    const job = await poll('后台添加')
+    const failedItems = jobProgress.failedItems(job)
+    if (failedItems.length) {
+      showBatchFailures(
+        job?.message || '批量添加完成',
+        failedItems.map((item: any) => `${item.name || ''} ${item.type || ''}: ${item.message || '失败'}`),
+        '条',
+        {
+          retryText: '重试失败项',
+          onRetry: async () => {
+            deleting.value = true
+            deletingText.value = '正在重试失败项...'
+            try {
+              await dnsApi.batchRetry(props.provider, jobId)
+              const retried = await poll('重试添加')
+              const again = jobProgress.failedItems(retried)
+              if (again.length) message.warning(retried?.message || `仍有 ${again.length} 条失败`)
+              else message.success(retried?.message || '重试完成')
+              await load({ refresh: true })
+            } catch (error) {
+              message.error(errorMessage(error))
+            } finally {
+              deleting.value = false
+              deletingText.value = ''
+            }
+          },
+        },
+      )
+    } else {
+      message.success(job?.message || `已添加 ${total} 条记录`)
+    }
+    await load({ refresh: true })
+  } finally {
+    deleting.value = false
+    deletingText.value = ''
   }
 }
 function askRemove(record: DnsRecord) {
