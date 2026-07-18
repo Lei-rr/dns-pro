@@ -183,9 +183,12 @@ export class SyncOrchestrator {
     try {
       return await fn()
     } catch (error) {
+      // Must be `failed` so callers (preferred apply / batch) can surface DNS write errors.
+      // Historically this returned `skipped`, which made preferred-domain changes look successful
+      // even when DNSPod/Cloudflare CNAME was not updated.
       return {
-        status: 'skipped',
-        code: error instanceof ApiError ? error.code : 'sync_skipped',
+        status: 'failed',
+        code: error instanceof ApiError ? error.code : 'dns_sync_failed',
         message: error instanceof Error ? error.message : String(error),
       }
     }

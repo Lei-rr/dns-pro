@@ -37,3 +37,8 @@ export async function providerSort(request: FastifyRequest, reply: FastifyReply)
   const order = Array.isArray(body.order) ? body.order.map(String) : []
   return reply.send(success(await request.server.ctx.providerService.sort(order)))
 }
+
+export async function providerTest(request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
+  const result = await request.server.ctx.providerService.testConnection(request.params.id)
+  return reply.send(success(result))
+}

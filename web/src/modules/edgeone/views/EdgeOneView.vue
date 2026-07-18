@@ -7,7 +7,7 @@
       search-placeholder="搜索站点"
     >
       <template #actions>
-        <a-button :loading="loading" @click="load({ refresh: true })">刷新</a-button>
+        <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
       </template>
     </ListToolbar>
     <a-table
@@ -116,6 +116,10 @@ function handleTableChange(pagination: { current?: number; pageSize?: number }) 
   zoneMeta.value = next
   load()
 }
+async function handleRefresh() {
+  await load({ refresh: true })
+  message.success('已刷新')
+}
 async function load(options: Record<string, unknown> = {}) {
   const requestToken = loadTask.next()
   loading.value = true
@@ -128,8 +132,7 @@ async function load(options: Record<string, unknown> = {}) {
     if (!loadTask.isCurrent(requestToken)) return
     zones.value = response.data
     zoneMeta.value = mergePaginationMeta(zoneMeta.value, response.meta || {})
-    if (options.refresh) message.success('已刷新')
-  } catch (error) {
+      } catch (error) {
     if (!loadTask.isCurrent(requestToken)) return
     message.error(errorMessage(error))
   } finally {

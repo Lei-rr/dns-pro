@@ -40,9 +40,30 @@ export function useSaasHostnameCrud({
   const applyingPreferredText = ref('')
   const jobProgress = useJobProgress()
 
-  function dnsOperationMessage(operation: { message?: string } | undefined, fallback: string) {
-    if (!operation) return fallback
-    return operation.message || fallback
+  function notifyDnsSideEffect(
+    operation: { status?: string; message?: string } | undefined,
+    successFallback: string,
+  ) {
+    if (!operation) {
+      message.success(successFallback)
+      return
+    }
+    const text = operation.message || successFallback
+    if (operation.status === 'failed' || operation.status === 'skipped') {
+      // Prefer one combined sentence, not "saved" + separate refresh toast.
+      if (operation.status === 'failed') {
+        message.warning(`${successFallback}，但 DNS 未成功：${text}`)
+      } else {
+        message.warning(`${successFallback}，DNS：${text}`)
+      }
+      return
+    }
+    // completed — avoid double phrasing if vendor message already complete
+    if (operation.message && operation.message !== successFallback) {
+      message.success(`${successFallback}（${operation.message}）`)
+    } else {
+      message.success(successFallback)
+    }
   }
 
   async function create(formData: Record<string, unknown>) {
@@ -72,7 +93,7 @@ export function useSaasHostnameCrud({
       const options = { autoSync: !!formData.sync_target }
       const response = await saasApi.createHostname(props.provider, decodedZoneName.value, payload, options)
       const dnsSync = response.side_effects?.dns?.sync
-      message.success(dnsOperationMessage(dnsSync, '自定义主机名已创建'))
+      notifyDnsSideEffect(dnsSync, '自定义主机名已创建')
       showCreateForm.value = false
       await load({ refresh: true })
       await openDetails(response.data)
@@ -127,7 +148,7 @@ export function useSaasHostnameCrud({
         { autoSync: true },
       )
       const dnsSync = response.side_effects?.dns?.sync
-      message.success(dnsOperationMessage(dnsSync, '自定义主机名已更新'))
+      notifyDnsSideEffect(dnsSync, '自定义主机名已更新')
       showCreateForm.value = false
       editingHostname.value = null
       mergeHostnameRecord(response.data)
@@ -204,7 +225,7 @@ export function useSaasHostnameCrud({
     try {
       const response = await saasApi.deleteHostname(props.provider, decodedZoneName.value, record.hostname)
       const dnsCleanup = response.side_effects?.dns?.cleanup
-      message.success(dnsOperationMessage(dnsCleanup, '已删除'))
+      notifyDnsSideEffect(dnsCleanup, '已删除')
       if (isCurrentHostname(record)) {
         selectedHostname.value = null
         showDetails.value = false
@@ -430,10 +451,9 @@ export function useSaasHostnameCrud({
       // poll job until finished via shared helper
       let job = await jobProgress.pollJob(jobId, {
         fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+        label: '后台切换',
         onTick: (current) => {
-          applyingPreferredText.value = current.current
-            ? `后台切换 ${current.done || 0}/${current.total || 0}：${current.current}`
-            : `后台切换 ${current.done || 0}/${current.total || 0}`
+          applyingPreferredText.value = jobProgress.progressText(current, '后台切换')
         },
       })
 
@@ -443,31 +463,38 @@ export function useSaasHostnameCrud({
           job?.message || '一键切换优选域名完成',
           failedItems.map((i: any) => `${i.hostname}: ${i.message || '失败'}`),
           '个',
-        )
-        modal.confirm({
-          title: '重试失败项？',
-          content: `有 ${failedItems.length} 个主机切换失败，是否仅重试失败项？`,
-          okText: '重试失败项',
-          onOk: async () => {
-            applyingPreferred.value = true
-            try {
-              await saasApi.preferredApplyRetry(jobId)
-              job = await jobProgress.pollJob(jobId, {
-                fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
-                onTick: (current) => {
-                  applyingPreferredText.value = `重试 ${current.done || 0}/${current.total || 0}`
-                },
-              })
-              message.success(job?.message || '重试完成')
-              await load({ refresh: true })
-            } catch (error) {
-              message.error(errorMessage(error))
-            } finally {
-              applyingPreferred.value = false
-              applyingPreferredText.value = ''
-            }
+          {
+            retryText: '重试失败项',
+            onRetry: async () => {
+              applyingPreferred.value = true
+              applyingPreferredText.value = '正在重试失败项...'
+              try {
+                await saasApi.preferredApplyRetry(jobId)
+                job = await jobProgress.pollJob(jobId, {
+                  fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+                  label: '重试',
+                  onTick: (current) => {
+                    applyingPreferredText.value = current.current
+                      ? `重试 ${current.done || 0}/${current.total || 0}：${current.current}`
+                      : `重试 ${current.done || 0}/${current.total || 0}`
+                  },
+                })
+                const again = jobProgress.failedItems(job)
+                if (again.length) {
+                  message.warning(job?.message || `仍有 ${again.length} 个失败`)
+                } else {
+                  message.success(job?.message || '重试完成')
+                }
+                await load({ refresh: true })
+              } catch (error) {
+                message.error(errorMessage(error))
+              } finally {
+                applyingPreferred.value = false
+                applyingPreferredText.value = ''
+              }
+            },
           },
-        })
+        )
       } else {
         message.success(job?.message || `已将当前列表切换为 ${preferred}`)
       }

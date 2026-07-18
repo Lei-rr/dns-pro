@@ -6,7 +6,7 @@
         <a-typography-text type="secondary">隧道列表，详情页在未连接时会自动刷新状态</a-typography-text>
       </div>
       <div class="page-actions">
-        <a-button :loading="loading" @click="load({ refresh: true })">刷新</a-button>
+        <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
         <a-button type="primary" @click="openCreate">创建隧道</a-button>
       </div>
     </div>
@@ -116,6 +116,10 @@ function tunnelRowKey(tunnel: CloudflaredTunnel) {
   return String(tunnel.id || '')
 }
 
+async function handleRefresh() {
+  await load({ refresh: true })
+  message.success('已刷新')
+}
 async function load(options: Record<string, unknown> = {}) {
   const requestToken = loadTask.next()
   loading.value = true
@@ -123,7 +127,6 @@ async function load(options: Record<string, unknown> = {}) {
     const response = await cloudflaredApi.tunnels(props.provider, options)
     if (!loadTask.isCurrent(requestToken)) return
     tunnels.value = response.data
-    if (options.refresh) message.success('已刷新')
   } catch (error) {
     if (!loadTask.isCurrent(requestToken)) return
     message.error(errorMessage(error))

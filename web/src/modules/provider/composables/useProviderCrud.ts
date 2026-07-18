@@ -197,6 +197,20 @@ export function useProviderCrud({
     return providerOperation.value?.providerId === providerId && providerOperation.value?.action === action
   }
 
+  async function testProvider(provider: Provider) {
+    if (providerOperation.value) return
+    providerOperation.value = { providerId: provider.id, action: 'test' }
+    try {
+      const result = await providerSettingsApi.testProvider(provider.id)
+      const data = (result as { data?: { message?: string } }).data
+      message.success(data?.message || '连接正常')
+    } catch (error) {
+      message.error(errorMessage(error, '测通失败'))
+    } finally {
+      providerOperation.value = null
+    }
+  }
+
   function providerReferenceDependencies(provider: Provider) {
     return Array.isArray(provider.dependencies) ? provider.dependencies : []
   }
@@ -239,5 +253,6 @@ export function useProviderCrud({
     save,
     askDelete,
     remove,
+    testProvider,
   }
 }

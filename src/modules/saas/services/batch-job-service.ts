@@ -161,7 +161,10 @@ export class SaasBatchJobService {
         await this.jobs.patchItem(
           job.id,
           (row) => String(row.hostname || '') === hostname,
-          { status: 'success', message: '已删除' },
+          {
+            status: 'success',
+            message: autoCleanup ? '已删除（含 DNS 清理）' : '已删除',
+          },
         )
       } catch (error) {
         await this.jobs.patchItem(
@@ -204,12 +207,46 @@ export class SaasBatchJobService {
       )
 
       try {
-        await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync)
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.hostname || '') === hostname,
-          { status: 'success', message: '已更新' },
-        )
+        const updated = await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync)
+
+        if (autoSync) {
+          const dnsSync = (
+            updated as { side_effects?: { dns?: { sync?: { status?: string; message?: string } } } }
+          )?.side_effects?.dns?.sync
+          if (dnsSync?.status === 'failed') {
+            await this.jobs.patchItem(
+              job.id,
+              (row) => String(row.hostname || '') === hostname,
+              {
+                status: 'failed',
+                message: `配置已更新，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
+                dns_sync_status: 'failed',
+              },
+            )
+            continue
+          }
+          const dnsNote =
+            dnsSync?.status === 'skipped'
+              ? `（DNS 跳过：${dnsSync.message || '已跳过'}）`
+              : dnsSync?.status === 'completed'
+                ? '（DNS 已写回）'
+                : ''
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.hostname || '') === hostname,
+            {
+              status: 'success',
+              message: `已更新${dnsNote}`,
+              dns_sync_status: dnsSync?.status || 'unknown',
+            },
+          )
+        } else {
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.hostname || '') === hostname,
+            { status: 'success', message: '已更新' },
+          )
+        }
       } catch (error) {
         await this.jobs.patchItem(
           job.id,

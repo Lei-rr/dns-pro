@@ -19,7 +19,7 @@
       </template>
     </ListToolbar>
     <a-alert
-      v-if="saving && deletingText"
+      v-if="deletingText"
       type="warning"
       show-icon
       style="margin-bottom: 16px"
@@ -29,9 +29,46 @@
       :count="selectedRecords.length"
       :deleting="deleting"
       delete-text="批量删除"
+      :actions="batchActions"
+      @action="onBatchAction"
       @delete="askBatchRemove"
       @clear="clearSelection"
     />
+    <a-modal
+      v-model:open="showBatchEdit"
+      title="批量修改解析记录"
+      :confirm-loading="deleting"
+      ok-text="开始修改"
+      cancel-text="取消"
+      destroy-on-close
+      @ok="confirmBatchEdit"
+    >
+      <a-form layout="vertical">
+        <a-form-item :label="`记录值（已选 ${selectedRecords.length} 条，留空不改）`">
+          <a-input v-model:value="batchEditForm.value" placeholder="不修改请留空" allow-clear />
+        </a-form-item>
+        <a-form-item label="TTL">
+          <a-input-number v-model:value="batchEditForm.ttl" :min="1" :max="604800" style="width: 100%" placeholder="不修改请留空" />
+        </a-form-item>
+        <a-form-item v-if="showBatchLine" :label="providerHook.lineLabel || '线路'">
+          <a-select v-model:value="batchEditForm.line" allow-clear placeholder="不修改请留空" style="width: 100%">
+            <a-select-option v-for="line in lineOptions" :key="line.value" :value="line.value">{{ line.label }}</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item v-if="showBatchProxy">
+          <a-checkbox v-model:checked="batchEditForm.proxiedEnabled">修改代理状态</a-checkbox>
+          <a-checkbox v-if="batchEditForm.proxiedEnabled" v-model:checked="batchEditForm.proxied" style="margin-left: 12px">{{
+            providerHook.proxyLabel || '已代理'
+          }}</a-checkbox>
+        </a-form-item>
+        <a-form-item label="备注">
+          <a-input v-model:value="batchEditForm.remark" placeholder="不修改请留空" allow-clear />
+        </a-form-item>
+        <a-form-item v-if="showBatchMx" label="MX 优先级">
+          <a-input-number v-model:value="batchEditForm.priority" :min="0" :max="65535" style="width: 100%" placeholder="不修改请留空" />
+        </a-form-item>
+      </a-form>
+    </a-modal>
     <RecordTable
       :records="filteredRecords"
       :provider-hook="providerHook"
@@ -138,6 +175,16 @@ const loading = ref(true)
 const saving = ref(false)
 const deleting = ref(false)
 const deletingText = ref('')
+const showBatchEdit = ref(false)
+const batchEditForm = ref({
+  value: '',
+  ttl: null as number | null,
+  line: undefined as string | undefined,
+  remark: '',
+  priority: null as number | null,
+  proxiedEnabled: false,
+  proxied: false,
+})
 const jobProgress = useJobProgress()
 const importMode = ref('create')
 const showImportConfirm = ref(false)
@@ -151,6 +198,22 @@ const providerType = computed(
 const displayDomain = computed(() => currentDomainName.value || decodedDomain.value)
 const recordsTarget = computed(() => decodedDomain.value)
 const capabilities = computed(() => providerHook.value.capabilities)
+const batchActions = computed(() => [{ key: 'edit', label: '批量修改', type: 'primary' }])
+const showBatchLine = computed(() => {
+  try {
+    return Boolean(providerHook.value.showLine?.(lineOptions.value || []))
+  } catch {
+    return providerType.value === 'dnspod'
+  }
+})
+const showBatchProxy = computed(() => providerType.value === 'cloudflare')
+const lineOptions = computed(() => {
+  if (lines.value?.length) return lines.value
+  return [{ label: '默认', value: '默认' }]
+})
+const showBatchMx = computed(() =>
+  selectedRecords.value.some((record) => String(record.type || '').toUpperCase() === 'MX'),
+)
 const typeOptions = computed(() => {
   const types = [...new Set(records.value.map((record) => String(record.type || '')).filter(Boolean))]
   return types.sort().map((type) => ({ label: type, value: type }))
@@ -319,6 +382,139 @@ function askRemove(record: DnsRecord) {
     onOk: () => remove(record),
   })
 }
+function onBatchAction(key: string) {
+  if (key === 'edit') openBatchEdit()
+}
+function openBatchEdit() {
+  if (!selectedRecords.value.length) return
+  batchEditForm.value = {
+    value: '',
+    ttl: null,
+    line: undefined,
+    remark: '',
+    priority: null,
+    proxiedEnabled: false,
+    proxied: false,
+  }
+  deletingText.value = ''
+  showBatchEdit.value = true
+}
+function buildBatchPatch() {
+  const form = batchEditForm.value
+  const patch: Record<string, unknown> = {}
+  const value = String(form.value || '').trim()
+  if (value) patch.value = value
+  if (form.ttl !== null && form.ttl !== undefined && String(form.ttl) !== '') patch.ttl = Number(form.ttl)
+  if (form.line) patch.line = form.line
+  const remark = String(form.remark || '').trim()
+  if (remark) patch.remark = remark
+  if (
+    showBatchMx.value &&
+    form.priority !== null &&
+    form.priority !== undefined &&
+    String(form.priority) !== ''
+  ) {
+    patch.priority = Number(form.priority)
+    patch.mx = Number(form.priority)
+  }
+  if (form.proxiedEnabled) patch.proxied = !!form.proxied
+  return patch
+}
+async function confirmBatchEdit() {
+  const patch = buildBatchPatch()
+  if (!Object.keys(patch).length) {
+    message.warning('请至少填写一个要修改的字段')
+    return Promise.reject()
+  }
+  showBatchEdit.value = false
+  await batchUpdate(patch)
+}
+async function batchUpdate(patch: Record<string, unknown>) {
+  if (!selectedRecords.value.length) return
+  const total = selectedRecords.value.length
+  deleting.value = true
+  try {
+    deletingText.value = `正在创建批量修改任务 0/${total}`
+    const records = selectedRecords.value
+      .map((record) => ({
+        id: String(record.id || ''),
+        name: String(record.name || ''),
+        type: String(record.type || ''),
+        value: String(record.value || record.content || ''),
+        content: String(record.content || record.value || ''),
+        ttl: record.ttl,
+        line: record.line || record.record_line || '',
+        record_line: record.record_line || record.line || '',
+        record_line_id: record.record_line_id || '',
+        mx: record.mx ?? record.priority,
+        priority: record.priority ?? record.mx,
+        remark: record.remark || record.comment || '',
+        comment: record.comment || record.remark || '',
+        proxied: record.proxied,
+        subdomain: record.subdomain || record.name || '',
+        status: record.status || '',
+      }))
+      .filter((item) => item.id)
+    const created = await dnsApi.batchUpdateRecords(props.provider, recordsTarget.value, { records, patch })
+    const jobId = String((created.data as any)?.id || '')
+    if (!jobId) throw new Error('创建批量修改任务失败')
+
+    const job = await jobProgress.pollJob(jobId, {
+      fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as any) || {},
+      onTick: (current) => {
+        deletingText.value = current.current
+          ? `后台修改 ${current.done || 0}/${current.total || total}：${current.current}`
+          : `后台修改 ${current.done || 0}/${current.total || total}`
+      },
+    })
+
+    const failedItems = jobProgress.failedItems(job)
+    if (failedItems.length) {
+      showBatchFailures(
+        job?.message || '批量修改完成',
+        failedItems.map((i: any) => `${i.name || ''} ${i.type || ''} ${i.record_id || ''}: ${i.message || '失败'}`),
+        '条',
+        {
+          retryText: '重试失败项',
+          onRetry: async () => {
+            deleting.value = true
+            deletingText.value = '正在重试失败项...'
+            try {
+              await dnsApi.batchRetry(props.provider, jobId)
+              const retried = await jobProgress.pollJob(jobId, {
+                fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as any) || {},
+                label: '重试修改',
+                onTick: (current) => {
+                  deletingText.value = jobProgress.progressText(current, '重试修改')
+                },
+              })
+              const again = jobProgress.failedItems(retried)
+              if (again.length) message.warning(retried?.message || `仍有 ${again.length} 条失败`)
+              else message.success(retried?.message || '重试完成')
+              clearSelection()
+              await load({ refresh: true })
+            } catch (error) {
+              message.error(errorMessage(error))
+            } finally {
+              deleting.value = false
+              deletingText.value = ''
+            }
+          },
+        },
+      )
+    } else {
+      message.success(job?.message || '批量修改完成')
+      clearSelection()
+    }
+    await load({ refresh: true })
+  } catch (error) {
+    message.error(errorMessage(error))
+    return Promise.reject(error)
+  } finally {
+    deleting.value = false
+    deletingText.value = ''
+  }
+}
 function askBatchRemove() {
   if (!selectedRecords.value.length) return
   const total = selectedRecords.value.length
@@ -387,12 +583,41 @@ async function batchRemove(dialog: ReturnType<typeof modal.confirm> | null, tota
       showBatchFailures(
         job?.message || '批量删除完成',
         failedItems.map((i: any) => `${i.name || ''} ${i.type || ''} ${i.record_id || ''}: ${i.message || '失败'}`),
+        '条',
+        {
+          retryText: '重试失败项',
+          onRetry: async () => {
+            deleting.value = true
+            deletingText.value = '正在重试失败项...'
+            try {
+              await dnsApi.batchRetry(props.provider, jobId)
+              const retried = await jobProgress.pollJob(jobId, {
+                fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as any) || {},
+                label: '重试删除',
+                onTick: (current) => {
+                  deletingText.value = jobProgress.progressText(current, '重试删除')
+                },
+              })
+              const again = jobProgress.failedItems(retried)
+              if (again.length) message.warning(retried?.message || `仍有 ${again.length} 条失败`)
+              else message.success(retried?.message || '重试完成')
+              clearSelection()
+              await load({ refresh: true })
+            } catch (error) {
+              message.error(errorMessage(error))
+            } finally {
+              deleting.value = false
+              deletingText.value = ''
+            }
+          },
+        },
       )
     } else {
       message.success(job?.message || '批量删除完成')
+      clearSelection()
     }
-    clearSelection()
-    await load({ refresh: true })
+    if (!failedItems.length) await load({ refresh: true })
+    else await load({ refresh: true })
   } catch (error) {
     message.error(errorMessage(error))
   } finally {

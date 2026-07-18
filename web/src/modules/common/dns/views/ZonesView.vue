@@ -8,7 +8,7 @@
       @search="applyKeyword"
     >
       <template #actions>
-        <a-button :loading="loading" :disabled="deleting" @click="load({ refresh: true })">刷新</a-button>
+        <a-button :loading="loading" :disabled="deleting" @click="handleRefresh">刷新</a-button>
         <a-button v-if="capabilities.createZone" type="primary" :disabled="loading || deleting" @click="openAddZone"
           >添加域名</a-button
         >
@@ -262,6 +262,10 @@ async function remove(zone: Zone) {
     deleting.value = false
   }
 }
+async function handleRefresh() {
+  await load({ refresh: true })
+  message.success('已刷新')
+}
 async function load(options: Record<string, unknown> = {}) {
   const requestToken = loadTask.next()
   loading.value = true
@@ -282,7 +286,6 @@ async function load(options: Record<string, unknown> = {}) {
     providerHook.value = resolveProviderHook(currentProviderMeta.value?.type || props.provider)
     zones.value = response.data
     zoneMeta.value = mergePaginationMeta(zoneMeta.value, response.meta || {})
-    if (options.refresh) message.success('已刷新')
   } catch (error) {
     if (!loadTask.isCurrent(requestToken)) return
     message.error(errorMessage(error))

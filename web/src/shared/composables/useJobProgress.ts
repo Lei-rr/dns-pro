@@ -19,6 +19,8 @@ export type PollJobOptions = {
   intervalMs?: number
   onTick?: (job: JobLike) => void
   isActive?: (job: JobLike) => boolean
+  /** optional progress label prefix, e.g. 后台修改 / 后台切换 */
+  label?: string
 }
 
 /**
@@ -33,6 +35,15 @@ export function useJobProgress() {
     return status === 'pending' || status === 'running'
   }
 
+  function progressText(current: JobLike, label = '') {
+    const prefix = label ? `${label} ` : ''
+    if (current.current) {
+      return `${prefix}${current.done || 0}/${current.total || 0}：${current.current}`
+    }
+    if (current.message && !isActiveStatus(current.status)) return current.message
+    return `${prefix}${current.done || 0}/${current.total || 0}`
+  }
+
   async function pollJob(jobId: string, options: PollJobOptions): Promise<JobLike | null> {
     const interval = Math.max(300, options.intervalMs ?? 1000)
     running.value = true
@@ -40,9 +51,7 @@ export function useJobProgress() {
       let current: JobLike | null = { id: jobId, status: 'pending' }
       while (current && (options.isActive?.(current) ?? isActiveStatus(current.status))) {
         job.value = current
-        text.value = current.current
-          ? `${current.done || 0}/${current.total || 0}：${current.current}`
-          : current.message || `${current.done || 0}/${current.total || 0}`
+        text.value = progressText(current, options.label)
         options.onTick?.(current)
         await new Promise((r) => setTimeout(r, interval))
         current = await options.fetchJob(jobId)
@@ -65,5 +74,6 @@ export function useJobProgress() {
     job,
     pollJob,
     failedItems,
+    progressText,
   }
 }

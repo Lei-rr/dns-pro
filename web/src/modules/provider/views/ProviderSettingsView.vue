@@ -54,6 +54,14 @@
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space size="small">
+            <a-button
+              type="link"
+              size="small"
+              :loading="providerOperationLoading(record.id, 'test')"
+              :disabled="!!providerOperation"
+              @click="testProvider(record)"
+              >测通</a-button
+            >
             <a-button type="link" size="small" :disabled="!!providerOperation" @click="edit(record)">更新</a-button>
             <a-button
               type="link"
@@ -217,6 +225,7 @@ const {
   create,
   save,
   askDelete,
+  testProvider,
 } = crud
 
 onMounted(async () => {

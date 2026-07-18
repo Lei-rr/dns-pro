@@ -93,6 +93,11 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
     load()
   }
 
+  async function handleRefresh() {
+    await load({ refresh: true })
+    message.success('已刷新')
+  }
+
   async function load(options: Record<string, unknown> = {}) {
     const requestToken = loadTask.next()
     loading.value = true
@@ -118,7 +123,6 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
         per_page: Number(response.meta?.per_page) || recordMeta.value.per_page,
         total: Number(response.meta?.total) || 0,
       }
-      if (options.refresh) message.success('已刷新')
     } catch (error) {
       if (!loadTask.isCurrent(requestToken)) return
       const e = error as { status?: number; code?: string }
@@ -167,11 +171,11 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
         })
         const sync = result.side_effects?.dns?.sync
         if (autoSync && sync?.status === 'failed') {
-          message.warning(`加速域名已添加，CNAME 同步失败：${sync.message || '-'}`)
+          message.warning(`加速域名已添加，但 CNAME 同步失败：${sync.message || '-'}`)
         } else if (autoSync && sync?.status === 'skipped') {
-          message.warning(`加速域名已添加，CNAME 稍后需处理：${sync.message || '-'}`)
-        } else if (autoSync && sync) {
-          message.success(sync.message || 'CNAME 已同步')
+          message.warning(`加速域名已添加，CNAME 未同步：${sync.message || '-'}`)
+        } else if (autoSync && sync?.status === 'completed') {
+          message.success(sync.message && sync.message !== '已执行 DNSPod CNAME 同步' ? `加速域名已添加（${sync.message}）` : '加速域名已添加，CNAME 已同步')
         } else {
           message.success('加速域名已添加')
         }
@@ -359,6 +363,33 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
           job?.message || '批量停用完成',
           failedItems.map((i: any) => `${i.domain}: ${i.message || '失败'}`),
           '个',
+          {
+            retryText: '重试失败项',
+            onRetry: async () => {
+              statusUpdating.value = true
+              statusUpdatingText.value = '正在重试失败项...'
+              try {
+                await edgeOneApi.batchRetry(props.provider, jobId)
+                const retried = await jobProgress.pollJob(jobId, {
+                  fetchJob: async (id) => ((await edgeOneApi.batchJob(props.provider, id)).data as any) || {},
+                  label: '重试停用',
+                  onTick: (current) => {
+                    statusUpdatingText.value = jobProgress.progressText(current, '重试停用')
+                  },
+                })
+                const again = jobProgress.failedItems(retried)
+                if (again.length) message.warning(retried?.message || `仍有 ${again.length} 个失败`)
+                else message.success(retried?.message || '重试完成')
+                clearSelection()
+                await load({ refresh: true })
+              } catch (error) {
+                message.error(errorMessage(error))
+              } finally {
+                statusUpdating.value = false
+                statusUpdatingText.value = ''
+              }
+            },
+          },
         )
       } else {
         message.success(job?.message || '批量停用完成')
@@ -400,6 +431,33 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
           job?.message || '批量删除完成',
           failedItems.map((i: any) => `${i.domain}: ${i.message || '失败'}`),
           '个',
+          {
+            retryText: '重试失败项',
+            onRetry: async () => {
+              deleting.value = true
+              deletingText.value = '正在重试失败项...'
+              try {
+                await edgeOneApi.batchRetry(props.provider, jobId)
+                const retried = await jobProgress.pollJob(jobId, {
+                  fetchJob: async (id) => ((await edgeOneApi.batchJob(props.provider, id)).data as any) || {},
+                  label: '重试删除',
+                  onTick: (current) => {
+                    deletingText.value = jobProgress.progressText(current, '重试删除')
+                  },
+                })
+                const again = jobProgress.failedItems(retried)
+                if (again.length) message.warning(retried?.message || `仍有 ${again.length} 个失败`)
+                else message.success(retried?.message || '重试完成')
+                clearSelection()
+                await load({ refresh: true })
+              } catch (error) {
+                message.error(errorMessage(error))
+              } finally {
+                deleting.value = false
+                deletingText.value = ''
+              }
+            },
+          },
         )
       } else {
         message.success(job?.message || '批量删除完成')
@@ -440,6 +498,7 @@ export function useEdgeOneRecords(props: { provider: string; zoneId: string }) {
     pagination,
     batchDeleteDisabled,
     load,
+    handleRefresh,
     handleTableChange,
     edit,
     create,

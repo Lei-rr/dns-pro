@@ -7,6 +7,7 @@ import {
   providerUpdate,
   providerDelete,
   providerSort,
+  providerTest,
 } from './controller.js'
 
 export async function routes(app: FastifyInstance) {
@@ -16,5 +17,6 @@ export async function routes(app: FastifyInstance) {
   app.get('/:id', providerShow)
   app.put('/:id', providerUpdate)
   app.delete('/:id', providerDelete)
+  app.post('/:id/test', providerTest)
   app.put('/sort-order', providerSort)
 }

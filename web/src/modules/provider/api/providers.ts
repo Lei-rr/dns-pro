@@ -30,6 +30,7 @@ export const providerSettingsApi = {
   createProvider: (data: Record<string, unknown>) => http.post(endpoints.providers, data),
   updateProvider: (provider: string, data: Record<string, unknown>) => http.put(endpoints.provider(provider), data),
   deleteProvider: (provider: string) => http.delete(endpoints.provider(provider)),
+  testProvider: (provider: string) => http.post(`${endpoints.provider(provider)}/test`),
   updateProviderOrder: async (order: string[]): Promise<ApiResponse<Provider[]>> => {
     const response = await http.put<Provider[]>(endpoints.providerOrder, { order })
     return { ...response, data: response.data.map(presentProvider) }

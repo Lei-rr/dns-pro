@@ -7,7 +7,7 @@
         <a-typography-text type="secondary">EdgeOne 加速域名</a-typography-text>
       </div>
       <div class="page-actions">
-        <a-button :loading="loading" :disabled="saving || deleting || statusUpdating" @click="load({ refresh: true })"
+        <a-button :loading="loading" :disabled="saving || deleting || statusUpdating" @click="handleRefresh"
           >刷新</a-button
         >
         <a-button
@@ -120,6 +120,7 @@ const {
   pagination,
   batchDeleteDisabled,
   load,
+  handleRefresh,
   handleTableChange,
   edit,
   create,

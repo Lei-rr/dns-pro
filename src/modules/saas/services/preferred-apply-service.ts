@@ -197,7 +197,7 @@ export class SaasPreferredApplyService {
       )
 
       try {
-        await this.workflow.updateHostname(
+        const updated = await this.workflow.updateHostname(
           providerId,
           zoneName,
           hostname,
@@ -207,13 +207,38 @@ export class SaasPreferredApplyService {
           },
           true,
         )
+
+        const dnsSync = (updated as { side_effects?: { dns?: { sync?: { status?: string; message?: string } } } })
+          ?.side_effects?.dns?.sync
+        if (dnsSync && dnsSync.status === 'failed') {
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.hostname || '') === hostname,
+            {
+              status: 'failed',
+              message: `优选已保存，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
+              preferred_domain: preferred,
+              dns_sync_status: 'failed',
+            },
+          )
+          continue
+        }
+
+        const dnsNote =
+          dnsSync?.status === 'skipped'
+            ? `（DNS 跳过：${dnsSync.message || '已跳过'}）`
+            : dnsSync?.status === 'completed'
+              ? '（DNS 已写回）'
+              : ''
+
         await this.jobs.patchItem(
           job.id,
           (row) => String(row.hostname || '') === hostname,
           {
             status: 'success',
-            message: `已切换为 ${preferred}`,
+            message: `已切换为 ${preferred}${dnsNote}`,
             preferred_domain: preferred,
+            dns_sync_status: dnsSync?.status || 'unknown',
           },
         )
       } catch (error) {

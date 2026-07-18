@@ -98,6 +98,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   preferred_apply_empty: '没有匹配的主机名可切换',
   preferred_apply_not_found: '优选切换任务不存在',
   preferred_apply_no_failed: '没有失败项可重试',
+  dns_sync_failed: 'DNS 写回失败，请检查关联 DNS 服务商与权限',
 
   // 常见厂商错误补充
   saas_cloudflare_sync_zone_mismatch: 'Cloudflare DNS 同步域名与主机名不匹配，请检查同步目标',
@@ -105,6 +106,13 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   dnspod_permission_denied: 'DNSPod 权限不足，请检查密钥权限',
   dnspod_record_not_found: 'DNSPod 记录不存在或已被删除',
   provider_api_error: '服务商接口返回错误，请稍后重试或检查配置',
+  provider_test_unsupported: '该服务商类型暂不支持测通',
+  provider_test_failed: '服务商连接测试失败',
+  provider_credentials_invalid: '密钥无效或权限不足',
+  invalid_access: '密钥无效或权限不足',
+  auth_failure: '认证失败，请检查密钥',
+  unauthorized: '未授权，请检查 API Token / 密钥',
+  forbidden: '权限不足，请检查服务商权限范围',
 
   // Fallback origin
   fallback_origin_zone_mismatch: '默认回源必须是该站点的子域名',

@@ -3,6 +3,7 @@ import { zoneIndex, zoneStore, zoneDelete } from './controllers/zone-controller.
 import { recordIndex, recordStore, recordUpdate, recordDelete } from './controllers/record-controller.js'
 import {
   recordBatchDeleteStore,
+  recordBatchUpdateStore,
   recordBatchJobShow,
   recordBatchJobActive,
   recordBatchJobRetry,
@@ -27,6 +28,7 @@ export async function routes(app: FastifyInstance) {
   app.delete('/zones/:zone/records/:recordId', recordDelete)
 
   app.post('/zones/:zone/records/batch-delete', recordBatchDeleteStore)
+  app.post('/zones/:zone/records/batch-update', recordBatchUpdateStore)
   app.get('/zones/:zone/records/batch/active', recordBatchJobActive)
   app.get('/records/batch/:jobId', recordBatchJobShow)
   app.post('/records/batch/:jobId/retry', recordBatchJobRetry)

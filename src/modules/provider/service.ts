@@ -134,6 +134,93 @@ export class ProviderService {
     }))
   }
 
+  /**
+   * Lightweight connectivity check — list a small page from the vendor API.
+   * Linked providers (edgeone/saas/cloudflared) resolve their linked CF/DNSPod first.
+   */
+  async testConnection(id: string): Promise<{ ok: true; type: string; message: string; details?: Record<string, unknown> }> {
+    const providers = await this.providers.all()
+    const provider = providers.find((item) => item.id === id)
+    if (!provider) throw new ApiError('provider_not_found', 'Provider not found', 404)
+
+    try {
+      switch (provider.type) {
+        case 'dnspod': {
+          const { DnsPodZoneService } = await import('../dnspod/services/zone-service.js')
+          const zones = await new DnsPodZoneService(this.providers).list(provider.id, {
+            offset: 0,
+            limit: 1,
+            refresh: true,
+          })
+          return {
+            ok: true,
+            type: provider.type,
+            message: `DNSPod 连接正常（域名 ${zones.pagination?.total ?? zones.items.length} 个）`,
+            details: { total: zones.pagination?.total ?? zones.items.length },
+          }
+        }
+        case 'cloudflare': {
+          const { CloudflareZoneService } = await import('../cloudflare/services/zone-service.js')
+          const zones = await new CloudflareZoneService(this.providers).list(provider.id, 1, 1, '', true)
+          return {
+            ok: true,
+            type: provider.type,
+            message: `Cloudflare 连接正常（站点 ${zones.pagination?.total_count ?? zones.items.length} 个）`,
+            details: { total: zones.pagination?.total_count ?? zones.items.length },
+          }
+        }
+        case 'edgeone': {
+          const linked = String((provider as Record<string, unknown>).dnspod_provider || '').trim()
+          if (!linked) throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne 未关联 DNSPod', 422)
+          await this.testConnection(linked)
+          const { EdgeOneZoneService } = await import('../edgeone/services/zone-service.js')
+          const zones = await new EdgeOneZoneService(this.providers).zones(provider.id, true)
+          return {
+            ok: true,
+            type: provider.type,
+            message: `EdgeOne 连接正常（站点 ${zones.items.length} 个）`,
+            details: { total: zones.items.length, dnspod_provider: linked },
+          }
+        }
+        case 'saas': {
+          const cf = String((provider as Record<string, unknown>).cloudflare_provider || '').trim()
+          if (!cf) throw new ApiError('saas_cloudflare_provider_missing', 'SaaS 未关联 Cloudflare', 422)
+          await this.testConnection(cf)
+          return {
+            ok: true,
+            type: provider.type,
+            message: 'SaaS 关联的 Cloudflare 连接正常',
+            details: { cloudflare_provider: cf },
+          }
+        }
+        case 'cloudflared': {
+          const cf = String((provider as Record<string, unknown>).cloudflare_provider || '').trim()
+          if (!cf) throw new ApiError('cloudflared_cloudflare_provider_missing', 'Tunnel 未关联 Cloudflare', 422)
+          await this.testConnection(cf)
+          const { CloudflaredTunnelService } = await import('../cloudflared/services/tunnel-service.js')
+          const tunnels = await new CloudflaredTunnelService(this.providers).list(provider.id, true)
+          return {
+            ok: true,
+            type: provider.type,
+            message: `Cloudflare Tunnel 连接正常（隧道 ${tunnels.items.length} 个）`,
+            details: { total: tunnels.items.length, cloudflare_provider: cf },
+          }
+        }
+        default: {
+          const unknownType = String((provider as { type?: string }).type || 'unknown')
+          throw new ApiError('provider_test_unsupported', `Unsupported provider type: ${unknownType}`, 422)
+        }
+      }
+    } catch (error) {
+      if (error instanceof ApiError) throw error
+      const msg = error instanceof Error ? error.message : String(error)
+      throw new ApiError('provider_test_failed', msg || 'Provider test failed', 502, {
+        provider_id: id,
+        type: String((provider as { type?: string }).type || ''),
+      })
+    }
+  }
+
   private definitionFor(type: string) {
     const definition = getProviderDefinition(type)
     if (!definition) {
