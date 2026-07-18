@@ -55,14 +55,14 @@
         </a-form-item>
       </a-col>
     </a-row>
-    <div class="modal-form-actions">
+    <a-space style="width: 100%; justify-content: space-between; margin-top: 16px; padding-top: 16px; border-top: 1px solid #f0f0f0">
       <a-button v-if="form.id" danger :disabled="saving" @click="$emit('delete', form)">删除</a-button>
       <span v-else></span>
-      <div class="modal-form-actions-main">
+      <a-space>
         <a-button :disabled="saving" @click="$emit('cancel')">取消</a-button>
         <a-button type="primary" :loading="saving" @click="submit">保存</a-button>
-      </div>
-    </div>
+      </a-space>
+    </a-space>
   </a-form>
 </template>
 

@@ -13,16 +13,18 @@
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
-        <a-typography-text strong class="break-text">{{ record.name }}</a-typography-text>
+        <a-typography-text strong :ellipsis="{ tooltip: record.name }">{{ record.name }}</a-typography-text>
       </template>
       <template v-else-if="column.key === 'status'">
         <a-tag :color="statusColor(record.status)">{{ statusLabel(record) }}</a-tag>
       </template>
       <template v-else-if="column.key === 'cname'">
-        <div class="copy-cell">
-          <span class="truncate-text" :title="record.cname">{{ record.cname || '-' }}</span>
+        <a-space size="small" style="max-width: 100%">
+          <a-typography-text :ellipsis="{ tooltip: record.cname || '-' }" style="max-width: var(--table-copy-width)">{{
+            record.cname || '-'
+          }}</a-typography-text>
           <CopyButton v-if="record.cname" :value="record.cname" />
-        </div>
+        </a-space>
       </template>
       <template v-else-if="column.key === 'origin'">
         <a-space direction="vertical" size="small">
@@ -48,7 +50,7 @@
         }}</a-tag>
       </template>
       <template v-else-if="column.key === 'https'">
-        <a-space size="small" class="nowrap-cell">
+        <a-space size="small">
           <a-tag :color="httpsColor(record)">{{ httpsLabel(record) }}</a-tag>
           <a-button
             type="link"
@@ -221,13 +223,15 @@ function httpsColor(record: EdgeOneAccelerationDomain) {
   const first = cert[0]
   return certificateStatusColor(first?.status || 'deployed')
 }
-function actionItems(record: EdgeOneAccelerationDomain): Array<{ key: string; label: string; danger?: boolean }> {
-  const items: Array<{ key: string; label: string; danger?: boolean }> = [
-    { key: 'status', label: record.status === 'offline' ? '启用' : '停用' },
+function actionItems(
+  record: EdgeOneAccelerationDomain,
+): Array<{ key: string; label: string; danger?: boolean; inline?: boolean }> {
+  const items: Array<{ key: string; label: string; danger?: boolean; inline?: boolean }> = [
+    { key: 'status', label: record.status === 'offline' ? '启用' : '停用', inline: true },
   ]
 
   if (record.status === 'offline') {
-    items.push({ key: 'delete', label: '删除', danger: true })
+    items.push({ key: 'delete', label: '删除', danger: true, inline: true })
   }
 
   return items

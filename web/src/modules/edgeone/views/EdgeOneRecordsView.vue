@@ -1,15 +1,14 @@
 <template>
   <section>
-    <div class="page-toolbar">
-      <div>
-        <a-button type="link" style="padding: 0" @click="router.push(zonesPath)">返回站点</a-button>
-        <a-typography-title :level="3" style="margin: 4px 0">{{ displayZoneName || decodedZoneId }}</a-typography-title>
-        <a-typography-text type="secondary">EdgeOne 加速域名</a-typography-text>
-      </div>
-      <div class="page-actions">
-        <a-button :loading="loading" :disabled="saving || deleting || statusUpdating" @click="handleRefresh"
-          >刷新</a-button
-        >
+    <ListToolbar
+      back-text="返回站点"
+      :title="displayZoneName || decodedZoneId"
+      subtitle="EdgeOne 加速域名"
+      :show-search="false"
+      @back="router.push(zonesPath)"
+    >
+      <template #actions>
+        <a-button :loading="loading" :disabled="saving || deleting || statusUpdating" @click="handleRefresh">刷新</a-button>
         <a-button
           v-if="!notFound"
           type="primary"
@@ -17,8 +16,10 @@
           @click="create"
           >添加加速域名</a-button
         >
-      </div>
-    </div>
+      </template>
+    </ListToolbar>
+    <JobProgressAlert :running="deleting" :text="deletingText" />
+    <JobProgressAlert :running="statusUpdating" :text="statusUpdatingText" tone="info" />
     <a-result v-if="notFound" status="404" title="站点不存在或未配置" :sub-title="decodedZoneId">
       <template #extra><a-button type="primary" @click="router.push(zonesPath)">返回 EdgeOne</a-button></template>
     </a-result>
@@ -86,6 +87,8 @@
 </template>
 
 <script setup lang="ts">
+import ListToolbar from '@/shared/components/ListToolbar.vue'
+import JobProgressAlert from '@/shared/components/JobProgressAlert.vue'
 import BatchToolbar from '@/shared/components/BatchToolbar.vue'
 import EdgeOneCertificateForm from '../components/EdgeOneCertificateForm.vue'
 import EdgeOneRecordForm from '../components/EdgeOneRecordForm.vue'
@@ -112,6 +115,8 @@ const {
   loading,
   saving,
   deleting,
+  deletingText,
+  statusUpdatingText,
   statusUpdating,
   decodedZoneId,
   displayZoneName,

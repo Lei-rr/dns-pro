@@ -8,18 +8,17 @@
     :row-selection="{ selectedRowKeys, onChange: selectRows }"
     :locale="{ emptyText }"
     size="middle"
-    class="dns-record-table"
     :scroll="{ x: 760 }"
     @change="handleTableChange"
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
-        <a-typography-text strong :ellipsis="{ tooltip: record.name }" class="dns-record-name">{{
+        <a-typography-text strong :ellipsis="{ tooltip: record.name }" style="max-width: 130px">{{
           record.name
         }}</a-typography-text>
       </template>
       <template v-else-if="column.key === 'type'">
-        <span class="dns-type-cell">
+        <a-space size="small">
           <a-tag :color="typeColor(record.type)">{{ record.type }}</a-tag>
           <a-tag
             v-if="
@@ -29,25 +28,26 @@
               record.priority !== ''
             "
             color="blue"
-            class="dns-priority-tag"
             >{{ record.priority }}</a-tag
           >
-        </span>
+        </a-space>
       </template>
       <template v-else-if="column.key === 'value'">
-        <div class="copy-cell">
-          <span class="truncate-text" :title="record.value">{{ record.value }}</span>
+        <a-space size="small" style="max-width: 100%">
+          <a-typography-text :ellipsis="{ tooltip: record.value }" style="max-width: var(--table-copy-width)">{{
+            record.value
+          }}</a-typography-text>
           <CopyButton :value="record.value" />
-        </div>
+        </a-space>
       </template>
       <template v-else-if="column.key === 'line'">
         <a-tag v-if="hasProxy" :color="record.proxied ? hook.proxyOnColor : hook.proxyOffColor">{{
           record.proxied ? hook.proxyOnText : hook.proxyOffText
         }}</a-tag>
-        <span v-else class="nowrap-cell">{{ record.line || '默认' }}</span>
+        <span v-else>{{ record.line || '默认' }}</span>
       </template>
       <template v-else-if="column.key === 'remark'">
-        <a-typography-text type="secondary" :ellipsis="{ tooltip: record.remark }" class="table-remark">{{
+        <a-typography-text type="secondary" :ellipsis="{ tooltip: record.remark }" style="max-width: var(--table-remark-width)">{{
           record.remark || '-'
         }}</a-typography-text>
       </template>
@@ -184,8 +184,8 @@ function handleTableChange(pagination: { current?: number; pageSize?: number }) 
   emit('change', pagination)
 }
 
-function actionItems(_record?: DnsRecord): Array<{ key: string; label: string; danger?: boolean }> {
-  return [{ key: 'delete', label: '删除', danger: true }]
+function actionItems(_record?: DnsRecord): Array<{ key: string; label: string; danger?: boolean; inline?: boolean }> {
+  return [{ key: 'delete', label: '删除', danger: true, inline: true }]
 }
 
 function selectAction(action: string, record: DnsRecord) {

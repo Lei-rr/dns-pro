@@ -1,30 +1,30 @@
 <template>
   <a-layout style="min-height: 100vh; background: #fff">
-    <a-layout-header style="position: sticky; top: 0; z-index: 10; background: #fff; padding: 0">
+    <a-layout-header class="app-header">
       <div class="app-container app-header-inner">
-        <div class="app-brand-nav">
+        <div class="app-header-top">
           <router-link to="/" class="app-brand">
             <a-avatar shape="square" size="small" style="background: #1677ff">D</a-avatar>
             <a-typography-text strong style="font-size: 16px">DNS-PRO</a-typography-text>
           </router-link>
-          <a-menu
-            class="app-menu"
-            mode="horizontal"
-            :selected-keys="selectedKeys"
-            :items="menuItems"
-            @click="openMenu"
-          />
+          <a-dropdown class="app-header-user" :trigger="['click']">
+            <a-button shape="circle" title="管理" aria-label="管理">☰</a-button>
+            <template #overlay>
+              <a-menu @click="handleUserMenu">
+                <a-menu-item key="providers">服务商</a-menu-item>
+                <a-menu-divider />
+                <a-menu-item key="logout" danger>退出</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
         </div>
-        <a-dropdown :trigger="['click']">
-          <a-button shape="circle" title="管理" aria-label="管理">☰</a-button>
-          <template #overlay>
-            <a-menu @click="handleUserMenu">
-              <a-menu-item key="providers">服务商</a-menu-item>
-              <a-menu-divider />
-              <a-menu-item key="logout" danger>退出</a-menu-item>
-            </a-menu>
-          </template>
-        </a-dropdown>
+        <a-menu
+          class="app-menu"
+          mode="horizontal"
+          :selected-keys="selectedKeys"
+          :items="menuItems"
+          @click="openMenu"
+        />
       </div>
     </a-layout-header>
     <a-layout-content>
@@ -43,7 +43,6 @@ import { loadProviders, useProviderStore } from '@/stores/providers'
 import { providerMenuEntries, selectedMenuKey } from '@/routes/utils'
 import { message } from '@/shared/plugins/antDesignVue'
 import { errorMessage } from '@/shared/utils/errors'
-import type { Provider } from '@/types'
 
 const route = useRoute()
 const router = useRouter()

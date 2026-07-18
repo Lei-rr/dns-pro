@@ -1,11 +1,6 @@
 <template>
   <section>
-    <div class="page-toolbar">
-      <div>
-        <a-typography-title :level="3" style="margin-bottom: 4px">控制台</a-typography-title>
-        <a-typography-text type="secondary">选择服务商进入 DNS 或 EdgeOne 管理。</a-typography-text>
-      </div>
-    </div>
+    <ListToolbar title="控制台" subtitle="选择服务商进入 DNS 或 EdgeOne 管理。" :show-search="false" />
     <a-spin :spinning="loading">
       <a-row :gutter="[16, 16]">
         <a-col v-for="provider in cards" :key="provider.id" :xs="24" :sm="12" :lg="8">
@@ -32,6 +27,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import ListToolbar from '@/shared/components/ListToolbar.vue'
 import { useProviderStore } from '@/stores/providers'
 import { providerCards } from '@/routes/utils'
 import type { Provider } from '@/types'

@@ -1,18 +1,16 @@
 <template>
   <section>
-    <div class="page-toolbar">
-      <div>
-        <a-button type="link" style="padding: 0" @click="router.push(backPath)">返回隧道列表</a-button>
-        <a-typography-title :level="3" style="margin: 4px 0">{{ tunnelName || tunnelId }}</a-typography-title>
+    <ListToolbar back-text="返回隧道列表" :title="tunnelName || tunnelId" @back="router.push(backPath)">
+      <template #subtitle>
         <a-space>
           <a-tag :color="statusColor(tunnelStatus)">{{ statusLabel(tunnelStatus) }}</a-tag>
           <a-typography-text type="secondary">Cloudflare Tunnel</a-typography-text>
         </a-space>
-      </div>
-      <div class="page-actions">
-        <a-button :loading="loading" @click="refreshAll">刷新</a-button>
-      </div>
-    </div>
+      </template>
+      <template #actions>
+        <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
+      </template>
+    </ListToolbar>
 
     <a-spin :spinning="loading && !tunnel">
       <a-tabs v-model:active-key="activeTab">
@@ -133,14 +131,8 @@
               <template v-if="column.key === 'path'">{{ record.path || '/' }}</template>
               <template v-else-if="column.key === 'actions'">
                 <a-space size="small">
-                  <a style="cursor: pointer" @click="openEditRoute(record)">编辑</a>
-                  <a-divider type="vertical" />
-                  <a
-                    class="ant-typography ant-typography-danger"
-                    style="cursor: pointer"
-                    @click="askDeleteRoute(record)"
-                    >删除</a
-                  >
+                  <a-button type="link" size="small" @click="openEditRoute(record)">编辑</a-button>
+                  <a-button type="link" size="small" danger @click="askDeleteRoute(record)">删除</a-button>
                 </a-space>
               </template>
             </template>
@@ -161,7 +153,9 @@
 
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount } from 'vue'
+import { message } from '@/shared/plugins/antDesignVue'
 import { useLatestTask } from '@/shared/composables/useLatestTask'
+import ListToolbar from '@/shared/components/ListToolbar.vue'
 import CopyButton from '@/shared/components/CopyButton.vue'
 import TunnelInstallPanel from '../components/TunnelInstallPanel.vue'
 import RouteFormModal from '../components/RouteFormModal.vue'
@@ -219,8 +213,9 @@ const {
   routeRowKey,
 } = routesApi
 
-async function refreshAll() {
+async function handleRefresh() {
   await loadAll({ loadRoutes: routesApi.loadRoutes, loadZones: routesApi.loadZones })
+  message.success('已刷新')
 }
 
 async function loadContext() {

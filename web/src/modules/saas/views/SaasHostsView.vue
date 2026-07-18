@@ -32,21 +32,8 @@
         >
       </template>
     </ListToolbar>
-    <a-alert
-      v-if="applyingPreferred"
-      type="info"
-      show-icon
-      style="margin-bottom: 12px"
-      :message="applyingPreferredText || '正在一键切换优选域名...'"
-    />
-    <!-- JobProgressAlert is available for future multi-job UIs; preferred-apply reuses toolbar text for now -->
-    <a-alert
-      v-if="deleting && deletingText"
-      type="warning"
-      show-icon
-      style="margin-bottom: 12px"
-      :message="deletingText"
-    />
+    <JobProgressAlert :running="applyingPreferred" :text="applyingPreferredText || '正在一键切换优选域名...'" tone="info" />
+    <JobProgressAlert :running="deleting" :text="deletingText" />
     <BatchToolbar
       :count="selectedHostnames.length"
       :deleting="deleting || applyingPreferred"
@@ -94,48 +81,40 @@
           <a-tag :color="statusColor(record.status)">{{ statusLabel(record.status) }}</a-tag>
         </template>
         <template v-else-if="column.key === 'custom_origin_server'">
-          <div class="origin-cell">
+          <a-space size="small">
             <a-tag v-if="!record.custom_origin_server" color="blue">默认回源</a-tag>
             <a-typography-text
               v-else
               :ellipsis="{ tooltip: record.custom_origin_server }"
-              style="max-width: 140px; display: inline-block"
+              style="max-width: 140px"
             >
               {{ record.custom_origin_server }}
             </a-typography-text>
-          </div>
+          </a-space>
         </template>
         <template v-else-if="column.key === 'preferred_domain'">
-          <div class="origin-cell">
+          <a-space size="small">
             <a-typography-text type="secondary" v-if="!preferredDomainOf(record)">—</a-typography-text>
             <a-typography-text
               v-else
               :ellipsis="{ tooltip: preferredDomainOf(record) }"
-              style="max-width: 160px; display: inline-block"
+              style="max-width: 160px"
             >
               {{ preferredDomainOf(record) }}
             </a-typography-text>
-          </div>
+          </a-space>
         </template>
         <template v-else-if="column.key === 'actions'">
-          <a-space size="small">
-            <a-button
-              type="link"
-              size="small"
-              :disabled="creating || savingEdit || deleting"
-              @click="openDetails(record)"
-              >详情</a-button
-            >
-            <a-dropdown>
-              <a-button type="link" size="small" :disabled="creating || savingEdit || deleting">更多</a-button>
-              <template #overlay>
-                <a-menu>
-                  <a-menu-item @click="openEdit(record)">编辑</a-menu-item>
-                  <a-menu-item danger @click="askDelete(record)">删除</a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
-          </a-space>
+          <TableActions
+            :disabled="creating || savingEdit || deleting"
+            :show-edit="false"
+            :primary="{ key: 'detail', label: '详情' }"
+            :items="[
+              { key: 'edit', label: '编辑', inline: true },
+              { key: 'delete', label: '删除', danger: true, inline: true },
+            ]"
+            @select="(key) => onHostnameAction(key, record)"
+          />
         </template>
       </template>
     </a-table>
@@ -193,7 +172,9 @@ import { ref, watch, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { statusColor, statusLabel, formatDate } from '../utils/saas'
 import ListToolbar from '@/shared/components/ListToolbar.vue'
+import JobProgressAlert from '@/shared/components/JobProgressAlert.vue'
 import BatchToolbar from '@/shared/components/BatchToolbar.vue'
+import TableActions from '@/shared/components/TableActions.vue'
 import SaasCreateModal from '../components/SaasCreateModal.vue'
 import SaasDetailModal from '../components/SaasDetailModal.vue'
 import SaasFallbackOriginModal from '../components/SaasFallbackOriginModal.vue'
@@ -310,6 +291,12 @@ const batchActions = computed(() => [
 
 function onBatchAction(key: string) {
   if (key === 'preferred') askBatchUpdatePreferred()
+}
+
+function onHostnameAction(key: string, record: SaaSHostname) {
+  if (key === 'detail') openDetails(record)
+  else if (key === 'edit') openEdit(record)
+  else if (key === 'delete') askDelete(record)
 }
 
 onMounted(async () => {

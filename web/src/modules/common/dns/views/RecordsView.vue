@@ -10,21 +10,15 @@
       @search="applyKeyword"
     >
       <template #actions>
+        <a-button :loading="loading" :disabled="saving || deleting" @click="handleRefresh">刷新</a-button>
         <a-button v-if="capabilities.importRecords" :disabled="saving || deleting" @click="importRecords"
           >导入</a-button
         >
         <a-button v-if="capabilities.exportRecords" :disabled="!records.length" @click="exportRecords">导出</a-button>
-        <a-button :loading="loading" :disabled="saving || deleting" @click="handleRefresh">刷新</a-button>
         <a-button type="primary" :disabled="saving || deleting" @click="create">添加记录</a-button>
       </template>
     </ListToolbar>
-    <a-alert
-      v-if="deletingText"
-      type="warning"
-      show-icon
-      style="margin-bottom: 16px"
-      :message="deletingText"
-    />
+    <JobProgressAlert :running="deleting" :text="deletingText" />
     <BatchToolbar
       :count="selectedRecords.length"
       :deleting="deleting"
@@ -144,6 +138,7 @@ import { chooseJsonFile, downloadJson } from '@/shared/utils/files'
 import { errorMessage } from '@/shared/utils/errors'
 import { mergePaginationMeta, nextPaginationState, paginationState, tablePagination } from '@/shared/utils/pagination'
 import BatchToolbar from '@/shared/components/BatchToolbar.vue'
+import JobProgressAlert from '@/shared/components/JobProgressAlert.vue'
 import RecordForm from '../components/RecordForm.vue'
 import RecordTable from '../components/RecordTable.vue'
 import { defaultProviderHook } from '../hook'

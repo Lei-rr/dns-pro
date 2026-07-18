@@ -1,7 +1,7 @@
 <template>
   <div v-if="count" class="batch-toolbar" aria-live="polite">
-    <span>已选择 {{ count }} 项</span>
-    <a-space size="small">
+    <span class="batch-toolbar-count">已选择 {{ count }} 项</span>
+    <a-space class="batch-toolbar-actions" size="small" wrap>
       <a-button
         v-for="action in actions"
         :key="action.key"
@@ -36,13 +36,18 @@ interface BatchAction {
   disabled?: boolean
 }
 
-defineProps<{
-  count?: number
-  deleting?: boolean
-  deleteDisabled?: boolean
-  deleteText?: string
-  actions?: BatchAction[]
-}>()
+withDefaults(
+  defineProps<{
+    count?: number
+    deleting?: boolean
+    deleteDisabled?: boolean
+    deleteText?: string
+    actions?: BatchAction[]
+  }>(),
+  {
+    deleteText: '批量删除',
+  },
+)
 
 defineEmits<{
   (e: 'delete'): void

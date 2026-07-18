@@ -42,17 +42,20 @@
             statusText(record, statusDefinition(column.key))
           }}</a-tag></template
         >
-        <template v-else-if="column.key === 'actions'"
-          ><a-space size="small"
-            ><router-link :to="routeBase() + '/' + encodeURIComponent(zoneRouteId(record))">管理</router-link
-            ><a-dropdown v-if="capabilities.deleteZone"
-              ><a-button type="link" size="small" style="padding: 0">更多</a-button
-              ><template #overlay
-                ><a-menu><a-menu-item danger @click="askRemove(record)">删除</a-menu-item></a-menu></template
-              ></a-dropdown
-            ></a-space
-          ></template
-        >
+        <template v-else-if="column.key === 'actions'">
+          <a-space size="small">
+            <router-link :to="routeBase() + '/' + encodeURIComponent(zoneRouteId(record))">管理</router-link>
+            <a-button
+              v-if="capabilities.deleteZone"
+              type="link"
+              size="small"
+              danger
+              :disabled="deleting"
+              @click="askRemove(record)"
+              >删除</a-button
+            >
+          </a-space>
+        </template>
       </template>
     </a-table>
     <a-modal

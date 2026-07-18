@@ -1,15 +1,15 @@
 <template>
   <section>
-    <div class="page-toolbar">
-      <div>
-        <a-typography-title :level="3" style="margin-bottom: 4px">Cloudflare Tunnel</a-typography-title>
-        <a-typography-text type="secondary">隧道列表，详情页在未连接时会自动刷新状态</a-typography-text>
-      </div>
-      <div class="page-actions">
+    <ListToolbar
+      title="Cloudflare Tunnel"
+      subtitle="隧道列表，详情页在未连接时会自动刷新状态"
+      :show-search="false"
+    >
+      <template #actions>
         <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
         <a-button type="primary" @click="openCreate">创建隧道</a-button>
-      </div>
-    </div>
+      </template>
+    </ListToolbar>
 
     <a-table
       :columns="columns"
@@ -43,8 +43,7 @@
         <template v-else-if="column.key === 'actions'">
           <a-space size="small">
             <router-link :to="detailPath(record)">管理</router-link>
-            <a-divider type="vertical" />
-            <a class="ant-typography ant-typography-danger" style="cursor: pointer" @click="askDelete(record)">删除</a>
+            <a-button type="link" size="small" danger @click="askDelete(record)">删除</a-button>
           </a-space>
         </template>
       </template>
@@ -64,6 +63,7 @@ import { providerChildPath } from '@/routes/paths'
 import { message, modal } from '@/shared/plugins/antDesignVue'
 import { useLatestTask } from '@/shared/composables/useLatestTask'
 import { errorMessage } from '@/shared/utils/errors'
+import ListToolbar from '@/shared/components/ListToolbar.vue'
 import TunnelCreateModal from '../components/TunnelCreateModal.vue'
 import type { CloudflaredTunnel } from '@/types'
 

@@ -1,17 +1,11 @@
 <template>
   <section>
-    <div class="page-toolbar">
-      <div>
-        <a-typography-title :level="3" style="margin-bottom: 4px">服务商</a-typography-title>
-        <a-typography-text type="secondary"
-          >管理 DNS 和 EdgeOne 服务商配置。已保存的密钥不会明文显示。</a-typography-text
-        >
-      </div>
-      <div class="page-actions">
+    <ListToolbar title="服务商" subtitle="管理 DNS 和 EdgeOne 服务商配置。已保存的密钥不会明文显示。" :show-search="false">
+      <template #actions>
+        <a-button :loading="loading" @click="handleRefresh">刷新</a-button>
         <a-button type="primary" @click="openCreate">新增服务商</a-button>
-        <a-button :loading="loading" @click="load">刷新</a-button>
-      </div>
-    </div>
+      </template>
+    </ListToolbar>
     <a-table
       :data-source="providers"
       :row-key="providerRowKey"
@@ -21,7 +15,7 @@
         { title: '排序', key: 'sort', width: 64 },
         { title: '服务商', key: 'name', width: 280 },
         { title: 'API 配置', key: 'fields', width: 420 },
-        { title: '操作', key: 'actions', width: 150, align: 'right' },
+        { title: '操作', key: 'actions', width: 200, align: 'right' },
       ]"
       size="middle"
       :scroll="{ x: 920 }"
@@ -172,6 +166,8 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
+import ListToolbar from '@/shared/components/ListToolbar.vue'
+import { message } from '@/shared/plugins/antDesignVue'
 import { useProviderList } from '../composables/useProviderList'
 import { useProviderCrud } from '../composables/useProviderCrud'
 import { useProviderSort } from '../composables/useProviderSort'
@@ -227,6 +223,11 @@ const {
   askDelete,
   testProvider,
 } = crud
+
+async function handleRefresh() {
+  await load()
+  message.success('已刷新')
+}
 
 onMounted(async () => {
   await loadProviderDefinitions()
