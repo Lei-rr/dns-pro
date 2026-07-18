@@ -1,5 +1,5 @@
 <template>
-  <a-space size="small" wrap class="table-actions">
+  <a-space size="small" :wrap="false" class="table-actions">
     <a-button
       v-if="primary"
       type="link"
@@ -21,7 +21,7 @@
       >
     </template>
 
-    <a-dropdown v-if="menuItems.length">
+    <a-dropdown v-if="menuItems.length" :trigger="['click']" :get-popup-container="getPopupContainer">
       <a-button type="link" size="small" :disabled="disabled">更多</a-button>
       <template #overlay>
         <a-menu>
@@ -72,6 +72,10 @@ const emit = defineEmits<{
 const actionItems = computed(() => props.items || [])
 const inlineItems = computed(() => actionItems.value.filter((item) => item.inline))
 const menuItems = computed(() => actionItems.value.filter((item) => !item.inline))
+
+function getPopupContainer() {
+  return document.body
+}
 
 function select(item: ActionItem) {
   if (!props.disabled && !item.disabled) {

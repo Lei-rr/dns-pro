@@ -7,13 +7,13 @@
             <a-avatar shape="square" size="small" style="background: #1677ff">D</a-avatar>
             <a-typography-text strong style="font-size: 16px">DNS-PRO</a-typography-text>
           </router-link>
-          <a-dropdown class="app-header-user" :trigger="['click']">
+          <a-dropdown class="app-header-user" :trigger="['click']" :get-popup-container="getPopupContainer">
             <a-button shape="circle" title="管理" aria-label="管理">☰</a-button>
             <template #overlay>
-              <a-menu @click="handleUserMenu">
-                <a-menu-item key="providers">服务商</a-menu-item>
+              <a-menu>
+                <a-menu-item key="providers" @click="handleUserMenu('providers')">服务商</a-menu-item>
                 <a-menu-divider />
-                <a-menu-item key="logout" danger>退出</a-menu-item>
+                <a-menu-item key="logout" danger @click="handleUserMenu('logout')">退出</a-menu-item>
               </a-menu>
             </template>
           </a-dropdown>
@@ -79,7 +79,11 @@ async function logout() {
   router.replace('/login')
 }
 
-function handleUserMenu({ key }: { key: string }) {
+function getPopupContainer() {
+  return document.body
+}
+
+function handleUserMenu(key: string) {
   if (key === 'providers') router.push('/providers')
   if (key === 'logout') logout()
 }

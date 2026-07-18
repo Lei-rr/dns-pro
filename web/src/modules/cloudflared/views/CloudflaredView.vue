@@ -86,7 +86,7 @@ const columns = computed(() => [
   { title: '副本', key: 'replicas', width: 80 },
   { title: '类型', key: 'type', width: 110 },
   { title: '隧道 ID', dataIndex: 'id', key: 'id', width: 280, responsive: ['lg'] },
-  { title: '操作', key: 'actions', width: 110, align: 'right' },
+  { title: '操作', key: 'actions', width: 140, align: 'right' },
 ])
 
 onMounted(async () => {

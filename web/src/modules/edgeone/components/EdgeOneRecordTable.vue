@@ -155,7 +155,7 @@ const columns = computed(() => [
         ? record.certificate?.mode !== 'disable'
         : record.certificate?.mode === 'disable',
   },
-  { title: '操作', key: 'actions', width: 110, align: 'right' },
+  { title: '操作', key: 'actions', width: 140, align: 'right' },
 ])
 const tablePaginationConfig = computed(() => props.pagination || tablePagination())
 

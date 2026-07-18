@@ -140,7 +140,7 @@ const columns = computed(() => {
           : (record.line || '默认') === value,
     },
     { title: '备注', dataIndex: 'remark', key: 'remark', width: 160 },
-    { title: '操作', key: 'actions', width: 110, align: 'right' }
+    { title: '操作', key: 'actions', width: 140, align: 'right' }
   )
 
   return cols

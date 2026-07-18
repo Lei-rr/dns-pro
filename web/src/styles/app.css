@@ -58,6 +58,7 @@ body {
   max-width: 100%;
 }
 
+/* Flatten children for desktop: brand | menu | user */
 .app-header-top {
   display: contents;
 }
@@ -71,6 +72,7 @@ body {
   white-space: nowrap;
   line-height: 1;
   flex: 0 0 auto;
+  order: 1;
 }
 
 .app-brand .ant-avatar {
@@ -98,6 +100,7 @@ body {
   height: 64px;
   background: transparent !important;
   color: rgba(0, 0, 0, 0.88) !important;
+  order: 2;
 }
 
 .app-menu.ant-menu-horizontal {
@@ -134,6 +137,8 @@ body {
 
 .app-header-user {
   flex: 0 0 auto;
+  order: 3;
+  margin-left: auto;
 }
 
 /* ListToolbar shell */
@@ -160,18 +165,26 @@ body {
 
 .page-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
   flex: 0 1 auto;
   max-width: 100%;
+  min-width: 0;
 }
 
 .page-actions .page-search,
 .page-actions .ant-input-search {
   width: min(280px, 100%);
   max-width: 100%;
+  flex: 0 1 280px;
+  min-width: 160px;
+}
+
+.page-actions > .ant-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .provider-card .ant-card-meta-title {
@@ -300,6 +313,12 @@ body {
 
   .app-header-top .app-brand {
     height: 44px;
+    order: 0;
+  }
+
+  .app-header-user {
+    order: 0;
+    margin-left: 0;
   }
 
   /* Light horizontal scroll nav — never wrap text vertically */
@@ -315,6 +334,7 @@ body {
     background: #fff !important;
     color: rgba(0, 0, 0, 0.88) !important;
     flex-wrap: nowrap !important;
+    order: 0;
   }
 
   .app-menu::-webkit-scrollbar {
@@ -358,6 +378,7 @@ body {
   .page-actions {
     justify-content: stretch;
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .page-actions .page-search,
@@ -365,6 +386,7 @@ body {
     flex: 1 0 100%;
     width: 100% !important;
     max-width: 100%;
+    min-width: 0;
   }
 
   .page-actions > .ant-btn {
@@ -479,11 +501,23 @@ body {
   .ant-result {
     padding: 24px 8px;
   }
+}
 
-  .table-actions {
-    max-width: 100%;
-  }
+.table-actions {
+  white-space: nowrap;
+  max-width: none;
+}
 
+.table-actions .ant-space,
+.table-actions.ant-space {
+  flex-wrap: nowrap !important;
+}
+
+.table-actions .ant-btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
   .table-actions .ant-btn {
     padding-inline: 4px;
   }

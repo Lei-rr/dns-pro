@@ -32,7 +32,12 @@
         >
       </template>
     </ListToolbar>
-    <JobProgressAlert :running="applyingPreferred" :text="applyingPreferredText || '正在一键切换优选域名...'" tone="info" />
+    <JobProgressAlert
+      :running="applyingPreferred"
+      :text="applyingPreferredText"
+      title="正在一键切换优选域名..."
+      tone="info"
+    />
     <JobProgressAlert :running="deleting" :text="deletingText" />
     <BatchToolbar
       :count="selectedHostnames.length"

@@ -129,7 +129,7 @@ const columns = computed(() => {
     { title: '域名', dataIndex: 'name', key: 'name', width: 320 },
     { title: '服务商', key: 'provider', width: 140 },
     ...statusColumns.value,
-    { title: '操作', key: 'actions', width: 120, align: 'right' },
+    { title: '操作', key: 'actions', width: 140, align: 'right' },
   ]
 })
 const pagination = computed(() =>
