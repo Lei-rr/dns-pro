@@ -128,7 +128,17 @@
             :locale="{ emptyText: '暂无路由' }"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'path'">{{ record.path || '/' }}</template>
+              <template v-if="column.key === 'hostname'">
+                <a-typography-text :ellipsis="{ tooltip: record.hostname }" style="max-width: 220px">{{
+                  record.hostname || '-'
+                }}</a-typography-text>
+              </template>
+              <template v-else-if="column.key === 'service'">
+                <a-typography-text :ellipsis="{ tooltip: record.service }" style="max-width: 220px">{{
+                  record.service || '-'
+                }}</a-typography-text>
+              </template>
+              <template v-else-if="column.key === 'path'">{{ record.path || '/' }}</template>
               <template v-else-if="column.key === 'actions'">
                 <a-space size="small">
                   <a-button type="link" size="small" @click="openEditRoute(record)">编辑</a-button>

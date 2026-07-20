@@ -29,10 +29,14 @@
           >
         </template>
         <template v-else-if="column.key === 'name'">
-          <a-space>
+          <a-space style="max-width: 100%">
             <a-tag>{{ providerDefinition(record.type)?.name || record.type }}</a-tag>
-            <span>{{ record.name }}</span>
-            <a-typography-text type="secondary">{{ record.id }}</a-typography-text>
+            <a-typography-text strong :ellipsis="{ tooltip: record.name }" style="max-width: 120px">{{
+              record.name
+            }}</a-typography-text>
+            <a-typography-text type="secondary" :ellipsis="{ tooltip: record.id }" style="max-width: 100px">{{
+              record.id
+            }}</a-typography-text>
           </a-space>
         </template>
         <template v-else-if="column.key === 'fields'">
@@ -40,9 +44,11 @@
             <div
               v-for="item in configItems(record)"
               :key="item.key"
-              style="display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; flex-wrap: wrap"
+              style="display: flex; align-items: flex-start; justify-content: flex-start; gap: 8px; flex-wrap: wrap; max-width: 100%"
             >
-              <a-tag :color="item.color" style="margin-inline-end: 0">{{ item.value }}</a-tag>
+              <a-tag :color="item.color" style="margin-inline-end: 0; max-width: 100%" :title="item.value">{{
+                item.value
+              }}</a-tag>
             </div>
           </a-space>
         </template>

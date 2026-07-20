@@ -36,7 +36,9 @@
           <template v-if="editingDomain === record.domain">
             <a-input v-model:value="editingValue" size="small" @press-enter="saveEdit" />
           </template>
-          <template v-else>{{ record.domain }}</template>
+          <a-typography-text v-else :ellipsis="{ tooltip: record.domain }" style="max-width: 260px">{{
+            record.domain
+          }}</a-typography-text>
         </template>
         <template v-else-if="column.key === 'actions'">
           <a-space size="small">

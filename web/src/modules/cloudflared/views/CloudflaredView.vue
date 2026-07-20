@@ -23,11 +23,13 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
-          <a-space>
+          <a-space style="max-width: 100%">
             <a-avatar size="small" :style="{ background: tunnelAvatarColor() }">{{
               tunnelAvatar(record.name)
             }}</a-avatar>
-            <router-link :to="detailPath(record)">{{ record.name }}</router-link>
+            <router-link class="table-link-ellipsis" :to="detailPath(record)" :title="record.name">{{
+              record.name
+            }}</router-link>
           </a-space>
         </template>
         <template v-else-if="column.key === 'status'">
