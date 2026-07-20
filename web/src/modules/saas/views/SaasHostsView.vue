@@ -69,11 +69,13 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'hostname'">
-          <a-space size="small">
+          <a-space style="max-width: 100%">
             <a-avatar size="small" :style="{ background: hostnameAvatarColor() }">{{
               hostnameAvatar(record.hostname)
             }}</a-avatar>
-            <a @click="openDetails(record)">{{ record.hostname }}</a>
+            <a class="table-link-ellipsis" :title="record.hostname" @click="openDetails(record)">{{
+              record.hostname
+            }}</a>
           </a-space>
         </template>
         <template v-else-if="column.key === 'ssl_status'">

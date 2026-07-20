@@ -241,6 +241,7 @@ body {
 }
 
 .ant-table-cell {
+  overflow: hidden;
   word-break: break-word;
   overflow-wrap: anywhere;
   vertical-align: middle;
@@ -252,7 +253,40 @@ body {
 }
 
 .ant-table-cell .ant-typography {
+  display: inline-block;
   max-width: 100%;
+  vertical-align: bottom;
+}
+
+/* Keep long domains / CNAME / IDs inside the cell */
+.ant-table-cell .ant-typography-ellipsis,
+.ant-table-cell .ant-typography-ellipsis-single-line {
+  max-width: 100%;
+}
+
+.ant-table-cell code {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.ant-table-cell .ant-tag {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.table-link-ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 .ant-table-pagination.ant-pagination {
@@ -411,16 +445,26 @@ body {
     word-break: break-word !important;
     overflow-wrap: anywhere !important;
     line-height: 1.4;
+    overflow: hidden;
   }
 
   /* avoid stacked/overlap from fixed widths + nowrap */
   .ant-table-cell .ant-tag {
     margin-inline-end: 4px;
     max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .ant-table-cell .ant-typography {
-    white-space: normal !important;
+    max-width: 100%;
+  }
+
+  .ant-table-cell .ant-typography-ellipsis,
+  .ant-table-cell .ant-typography-ellipsis-single-line {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
   }
 
   .ant-table-wrapper {

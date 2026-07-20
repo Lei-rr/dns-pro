@@ -36,7 +36,7 @@
         <template v-else-if="column.key === 'replicas'">{{ replicaCount(record) }}</template>
         <template v-else-if="column.key === 'type'"><a-tag>cloudflared</a-tag></template>
         <template v-else-if="column.key === 'id'">
-          <a-typography-text :ellipsis="{ tooltip: record.id }" code style="max-width: 260px">{{
+          <a-typography-text :ellipsis="{ tooltip: record.id }" code style="max-width: 180px">{{
             record.id
           }}</a-typography-text>
         </template>

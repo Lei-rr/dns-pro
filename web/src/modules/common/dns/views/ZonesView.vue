@@ -27,11 +27,14 @@
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'"
-          ><a-space
+          ><a-space style="max-width: 100%"
             ><a-avatar size="small" :style="{ background: avatarColor() }">{{ zoneAvatar(record.name) }}</a-avatar
-            ><router-link :to="routeBase() + '/' + encodeURIComponent(zoneRouteId(record))">{{
-              record.name
-            }}</router-link></a-space
+            ><router-link
+              class="table-link-ellipsis"
+              :to="routeBase() + '/' + encodeURIComponent(zoneRouteId(record))"
+              :title="record.name"
+              >{{ record.name }}</router-link
+            ></a-space
           ></template
         >
         <template v-else-if="column.key === 'provider'"

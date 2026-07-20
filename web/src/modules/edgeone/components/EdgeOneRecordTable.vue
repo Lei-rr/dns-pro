@@ -13,7 +13,7 @@
   >
     <template #bodyCell="{ column, record }">
       <template v-if="column.key === 'name'">
-        <a-typography-text strong :ellipsis="{ tooltip: record.name }">{{ record.name }}</a-typography-text>
+        <a-typography-text strong :ellipsis="{ tooltip: record.name }" style="max-width: 220px">{{ record.name }}</a-typography-text>
       </template>
       <template v-else-if="column.key === 'status'">
         <a-tag :color="statusColor(record.status)">{{ statusLabel(record) }}</a-tag>
