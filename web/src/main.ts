@@ -1,21 +1,13 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import './styles/app.css'
-import App from './App.vue'
-import router from './router'
-import { useSessionStore } from './stores/session'
-import { installAntDesignVue } from './shared/plugins/antDesignVue'
-import { setUnauthorizedHandler } from './shared/utils/request'
-import { ignoreResizeObserverNoise } from './shared/utils/browserErrors'
-
-ignoreResizeObserverNoise()
+import App from '@/app/App.vue'
+import router from '@/router'
+import { useSessionStore } from '@/features/auth/stores/session'
+import { setUnauthorizedHandler } from '@/shared/api/http'
+import '@/styles/index.css'
 
 const app = createApp(App)
 const pinia = createPinia()
-
-app.config.errorHandler = (err, _instance, info) => {
-  if (import.meta.env.DEV) console.error('[Vue error]', info, err)
-}
 
 setUnauthorizedHandler(() => {
   useSessionStore(pinia).invalidate()
@@ -24,6 +16,10 @@ setUnauthorizedHandler(() => {
   }
 })
 
+app.config.errorHandler = (err, _instance, info) => {
+  if (import.meta.env.DEV) console.error('[Vue error]', info, err)
+}
+
 app.use(pinia)
-installAntDesignVue(app)
-app.use(router).mount('#app')
+app.use(router)
+app.mount('#app')

@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [vue(), tailwindcss()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
@@ -23,18 +24,5 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     chunkSizeWarningLimit: 1500,
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            if (id.includes('ant-design-vue') || id.includes('@ant-design')) return 'vendor-antd'
-            if (id.includes('vue-router')) return 'vendor-router'
-            if (id.includes('pinia')) return 'vendor-pinia'
-            if (id.includes('@vue') || id.includes('/vue/')) return 'vendor-vue'
-            return 'vendor-others'
-          }
-        },
-      },
-    },
   },
 })

@@ -412,22 +412,32 @@ export class SaasHostnameService {
   }
 
   private mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): CloudflareCustomHostname {
-    const metadata = hostname.custom_metadata ?? {}
-    const preferred = preference?.preferred_domain?.trim() ?? ''
-    const syncTarget = preference?.sync_target?.trim() ?? ''
-    const syncProviderId = preference?.sync_provider_id?.trim() ?? ''
-    const syncZone = preference?.sync_zone?.trim() ?? ''
-    const autoPreferred = preference?.auto_preferred ?? false
+    const metadata: Record<string, unknown> = {
+      ...((hostname.custom_metadata && typeof hostname.custom_metadata === 'object'
+        ? hostname.custom_metadata
+        : {}) as Record<string, unknown>),
+    }
+
+    // 优先本地 preference；否则保留 CF custom_metadata / 顶层已有值
+    const fromPreference = String(preference?.preferred_domain ?? '').trim()
+    const fromMetadata = String(metadata.preferred_domain ?? '').trim()
+    const fromTop = String(hostname.preferred_domain ?? '').trim()
+    const preferred = fromPreference || fromMetadata || fromTop
+
+    const syncTarget = String(preference?.sync_target ?? hostname.sync_target ?? '').trim()
+    const syncProviderId = String(preference?.sync_provider_id ?? hostname.sync_provider_id ?? '').trim()
+    const syncZone = String(preference?.sync_zone ?? hostname.sync_zone ?? '').trim()
+    const autoPreferred =
+      preference != null ? Boolean(preference.auto_preferred) : Boolean(hostname.auto_preferred)
 
     if (preferred !== '') {
       metadata.preferred_domain = preferred
-    } else {
-      delete metadata.preferred_domain
     }
 
     return {
       ...hostname,
       custom_metadata: Object.keys(metadata).length > 0 ? metadata : null,
+      preferred_domain: preferred,
       sync_target: syncTarget,
       sync_provider_id: syncProviderId,
       sync_zone: syncZone,
