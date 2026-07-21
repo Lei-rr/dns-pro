@@ -1,6 +1,6 @@
 /**
  * Native fetch client for dns-pro.
- * Keeps the previous axios surface:
+ * HTTP client surface (native fetch):
  * - baseURL /api
  * - returns API JSON body directly
  * - supports { params }

@@ -35,6 +35,15 @@ function isActivePath(href: string) {
   return route.path === href || route.path.startsWith(`${href}/`)
 }
 
+/** 手机顶栏折叠按钮：显示当前模块名，而不是固定「控制台」 */
+const currentNavLabel = computed(() => {
+  if (route.path === '/' || route.path === '') return '控制台'
+  if (route.path === '/providers' || route.path.startsWith('/providers/')) return '服务商'
+  const active = providers.value.find((item) => item.id === activeProviderId.value)
+  if (active?.name) return String(active.name)
+  return '控制台'
+})
+
 onMounted(async () => {
   try {
     await loadProviders()
@@ -93,22 +102,34 @@ function toggleDark() {
           </Button>
         </nav>
 
-        <!-- 手机：折叠业务导航 -->
+        <!-- 手机：折叠业务导航，触发器显示当前模块 -->
         <div class="min-w-0 flex-1 lg:hidden">
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" size="sm" class="h-9 gap-1 px-2 text-[15px]">
-                控制台
-                <ChevronDown class="size-4 opacity-60" />
+              <Button variant="ghost" size="sm" class="h-9 max-w-full gap-1 px-2 text-[15px]">
+                <span class="truncate">{{ currentNavLabel }}</span>
+                <ChevronDown class="size-4 shrink-0 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" class="w-52">
               <DropdownMenuItem as-child>
-                <RouterLink to="/" class="w-full">控制台</RouterLink>
+                <RouterLink
+                  to="/"
+                  class="w-full"
+                  :class="cn(isActivePath('/') && 'bg-accent text-accent-foreground')"
+                >
+                  控制台
+                </RouterLink>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem v-for="item in providers" :key="item.id" as-child>
-                <RouterLink :to="providerPath(item.id)" class="w-full">{{ item.name }}</RouterLink>
+                <RouterLink
+                  :to="providerPath(item.id)"
+                  class="w-full"
+                  :class="cn(activeProviderId === item.id && 'bg-accent text-accent-foreground')"
+                >
+                  {{ item.name }}
+                </RouterLink>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
