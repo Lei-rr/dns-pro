@@ -171,12 +171,17 @@ export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
     const meta = {
       ...metaObj,
       ...pagination,
-      total: Number(pagination.total ?? metaObj.total ?? data.items.length ?? 0),
+      // CF SaaS uses total_count; DNSPod/EdgeOne use total
+      total: Number(
+        pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? data.items.length ?? 0,
+      ),
       count: Number(pagination.count ?? metaObj.count ?? data.items.length ?? 0),
       offset: Number(pagination.offset ?? metaObj.offset ?? 0),
-      limit: Number(pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? data.items.length ?? 0),
-      page: Number(metaObj.page ?? 0) || undefined,
-      per_page: Number(metaObj.per_page ?? pagination.limit ?? 0) || undefined,
+      limit: Number(pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? data.items.length ?? 0),
+      page: Number(pagination.page ?? metaObj.page ?? 0) || undefined,
+      per_page: Number(pagination.per_page ?? metaObj.per_page ?? pagination.limit ?? 0) || undefined,
+      total_count: Number(pagination.total_count ?? metaObj.total_count ?? 0) || undefined,
+      total_pages: Number(pagination.total_pages ?? metaObj.total_pages ?? 0) || undefined,
     }
     return { ...response, data: data.items as T, meta }
   }

@@ -12,13 +12,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow, TableLoading } from '@/shared/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
+import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { saasApi } from '@/features/saas/api/saas'
@@ -58,6 +53,9 @@ const saving = ref(false)
 const applyingPreferred = ref(false)
 const hostnames = ref<SaaSHostname[]>([])
 const keyword = ref('')
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const dialogOpen = ref(false)
 const batchPreferredOpen = ref(false)
 const batchPreferredDomain = ref('')
@@ -133,6 +131,7 @@ const showPreferred = ref(false)
 const showFallback = ref(false)
 
 const decodedZone = computed(() => decodeURIComponent(props.zoneName))
+/** 当前页数据 + 本页关键字过滤（CF 列表为服务端分页，搜索仅过滤当前页） */
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return hostnames.value
@@ -199,10 +198,18 @@ function resetForm() {
 async function load(options: { refresh?: boolean } = {}) {
   await withMinLoading(loading, async () => {
     try {
-    const response = await saasApi.hostnames(props.providerId, decodedZone.value, {
-      refresh: options.refresh,
-    })
-    hostnames.value = response.data || []
+      const response = await saasApi.hostnames(props.providerId, decodedZone.value, {
+        page: page.value,
+        per_page: pageSize.value,
+        refresh: options.refresh,
+      })
+      hostnames.value = response.data || []
+      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
+      // CF pagination uses total_count; unwrapItems maps pagination into meta
+      const rawTotal = meta.total_count ?? meta.total ?? meta.count
+      total.value = Number(
+        rawTotal != null && rawTotal !== '' ? rawTotal : hostnames.value.length || 0,
+      )
     } catch (error) {
       toast.error(errorMessage(error))
     }
@@ -212,10 +219,30 @@ async function load(options: { refresh?: boolean } = {}) {
 async function onRefresh() {
   refreshing.value = true
   try {
-      await handleRefresh(loading, load, toast.success)
+    await handleRefresh(loading, load, toast.success)
   } finally {
     refreshing.value = false
   }
+}
+
+function onPageChange(next: number) {
+  page.value = next
+  selection.clear()
+  void load()
+}
+
+function onPageSizeChange(next: number) {
+  pageSize.value = next
+  page.value = 1
+  selection.clear()
+  void load()
+}
+
+function onSearch() {
+  // CF hostnames API 无 keyword 参数：回第一页 + 本页过滤
+  page.value = 1
+  selection.clear()
+  void load()
 }
 
 async function openCreate() {
@@ -494,6 +521,7 @@ async function resumeJobs() {
 watch(
   () => [props.providerId, props.zoneName],
   () => {
+    page.value = 1
     selection.clear()
     void load().then(() => resumeJobs())
   },
@@ -533,8 +561,13 @@ onMounted(async () => {
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap items-center gap-2">
-        <Input v-model="keyword" class="h-8 w-full sm:w-72" placeholder="搜索主机名" @keyup.enter="load()" />
-        <Button variant="outline" size="sm" @click="load()">
+        <Input
+          v-model="keyword"
+          class="h-8 w-full sm:w-72"
+          placeholder="搜索主机名（当前页）"
+          @keyup.enter="onSearch"
+        />
+        <Button variant="outline" size="sm" @click="onSearch">
           <Search class="size-4" />
           搜索
         </Button>
@@ -621,6 +654,15 @@ onMounted(async () => {
           </TableBody>
         </Table>
       </TableLoading>
+
+      <TablePagination
+        :page="page"
+        :page-size="pageSize"
+        :total="total"
+        :disabled="loading"
+        @update:page="onPageChange"
+        @update:page-size="onPageSizeChange"
+      />
     </div>
 
     <AppDialog
