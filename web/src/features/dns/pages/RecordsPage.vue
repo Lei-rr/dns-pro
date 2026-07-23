@@ -592,19 +592,20 @@ onMounted(async () => {
           <FieldLabel>主机记录</FieldLabel>
           <Input v-model="form.name" placeholder="例如：www 或 www,ggg；根记录填 @" />
         </Field>
-        <div class="grid grid-cols-2 gap-3">
+        <div :class="isCloudflare ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'">
           <Field>
             <FieldLabel>类型</FieldLabel>
-<Select v-model="form.type">
+            <Select v-model="form.type">
               <SelectTrigger class="w-full">
-              <SelectValue placeholder="选择类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="item in typeOptions" :key="item" :value="item">{{ item }}</SelectItem>
-            </SelectContent>
-          </Select>
+                <SelectValue placeholder="选择类型" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="item in typeOptions" :key="item" :value="item">{{ item }}</SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
-          <Field>
+          <!-- Cloudflare 默认自动 TTL(1)，添加/编辑不展示 -->
+          <Field v-if="!isCloudflare">
             <FieldLabel>TTL</FieldLabel>
             <Input v-model="form.ttl" />
           </Field>
@@ -659,8 +660,8 @@ onMounted(async () => {
           <FieldLabel>记录值</FieldLabel>
           <Input v-model="batchPatch.value" placeholder="留空不改" />
         </Field>
-        <div class="grid grid-cols-2 gap-3">
-          <Field>
+        <div :class="isCloudflare ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'">
+          <Field v-if="!isCloudflare">
             <FieldLabel>TTL</FieldLabel>
             <Input v-model="batchPatch.ttl" placeholder="留空不改" />
           </Field>
