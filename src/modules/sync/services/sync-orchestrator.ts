@@ -161,6 +161,14 @@ export class SyncOrchestrator {
 
   normalizeCleanupSideEffect(result: unknown, defaultMessage: string): DnsSideEffect {
     const r = (result ?? {}) as Record<string, unknown>
+    // safe() failures must surface as failed (never collapse to skipped)
+    if (r.status === 'failed' || String(r.code ?? '') === 'dns_sync_failed') {
+      return {
+        status: 'failed',
+        message: String(r.message ?? (defaultMessage || 'DNS 清理失败')),
+        details: [r],
+      }
+    }
     const cleaned = Number(r.cleaned ?? 0)
     const status = r.status === 'skipped' || r.reason ? 'skipped' : cleaned > 0 ? 'completed' : 'skipped'
     let message = String(r.message ?? '')

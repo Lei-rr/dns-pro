@@ -44,7 +44,7 @@ const props = defineProps<ToasterProps>()
       </div>
     </template>
     <template #close-icon>
-      <X class="size-4" />
+      <X class="size-3" />
     </template>
   </Sonner>
 </template>

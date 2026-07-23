@@ -127,7 +127,7 @@ onMounted(() => load())
             <TableHead>状态</TableHead>
             <TableHead>副本</TableHead>
             <TableHead>隧道 ID</TableHead>
-            <TableHead class="rounded-r-lg w-12" />
+            <TableHead class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -145,18 +145,20 @@ onMounted(() => load())
             </TableCell>
             <TableCell>{{ replicaCount(record) }}</TableCell>
             <TableCell class="max-w-[220px] truncate text-sm">{{ record.id || '-' }}</TableCell>
-            <TableCell>
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button variant="ghost" size="icon" class="size-8">
-                    <EllipsisVertical class="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem @click="openDetail(record)">管理</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" @click="removeTunnel(record)">删除</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+            <TableCell class="text-right">
+              <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
+                <Button variant="ghost" size="sm" @click="openDetail(record)">管理</Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="size-8">
+                      <EllipsisVertical class="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem variant="destructive" @click="removeTunnel(record)">删除</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </TableCell>
           </TableRow>
         </TableBody>

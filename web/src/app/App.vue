@@ -6,7 +6,7 @@ import { ConfirmHost } from '@/shared/ui/confirm'
 
 <template>
   <RouterView />
-  <!-- position only product preference; rest = official sonner defaults -->
-  <Toaster position="top-center" :close-button="true" />
+  <!-- top-center 产品偏好；关闭钮右上角 + 宽度随文案（见 styles sonner 覆盖） -->
+  <Toaster position="top-center" :close-button="true" close-button-position="top-right" />
   <ConfirmHost />
 </template>

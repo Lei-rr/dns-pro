@@ -194,12 +194,33 @@ export class EdgeOneBatchJobService {
       )
 
       try {
-        await this.workflow.deleteAccelerationDomain(providerId, zoneId, domain, autoCleanup)
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.domain || '') === domain,
-          { status: 'success', message: '已删除' },
-        )
+        const result = await this.workflow.deleteAccelerationDomain(providerId, zoneId, domain, autoCleanup)
+        const cleanup = (
+          result as { side_effects?: { dns?: { cleanup?: { status?: string; message?: string } } } }
+        )?.side_effects?.dns?.cleanup
+        if (autoCleanup && cleanup?.status === 'failed') {
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.domain || '') === domain,
+            {
+              status: 'failed',
+              message: `加速域名已删除，但 DNS 清理失败：${cleanup.message || '未知错误'}`,
+              dns_cleanup_status: 'failed',
+            },
+          )
+        } else {
+          const note =
+            autoCleanup && cleanup?.status === 'completed'
+              ? '已删除（DNS 已清理）'
+              : autoCleanup && cleanup?.status === 'skipped'
+                ? `已删除（DNS 跳过：${cleanup.message || '—'}）`
+                : '已删除'
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.domain || '') === domain,
+            { status: 'success', message: note, dns_cleanup_status: cleanup?.status },
+          )
+        }
       } catch (error) {
         await this.jobs.patchItem(
           job.id,

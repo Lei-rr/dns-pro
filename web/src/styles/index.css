@@ -110,6 +110,31 @@
   }
 }
 
+/* sonner：宽度随文案；关闭钮更小、右上角（App.vue close-button-position） */
+[data-sonner-toaster] {
+  width: max-content !important;
+  max-width: min(420px, calc(100vw - 32px));
+}
+[data-sonner-toast][data-styled='true'] {
+  width: max-content !important;
+  max-width: min(420px, calc(100vw - 32px));
+  min-width: 0;
+  padding: 12px 14px;
+}
+[data-sonner-toast][data-styled='true'] [data-close-button] {
+  height: 16px;
+  width: 16px;
+  border-radius: 9999px;
+  opacity: 0.75;
+}
+[data-sonner-toast][data-styled='true'] [data-close-button]:hover {
+  opacity: 1;
+}
+[data-sonner-toast][data-styled='true'] [data-close-button] svg {
+  width: 10px;
+  height: 10px;
+}
+
 /* route transition */
 .page-fade-enter-active,
 .page-fade-leave-active {

@@ -98,7 +98,7 @@ onMounted(() => load())
               <TableHead>区域</TableHead>
               <TableHead>接入方式</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead class="rounded-r-lg text-right">操作</TableHead>
+              <TableHead class="rounded-r-lg w-[6rem] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
