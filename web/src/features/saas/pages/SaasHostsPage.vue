@@ -22,6 +22,7 @@ import type { SaaSHostname, Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
+import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import PreferredDomainsDialog from '@/features/saas/components/PreferredDomainsDialog.vue'
 import FallbackOriginDialog from '@/features/saas/components/FallbackOriginDialog.vue'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
@@ -54,7 +55,7 @@ const applyingPreferred = ref(false)
 const hostnames = ref<SaaSHostname[]>([])
 const keyword = ref('')
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(loadPageSize('saas-hosts'))
 const total = ref(0)
 const dialogOpen = ref(false)
 const batchPreferredOpen = ref(false)
@@ -233,6 +234,7 @@ function onPageChange(next: number) {
 
 function onPageSizeChange(next: number) {
   pageSize.value = next
+  savePageSize('saas-hosts', next)
   page.value = 1
   selection.clear()
   void load()
@@ -387,10 +389,13 @@ async function applyPreferred(payload: {
     })
     const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
     if (failed.length) {
-      showBatchFailures(job?.message || '优选切换完成', failed, '个', {
+      await showBatchFailures(job?.message || '优选切换完成', failed, '个', {
         onRetry: async () => {
           await saasApi.preferredApplyRetry(jobId)
-          toast.message('已提交重试')
+          return jobProgress.pollJob(jobId, {
+            label: '后台切换',
+            fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+          })
         },
       })
     } else {
@@ -411,16 +416,18 @@ async function runBatchJob(
   const created = await create()
   const jobId = String((created.data as { id?: string } | null | undefined)?.id || '')
   if (!jobId) throw new Error(`${label}任务创建失败`)
-  const job = await jobProgress.pollJob(jobId, {
-    label,
-    fetchJob: async (id) => ((await saasApi.batchJob(id)).data as any) || {},
-  })
+  const poll = () =>
+    jobProgress.pollJob(jobId, {
+      label,
+      fetchJob: async (id) => ((await saasApi.batchJob(id)).data as any) || {},
+    })
+  const job = await poll()
   const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
   if (failed.length) {
-    showBatchFailures(job?.message || `${label}完成`, failed, '个', {
+    await showBatchFailures(job?.message || `${label}完成`, failed, '个', {
       onRetry: async () => {
         await saasApi.batchRetry(jobId)
-        toast.message('已提交重试')
+        return poll()
       },
     })
   } else {
@@ -555,8 +562,8 @@ onMounted(async () => {
       :running="jobProgress.running.value || applyingPreferred"
       :text="jobProgress.text.value"
       title="SaaS 任务"
+      :status="jobProgress.job.value?.status"
       :percent="jobProgress.percent.value"
-      
     />
 
     <div class="flex w-full flex-col gap-4">

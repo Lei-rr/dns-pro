@@ -20,6 +20,8 @@ export type PollJobOptions = {
   onTick?: (job: JobLike) => void
   isActive?: (job: JobLike) => boolean
   label?: string
+  /** 完成后横幅保留多久再淡出清除，默认 3000ms；0 = 不自动清除 */
+  autoClearMs?: number
 }
 
 export function extractJobId(data: unknown): string {
@@ -39,6 +41,7 @@ export function useJobProgress() {
   const text = ref('')
   const job = ref<JobLike | null>(null)
   const percent = ref<number | null>(null)
+  let clearTimer: ReturnType<typeof setTimeout> | null = null
 
   function isActiveStatus(status?: string) {
     return status === 'pending' || status === 'running'
@@ -59,9 +62,31 @@ export function useJobProgress() {
     return `${prefix}${current.done || 0}/${current.total || 0}`
   }
 
+  function cancelAutoClear() {
+    if (clearTimer) {
+      clearTimeout(clearTimer)
+      clearTimer = null
+    }
+  }
+
+  /** 完成后保留结果文案一会再清空，配合 JobProgressAlert 淡出 */
+  function scheduleAutoClear(ms = 3000) {
+    cancelAutoClear()
+    if (ms <= 0) return
+    clearTimer = setTimeout(() => {
+      clearTimer = null
+      if (running.value) return
+      text.value = ''
+      job.value = null
+      percent.value = null
+    }, ms)
+  }
+
   async function pollJob(jobId: string, options: PollJobOptions): Promise<JobLike | null> {
     if (!jobId || running.value) return job.value
     const interval = Math.max(300, options.intervalMs ?? 1000)
+    const autoClearMs = options.autoClearMs ?? 3000
+    cancelAutoClear()
     running.value = true
     try {
       let current: JobLike | null = { id: jobId, status: 'pending' }
@@ -79,6 +104,8 @@ export function useJobProgress() {
       return current
     } finally {
       running.value = false
+      // 成功/失败结果展示约 3s 后自动淡出消失
+      if (text.value || job.value) scheduleAutoClear(autoClearMs)
     }
   }
 
@@ -113,6 +140,7 @@ export function useJobProgress() {
   }
 
   function reset() {
+    cancelAutoClear()
     running.value = false
     text.value = ''
     job.value = null

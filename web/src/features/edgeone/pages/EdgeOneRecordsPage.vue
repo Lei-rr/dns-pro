@@ -217,16 +217,18 @@ async function runEdgeBatch(
   const created = await create()
   const jobId = String((created.data as { id?: string } | null | undefined)?.id || '')
   if (!jobId) throw new Error(`${label}任务创建失败`)
-  const job = await jobProgress.pollJob(jobId, {
-    label,
-    fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as any) || {},
-  })
+  const poll = () =>
+    jobProgress.pollJob(jobId, {
+      label,
+      fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as any) || {},
+    })
+  const job = await poll()
   const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
   if (failed.length) {
-    showBatchFailures(job?.message || `${label}完成`, failed, '个', {
+    await showBatchFailures(job?.message || `${label}完成`, failed, '个', {
       onRetry: async () => {
         await edgeOneApi.batchRetry(props.providerId, jobId)
-        toast.message('已提交重试')
+        return poll()
       },
     })
   } else {
@@ -319,6 +321,7 @@ onMounted(() => {
       :running="jobProgress.running.value"
       :text="jobProgress.text.value"
       title="EdgeOne 批量任务"
+      :status="jobProgress.job.value?.status"
       :percent="jobProgress.percent.value"
     />
 

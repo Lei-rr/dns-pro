@@ -306,14 +306,23 @@ export class DnsBatchJobService {
           { status: 'success', message: '已删除' },
         )
       } catch (error) {
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.record_id || '') === recordId,
-          {
-            status: 'failed',
-            message: error instanceof Error ? error.message : String(error),
-          },
-        )
+        // CF/DNSPod 记录已不存在时删会 404：目标态已达成，记为 skipped 而非 failed
+        if (this.isProviderNotFound(error)) {
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.record_id || '') === recordId,
+            { status: 'skipped', message: '记录已不存在（404）' },
+          )
+        } else {
+          await this.jobs.patchItem(
+            job.id,
+            (row) => String(row.record_id || '') === recordId,
+            {
+              status: 'failed',
+              message: error instanceof Error ? error.message : String(error),
+            },
+          )
+        }
       }
     }
 
@@ -633,5 +642,12 @@ export class DnsBatchJobService {
       updated_at: job.updated_at,
       finished_at: job.finished_at,
     }
+  }
+
+  /** Cloudflare/DNSPod 删除时记录已不存在 → 404，批量删按目标态记 skipped */
+  private isProviderNotFound(error: unknown): boolean {
+    if (error instanceof ApiError && error.statusCode === 404) return true
+    const msg = error instanceof Error ? error.message : String(error || '')
+    return /\b404\b/i.test(msg) || /not\s*found/i.test(msg)
   }
 }

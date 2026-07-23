@@ -15,15 +15,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoa
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { EllipsisVertical, Plus, RefreshCw, Search } from '@lucide/vue'
+import { EllipsisVertical, Plus, RefreshCw, Search, ChevronRight, ChevronDown } from '@lucide/vue'
 import { dnsApi } from '@/features/dns/api/dns'
 import { getCachedProvider, loadProviders } from '@/features/providers/stores/providers'
 import { providerPath } from '@/features/providers/lib/paths'
 import { parseRecordNames } from '@/features/dns/lib/record-names'
+import {
+  compareRecordsForGroup,
+  recordHostKey,
+  hostGroupLabel,
+  orderedPurposeLabels,
+  shouldCollapseHostGroup,
+} from '@/features/dns/lib/record-remark'
 import type { DnsRecord } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
+import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
@@ -49,7 +57,7 @@ const records = ref<DnsRecord[]>([])
 const keyword = ref('')
 const typeFilter = ref('all')
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(loadPageSize('dns-records'))
 const total = ref(0)
 const dialogOpen = ref(false)
 const batchEditOpen = ref(false)
@@ -77,7 +85,7 @@ const provider = computed(() => getCachedProvider(props.providerId))
 const isCloudflare = computed(() => provider.value?.type === 'cloudflare')
 const zoneName = computed(() => decodeURIComponent(props.zoneId))
 
-const typeOptions = ['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA']
+const typeOptions = ['A', 'AAAA', 'CNAME', 'TXT', 'MX']
 // DNSPod 常用线路（对齐旧 hook.recordLines）
 const dnspodLineOptions = [
   { label: '默认', value: '默认' },
@@ -88,10 +96,133 @@ const dnspodLineOptions = [
   { label: '境外', value: '境外' },
 ]
 const filteredRecords = computed(() => {
-  if (typeFilter.value === 'all') return records.value
-  return records.value.filter((r) => String(r.type || '').toUpperCase() === typeFilter.value)
+  const list =
+    typeFilter.value === 'all'
+      ? [...records.value]
+      : records.value.filter((r) => String(r.type || '').toUpperCase() === typeFilter.value)
+  // 同主机（备注 FQDN / 主机名）聚组：默认回源 → 优选 → DCV → 其它
+  list.sort((a, b) => compareRecordsForGroup(a, b, zoneName.value))
+  return list
 })
-const selection = useRowSelection(filteredRecords, (row) => String(row.id || `${row.name}-${row.type}-${row.value || ''}`))
+
+type DisplayRow =
+  | { kind: 'single'; record: DnsRecord; key: string }
+  | { kind: 'group'; hostKey: string; label: string; records: DnsRecord[]; key: string }
+
+/**
+ * 当前页按主机前缀 / 邮箱套件聚组：
+ * - api(默认)+api(境内)+_acme-challenge.api
+ * - MX/SPF/DKIM/DMARC → @zone
+ */
+const displayRows = computed((): DisplayRow[] => {
+  const list = filteredRecords.value
+  const zone = zoneName.value
+  const rows: DisplayRow[] = []
+  let i = 0
+  while (i < list.length) {
+    const rec = list[i]
+    const hk = recordHostKey(rec, zone)
+    let j = i + 1
+    while (j < list.length && recordHostKey(list[j], zone) === hk) j++
+    const chunk = list.slice(i, j)
+    if (shouldCollapseHostGroup(chunk, zone)) {
+      rows.push({
+        kind: 'group',
+        hostKey: hk,
+        label: hostGroupLabel(hk, zone),
+        records: chunk,
+        key: `g:${hk}`,
+      })
+    } else {
+      for (const r of chunk) {
+        rows.push({
+          kind: 'single',
+          record: r,
+          key: `r:${String(r.id || `${r.name}-${r.type}-${r.value}-${r.line}`)}`,
+        })
+      }
+    }
+    i = j
+  }
+  return rows
+})
+
+/** 折叠状态：默认收起；搜索命中自动展开 */
+const expandedHosts = ref<Record<string, boolean>>({})
+
+function isHostExpanded(hostKey: string) {
+  return expandedHosts.value[hostKey] === true
+}
+
+function toggleHost(hostKey: string) {
+  expandedHosts.value = {
+    ...expandedHosts.value,
+    [hostKey]: !isHostExpanded(hostKey),
+  }
+}
+
+function groupPurposeLabels(groupRecords: DnsRecord[]) {
+  return orderedPurposeLabels(groupRecords, zoneName.value)
+}
+
+function recordMatchesKeyword(record: DnsRecord, q: string) {
+  if (!q) return false
+  const blob = [
+    record.name,
+    record.type,
+    record.value,
+    record.content,
+    record.remark,
+    record.comment,
+    record.line,
+  ]
+    .map((x) => String(x || '').toLowerCase())
+    .join(' ')
+  return blob.includes(q)
+}
+
+watch(
+  [() => keyword.value, displayRows],
+  () => {
+    const q = keyword.value.trim().toLowerCase()
+    if (!q) return
+    const next = { ...expandedHosts.value }
+    let changed = false
+    for (const row of displayRows.value) {
+      if (row.kind !== 'group') continue
+      if (row.records.some((r) => recordMatchesKeyword(r, q)) || row.label.toLowerCase().includes(q)) {
+        if (!next[row.hostKey]) {
+          next[row.hostKey] = true
+          changed = true
+        }
+      }
+    }
+    if (changed) expandedHosts.value = next
+  },
+  { flush: 'post' },
+)
+
+function groupAllSelected(groupRecords: DnsRecord[]) {
+  return groupRecords.length > 0 && groupRecords.every((r) => selection.isSelected(r))
+}
+
+function groupSomeSelected(groupRecords: DnsRecord[]) {
+  const n = groupRecords.filter((r) => selection.isSelected(r)).length
+  return n > 0 && n < groupRecords.length
+}
+
+function toggleGroupSelect(groupRecords: DnsRecord[]) {
+  const all = groupAllSelected(groupRecords)
+  for (const r of groupRecords) selection.toggle(r, !all)
+}
+
+function recordRowKey(record: DnsRecord) {
+  return String(record.id || `${record.name || ''}·${record.type || ''}·${record.value || ''}·${record.line || ''}`)
+}
+
+const selection = useRowSelection(filteredRecords, (row) =>
+  String(row.id || `${row.name}-${row.type}-${row.value || ''}-${row.line || ''}`),
+)
 const selectedCount = computed(() => selection.selected.value.length)
 
 async function ensureProvider() {
@@ -135,19 +266,23 @@ async function onRefresh() {
 function onPageChange(next: number) {
   page.value = next
   selection.clear()
+  expandedHosts.value = {}
   void load()
 }
 
 function onPageSizeChange(next: number) {
   pageSize.value = next
+  savePageSize('dns-records', next)
   page.value = 1
   selection.clear()
+  expandedHosts.value = {}
   void load()
 }
 
 function onSearch() {
   page.value = 1
   selection.clear()
+  expandedHosts.value = {}
   void load()
 }
 
@@ -244,16 +379,18 @@ async function save() {
       if (!jobId) {
         toast.success(`已提交批量创建（${names.length} 条）`)
       } else {
-        const job = await jobProgress.pollJob(jobId, {
-          label: '批量创建',
-          fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
-        })
+        const poll = () =>
+          jobProgress.pollJob(jobId, {
+            label: '批量创建',
+            fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
+          })
+        const job = await poll()
         const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
         if (failed.length) {
-          showBatchFailures(job?.message || '批量创建完成', failed, '条', {
+          await showBatchFailures(job?.message || '批量创建完成', failed, '条', {
             onRetry: async () => {
               await dnsApi.batchRetry(props.providerId, jobId)
-              toast.message('已提交重试')
+              return poll()
             },
           })
         } else {
@@ -288,16 +425,20 @@ async function runDnsBatch(
   const created = await create()
   const jobId = String((created.data as { id?: string } | null | undefined)?.id || '')
   if (!jobId) throw new Error(`${label}任务创建失败`)
-  const job = await jobProgress.pollJob(jobId, {
-    label,
-    fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
-  })
+
+  const poll = () =>
+    jobProgress.pollJob(jobId, {
+      label,
+      fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
+    })
+
+  const job = await poll()
   const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
   if (failed.length) {
-    showBatchFailures(job?.message || `${label}完成`, failed, '条', {
+    await showBatchFailures(job?.message || `${label}完成`, failed, '条', {
       onRetry: async () => {
         await dnsApi.batchRetry(props.providerId, jobId)
-        toast.message('已提交重试')
+        return poll()
       },
     })
   } else {
@@ -329,6 +470,7 @@ async function batchDeleteSelected() {
   }
 }
 
+/** 打开批量修改表单弹窗（底部「批量管理」） */
 function openBatchEdit() {
   if (!selection.selected.value.length) {
     toast.warning('请先勾选记录')
@@ -432,6 +574,7 @@ onMounted(async () => {
       :running="jobProgress.running.value"
       :text="jobProgress.text.value"
       title="DNS 批量任务"
+      :status="jobProgress.job.value?.status"
       :percent="jobProgress.percent.value"
     />
 
@@ -451,21 +594,6 @@ onMounted(async () => {
           <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
           刷新
         </Button>
-        <template v-if="selectedCount">
-          <span class="text-muted-foreground text-sm">已选 {{ selectedCount }}</span>
-          <Button variant="outline" size="sm" :disabled="jobProgress.running.value" @click="openBatchEdit">
-            批量修改
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            class="text-destructive"
-            :disabled="jobProgress.running.value"
-            @click="batchDeleteSelected"
-          >
-            批量删除
-          </Button>
-        </template>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
@@ -516,59 +644,156 @@ onMounted(async () => {
           <TableRow v-if="!filteredRecords.length && !loading">
             <TableCell colspan="8" class="text-muted-foreground py-10 text-center">暂无记录</TableCell>
           </TableRow>
-          <TableRow
-            v-for="record in filteredRecords"
-            :key="String(record.id || `${record.name || ''}·${record.type || ''}·${record.value || ''}`)"
-          >
-            <TableCell class="px-3">
-              <Checkbox
-                :model-value="selection.isSelected(record)"
-                @update:model-value="(v: boolean | 'indeterminate') => selection.toggle(record, v === true)"
-                @click.stop
-              />
-            </TableCell>
-            <TableCell class="max-w-[7rem] truncate font-medium" :title="String(record.name || '@')">
-              {{ record.name || '@' }}
-            </TableCell>
-            <TableCell>
-              <Badge variant="secondary">{{ record.type }}</Badge>
-            </TableCell>
-            <TableCell class="w-[14rem] max-w-[18rem]">
-              <div class="max-w-[18rem] truncate" :title="String(record.value || record.content || '')">
-                {{ record.value || record.content || '-' }}
-              </div>
-            </TableCell>
-            <TableCell>{{ ttlDisplay(record.ttl) }}</TableCell>
-            <TableCell>
-              <template v-if="isCloudflare">
-                <Badge :variant="record.proxied ? 'default' : 'outline'">
-                  {{ record.proxied ? '代理' : '仅 DNS' }}
-                </Badge>
-              </template>
-              <template v-else>{{ record.line || '默认' }}</template>
-            </TableCell>
-            <TableCell>
-              <div
-                class="text-muted-foreground max-w-[10rem] truncate text-sm"
-                :title="String(record.remark || record.comment || '')"
-              >
-                {{ record.remark || record.comment || '—' }}
-              </div>
-            </TableCell>
-            <TableCell>
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button variant="ghost" size="icon" class="size-8">
-                    <EllipsisVertical class="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem @click="openEdit(record)">编辑</DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" @click="removeRecord(record)">删除</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </TableCell>
-          </TableRow>
+
+          <template v-for="row in displayRows" :key="row.key">
+            <!-- 可折叠组头：默认回源 / 优选 / DCV 同主机 -->
+            <TableRow v-if="row.kind === 'group'" class="bg-muted/30 hover:bg-muted/40">
+              <TableCell class="px-3">
+                <Checkbox
+                  :model-value="
+                    groupAllSelected(row.records)
+                      ? true
+                      : groupSomeSelected(row.records)
+                        ? 'indeterminate'
+                        : false
+                  "
+                  @update:model-value="() => toggleGroupSelect(row.records)"
+                  @click.stop
+                />
+              </TableCell>
+              <TableCell colspan="6" class="px-2">
+                <button
+                  type="button"
+                  class="flex w-full min-w-0 items-center gap-2 text-left"
+                  @click="toggleHost(row.hostKey)"
+                >
+                  <ChevronDown v-if="isHostExpanded(row.hostKey)" class="text-muted-foreground size-4 shrink-0" />
+                  <ChevronRight v-else class="text-muted-foreground size-4 shrink-0" />
+                  <span class="min-w-0 truncate font-medium">{{ row.label }}</span>
+                  <span class="text-muted-foreground shrink-0 text-xs">{{ row.records.length }} 条</span>
+                  <span class="flex min-w-0 flex-wrap items-center gap-1">
+                    <Badge
+                      v-for="label in groupPurposeLabels(row.records)"
+                      :key="label"
+                      variant="outline"
+                      class="text-[11px] font-normal"
+                    >
+                      {{ label }}
+                    </Badge>
+                  </span>
+                </button>
+              </TableCell>
+              <TableCell class="w-12" />
+            </TableRow>
+
+            <!-- 组内子行（展开时） -->
+            <TableRow
+              v-for="record in row.kind === 'group' && isHostExpanded(row.hostKey) ? row.records : []"
+              :key="recordRowKey(record)"
+              class="bg-muted/10"
+            >
+              <TableCell class="px-3">
+                <Checkbox
+                  :model-value="selection.isSelected(record)"
+                  @update:model-value="(v: boolean | 'indeterminate') => selection.toggle(record, v === true)"
+                  @click.stop
+                />
+              </TableCell>
+              <TableCell class="max-w-[7rem] truncate font-medium pl-8" :title="String(record.name || '@')">
+                {{ record.name || '@' }}
+              </TableCell>
+              <TableCell>
+                <Badge variant="secondary">{{ record.type }}</Badge>
+              </TableCell>
+              <TableCell class="w-[14rem] max-w-[18rem]">
+                <div class="max-w-[18rem] truncate" :title="String(record.value || record.content || '')">
+                  {{ record.value || record.content || '-' }}
+                </div>
+              </TableCell>
+              <TableCell>{{ ttlDisplay(record.ttl) }}</TableCell>
+              <TableCell>
+                <template v-if="isCloudflare">
+                  <Badge :variant="record.proxied ? 'default' : 'outline'">
+                    {{ record.proxied ? '代理' : '仅 DNS' }}
+                  </Badge>
+                </template>
+                <template v-else>{{ record.line || '默认' }}</template>
+              </TableCell>
+              <TableCell>
+                <div
+                  class="text-muted-foreground max-w-[10rem] truncate text-sm"
+                  :title="String(record.remark || record.comment || '')"
+                >
+                  {{ record.remark || record.comment || '—' }}
+                </div>
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="size-8">
+                      <EllipsisVertical class="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem @click="openEdit(record)">编辑</DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" @click="removeRecord(record)">删除</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+
+            <!-- 普通单行 -->
+            <TableRow v-if="row.kind === 'single'">
+              <TableCell class="px-3">
+                <Checkbox
+                  :model-value="selection.isSelected(row.record)"
+                  @update:model-value="(v: boolean | 'indeterminate') => selection.toggle(row.record, v === true)"
+                  @click.stop
+                />
+              </TableCell>
+              <TableCell class="max-w-[7rem] truncate font-medium" :title="String(row.record.name || '@')">
+                {{ row.record.name || '@' }}
+              </TableCell>
+              <TableCell>
+                <Badge variant="secondary">{{ row.record.type }}</Badge>
+              </TableCell>
+              <TableCell class="w-[14rem] max-w-[18rem]">
+                <div class="max-w-[18rem] truncate" :title="String(row.record.value || row.record.content || '')">
+                  {{ row.record.value || row.record.content || '-' }}
+                </div>
+              </TableCell>
+              <TableCell>{{ ttlDisplay(row.record.ttl) }}</TableCell>
+              <TableCell>
+                <template v-if="isCloudflare">
+                  <Badge :variant="row.record.proxied ? 'default' : 'outline'">
+                    {{ row.record.proxied ? '代理' : '仅 DNS' }}
+                  </Badge>
+                </template>
+                <template v-else>{{ row.record.line || '默认' }}</template>
+              </TableCell>
+              <TableCell>
+                <div
+                  class="text-muted-foreground max-w-[10rem] truncate text-sm"
+                  :title="String(row.record.remark || row.record.comment || '')"
+                >
+                  {{ row.record.remark || row.record.comment || '—' }}
+                </div>
+              </TableCell>
+              <TableCell>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="size-8">
+                      <EllipsisVertical class="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem @click="openEdit(row.record)">编辑</DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" @click="removeRecord(row.record)">删除</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </TableCell>
+            </TableRow>
+          </template>
         </TableBody>
       </Table>
     </TableLoading>
@@ -581,6 +806,33 @@ onMounted(async () => {
       @update:page="onPageChange"
       @update:page-size="onPageSizeChange"
     />
+
+    <!-- 勾选后：底部居中操作条 -->
+    <div
+      v-if="selectedCount"
+      class="pointer-events-none sticky bottom-4 z-20 flex justify-center px-2"
+    >
+      <div
+        class="bg-card pointer-events-auto flex flex-wrap items-center gap-2 rounded-full border px-3 py-2 shadow-md"
+      >
+        <span class="text-muted-foreground px-1 text-sm whitespace-nowrap">
+          已选 {{ selectedCount }}
+        </span>
+        <Button size="sm" :disabled="jobProgress.running.value" @click="openBatchEdit">
+          批量管理
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          class="text-destructive"
+          :disabled="jobProgress.running.value"
+          @click="batchDeleteSelected"
+        >
+          批量删除
+        </Button>
+        <Button size="sm" variant="ghost" @click="selection.clear()">取消</Button>
+      </div>
+    </div>
 
     <AppDialog
       v-model:open="dialogOpen"

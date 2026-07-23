@@ -23,6 +23,7 @@ import type { Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
+import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 
 const props = defineProps<{ providerId: string }>()
@@ -34,7 +35,7 @@ const refreshing = ref(false)
 const zones = ref<Zone[]>([])
 const keyword = ref('')
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(loadPageSize('dns-zones'))
 const total = ref(0)
 const showAdd = ref(false)
 const adding = ref(false)
@@ -93,6 +94,7 @@ function onPageChange(next: number) {
 
 function onPageSizeChange(next: number) {
   pageSize.value = next
+  savePageSize('dns-zones', next)
   page.value = 1
   void load()
 }
