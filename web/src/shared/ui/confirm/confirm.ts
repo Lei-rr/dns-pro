@@ -15,6 +15,12 @@ const options = ref<ConfirmOptions>({
 let resolver: ((value: boolean) => void) | null = null
 
 export function confirmDialog(opts: ConfirmOptions = {}): Promise<boolean> {
+  // 若上一次弹窗异常未 settle，先以 false 收尾，避免永久挂起
+  if (resolver) {
+    const prev = resolver
+    resolver = null
+    prev(false)
+  }
   options.value = {
     title: opts.title || '确认操作',
     description: opts.description || '此操作不可撤销，确定继续吗？',
@@ -40,13 +46,18 @@ export function confirmDelete(name: string, extra = ''): Promise<boolean> {
 
 export function settleConfirm(value: boolean) {
   open.value = false
-  if (resolver) {
-    resolver(value)
-    resolver = null
-  }
+  if (!resolver) return
+  const r = resolver
+  resolver = null
+  r(value)
+}
+
+export function hasPendingConfirm() {
+  return resolver != null
 }
 
 export const confirmState = {
   open,
   options,
+  hasPending: hasPendingConfirm,
 }

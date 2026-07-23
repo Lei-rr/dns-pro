@@ -22,9 +22,31 @@ const confirmClass = computed(() =>
   ),
 )
 
+/**
+ * reka AlertDialogAction = DialogClose：点确认会先关弹窗再/同时冒泡 click。
+ * 若 @update:open(false) 同步 settle(false)，会冲掉 settle(true) → 看起来“确定没用”。
+ * 取消关闭延后到 microtask，让确认 click 先 resolve。
+ */
 function onOpenChange(value: boolean) {
-  if (!value) settleConfirm(false)
-  else confirmState.open.value = true
+  if (value) {
+    confirmState.open.value = true
+    return
+  }
+  queueMicrotask(() => {
+    if (confirmState.open.value || confirmState.hasPending()) {
+      settleConfirm(false)
+    }
+  })
+}
+
+function onConfirm(e: Event) {
+  e.preventDefault()
+  settleConfirm(true)
+}
+
+function onCancel(e: Event) {
+  e.preventDefault()
+  settleConfirm(false)
 }
 </script>
 
@@ -38,10 +60,10 @@ function onOpenChange(value: boolean) {
         </AlertDialogDescription>
       </AlertDialogHeader>
       <AlertDialogFooter>
-        <AlertDialogCancel @click="settleConfirm(false)">
+        <AlertDialogCancel @click="onCancel">
           {{ confirmState.options.value.cancelText }}
         </AlertDialogCancel>
-        <AlertDialogAction :class="confirmClass" @click="settleConfirm(true)">
+        <AlertDialogAction :class="confirmClass" @click="onConfirm">
           {{ confirmState.options.value.confirmText }}
         </AlertDialogAction>
       </AlertDialogFooter>
