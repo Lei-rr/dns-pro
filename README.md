@@ -347,7 +347,7 @@ JSON 写入通过文件锁保护，避免并发写坏。
 - `GET /api/health`
 - `POST|GET|DELETE /api/session`
 
-其余业务 API 与 `GET /api/audit` 需登录。
+其余业务 API 需登录。
 
 ## 贡献
 

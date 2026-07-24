@@ -1,5 +1,4 @@
 import { eventBus, type DomainEvent } from './event-bus.js'
-import { auditService } from '../../lib/utils/audit.js'
 import { invalidateProviderCache } from '../../lib/cache/provider-cache.js'
 
 const CACHE_EVENTS = new Set([
@@ -15,7 +14,7 @@ const CACHE_EVENTS = new Set([
 let registered = false
 
 /**
- * Wire platform side-effects to domain events.
+ * Wire platform side-effects to domain events (cache invalidate).
  * Idempotent: safe to call multiple times in the same process.
  */
 export function registerEventSubscribers(): void {
@@ -23,18 +22,6 @@ export function registerEventSubscribers(): void {
   registered = true
 
   eventBus.on('*', async (event: DomainEvent) => {
-    await auditService.write({
-      ts: event.ts,
-      action: event.action || event.type,
-      provider_id: event.provider_id,
-      zone: event.zone,
-      hostname: event.hostname,
-      target: event.target,
-      result: event.result ?? 'success',
-      message: event.message,
-      meta: { type: event.type, ...(event.meta || {}) },
-    })
-
     if (CACHE_EVENTS.has(event.type) && event.cache_tags?.length) {
       invalidateProviderCache(event.cache_tags)
     }

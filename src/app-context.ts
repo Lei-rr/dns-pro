@@ -41,7 +41,7 @@ import { JobService } from './platform/job/job-service.js'
 import { registerEventSubscribers } from './platform/events/subscribers.js'
 
 export async function createAppContext(config: AppConfig) {
-  // Side-effect bus (audit + cache invalidate)
+  // Side-effect bus (cache invalidate)
   registerEventSubscribers()
 
   const appConfigRepository = new AppConfigRepository()

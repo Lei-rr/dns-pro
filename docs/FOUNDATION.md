@@ -47,8 +47,7 @@ API        → /api only
 ## 鉴权
 
 - 公开：`GET /health`、`POST/GET/DELETE /session`
-- 其余业务 API + `GET /audit`：统一走 compose 里一层 `authRequired`
-- `/audit` 有后端、当前无前端页面（运维接口）
+- 其余业务 API：统一走 compose 里一层 `authRequired`
 
 ## 加功能 3 步
 

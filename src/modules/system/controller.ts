@@ -4,8 +4,6 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success, error } from '../../lib/http/api-response.js'
 import { getDataRoot } from '../../lib/storage/json-store.js'
 import { globalCache } from '../../lib/cache/provider-cache.js'
-import { auditService } from '../../lib/utils/audit.js'
-import { queryInt, queryRecord } from '../../lib/utils/request-parse.js'
 
 async function isDirectoryWritable(dir: string): Promise<boolean> {
   const probe = path.join(dir, `.health-check-${Date.now()}`)
@@ -48,10 +46,4 @@ export async function healthShow(request: FastifyRequest, reply: FastifyReply) {
   }
 
   return reply.send(success(payload))
-}
-
-export async function auditIndex(request: FastifyRequest, reply: FastifyReply) {
-  const q = queryRecord(request)
-  const items = await auditService.list(queryInt(q, 'limit', 100, 1, 1000))
-  return reply.send(success({ items }))
 }

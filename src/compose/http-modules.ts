@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { authRequired } from '../modules/auth/hooks/auth-required.js'
-import { routes as systemPublicRoutes, protectedRoutes as systemProtectedRoutes } from '../modules/system/routes.js'
+import { routes as systemPublicRoutes } from '../modules/system/routes.js'
 import { routes as authRoutes } from '../modules/auth/routes.js'
 import { routes as providerRoutes } from '../modules/provider/routes.js'
 import { routes as cloudflareRoutes } from '../modules/cloudflare/routes.js'
@@ -17,7 +17,7 @@ import { routes as cloudflaredRoutes } from '../modules/cloudflared/routes.js'
  *
  * Auth model:
  * - public: health + session
- * - one authenticated envelope for all business APIs (including audit)
+ * - one authenticated envelope for all business APIs
  */
 export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
   // Public
@@ -27,7 +27,6 @@ export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
   // Authenticated envelope — single place for authRequired
   await app.register(async function authenticatedApi(scope) {
     scope.addHook('preHandler', authRequired)
-    await scope.register(systemProtectedRoutes)
     await scope.register(providerRoutes, { prefix: '/providers' })
     await scope.register(cloudflareRoutes, { prefix: '/cloudflare/providers/:providerId' })
     await scope.register(dnspodRoutes, { prefix: '/dnspod/providers/:providerId' })
