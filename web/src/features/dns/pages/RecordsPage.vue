@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoa
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { EllipsisVertical, Plus, RefreshCw, Search, ChevronRight, ChevronDown } from '@lucide/vue'
+import { EllipsisVertical, Plus, RefreshCw, Search, ChevronRight, ChevronDown, Copy } from '@lucide/vue'
 import { dnsApi } from '@/features/dns/api/dns'
 import { getCachedProvider, loadProviders } from '@/features/providers/stores/providers'
 import { providerPath } from '@/features/providers/lib/paths'
@@ -113,11 +113,13 @@ type DisplayRow =
  * 当前页按主机前缀 / 邮箱套件聚组：
  * - api(默认)+api(境内)+_acme-challenge.api
  * - MX/SPF/DKIM/DMARC → @zone
+ * 折叠组一律置顶，避免和普通单行穿插。
  */
 const displayRows = computed((): DisplayRow[] => {
   const list = filteredRecords.value
   const zone = zoneName.value
-  const rows: DisplayRow[] = []
+  const groups: DisplayRow[] = []
+  const singles: DisplayRow[] = []
   let i = 0
   while (i < list.length) {
     const rec = list[i]
@@ -126,7 +128,7 @@ const displayRows = computed((): DisplayRow[] => {
     while (j < list.length && recordHostKey(list[j], zone) === hk) j++
     const chunk = list.slice(i, j)
     if (shouldCollapseHostGroup(chunk, zone)) {
-      rows.push({
+      groups.push({
         kind: 'group',
         hostKey: hk,
         label: hostGroupLabel(hk, zone),
@@ -135,7 +137,7 @@ const displayRows = computed((): DisplayRow[] => {
       })
     } else {
       for (const r of chunk) {
-        rows.push({
+        singles.push({
           kind: 'single',
           record: r,
           key: `r:${String(r.id || `${r.name}-${r.type}-${r.value}-${r.line}`)}`,
@@ -144,7 +146,7 @@ const displayRows = computed((): DisplayRow[] => {
     }
     i = j
   }
-  return rows
+  return [...groups, ...singles]
 })
 
 /** 折叠状态：默认收起；搜索命中自动展开 */
@@ -415,6 +417,20 @@ async function removeRecord(record: DnsRecord) {
     await load({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
+  }
+}
+
+async function copyRecordValue(record: DnsRecord | { value?: string; content?: string }) {
+  const text = String(record.value || record.content || '').trim()
+  if (!text) {
+    toast.warning('无可复制内容')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    toast.success('已复制')
+  } catch {
+    toast.warning('复制失败，请手动选择')
   }
 }
 
@@ -706,8 +722,21 @@ onMounted(async () => {
                 <Badge variant="secondary">{{ record.type }}</Badge>
               </TableCell>
               <TableCell class="w-[14rem] max-w-[18rem]">
-                <div class="max-w-[18rem] truncate" :title="String(record.value || record.content || '')">
-                  {{ record.value || record.content || '-' }}
+                <div class="flex min-w-0 items-center gap-1">
+                  <div class="min-w-0 flex-1 truncate" :title="String(record.value || record.content || '')">
+                    {{ record.value || record.content || '-' }}
+                  </div>
+                  <Button
+                    v-if="record.value || record.content"
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    class="size-7 shrink-0"
+                    title="复制记录值"
+                    @click.stop="copyRecordValue(record)"
+                  >
+                    <Copy class="size-3.5" />
+                  </Button>
                 </div>
               </TableCell>
               <TableCell>{{ ttlDisplay(record.ttl) }}</TableCell>
@@ -758,8 +787,21 @@ onMounted(async () => {
                 <Badge variant="secondary">{{ row.record.type }}</Badge>
               </TableCell>
               <TableCell class="w-[14rem] max-w-[18rem]">
-                <div class="max-w-[18rem] truncate" :title="String(row.record.value || row.record.content || '')">
-                  {{ row.record.value || row.record.content || '-' }}
+                <div class="flex min-w-0 items-center gap-1">
+                  <div class="min-w-0 flex-1 truncate" :title="String(row.record.value || row.record.content || '')">
+                    {{ row.record.value || row.record.content || '-' }}
+                  </div>
+                  <Button
+                    v-if="row.record.value || row.record.content"
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    class="size-7 shrink-0"
+                    title="复制记录值"
+                    @click.stop="copyRecordValue(row.record)"
+                  >
+                    <Copy class="size-3.5" />
+                  </Button>
                 </div>
               </TableCell>
               <TableCell>{{ ttlDisplay(row.record.ttl) }}</TableCell>

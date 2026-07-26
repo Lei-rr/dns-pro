@@ -39,8 +39,114 @@ export class SyncOrchestrator {
   }
 
   async collectSaasRecords(providerId: string, zoneName: string, hostnameFqdn: string) {
-    const driver = await this.driverForSaasHostname(providerId, zoneName, hostnameFqdn)
-    return driver.collectRecordsFor(providerId, zoneName, hostnameFqdn)
+    try {
+      const driver = await this.driverForSaasHostname(providerId, zoneName, hostnameFqdn)
+      return await driver.collectRecordsFor(providerId, zoneName, hostnameFqdn)
+    } catch {
+      // CF custom hostname may already be gone; still build DNS cleanup list from local preference.
+      return this.collectSaasRecordsFallback(providerId, hostnameFqdn)
+    }
+  }
+
+  /**
+   * When CF hostname is already deleted, invent the usual DNS cleanup set from local preference / defaults.
+   * Values are empty so DNSPod delete matches by type+name(+line) only.
+   */
+  async collectSaasRecordsFallback(providerId: string, hostnameFqdn: string): Promise<{ hostname_fqdn: string; records: SyncRecord[] }> {
+    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    if (fqdn === '') return { hostname_fqdn: '', records: [] }
+
+    let config: Record<string, unknown> = {}
+    try {
+      config = await this.hostnames.effectiveSyncConfig(providerId, fqdn, '')
+    } catch {
+      config = {
+        sync_target: await this.hostnames.defaultSyncTarget(providerId),
+        sync_provider_id: '',
+        sync_zone: '',
+      }
+    }
+    const target = String(config.sync_target ?? '').trim() || (await this.hostnames.defaultSyncTarget(providerId))
+    if (target !== 'dnspod') {
+      // Cloudflare DNS fallback: zone must match FQDN; only clean common names when zone known.
+      const zoneName = String(config.sync_zone ?? '').trim().toLowerCase()
+      let provider = String(config.sync_provider_id ?? '').trim()
+      if (provider === '') {
+        try {
+          provider = await this.hostnames.cloudflareProviderIdFor(providerId)
+        } catch {
+          provider = ''
+        }
+      }
+      if (provider === '' || zoneName === '' || (fqdn !== zoneName && !fqdn.endsWith('.' + zoneName))) {
+        return { hostname_fqdn: fqdn, records: [] }
+      }
+      return {
+        hostname_fqdn: fqdn,
+        records: [
+          { type: 'CNAME', name: fqdn, value: '', purpose: 'origin_cname', provider_id: provider, zone_name: zoneName },
+          { type: 'CNAME', name: `_acme-challenge.${fqdn}`, value: '', purpose: 'dcv_delegation', provider_id: provider, zone_name: zoneName },
+          { type: 'TXT', name: `_cf-custom-hostname.${fqdn}`, value: '', purpose: 'ownership_verification', provider_id: provider, zone_name: zoneName },
+        ],
+      }
+    }
+
+    let dnspodProviderId = String(config.sync_provider_id ?? '').trim()
+    if (dnspodProviderId === '') {
+      try {
+        dnspodProviderId = await this.support.requireDnspodProviderId(providerId, 'saas', 'SaaS')
+      } catch {
+        return { hostname_fqdn: fqdn, records: [] }
+      }
+    }
+
+    let dnspodZone = String(config.sync_zone ?? '').trim().toLowerCase()
+    try {
+      if (dnspodZone !== '') {
+        dnspodZone = await this.support.requireExplicitDnspodZone(dnspodProviderId, dnspodZone, 'saas')
+      } else {
+        dnspodZone = await this.support.resolveDnspodZone(dnspodProviderId, fqdn, 'saas')
+      }
+    } catch {
+      return { hostname_fqdn: fqdn, records: [] }
+    }
+
+    const records: SyncRecord[] = [
+      { type: 'CNAME', name: fqdn, value: '', purpose: 'origin_cname', provider_id: dnspodProviderId, line: '默认', dnspod_zone: dnspodZone },
+      { type: 'CNAME', name: fqdn, value: '', purpose: 'preferred_cname', provider_id: dnspodProviderId, line: '境内', dnspod_zone: dnspodZone },
+      { type: 'CNAME', name: `_acme-challenge.${fqdn}`, value: '', purpose: 'dcv_delegation', provider_id: dnspodProviderId, line: '默认', dnspod_zone: dnspodZone },
+      { type: 'TXT', name: `_cf-custom-hostname.${fqdn}`, value: '', purpose: 'ownership_verification', provider_id: dnspodProviderId, line: '默认', dnspod_zone: dnspodZone },
+    ]
+    return { hostname_fqdn: fqdn, records }
+  }
+
+  async cleanupSaasRecords(providerId: string, zoneName: string, hostnameFqdn: string, records: SyncRecord[]) {
+    // Must not require CF hostname still exists — delete flow removes CF first, then cleans DNS.
+    const target = await this.targetForCleanup(providerId, zoneName, hostnameFqdn, records)
+    const driver = this.driverForTarget(target)
+    return this.safe(() => driver.cleanup(providerId, hostnameFqdn, records))
+  }
+
+  private async targetForCleanup(
+    providerId: string,
+    zoneName: string,
+    hostnameFqdn: string,
+    records: SyncRecord[],
+  ): Promise<string> {
+    if (records.some((r) => String(r.dnspod_zone ?? '').trim() !== '' || String(r.line ?? '').trim() !== '')) {
+      return 'dnspod'
+    }
+    if (records.some((r) => String(r.zone_name ?? '').trim() !== '')) {
+      return 'cloudflare_dns'
+    }
+    try {
+      const config = await this.hostnames.effectiveSyncConfig(providerId, hostnameFqdn, zoneName)
+      const target = String(config.sync_target ?? '').trim()
+      if (target !== '') return target
+    } catch {
+      // ignore
+    }
+    return (await this.hostnames.defaultSyncTarget(providerId)) || 'dnspod'
   }
 
   async preflightSaas(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}) {
@@ -61,11 +167,6 @@ export class SyncOrchestrator {
   ) {
     const driver = await this.driverForSaasHostname(providerId, zoneName, hostnameFqdn)
     return this.safe(() => driver.resyncAfterUpdate(providerId, zoneName, hostnameFqdn, beforeRecords))
-  }
-
-  async cleanupSaasRecords(providerId: string, zoneName: string, hostnameFqdn: string, records: SyncRecord[]) {
-    const driver = await this.driverForSaasHostname(providerId, zoneName, hostnameFqdn)
-    return this.safe(() => driver.cleanup(providerId, hostnameFqdn, records))
   }
 
   async cleanupSaasStaleRecords(providerId: string, zoneName: string, hostnameFqdn: string) {

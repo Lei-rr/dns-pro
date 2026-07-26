@@ -21,6 +21,7 @@ import { SaasPreferenceService } from './modules/saas/services/preference-servic
 import { SaasPreferredApplyService } from './modules/saas/services/preferred-apply-service.js'
 import { SaasBatchJobService } from './modules/saas/services/batch-job-service.js'
 import { DnsBatchJobService } from './modules/dns-batch/services/batch-job-service.js'
+import { CloudflareDnsBatchAdapter } from './modules/dns-batch/services/cloudflare-dns-batch-adapter.js'
 import { CloudflareZoneService } from './modules/cloudflare/services/zone-service.js'
 import { CloudflareDnsRecordService } from './modules/cloudflare/services/dns-record-service.js'
 import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
@@ -99,7 +100,8 @@ export async function createAppContext(config: AppConfig) {
   const saasBatchJobService = new SaasBatchJobService(jobService, saasWorkflowService)
   const dnsBatchJobService = new DnsBatchJobService(jobService, {
     dnspod: dnspodRecordService,
-    cloudflare: cloudflareDnsRecordService,
+    // CF batch must resolve zone name → zone id (single-record controllers already do this).
+    cloudflare: new CloudflareDnsBatchAdapter(cloudflareZoneService, cloudflareDnsRecordService),
   })
   const edgeoneBatchJobService = new EdgeOneBatchJobService(
     jobService,

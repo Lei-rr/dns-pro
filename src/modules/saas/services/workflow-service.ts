@@ -1,4 +1,5 @@
 import { completed, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
+import { ApiError } from '../../../lib/http/api-error.js'
 import { SyncOrchestrator } from '../../sync/services/sync-orchestrator.js'
 import type { SyncRecord } from '../../sync/types.js'
 import { isHostnameActive } from '../utils/host-status.js'
@@ -156,8 +157,21 @@ export class SaasWorkflowService {
     hostnameFqdn: string,
     autoCleanup = true,
   ): Promise<Record<string, unknown>> {
-    const collected = autoCleanup ? await this.sync.collectSaasRecords(providerId, zoneName, hostnameFqdn) : null
-    const result = await this.hostnames.deleteHostname(providerId, zoneName, hostnameFqdn)
+    // Order: collect DNS targets → delete CF custom hostname → clean DNS.
+    // CF already gone must not block DNS cleanup.
+    let collected: { hostname_fqdn: string; records: SyncRecord[] } | null = null
+    if (autoCleanup) {
+      collected = await this.sync.collectSaasRecords(providerId, zoneName, hostnameFqdn)
+    }
+
+    let result: Record<string, unknown> = { id: '', hostname: hostnameFqdn }
+    try {
+      result = await this.hostnames.deleteHostname(providerId, zoneName, hostnameFqdn)
+    } catch (error) {
+      const code = error instanceof ApiError ? error.code : ''
+      if (code !== 'saas_hostname_not_found') throw error
+    }
+
     await eventBus.emit({
       type: 'saas.hostname.mutated',
       provider_id: providerId,

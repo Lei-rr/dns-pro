@@ -159,10 +159,22 @@ export class SaasHostnameService {
   }
 
   async deleteHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<{ id: string }> {
-    const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
-    const result = await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
-    await this.preferences.clear(cfId, hostnameId)
-    return result
+    let cfId = ''
+    let zoneId = ''
+    let hostnameId = ''
+    try {
+      ;[cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
+    } catch {
+      // Hostname already gone from CF; skip API delete and clear preferences by FQDN.
+      await this.clearPreferencesForFqdn(providerId, hostnameFqdn)
+      return { id: '' }
+    }
+
+    if (hostnameId !== '') {
+      await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
+      await this.preferences.clear(cfId, hostnameId)
+    }
+    return { id: hostnameId }
   }
 
   async fallbackOriginInfo(providerId: string, zoneName: string, refresh = false): Promise<{ origin?: string | null; status?: string | null; [key: string]: unknown }> {
@@ -187,6 +199,18 @@ export class SaasHostnameService {
   }
 
   async syncConfig(providerId: string, hostnameFqdn: string, zoneName = ''): Promise<Record<string, unknown>> {
+    // Local preference by FQDN first — still works after CF custom hostname is already deleted.
+    const byFqdn = await this.preferenceForFqdn(providerId, hostnameFqdn)
+    if (byFqdn) {
+      return {
+        hostname: byFqdn.hostname ?? '',
+        sync_target: byFqdn.sync_target ?? '',
+        sync_provider_id: byFqdn.sync_provider_id ?? '',
+        sync_zone: byFqdn.sync_zone ?? '',
+        auto_preferred: byFqdn.auto_preferred ?? false,
+      }
+    }
+
     const [cfId, , hostnameId] =
       zoneName !== ''
         ? await this.resolveHostname(providerId, zoneName, hostnameFqdn)
@@ -201,6 +225,34 @@ export class SaasHostnameService {
       sync_zone: preference.sync_zone ?? '',
       auto_preferred: preference.auto_preferred ?? false,
     }
+  }
+
+  /** Match local preference by FQDN without requiring CF hostname to still exist. */
+  async preferenceForFqdn(providerId: string, hostnameFqdn: string): Promise<HostnamePreference | null> {
+    const cfId = await this.cloudflareProviderId(providerId)
+    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    if (fqdn === '') return null
+    const map = await this.preferences.listByProvider(cfId)
+    for (const pref of Object.values(map)) {
+      if (String(pref.hostname ?? '').toLowerCase().replace(/\.$/, '').trim() === fqdn) {
+        return pref
+      }
+    }
+    return null
+  }
+
+  async clearPreferencesForFqdn(providerId: string, hostnameFqdn: string): Promise<number> {
+    const cfId = await this.cloudflareProviderId(providerId)
+    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    if (fqdn === '') return 0
+    const map = await this.preferences.listByProvider(cfId)
+    let cleared = 0
+    for (const [hostnameId, pref] of Object.entries(map)) {
+      if (String(pref.hostname ?? '').toLowerCase().replace(/\.$/, '').trim() !== fqdn) continue
+      await this.preferences.clear(cfId, hostnameId)
+      cleared++
+    }
+    return cleared
   }
 
   async effectiveSyncConfig(providerId: string, hostnameFqdn: string, zoneName = ''): Promise<Record<string, unknown>> {
