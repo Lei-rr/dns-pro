@@ -28,7 +28,14 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
   ) {}
 
   async preflight(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
-    const [cloudflareProviderId, zoneId, zoneName] = await this.resolveTarget(providerId, hostnameFqdn, String(data.sync_zone ?? ''))
+    // Create-time preflight must not look up SaaS hostname preferences — hostname is not created yet.
+    const [cloudflareProviderId, zoneId, zoneName] = await this.resolveTarget(
+      providerId,
+      hostnameFqdn,
+      String(data.sync_zone ?? ''),
+      String(data.sync_provider_id ?? ''),
+      true,
+    )
     return { cloudflare_provider_id: cloudflareProviderId, cloudflare_zone_id: zoneId, cloudflare_zone: zoneName, hostname_fqdn: hostnameFqdn.trim() }
   }
 
@@ -118,16 +125,22 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     }
   }
 
-  private async resolveTarget(providerId: string, hostnameFqdn: string, explicitSyncZone = '', explicitSyncProviderId = ''): Promise<[string, string, string]> {
+  private async resolveTarget(
+    providerId: string,
+    hostnameFqdn: string,
+    explicitSyncZone = '',
+    explicitSyncProviderId = '',
+    skipHostnameConfig = false,
+  ): Promise<[string, string, string]> {
     let cloudflareProviderId = explicitSyncProviderId.trim()
-    if (cloudflareProviderId === '') {
+    if (cloudflareProviderId === '' && !skipHostnameConfig) {
       const sync = await this.hostnames.syncConfig(providerId, hostnameFqdn)
       cloudflareProviderId = String(sync.sync_provider_id ?? '').trim()
     }
     if (cloudflareProviderId === '') cloudflareProviderId = await this.requireCloudflareDnsProviderId(providerId)
 
     let zoneName = explicitSyncZone.toLowerCase().trim()
-    if (zoneName === '') {
+    if (zoneName === '' && !skipHostnameConfig) {
       const sync = await this.hostnames.syncConfig(providerId, hostnameFqdn)
       zoneName = String(sync.sync_zone ?? '').toLowerCase().trim()
     }
@@ -169,24 +182,32 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
   }
 
   private requireBusinessTarget(hostname: CloudflareCustomHostname, effectiveOrigin: string): void {
-    const autoPreferred = Boolean(hostname.auto_preferred ?? false)
+    if (this.businessTarget(hostname, effectiveOrigin) === '') {
+      throw new ApiError('saas_business_target_missing', 'No business CNAME target available', 422)
+    }
+  }
+
+  /**
+   * Cloudflare DNS has no line split (unlike DNSPod 默认/境内).
+   * One business CNAME: preferred domain when set, otherwise origin/fallback.
+   * Ownership TXT is not written on sync (same-zone CF often auto-verifies); includeAll still
+   * surfaces existing ownership for delete cleanup only.
+   */
+  private businessTarget(hostname: CloudflareCustomHostname, effectiveOrigin: string): string {
     const metadata = hostname.custom_metadata ?? {}
-    const preferred = String(metadata.preferred_domain ?? '').trim()
-    const businessTarget = autoPreferred && preferred !== '' ? preferred : effectiveOrigin
-    if (businessTarget === '') throw new ApiError('saas_business_target_missing', 'No business CNAME target available', 422)
+    const preferred = String(metadata.preferred_domain ?? hostname.preferred_domain ?? '').trim()
+    if (preferred !== '') return preferred
+    return effectiveOrigin.trim()
   }
 
   private collectRecords(hostname: CloudflareCustomHostname, effectiveOrigin: string, zoneName: string, cloudflareProviderId: string, includeAll = false): CloudflareDnsSyncRecord[] {
     const records: CloudflareDnsSyncRecord[] = []
     const fqdn = String(hostname.hostname ?? '')
-    const shouldOutputOwnership = includeAll || !isHostnameActive(hostname)
-    const autoPreferred = Boolean(hostname.auto_preferred ?? false)
-    const metadata = hostname.custom_metadata ?? {}
-    const preferred = String(metadata.preferred_domain ?? '').trim()
-    const businessTarget = autoPreferred && preferred !== '' ? preferred : effectiveOrigin
+    const target = this.businessTarget(hostname, effectiveOrigin)
 
-    if (fqdn !== '' && businessTarget !== '') {
-      records.push(this.record('CNAME', fqdn, businessTarget, 'origin_cname', fqdn, zoneName, cloudflareProviderId))
+    if (fqdn !== '' && target !== '') {
+      // Single business CNAME (no DNSPod-style 境内 line). Preferred when present, else origin.
+      records.push(this.record('CNAME', fqdn, target, 'origin_cname', fqdn, zoneName, cloudflareProviderId))
     }
 
     const ssl = hostname.ssl ?? {}
@@ -194,9 +215,9 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     let dcvAdded = false
     for (const rec of dcvRecords) {
       const cname = String(rec.cname ?? '')
-      const target = String(rec.cname_target ?? '')
-      if (cname !== '' && target !== '') {
-        records.push(this.record('CNAME', cname, target, 'dcv_delegation', fqdn, zoneName, cloudflareProviderId))
+      const dcvTarget = String(rec.cname_target ?? '')
+      if (cname !== '' && dcvTarget !== '') {
+        records.push(this.record('CNAME', cname, dcvTarget, 'dcv_delegation', fqdn, zoneName, cloudflareProviderId))
         dcvAdded = true
       }
     }
@@ -208,7 +229,8 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
       }
     }
 
-    if (shouldOutputOwnership) {
+    // Do not create ownership TXT on sync. Only list it when collecting for cleanup/delete.
+    if (includeAll) {
       const ownership = hostname.ownership_verification ?? null
       if (ownership && ownership.name && ownership.value) {
         records.push(this.record('TXT', String(ownership.name), String(ownership.value), 'ownership_verification', fqdn, zoneName, cloudflareProviderId))
