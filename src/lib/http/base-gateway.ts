@@ -21,10 +21,6 @@ export function setDefaultHttpTimeout(ms: number): void {
   defaultHttpTimeoutMs = Math.max(1000, Math.min(300000, ms))
 }
 
-export function getDefaultHttpTimeout(): number {
-  return defaultHttpTimeoutMs
-}
-
 function buildUrl(baseURL: string, path: string, params?: Record<string, unknown>): string {
   const base = baseURL.endsWith('/') ? baseURL : `${baseURL}/`
   const relative = path.startsWith('/') ? path.slice(1) : path

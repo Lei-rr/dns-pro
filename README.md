@@ -18,26 +18,10 @@
 | 层 | 技术 |
 |---|---|
 | 后端 | Fastify 5 + TypeScript |
-| 前端 | Vue 3 + Vite + Ant Design Vue |
+| 前端 | Vue 3 + Vite + Tailwind CSS + shadcn 风格组件 |
 | 存储 | 本地 JSON，无数据库 |
 
 ---
-
-## 目录
-
-- [功能特性](#功能特性)
-- [快速开始](#快速开始)
-- [Docker 部署](#docker-部署)
-- [开发](#开发)
-- [配置](#配置)
-- [Provider 配置](#provider-配置)
-- [架构说明](#架构说明)
-- [目录结构](#目录结构)
-- [数据与任务](#数据与任务)
-- [安全建议](#安全建议)
-- [贡献](#贡献)
-- [分支说明](#分支说明)
-- [许可证](#许可证)
 
 ## 功能特性
 
@@ -100,8 +84,6 @@ ghcr.io/lei-rr/dns-pro:fast
 ```bash
 docker compose pull
 docker compose up -d
-docker compose ps
-docker compose logs -f dns-pro
 ```
 
 默认端口与数据目录：
@@ -124,21 +106,7 @@ docker run -d \
   ghcr.io/lei-rr/dns-pro:latest
 ```
 
-访问：
-
-```text
-http://服务器IP:2022
-```
-
-本地构建镜像：
-
-```bash
-docker build -t dns-pro:local .
-```
-
 ## 开发
-
-本地开发端口与 Docker 生产端口分开，避免冲突：
 
 | 服务 | 地址 |
 |---|---|
@@ -149,15 +117,7 @@ docker build -t dns-pro:local .
 ### 启动后端
 
 ```bash
-npm run dev
-# 或
 npm run dev:server
-```
-
-需要请求日志：
-
-```bash
-npm run dev:server:debug
 ```
 
 ### 启动前端
@@ -166,211 +126,79 @@ npm run dev:server:debug
 npm run dev:web
 ```
 
-Vite 已代理 `/api` 到 `http://127.0.0.1:3022`。
+## 架构
 
-### 常用命令
-
-```bash
-npm run lint
-npm run typecheck
-npm run typecheck:web
-npm run build
-npm run verify
+```
+src/
+  app.ts              # Fastify 组装
+  server.ts           # 进程入口
+  app-context.ts      # 接线：new 服务 → ctx（唯一组装点）
+  compose/
+    http-modules.ts   # 路由表
+  plugins/            # Fastify 插件（安全、静态、session、错误处理）
+  platform/           # job / events / ensure-data-dirs / batch-helpers
+  config/app.ts
+  lib/
+    cache/            # 内存缓存 + tag 失效
+    http/             # BaseGateway + ApiError + 第三方签名
+    storage/          # JsonStore
+    auth/             # AES-GCM session
+    providers/        # 供应商响应 schema
+  modules/
+    auth provider system
+    dnspod cloudflare saas edgeone cloudflared
+    sync              # 内部 DNS 同步（无 HTTP、不进 ctx）
+    dns-batch         # DNS 批量（挂 dnspod/cloudflare 路由）
+  types/fastify.d.ts
 ```
 
-`verify` = lint + typecheck（含前端）+ 全量 build，适合发版前自检。
+### 接线原则
+
+- 无 DI 容器，无服务注册表
+- 所有 service 构造器无默认参数，`app-context.ts` 是唯一组装点
+- Gateway 实例通过 `CloudflareGateway.forToken()` / `DnsPodGateway.forCredentials()` 等工厂获取
+- 缓存失效通过 `eventBus.emit` + `cache_tags` 统一路径
+- 批量任务循环、互斥、计数、finish 通过 `platform/job/batch-helpers.ts`
 
 ## 配置
 
-项目默认**不依赖环境变量**，核心配置在 `src/config/app.ts`：
-
-| 配置项 | 默认值 | 说明 |
+| 变量 | 说明 | 默认值 |
 |---|---|---|
-| `host` | `0.0.0.0` | 监听地址 |
-| `port` | `2022` | 生产默认端口 |
-| `dataDir` | `./data` | 运行数据目录 |
-| `logLevel` | `false` | 默认关闭访问日志 |
-| `sessionSecret` | `dns-pro-secure-session` | session 密钥（生产务必改） |
-| `sessionMaxAgeSeconds` | `604800` | session 有效期（7 天） |
-| `httpTimeoutMs` | `30000` | 外部 API 超时 |
+| `PORT` | HTTP 监听端口 | `2022` |
+| `HOST` | 监听地址 | `0.0.0.0` |
+| `DATA_DIR` | 数据持久化目录 | `./data` |
+| `SESSION_SECRET` | 会话加密密钥 | `dns-pro-secure-session` |
+| `TRUST_PROXY` | 是否信任反向代理 IP | `false` |
+| `LOG_LEVEL` | 日志级别 | `info` |
+| `HTTP_TIMEOUT_MS` | 上游 API 超时 | `30000` |
+| `CACHE_MAX_ENTRIES` | 内存缓存最大条目 | `1000` |
+| `CACHE_SWEEP_INTERVAL_MS` | 缓存清理间隔 | `600000` |
 
-本地开发可指定端口：
+## 常用命令
 
-```bash
-tsx watch src/server.ts --port 3022
-```
-
-生产环境请务必：
-
-1. 修改默认登录密码（`data/config.json`）
-2. 替换默认 `sessionSecret`
-
-## Provider 配置
-
-登录后台后在页面中配置 Provider，数据写入 `data/providers.json`。
-
-### DNSPod
-
-使用腾讯云 `SecretId` / `SecretKey`，至少需要：
-
-- `DescribeDomainList` / `CreateDomain` / `DeleteDomain`
-- `DescribeRecordList` / `CreateRecord` / `ModifyRecord` / `DeleteRecord`
-
-### Cloudflare
-
-使用 Cloudflare API Token，按需最小化授权：
-
-| 功能 | 权限 | 范围 |
-|---|---|---|
-| 域名列表 | Zone / Zone / Read | 目标 Zone |
-| DNS 记录 | Zone / DNS / Edit | 目标 Zone |
-| Cloudflare for SaaS | Zone / SSL and Certificates / Edit | 目标 Zone |
-| Cloudflare Tunnel | Account / Cloudflare Tunnel / Edit | 目标 Account |
-
-创建 Zone、Tunnel 相关操作需要配置 `account_id`。
-
-### EdgeOne
-
-EdgeOne 复用关联 DNSPod Provider 凭据。常用权限：
-
-- `DescribeZones`
-- `DescribeAccelerationDomains`
-- `CreateAccelerationDomain` / `ModifyAccelerationDomain`
-- `ModifyAccelerationDomainStatuses` / `DeleteAccelerationDomains`
-- `ModifyHostsCertificate`
-
-### Provider 依赖关系
-
-```text
-edgeone     -> dnspod
-saas        -> cloudflare
-saas        -> dnspod / cloudflare   # 可选 DNS 同步目标
-cloudflared -> cloudflare
-```
-
-删除 Provider 前会检查是否仍被其他模块引用。
-
-## 架构说明
-
-> 权威说明见 [docs/FOUNDATION.md](docs/FOUNDATION.md)。
-
-### 两个词，不要混
-
-| 词 | 含义 | 目录 |
-|---|---|---|
-| **插件 Plugin** | Fastify HTTP 能力 | 仅 `src/plugins/*` + `@fastify/*` |
-| **模块 Module** | 业务功能（路由 + 服务） | `src/modules/*` |
-
-### 请求链路
-
-```text
-HTTP /api
-  → public: health + session
-  → authRequired envelope
-  → controller
-  → request.server.ctx.<service>
-  → gateway / repository
-  → 外部 API 或本地 JSON
-```
-
-批量任务：`JobService`（构造 batch service 时 `registerRunner`）  
-副作用：`eventBus`（审计日志 + 缓存失效）
-
-### 加功能 3 步
-
-1. 新增 `src/modules/<name>/`
-2. 在 `app-context.ts` 中 `new` 服务并放入 `ctx`（仅控制器要用的）
-3. 在 `compose/http-modules.ts` 加一行 `register`
-
-## 目录结构
-
-```text
-dns-pro/
-├── src/
-│   ├── app.ts                 # Fastify 组装
-│   ├── server.ts              # 进程入口 + ensureDataDirs
-│   ├── app-context.ts         # 接线：服务 → ctx
-│   ├── compose/http-modules.ts
-│   ├── plugins/               # 官方 Fastify 插件（security/static/…）
-│   ├── platform/              # job / events / ensure-data-dirs
-│   ├── lib/                   # http / storage / cache / auth / providers
-│   ├── modules/               # 业务模块
-│   │   ├── auth provider system
-│   │   ├── dnspod cloudflare saas edgeone cloudflared
-│   │   ├── sync               # 内部 DNS 同步（无独立 HTTP）
-│   │   └── dns-batch          # 批量删除（挂在 dnspod/cf 路由）
-│   ├── config/app.ts
-│   └── types/fastify.d.ts
-├── web/                       # Vue 3 前端
-├── docs/
-│   ├── FOUNDATION.md          # 底座权威说明
-│   └── ARCHITECTURE.md
-├── docker/                    # 容器入口脚本
-├── data/                      # 运行数据（Git 忽略）
-├── Dockerfile
-├── compose.yaml
-├── LICENSE
-└── package.json
-```
-
-生产构建后，Fastify 托管 `web/dist/` 静态资源。
-
-## 数据与任务
-
-| 路径 | 说明 |
+| 命令 | 说明 |
 |---|---|
-| `data/config.json` | 登录账号 |
-| `data/providers.json` | Provider 配置（含密钥） |
-| `data/saas/preferences.json` | SaaS 主机偏好 |
-| `data/saas/preferred-domains.json` | 优选域名列表 |
-| `data/jobs/jobs.json` | 后台任务状态 |
-| `data/sessions/` | 会话相关（若启用） |
-
-启动时 `ensureDataDirs` 仅创建 `saas/`、`jobs/` 等目录，**无** `meta.json` / schema 版本迁移。
-
-`data/` 已加入 `.gitignore`，不会提交到仓库。  
-JSON 写入通过文件锁保护，避免并发写坏。
-
-可重建的查询数据（DNS 记录列表等）走**内存缓存**；账号 / Provider / 偏好 / 任务等**本地主数据**走 JsonStore 文件。
+| `npm run dev:server` | 后端开发（3022） |
+| `npm run dev:web` | 前端开发（5173） |
+| `npm run build` | 构建前后端 |
+| `npm start` | 生产启动 |
+| `npm run typecheck` | TypeScript 检查 |
+| `npm run lint` | ESLint |
+| `npm run verify` | lint + typecheck + build |
 
 ## 安全建议
 
-- 不要提交 `data/` 或真实密钥
-- 首次部署后立即修改默认 `admin/admin`
-- 生产环境替换默认 `sessionSecret`
-- Cloudflare / 腾讯云权限按最小原则授权
-- 建议通过 HTTPS 访问
-- 自行备份 `data/`（项目不提供内置备份 API）
-
-公开接口：
-
-- `GET /api/health`
-- `POST|GET|DELETE /api/session`
-
-其余业务 API 需登录。
+- 生产环境务必设置强 `SESSION_SECRET`
+- 启用 HTTPS 反向代理
+- 修改默认 `admin` 密码
 
 ## 贡献
 
-欢迎 Issue / PR，尤其是：
+Issue / PR 欢迎。建议：
 
-- Provider 兼容与权限说明
-- 部署体验 / Docker
-- 界面与交互改进
-
-建议流程：
-
-1. Fork，基于 `fast` 开分支
-2. 本地 `npm run verify` 通过
-3. 小步 PR，说明动机与验证方式
-
-更细的底座约定见 [docs/FOUNDATION.md](docs/FOUNDATION.md)。
-
-## 分支说明
-
-| 分支 | 说明 |
-|---|---|
-| `fast` | 当前 Node.js / Fastify / Vue 版本（**推荐**） |
-| `main` | 历史 PHP 版本 |
+1. `npm run verify` 通过
+2. 保持模块边界：业务进 `modules/`，HTTP 壳进 `plugins/`，接线只在 `app-context.ts`
+3. 不引入 Nest / DI 容器 / 额外文档目录
 
 ## 许可证
 
@@ -378,5 +206,4 @@ JSON 写入通过文件锁保护，避免并发写坏。
 
 ---
 
-如果这个项目对你有用，欢迎 Star。  
-Issue / PR 也欢迎。
+如果这个项目对你有用，欢迎 Star。

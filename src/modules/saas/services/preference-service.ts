@@ -12,7 +12,7 @@ export interface HostnamePreference {
 }
 
 export class SaasPreferenceService {
-  constructor(private readonly store: SaasPreferenceRepository = new SaasPreferenceRepository()) {}
+  constructor(private readonly store: SaasPreferenceRepository) {}
 
   async get(cloudflareProviderId: string, hostnameId: string): Promise<HostnamePreference | null> {
     const items = await this.readItems()

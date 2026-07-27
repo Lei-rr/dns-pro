@@ -6,7 +6,7 @@ function domainNameParam(request: { params: { domainName: string } }): string {
   return decodeURIComponent(request.params.domainName).trim()
 }
 
-export async function edgeOneAccelerationDomainsIndex(
+export async function domainsIndex(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string } }>,
   reply: FastifyReply,
 ) {
@@ -21,7 +21,7 @@ export async function edgeOneAccelerationDomainsIndex(
   return reply.send(success(result))
 }
 
-export async function edgeOneAccelerationDomainStore(
+export async function domainStore(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string } }>,
   reply: FastifyReply,
 ) {
@@ -35,7 +35,7 @@ export async function edgeOneAccelerationDomainStore(
   return reply.status(201).send(success(result))
 }
 
-export async function edgeOneAccelerationDomainUpdate(
+export async function domainUpdate(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string } }>,
   reply: FastifyReply,
 ) {
@@ -48,7 +48,7 @@ export async function edgeOneAccelerationDomainUpdate(
   return reply.send(success(result))
 }
 
-export async function edgeOneAccelerationDomainDelete(
+export async function domainDelete(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string } }>,
   reply: FastifyReply,
 ) {
@@ -62,7 +62,7 @@ export async function edgeOneAccelerationDomainDelete(
   return reply.send(success(result))
 }
 
-export async function edgeOneAccelerationDomainStatusUpdate(
+export async function domainStatusUpdate(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string } }>,
   reply: FastifyReply,
 ) {
@@ -76,7 +76,7 @@ export async function edgeOneAccelerationDomainStatusUpdate(
   return reply.send(success(result))
 }
 
-export async function edgeOneAccelerationDomainCertificateUpdate(
+export async function domainCertificateUpdate(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string } }>,
   reply: FastifyReply,
 ) {
@@ -89,7 +89,7 @@ export async function edgeOneAccelerationDomainCertificateUpdate(
   return reply.send(success(result))
 }
 
-export async function edgeOneAccelerationDomainCnameSync(
+export async function domainCnameSync(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string; domainName: string } }>,
   reply: FastifyReply,
 ) {

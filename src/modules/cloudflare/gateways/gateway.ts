@@ -10,6 +10,19 @@ export interface CloudflareApiResponse<T = unknown> {
 }
 
 export class CloudflareGateway extends BaseGateway {
+  private static readonly byToken = new Map<string, CloudflareGateway>()
+
+  /** Reuse gateway instances per API token within the process. */
+  static forToken(apiToken: string): CloudflareGateway {
+    const key = apiToken.trim()
+    let gateway = this.byToken.get(key)
+    if (!gateway) {
+      gateway = new CloudflareGateway(key)
+      this.byToken.set(key, gateway)
+    }
+    return gateway
+  }
+
   constructor(apiToken: string) {
     super({
       baseURL: 'https://api.cloudflare.com/client/v4',

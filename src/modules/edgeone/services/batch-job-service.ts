@@ -1,12 +1,23 @@
 import { ApiError } from '../../../lib/http/api-error.js'
 import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
-import { eventBus } from '../../../platform/events/event-bus.js'
+import {
+  EDGEONE_BATCH_DELETE_JOB,
+  EDGEONE_BATCH_DISABLE_JOB,
+  EDGEONE_ZONE_JOB_TYPES,
+} from '../job-types.js'
+import { emitEdgeDomainMutated } from '../events.js'
+import {
+  assertNoActiveBatchJob,
+  dedupeStrings,
+  findActiveBatchJob,
+  finishBatchJob,
+  presentBatchJobBase,
+  requeueFailedBatchItems,
+  runBatchItems,
+} from '../../../platform/job/batch-helpers.js'
 import type { EdgeOneDomainService } from './domain-service.js'
 import type { EdgeOneWorkflowService } from './workflow-service.js'
-
-export const EDGEONE_BATCH_DISABLE_JOB = 'edgeone.batch_disable'
-export const EDGEONE_BATCH_DELETE_JOB = 'edgeone.batch_delete'
 
 export type EdgeOneBatchJobView = {
   id: string
@@ -46,15 +57,13 @@ export class EdgeOneBatchJobService {
     zoneId: string
     domains: string[]
   }): Promise<EdgeOneBatchJobView> {
-    const domains = this.normalizeDomains(input.domains)
+    const domains = dedupeStrings(input.domains)
     if (!domains.length) throw new ApiError('batch_empty', 'No domains selected', 422)
 
-    const active = await this.findActive(input.providerId, input.zoneId)
-    if (active) {
-      throw new ApiError('batch_job_running', 'A batch job is already running for this zone', 409, {
-        job_id: active.id,
-      })
-    }
+    await assertNoActiveBatchJob(this.jobs, [...EDGEONE_ZONE_JOB_TYPES], {
+      provider_id: input.providerId,
+      zone_id: input.zoneId,
+    })
 
     const job = await this.jobs.create(
       EDGEONE_BATCH_DISABLE_JOB,
@@ -75,15 +84,13 @@ export class EdgeOneBatchJobService {
     domains: string[]
     autoCleanup?: boolean
   }): Promise<EdgeOneBatchJobView> {
-    const domains = this.normalizeDomains(input.domains)
+    const domains = dedupeStrings(input.domains)
     if (!domains.length) throw new ApiError('batch_empty', 'No domains selected', 422)
 
-    const active = await this.findActive(input.providerId, input.zoneId)
-    if (active) {
-      throw new ApiError('batch_job_running', 'A batch job is already running for this zone', 409, {
-        job_id: active.id,
-      })
-    }
+    await assertNoActiveBatchJob(this.jobs, [...EDGEONE_ZONE_JOB_TYPES], {
+      provider_id: input.providerId,
+      zone_id: input.zoneId,
+    })
 
     const job = await this.jobs.create(
       EDGEONE_BATCH_DELETE_JOB,
@@ -110,21 +117,10 @@ export class EdgeOneBatchJobService {
   }
 
   async retryFailed(jobId: string): Promise<EdgeOneBatchJobView> {
-    const job = await this.require(jobId)
-    const failed = job.items.filter((i) => i.status === 'failed')
-    if (!failed.length) throw new ApiError('batch_no_failed', 'No failed items to retry', 422)
-
-    const items = job.items.map((item) =>
-      item.status === 'failed' ? { ...item, status: 'pending', message: undefined } : item,
-    )
-    const requeued = await this.jobs.requeue(jobId, {
-      items,
-      done: items.filter((i) => ['success', 'skipped'].includes(String(i.status))).length,
-      failed: 0,
-      success: items.filter((i) => i.status === 'success').length,
-      skipped: items.filter((i) => i.status === 'skipped').length,
-      message: '失败项重试中',
-    })
+    await this.require(jobId)
+    const raw = await this.jobs.get(jobId)
+    if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
+    const requeued = await requeueFailedBatchItems(this.jobs, raw)
     return this.present(requeued)
   }
 
@@ -134,44 +130,21 @@ export class EdgeOneBatchJobService {
     const zoneId = String(payload.zone_id || '')
     const status = String(payload.status || 'offline')
 
-    for (const raw of job.items) {
-      const item = raw as Record<string, unknown>
-      const domain = String(item.domain || '')
-      if (!domain || item.status === 'success' || item.status === 'skipped') continue
-
-      await this.jobs.patchItem(
-        job.id,
-        (row) => String(row.domain || '') === domain,
-        { status: 'running', message: '停用中' },
-        { current: domain, message: '批量停用执行中' },
-      )
-
-      try {
+    await runBatchItems(this.jobs, job, {
+      itemKey: (item) => String(item.domain || ''),
+      runningMessage: '停用中',
+      progressMessage: '批量停用执行中',
+      execute: async (_item, domain) => {
         await this.domains.updateAccelerationDomainStatus(providerId, zoneId, domain, status)
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.domain || '') === domain,
-          { status: 'success', message: '已停用' },
-        )
-      } catch (error) {
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.domain || '') === domain,
-          {
-            status: 'failed',
-            message: error instanceof Error ? error.message : String(error),
-          },
-        )
-      }
-    }
+        return { status: 'success', message: '已停用' }
+      },
+    })
 
-    await this.finish(job.id, '批量停用')
-    await eventBus.emit({
-      type: 'edge.domain.mutated',
-      provider_id: providerId,
-      zone: zoneId,
-      action: 'edgeone.domain.batch_disable',
-      cache_tags: [`edgeone:domains:${providerId}:${zoneId}`],
+    await finishBatchJob(this.jobs, job.id, '批量停用')
+    await emitEdgeDomainMutated({
+      providerId,
+      zoneId,
+      action: 'batch_disable',
     })
   }
 
@@ -181,108 +154,48 @@ export class EdgeOneBatchJobService {
     const zoneId = String(payload.zone_id || '')
     const autoCleanup = payload.auto_cleanup !== false
 
-    for (const raw of job.items) {
-      const item = raw as Record<string, unknown>
-      const domain = String(item.domain || '')
-      if (!domain || item.status === 'success' || item.status === 'skipped') continue
-
-      await this.jobs.patchItem(
-        job.id,
-        (row) => String(row.domain || '') === domain,
-        { status: 'running', message: '删除中' },
-        { current: domain, message: '批量删除执行中' },
-      )
-
-      try {
+    await runBatchItems(this.jobs, job, {
+      itemKey: (item) => String(item.domain || ''),
+      runningMessage: '删除中',
+      progressMessage: '批量删除执行中',
+      execute: async (_item, domain) => {
         const result = await this.workflow.deleteAccelerationDomain(providerId, zoneId, domain, autoCleanup)
         const cleanup = (
           result as { side_effects?: { dns?: { cleanup?: { status?: string; message?: string } } } }
         )?.side_effects?.dns?.cleanup
         if (autoCleanup && cleanup?.status === 'failed') {
-          await this.jobs.patchItem(
-            job.id,
-            (row) => String(row.domain || '') === domain,
-            {
-              status: 'failed',
-              message: `加速域名已删除，但 DNS 清理失败：${cleanup.message || '未知错误'}`,
-              dns_cleanup_status: 'failed',
-            },
-          )
-        } else {
-          const note =
-            autoCleanup && cleanup?.status === 'completed'
-              ? '已删除（DNS 已清理）'
-              : autoCleanup && cleanup?.status === 'skipped'
-                ? `已删除（DNS 跳过：${cleanup.message || '—'}）`
-                : '已删除'
-          await this.jobs.patchItem(
-            job.id,
-            (row) => String(row.domain || '') === domain,
-            { status: 'success', message: note, dns_cleanup_status: cleanup?.status },
-          )
-        }
-      } catch (error) {
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.domain || '') === domain,
-          {
+          return {
             status: 'failed',
-            message: error instanceof Error ? error.message : String(error),
-          },
-        )
-      }
-    }
-
-    await this.finish(job.id, '批量删除')
-    await eventBus.emit({
-      type: 'edge.domain.mutated',
-      provider_id: providerId,
-      zone: zoneId,
-      action: 'edgeone.domain.batch_delete',
-      cache_tags: [`edgeone:domains:${providerId}:${zoneId}`],
+            message: `加速域名已删除，但 DNS 清理失败：${cleanup.message || '未知错误'}`,
+            extra: { dns_cleanup_status: 'failed' },
+          }
+        }
+        const note =
+          autoCleanup && cleanup?.status === 'completed'
+            ? '已删除（DNS 已清理）'
+            : autoCleanup && cleanup?.status === 'skipped'
+              ? `已删除（DNS 跳过：${cleanup.message || '—'}）`
+              : '已删除'
+        return {
+          status: 'success',
+          message: note,
+          extra: { dns_cleanup_status: cleanup?.status },
+        }
+      },
     })
-  }
 
-  private async finish(jobId: string, label: string): Promise<void> {
-    const finalJob = await this.jobs.get(jobId)
-    if (!finalJob) return
-    const success = finalJob.items.filter((i) => i.status === 'success').length
-    const failed = finalJob.items.filter((i) => i.status === 'failed').length
-    const skipped = finalJob.items.filter((i) => i.status === 'skipped').length
-    await this.jobs.patch(jobId, {
-      status: failed > 0 && success === 0 ? 'failed' : 'completed',
-      success,
-      failed,
-      skipped,
-      done: finalJob.items.length,
-      current: undefined,
-      finished_at: Date.now(),
-      message: failed
-        ? `${label}完成：成功 ${success}，失败 ${failed}，跳过 ${skipped}`
-        : `${label}完成：成功 ${success}，跳过 ${skipped}`,
+    await finishBatchJob(this.jobs, job.id, '批量删除')
+    await emitEdgeDomainMutated({
+      providerId,
+      zoneId,
+      action: 'batch_delete',
     })
-  }
-
-  private normalizeDomains(domains: string[]): string[] {
-    const out: string[] = []
-    const seen = new Set<string>()
-    for (const raw of domains || []) {
-      const domain = String(raw || '').trim().toLowerCase()
-      if (!domain || seen.has(domain)) continue
-      seen.add(domain)
-      out.push(domain)
-    }
-    return out
   }
 
   private async findActive(providerId: string, zoneId: string): Promise<EdgeOneBatchJobView | null> {
-    const actives = [
-      ...(await this.jobs.listActive(EDGEONE_BATCH_DISABLE_JOB)),
-      ...(await this.jobs.listActive(EDGEONE_BATCH_DELETE_JOB)),
-    ]
-    const hit = actives.find((job) => {
-      const payload = job.payload || {}
-      return payload.provider_id === providerId && payload.zone_id === zoneId
+    const hit = await findActiveBatchJob(this.jobs, [...EDGEONE_ZONE_JOB_TYPES], {
+      provider_id: providerId,
+      zone_id: zoneId,
     })
     return hit ? this.present(hit) : null
   }
@@ -294,25 +207,12 @@ export class EdgeOneBatchJobService {
   }
 
   private present(job: JobRecord): EdgeOneBatchJobView {
+    const base = presentBatchJobBase(job)
     const payload = job.payload || {}
     return {
-      id: job.id,
-      type: job.type,
+      ...base,
       provider_id: String(payload.provider_id || ''),
       zone_id: String(payload.zone_id || ''),
-      status: job.status,
-      total: job.total,
-      done: job.done,
-      success: job.success,
-      failed: job.failed,
-      skipped: job.skipped,
-      current: job.current == null ? undefined : String(job.current),
-      message: job.message,
-      payload,
-      items: job.items,
-      created_at: job.created_at,
-      updated_at: job.updated_at,
-      finished_at: job.finished_at,
     }
   }
 }

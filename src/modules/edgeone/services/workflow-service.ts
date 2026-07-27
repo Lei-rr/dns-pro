@@ -5,8 +5,8 @@ import { EdgeOneDomainService } from './domain-service.js'
 
 export class EdgeOneWorkflowService {
   constructor(
-    private readonly edgeone: EdgeOneDomainService = new EdgeOneDomainService(),
-    private readonly sync: SyncOrchestrator = new SyncOrchestrator(),
+    private readonly edgeone: EdgeOneDomainService,
+    private readonly sync: SyncOrchestrator,
   ) {}
 
   async createAccelerationDomain(

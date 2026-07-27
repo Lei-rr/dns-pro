@@ -105,12 +105,15 @@ async function request<T = unknown>(
 
     if (!response.ok) {
       const obj = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+      const code = String(obj.code || 'REQUEST_FAILED')
       const error = toRequestError(String(obj.message || response.statusText || '请求失败'), {
-        code: String(obj.code || 'REQUEST_FAILED'),
+        code,
         details: obj.details || {},
         status: response.status,
       })
-      if (response.status === 401) unauthorizedHandler?.()
+      // Session expired / not logged in → jump login.
+      // Wrong password (invalid_credentials) stays on the form.
+      if (response.status === 401 && code !== 'invalid_credentials') unauthorizedHandler?.()
       throw error
     }
 

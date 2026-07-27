@@ -1,9 +1,11 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
+import { CacheTtl, edgeoneZonesCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../../../lib/providers/edgeone-response.js'
-import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
+import type { DnsPodProvider } from '../../provider/types.js'
+import { resolveEdgeOneApiCredentials } from '../credentials.js'
 
 export interface EdgeOneZone {
   id: string
@@ -19,20 +21,18 @@ export interface EdgeOneZone {
 }
 
 export class EdgeOneZoneService {
-  private credentialCache = new Map<string, DnsPodProvider>()
-
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   // 站点通常不多，直接全量拉取返回。
   async zones(providerId: string, refresh = false): Promise<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
     const cached = await withProviderCache<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown>; request_id?: string }>({
       key: `edgeone:zones:${providerId}:all`,
-      tags: [`edgeone:zones:${providerId}`],
+      tags: [edgeoneZonesCacheTag(providerId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
-        const provider = await this.credentialProvider(providerId)
-        const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+        const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+        const gateway = this.gatewayFor(provider)
 
         let pageOffset = 0
         const pageLimit = 100
@@ -41,10 +41,15 @@ export class EdgeOneZoneService {
         let hasMore = true
 
         while (hasMore) {
-          const response = await gateway.call('DescribeZones', {
-            Offset: Number(pageOffset),
-            Limit: Number(pageLimit),
-          })
+          let response
+          try {
+            response = await gateway.call('DescribeZones', {
+              Offset: Number(pageOffset),
+              Limit: Number(pageLimit),
+            })
+          } catch (error) {
+            throw wrapProviderError('edgeone_zone_list_failed', 'EdgeOne zone list failed', providerId, error)
+          }
           const parsed = edgeoneZoneListResponseSchema.parse(response)
 
           requestId = parsed.RequestId ?? undefined
@@ -86,21 +91,6 @@ export class EdgeOneZoneService {
     return zone
   }
 
-  private async credentialProvider(providerId: string): Promise<DnsPodProvider> {
-    const cached = this.credentialCache.get(providerId)
-    if (cached) return cached
-
-    const edgeoneProvider = await this.providers.requireType<EdgeOneProvider>(providerId, 'edgeone', 'EdgeOne provider not found', 'edgeone_provider_not_found')
-    const dnspodProviderId = edgeoneProvider.dnspod_provider.trim()
-    if (dnspodProviderId === '') {
-      throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne provider is not linked to a DNSPod provider', 422)
-    }
-
-    const dnspodProvider = await this.providers.requireType<DnsPodProvider>(dnspodProviderId, 'dnspod', 'DNSPod provider not found', 'dnspod_provider_not_found')
-    this.credentialCache.set(providerId, dnspodProvider)
-    return dnspodProvider
-  }
-
   private presentZone(zone: import('../../../lib/providers/edgeone-response.js').EdgeOneZone): EdgeOneZone {
     return {
       id: zone.ZoneId ?? '',
@@ -115,4 +105,12 @@ export class EdgeOneZoneService {
       modified_on: zone.ModifiedOn ?? undefined,
     }
   }
+
+  private gatewayFor(provider: DnsPodProvider): EdgeOneGateway {
+    return EdgeOneGateway.forCredentials({
+      secretId: provider.secret_id,
+      secretKey: provider.secret_key,
+    })
+  }
+
 }

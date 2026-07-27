@@ -18,46 +18,39 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow, TableLoading } from '@/shared/ui/table'
+  TableRow,
+  TableLoading,
+} from '@/shared/ui/table'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { cloudflaredApi, tunnelStatusLabel } from '@/features/cloudflared/api/cloudflared'
+import { cloudflaredApi } from '@/features/cloudflared/api/cloudflared'
+import { tunnelStatusLabel } from '@/features/cloudflared/lib/status'
 import { providerChildPath } from '@/features/providers/lib/paths'
 import type { CloudflaredTunnel } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
-import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
+import { confirmDelete } from '@/shared/ui/confirm'
+import { useListPage } from '@/shared/lib/use-list-page'
+import { removeListItem } from '@/shared/lib/row-busy'
 
 const props = defineProps<{ providerId: string }>()
 const router = useRouter()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const creating = ref(false)
 const tunnels = ref<CloudflaredTunnel[]>([])
 const dialogOpen = ref(false)
 const name = ref('')
 
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
+const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+  pageSizeScope: 'cloudflared-tunnels',
+  load: async (options = {}) => {
     try {
-    const response = await cloudflaredApi.tunnels(props.providerId, { refresh: options.refresh })
-    tunnels.value = response.data || []
+      const response = await cloudflaredApi.tunnels(props.providerId, { refresh: options.refresh })
+      tunnels.value = response.data || []
     } catch (error) {
-      toast.error(errorMessage(error))
+      fail(error)
     }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
-  }
-}
+  },
+})
 
 function openDetail(record: CloudflaredTunnel) {
   router.push(providerChildPath(props.providerId, String(record.id || record.name)))
@@ -75,9 +68,9 @@ async function createTunnel() {
     toast.success('隧道已创建')
     dialogOpen.value = false
     name.value = ''
-    await load({ refresh: true })
+    await runLoad({ refresh: true })
   } catch (error) {
-    toast.error(errorMessage(error))
+    fail(error)
   } finally {
     creating.value = false
   }
@@ -88,9 +81,9 @@ async function removeTunnel(record: CloudflaredTunnel) {
   try {
     await cloudflaredApi.deleteTunnel(props.providerId, String(record.id))
     toast.success('已删除')
-    await load({ refresh: true })
+    removeListItem(tunnels, (item) => String(item.id || item.name) === String(record.id || record.name))
   } catch (error) {
-    toast.error(errorMessage(error))
+    fail(error)
   }
 }
 
@@ -100,12 +93,11 @@ function replicaCount(record: CloudflaredTunnel) {
 
 watch(
   () => props.providerId,
-  () => load(),
+  () => runLoad(),
 )
 
-onMounted(() => load())
+onMounted(() => runLoad())
 </script>
-
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader title="Cloudflare Tunnel" description="隧道列表，详情页可管理路由与安装令牌。">

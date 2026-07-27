@@ -1,7 +1,8 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
-import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { CacheTtl, cloudflaredTunnelConfigCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { emitTunnelRouteMutated } from '../events.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
@@ -18,22 +19,33 @@ export interface CloudflaredRoute {
 
 export class CloudflaredRouteService {
   constructor(
-    private readonly providers: ProviderRepository = new ProviderRepository(),
-    private readonly cfZones: CloudflareZoneService = new CloudflareZoneService(),
-    private readonly dnsService: CloudflaredDnsService = new CloudflaredDnsService()
+    private readonly providers: ProviderRepository,
+    private readonly cfZones: CloudflareZoneService,
+    private readonly dnsService: CloudflaredDnsService
   ) {}
 
   async getConfig(providerId: string, tunnelId: string, refresh = false): Promise<{ routes: CloudflaredRoute[]; catch_all: string; version: number }> {
     const cached = await withProviderCache<{ routes: CloudflaredRoute[]; catch_all: string; version: number }>({
       key: `cloudflared:tunnel_config:${providerId}:${tunnelId}`,
-      tags: [`cloudflared:tunnel_config:${providerId}:${tunnelId}`],
+      tags: [cloudflaredTunnelConfigCacheTag(providerId, tunnelId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const [provider, accountId] = await this.requireProvider(providerId)
-        const gateway = new CloudflareGateway(provider.api_token)
+        const gateway = this.gatewayFor(provider)
 
-        const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`)
+        let response
+        try {
+          response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`)
+        } catch (error) {
+          throw wrapProviderError(
+            'cloudflared_route_list_failed',
+            'Cloudflare Tunnel route list failed',
+            providerId,
+            error,
+            { tunnel_id: tunnelId },
+          )
+        }
         const result = this.presentConfig(parseCloudflareItemResponse(response, cloudflareRouteConfigSchema).result)
         return result
       },
@@ -168,12 +180,22 @@ export class CloudflaredRouteService {
 
   private async writeIngress(providerId: string, tunnelId: string, routes: CloudflaredRoute[]): Promise<void> {
     const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
-    await gateway.put(
-      `accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
-      this.buildIngress(routes)
-    )
+    try {
+      await gateway.put(
+        `accounts/${accountId}/cfd_tunnel/${tunnelId}/configurations`,
+        this.buildIngress(routes),
+      )
+    } catch (error) {
+      throw wrapProviderError(
+        'cloudflared_route_write_failed',
+        'Cloudflare Tunnel route update failed',
+        providerId,
+        error,
+        { tunnel_id: tunnelId },
+      )
+    }
   }
 
   private normalizeRoute(route: CloudflaredRoute): CloudflaredRoute {
@@ -247,4 +269,9 @@ export class CloudflaredRouteService {
     if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup
     return sideEffects
   }
+
+  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
+    return CloudflareGateway.forToken(provider.api_token)
+  }
+
 }

@@ -10,6 +10,7 @@ const CODE_HINTS: Record<string, string> = {
   edgeone_cname_empty: 'EdgeOne 尚未生成 CNAME，请稍后刷新再同步',
   validation_failed: '参数不完整或格式不正确',
   unauthenticated: '登录已失效，请重新登录',
+  invalid_credentials: '用户名或密码错误',
   provider_test_failed: '服务商连接测试失败',
   provider_credentials_invalid: '密钥无效或权限不足',
   provider_test_unsupported: '该服务商类型暂不支持测通',

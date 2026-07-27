@@ -1,4 +1,5 @@
 import { eventBus } from '../../platform/events/event-bus.js'
+import { edgeoneDomainsCacheTag, edgeoneZonesCacheTag } from '../../lib/cache/provider-cache.js'
 
 export async function emitEdgeDomainMutated(input: {
   providerId: string
@@ -12,6 +13,6 @@ export async function emitEdgeDomainMutated(input: {
     zone: input.zoneId,
     hostname: input.domainName,
     action: `edgeone.domain.${input.action}`,
-    cache_tags: [`edgeone:domains:${input.providerId}:${input.zoneId}`, `edgeone:zones:${input.providerId}`],
+    cache_tags: [edgeoneDomainsCacheTag(input.providerId, input.zoneId), edgeoneZonesCacheTag(input.providerId)],
   })
 }

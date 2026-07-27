@@ -22,20 +22,17 @@ import { providerChildPath, providerTypeLabel } from '@/features/providers/lib/p
 import type { Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
-import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
+import { useListPage } from '@/shared/lib/use-list-page'
+import { removeListItem } from '@/shared/lib/row-busy'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 
 const props = defineProps<{ providerId: string }>()
 const route = useRoute()
 const router = useRouter()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const zones = ref<Zone[]>([])
 const keyword = ref('')
 const page = ref(1)
-const pageSize = ref(loadPageSize('dns-zones'))
 const total = ref(0)
 const showAdd = ref(false)
 const adding = ref(false)
@@ -43,6 +40,26 @@ const domainInput = ref('')
 
 const provider = computed(() => getCachedProvider(props.providerId))
 const title = computed(() => provider.value?.name || props.providerId)
+
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
+  pageSizeScope: 'dns-zones',
+  load: async (options = {}) => {
+    try {
+      const response = await dnsApi.zones(props.providerId, {
+        page: page.value,
+        per_page: pageSize.value,
+        keyword: keyword.value,
+        refresh: options.refresh,
+      })
+      zones.value = response.data || []
+      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
+      const rawTotal = meta.total ?? meta.count
+      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : zones.value.length || 0)
+    } catch (error) {
+      fail(error)
+    }
+  },
+})
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return zones.value
@@ -59,49 +76,20 @@ async function ensureProvider() {
   }
 }
 
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
-    try {
-      const response = await dnsApi.zones(props.providerId, {
-        page: page.value,
-        per_page: pageSize.value,
-        keyword: keyword.value,
-        refresh: options.refresh,
-      })
-      zones.value = response.data || []
-      const meta = (response as any).meta || {}
-      const rawTotal = meta.total ?? meta.count
-      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : zones.value.length || 0)
-    } catch (error) {
-      toast.error(errorMessage(error))
-    }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
-  }
-}
-
 function onPageChange(next: number) {
   page.value = next
-  void load()
+  void runLoad()
 }
 
 function onPageSizeChange(next: number) {
-  pageSize.value = next
-  savePageSize('dns-zones', next)
+  setPageSize(next)
   page.value = 1
-  void load()
+  void runLoad()
 }
 
 function onSearch() {
   page.value = 1
-  void load()
+  void runLoad()
 }
 
 async function createZone() {
@@ -116,7 +104,7 @@ async function createZone() {
     toast.success('域名已添加')
     showAdd.value = false
     domainInput.value = ''
-    await load({ refresh: true })
+    await runLoad({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -137,7 +125,8 @@ async function removeZone(zone: Zone) {
   try {
     await dnsApi.deleteZone(props.providerId, zoneRouteKey(zone))
     toast.success('已删除')
-    await load({ refresh: true })
+    removeListItem(zones, (item) => String(item.id || item.name) === String(zone.id || zone.name))
+    if (total.value > 0) total.value -= 1
   } catch (error) {
     toast.error(errorMessage(error))
   }
@@ -152,13 +141,13 @@ watch(
   async () => {
     page.value = 1
     await ensureProvider()
-    await load()
+    await runLoad()
   },
 )
 
 onMounted(async () => {
   await ensureProvider()
-  await load()
+  await runLoad()
 })
 </script>
 

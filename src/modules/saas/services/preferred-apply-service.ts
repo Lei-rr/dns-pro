@@ -2,10 +2,17 @@ import { ApiError } from '../../../lib/http/api-error.js'
 import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
+import {
+  assertNoActiveBatchJob,
+  findActiveBatchJob,
+  finishBatchJob,
+  presentBatchJobBase,
+  requeueFailedBatchItems,
+  runBatchItems,
+} from '../../../platform/job/batch-helpers.js'
+import { PREFERRED_APPLY_JOB_TYPE, SAAS_ZONE_JOB_TYPES } from '../job-types.js'
 import { SaasWorkflowService } from './workflow-service.js'
 import { SaasHostnameService } from './hostname-service.js'
-
-export const PREFERRED_APPLY_JOB_TYPE = 'saas.preferred_apply'
 
 /** API-facing job shape (keeps frontend fields stable). */
 export type PreferredApplyJob = {
@@ -30,7 +37,7 @@ export type PreferredApplyJob = {
 }
 
 /**
- * SaaS preferred-domain apply built on the generic JobService.
+ * SaaS preferred-domain apply on JobService (same zone lock as SaaS batch).
  */
 export class SaasPreferredApplyService {
   constructor(
@@ -79,12 +86,12 @@ export class SaasPreferredApplyService {
     const preferred = String(input.preferredDomain || '').trim()
     if (!preferred) throw new ApiError('preferred_domain_invalid', 'Preferred domain is required', 422)
 
-    const active = await this.findActive(input.providerId, input.zoneName)
-    if (active) {
-      throw new ApiError('preferred_apply_running', 'A preferred-domain apply job is already running', 409, {
-        job_id: active.id,
-      })
-    }
+    await assertNoActiveBatchJob(
+      this.jobs,
+      [...SAAS_ZONE_JOB_TYPES],
+      { provider_id: input.providerId, zone_name: input.zoneName },
+      'A SaaS batch or preferred-domain apply job is already running for this zone',
+    )
 
     const targets = await this.resolveTargets(
       input.providerId,
@@ -156,22 +163,10 @@ export class SaasPreferredApplyService {
   }
 
   async retryFailed(jobId: string): Promise<PreferredApplyJob> {
-    const job = await this.require(jobId)
-    const failed = job.items.filter((i) => i.status === 'failed')
-    if (!failed.length) throw new ApiError('preferred_apply_no_failed', 'No failed items to retry', 422)
-
-    const items = job.items.map((item) =>
-      item.status === 'failed' ? { ...item, status: 'pending', message: undefined } : item,
-    )
-    const done = items.filter((i) => ['success', 'skipped'].includes(String(i.status))).length
-    const requeued = await this.jobs.requeue(jobId, {
-      items,
-      done,
-      failed: 0,
-      success: items.filter((i) => i.status === 'success').length,
-      skipped: items.filter((i) => i.status === 'skipped').length,
-      message: '失败项重试中',
-    })
+    await this.require(jobId)
+    const raw = await this.jobs.get(jobId)
+    if (!raw) throw new ApiError('preferred_apply_not_found', 'Preferred apply job not found', 404, { job_id: jobId })
+    const requeued = await requeueFailedBatchItems(this.jobs, raw)
     return this.present(requeued)
   }
 
@@ -183,20 +178,11 @@ export class SaasPreferredApplyService {
     const zoneName = String(payload.zone_name || '')
     const preferred = String(payload.preferred_domain || '')
 
-    for (const raw of job.items) {
-      const item = raw as Record<string, unknown>
-      const hostname = String(item.hostname || '')
-      if (!hostname) continue
-      if (item.status === 'success' || item.status === 'skipped') continue
-
-      await this.jobs.patchItem(
-        job.id,
-        (row) => String(row.hostname || '') === hostname,
-        { status: 'running', message: '处理中' },
-        { current: hostname, message: '后台执行中' },
-      )
-
-      try {
+    await runBatchItems(this.jobs, job, {
+      itemKey: (item) => String(item.hostname || ''),
+      runningMessage: '处理中',
+      progressMessage: '后台执行中',
+      execute: async (_item, hostname) => {
         const updated = await this.workflow.updateHostname(
           providerId,
           zoneName,
@@ -211,17 +197,11 @@ export class SaasPreferredApplyService {
         const dnsSync = (updated as { side_effects?: { dns?: { sync?: { status?: string; message?: string } } } })
           ?.side_effects?.dns?.sync
         if (dnsSync && dnsSync.status === 'failed') {
-          await this.jobs.patchItem(
-            job.id,
-            (row) => String(row.hostname || '') === hostname,
-            {
-              status: 'failed',
-              message: `优选已保存，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
-              preferred_domain: preferred,
-              dns_sync_status: 'failed',
-            },
-          )
-          continue
+          return {
+            status: 'failed',
+            message: `优选已保存，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
+            extra: { preferred_domain: preferred, dns_sync_status: 'failed' },
+          }
         }
 
         const dnsNote =
@@ -231,45 +211,18 @@ export class SaasPreferredApplyService {
               ? '（DNS 已写回）'
               : ''
 
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.hostname || '') === hostname,
-          {
-            status: 'success',
-            message: `已切换为 ${preferred}${dnsNote}`,
+        return {
+          status: 'success',
+          message: `已切换为 ${preferred}${dnsNote}`,
+          extra: {
             preferred_domain: preferred,
             dns_sync_status: dnsSync?.status || 'unknown',
           },
-        )
-      } catch (error) {
-        await this.jobs.patchItem(
-          job.id,
-          (row) => String(row.hostname || '') === hostname,
-          {
-            status: 'failed',
-            message: error instanceof Error ? error.message : String(error),
-          },
-        )
-      }
-    }
-
-    const finalJob = await this.jobs.get(job.id)
-    if (!finalJob) return
-    const success = finalJob.items.filter((i) => i.status === 'success').length
-    const failed = finalJob.items.filter((i) => i.status === 'failed').length
-    const skipped = finalJob.items.filter((i) => i.status === 'skipped').length
-    await this.jobs.patch(job.id, {
-      status: failed > 0 && success === 0 ? 'failed' : 'completed',
-      success,
-      failed,
-      skipped,
-      done: finalJob.items.length,
-      current: undefined,
-      finished_at: Date.now(),
-      message: failed
-        ? `完成：成功 ${success}，失败 ${failed}，跳过 ${skipped}`
-        : `完成：成功 ${success}，跳过 ${skipped}`,
+        }
+      },
     })
+
+    await finishBatchJob(this.jobs, job.id, '优选应用')
   }
 
   private async resolveTargets(
@@ -295,10 +248,9 @@ export class SaasPreferredApplyService {
   }
 
   private async findActive(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
-    const actives = await this.jobs.listActive(PREFERRED_APPLY_JOB_TYPE)
-    const hit = actives.find((job) => {
-      const payload = job.payload || {}
-      return payload.provider_id === providerId && payload.zone_name === zoneName
+    const hit = await findActiveBatchJob(this.jobs, [...SAAS_ZONE_JOB_TYPES], {
+      provider_id: providerId,
+      zone_name: zoneName,
     })
     return hit ? this.present(hit) : null
   }
@@ -310,26 +262,16 @@ export class SaasPreferredApplyService {
   }
 
   private present(job: JobRecord): PreferredApplyJob {
+    const base = presentBatchJobBase(job)
     const payload = (job.payload || {}) as Record<string, unknown>
     return {
-      id: job.id,
+      ...base,
       provider_id: String(payload.provider_id || ''),
       zone_name: String(payload.zone_name || ''),
       preferred_domain: String(payload.preferred_domain || ''),
       only_auto_preferred: Boolean(payload.only_auto_preferred),
       dry_run: Boolean(payload.dry_run),
-      status: job.status,
-      total: job.total,
-      done: job.done,
-      success: job.success,
-      failed: job.failed,
-      skipped: job.skipped,
-      current: job.current == null ? undefined : String(job.current),
       items: job.items,
-      created_at: job.created_at,
-      updated_at: job.updated_at,
-      finished_at: job.finished_at,
-      message: job.message,
     }
   }
 }

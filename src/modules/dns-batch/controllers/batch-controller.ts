@@ -37,7 +37,7 @@ function parseRecords(body: Record<string, unknown>) {
   return []
 }
 
-export async function recordBatchCreateStore(
+export async function batchCreateStore(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
@@ -55,7 +55,7 @@ export async function recordBatchCreateStore(
   return reply.status(201).send(success(result))
 }
 
-export async function recordBatchDeleteStore(
+export async function batchDeleteStore(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
@@ -72,7 +72,7 @@ export async function recordBatchDeleteStore(
   return reply.status(201).send(success(result))
 }
 
-export async function recordBatchUpdateStore(
+export async function batchUpdateStore(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
@@ -97,7 +97,7 @@ export async function recordBatchUpdateStore(
   return reply.status(201).send(success(result))
 }
 
-export async function recordBatchJobShow(
+export async function batchJobShow(
   request: FastifyRequest<{ Params: { jobId: string } }>,
   reply: FastifyReply,
 ) {
@@ -105,7 +105,7 @@ export async function recordBatchJobShow(
   return reply.send(success(result))
 }
 
-export async function recordBatchJobActive(
+export async function batchJobActive(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
   reply: FastifyReply,
 ) {
@@ -113,7 +113,7 @@ export async function recordBatchJobActive(
   return reply.send(success(result))
 }
 
-export async function recordBatchJobRetry(
+export async function batchJobRetry(
   request: FastifyRequest<{ Params: { jobId: string } }>,
   reply: FastifyReply,
 ) {

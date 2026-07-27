@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { healthShow } from './controller.js'
+import { healthShow } from './controllers/health-controller.js'
 
 /** Public system routes (no auth). */
 export async function routes(app: FastifyInstance) {

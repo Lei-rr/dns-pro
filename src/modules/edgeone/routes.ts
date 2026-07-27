@@ -1,39 +1,39 @@
 import type { FastifyInstance } from 'fastify'
 import {
-  edgeOneZonesIndex,
-  edgeOneZoneShow,
+  zonesIndex,
+  zoneShow,
 } from './controllers/zone-controller.js'
 import {
-  edgeOneAccelerationDomainsIndex,
-  edgeOneAccelerationDomainStore,
-  edgeOneAccelerationDomainUpdate,
-  edgeOneAccelerationDomainDelete,
-  edgeOneAccelerationDomainStatusUpdate,
-  edgeOneAccelerationDomainCertificateUpdate,
-  edgeOneAccelerationDomainCnameSync,
+  domainsIndex,
+  domainStore,
+  domainUpdate,
+  domainDelete,
+  domainStatusUpdate,
+  domainCertificateUpdate,
+  domainCnameSync,
 } from './controllers/acceleration-domain-controller.js'
 import {
-  edgeOneBatchDisableStore,
-  edgeOneBatchDeleteStore,
-  edgeOneBatchJobShow,
-  edgeOneBatchJobActive,
-  edgeOneBatchJobRetry,
+  batchDisableStore,
+  batchDeleteStore,
+  batchJobShow,
+  batchJobActive,
+  batchJobRetry,
 } from './controllers/batch-controller.js'
 
 export async function routes(app: FastifyInstance) {
-  app.get('/zones', edgeOneZonesIndex)
-  app.get('/zones/:zoneId', edgeOneZoneShow)
-  app.get('/zones/:zoneId/records', edgeOneAccelerationDomainsIndex)
-  app.post('/zones/:zoneId/records', edgeOneAccelerationDomainStore)
-  app.put('/zones/:zoneId/records/:domainName', edgeOneAccelerationDomainUpdate)
-  app.delete('/zones/:zoneId/records/:domainName', edgeOneAccelerationDomainDelete)
-  app.put('/zones/:zoneId/records/:domainName/status', edgeOneAccelerationDomainStatusUpdate)
-  app.put('/zones/:zoneId/records/:domainName/certificate', edgeOneAccelerationDomainCertificateUpdate)
-  app.post('/zones/:zoneId/records/:domainName/cname-sync', edgeOneAccelerationDomainCnameSync)
+  app.get('/zones', zonesIndex)
+  app.get('/zones/:zoneId', zoneShow)
+  app.get('/zones/:zoneId/records', domainsIndex)
+  app.post('/zones/:zoneId/records', domainStore)
+  app.put('/zones/:zoneId/records/:domainName', domainUpdate)
+  app.delete('/zones/:zoneId/records/:domainName', domainDelete)
+  app.put('/zones/:zoneId/records/:domainName/status', domainStatusUpdate)
+  app.put('/zones/:zoneId/records/:domainName/certificate', domainCertificateUpdate)
+  app.post('/zones/:zoneId/records/:domainName/cname-sync', domainCnameSync)
 
-  app.get('/zones/:zoneId/batch/active', edgeOneBatchJobActive)
-  app.post('/zones/:zoneId/batch/disable', edgeOneBatchDisableStore)
-  app.post('/zones/:zoneId/batch/delete', edgeOneBatchDeleteStore)
-  app.get('/batch/:jobId', edgeOneBatchJobShow)
-  app.post('/batch/:jobId/retry', edgeOneBatchJobRetry)
+  app.get('/zones/:zoneId/batch/active', batchJobActive)
+  app.post('/zones/:zoneId/batch/disable', batchDisableStore)
+  app.post('/zones/:zoneId/batch/delete', batchDeleteStore)
+  app.get('/batch/:jobId', batchJobShow)
+  app.post('/batch/:jobId/retry', batchJobRetry)
 }

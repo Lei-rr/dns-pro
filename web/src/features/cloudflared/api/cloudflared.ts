@@ -1,9 +1,9 @@
 import http, { unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse, CloudflaredRoute, CloudflaredTunnel, Zone } from '@/shared/types'
+import { encodePath } from '@/shared/lib/path'
 
-const path = (value: string) => encodeURIComponent(value)
-const providerBase = (provider: string) => `/cloudflared/providers/${path(provider)}`
-const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provider)}/tunnels/${path(tunnelId)}`
+const providerBase = (provider: string) => `/cloudflared/providers/${encodePath(provider)}`
+const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provider)}/tunnels/${encodePath(tunnelId)}`
 
 export const cloudflaredApi = {
   zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Zone[]>> =>
@@ -41,13 +41,3 @@ export const cloudflaredApi = {
     }),
 }
 
-export function tunnelStatusLabel(status?: string) {
-  return (
-    {
-      healthy: '已连接',
-      degraded: '降级',
-      down: '已断开',
-      inactive: '未连接',
-    }[String(status || '')] || status || '-'
-  )
-}

@@ -6,12 +6,9 @@ interface ProvidersFile {
   items: Provider[]
 }
 
-const DEFAULT_PROVIDERS: ProvidersFile = { items: [] }
 
 export class ProviderRepository {
-  constructor(
-    private readonly store: JsonStore<ProvidersFile> = new JsonStore<ProvidersFile>('providers.json', DEFAULT_PROVIDERS)
-  ) {}
+  constructor(private readonly store: JsonStore<ProvidersFile>) {}
 
   async all(): Promise<Provider[]> {
     const data = await this.store.read()
@@ -23,7 +20,12 @@ export class ProviderRepository {
     return providers.find((p) => p.id === id) ?? null
   }
 
-  async requireType<T extends Provider>(id: string, type: ProviderType, message?: string, code?: string): Promise<T> {
+  async requireType<T extends Provider>(
+    id: string,
+    type: ProviderType,
+    message?: string,
+    code?: string,
+  ): Promise<T> {
     const provider = await this.find(id)
     if (!provider || provider.type !== type) {
       throw new ApiError(code ?? 'provider_not_found', message ?? 'Provider not found', 404)
@@ -43,20 +45,17 @@ export class ProviderRepository {
 
   private normalizeForStorage(provider: ProviderInput): Provider {
     const type = provider.type
-
     const head = {
       type,
       id: provider.id ?? '',
       name: provider.name ?? '',
     }
-
-    const body: Record<string, string> = {}
+    const body: Record<string, unknown> = {}
     for (const field of Object.keys(provider)) {
       if (field === 'type' || field === 'id' || field === 'name') continue
       const value = (provider as Record<string, unknown>)[field]
       body[field] = typeof value === 'string' ? value : String(value ?? '')
     }
-
     return { ...head, ...body } as Provider
   }
 }

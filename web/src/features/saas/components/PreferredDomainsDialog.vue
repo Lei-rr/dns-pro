@@ -118,6 +118,8 @@ async function removeDomain(record: { domain: string }) {
 
 function applyDomain(record: { domain: string }, options: { onlyAutoPreferred?: boolean; dryRun?: boolean } = {}) {
   applyingDomain.value = record.domain
+  // 正式切换会跑 Job：先关弹窗，露出页顶进度条；预览保留弹窗
+  if (!options.dryRun) open.value = false
   emit('apply', { domain: record.domain, ...options })
   setTimeout(() => {
     applyingDomain.value = ''

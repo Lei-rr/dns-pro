@@ -1,7 +1,13 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
-import { CacheTtl, invalidateProviderCache, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import {
+  CacheTtl,
+  customHostnameCacheTag,
+  withProviderCache,
+} from '../../../lib/cache/provider-cache.js'
+import { emitSaasZoneCacheInvalidated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import {
   cloudflareCustomHostnameSchema,
   cloudflareFallbackOriginSchema,
@@ -52,26 +58,36 @@ export interface CloudflareCustomHostname {
 }
 
 export class CloudflareCustomHostnameGateway {
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async list(cloudflareProviderId: string, zoneId: string, page = 1, perPage = 100, refresh = false): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }> {
-    if (refresh) {
-      invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
-    }
+    const tag = customHostnameCacheTag(cloudflareProviderId, zoneId)
+    // refresh flag on withProviderCache already bypasses memory; no pre-invalidate needed.
 
     const cached = await withProviderCache<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }>({
       key: `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`,
-      tags: [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`],
+      tags: [tag],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-        const gateway = new CloudflareGateway(provider.api_token)
+        const gateway = this.gatewayFor(provider)
 
-        const response = await gateway.get(
-          `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
-          { page, per_page: perPage }
-        )
+        let response
+        try {
+          response = await gateway.get(
+            `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
+            { page, per_page: perPage },
+          )
+        } catch (error) {
+          throw wrapProviderError(
+            'saas_hostname_list_failed',
+            'Cloudflare custom hostname list failed',
+            cloudflareProviderId,
+            error,
+            { zone: zoneId },
+          )
+        }
 
         const parsed = parseCloudflareListResponse(response, cloudflareCustomHostnameSchema)
         const resultInfo = parsed.result_info ?? cloudflareResultInfoSchema.parse({})
@@ -93,16 +109,27 @@ export class CloudflareCustomHostnameGateway {
   async show(cloudflareProviderId: string, zoneId: string, hostnameId: string, refresh = false): Promise<CloudflareCustomHostname> {
     const cached = await withProviderCache<CloudflareCustomHostname>({
       key: `cloudflare:custom_hostname:${cloudflareProviderId}:${zoneId}:${hostnameId}`,
-      tags: [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`],
+      tags: [customHostnameCacheTag(cloudflareProviderId, zoneId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-        const gateway = new CloudflareGateway(provider.api_token)
+        const gateway = this.gatewayFor(provider)
 
-        const response = await gateway.get(
-          `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
-        )
+        let response
+        try {
+          response = await gateway.get(
+            `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`,
+          )
+        } catch (error) {
+          throw wrapProviderError(
+            'saas_hostname_show_failed',
+            'Cloudflare custom hostname show failed',
+            cloudflareProviderId,
+            error,
+            { zone: zoneId, hostname_id: hostnameId },
+          )
+        }
         return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
       },
     })
@@ -125,7 +152,7 @@ export class CloudflareCustomHostnameGateway {
 
   async create(cloudflareProviderId: string, zoneId: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
     const payload: Record<string, unknown> = { hostname: String(data.hostname ?? '').trim() }
     const ssl: Record<string, unknown> = { type: 'dv' }
@@ -136,18 +163,28 @@ export class CloudflareCustomHostnameGateway {
     const customOrigin = String(data.custom_origin_server ?? '').trim()
     if (customOrigin) payload.custom_origin_server = customOrigin
 
-    const response = await gateway.post(
-      `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
-      payload
-    )
+    let response
+    try {
+      response = await gateway.post(
+        `zones/${encodeURIComponent(zoneId)}/custom_hostnames`,
+        payload,
+      )
+    } catch (error) {
+      throw wrapProviderError(
+        'saas_hostname_create_failed',
+        'Cloudflare custom hostname create failed',
+        cloudflareProviderId,
+        error,
+        { zone: zoneId },
+      )
+    }
 
-    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
   async update(cloudflareProviderId: string, zoneId: string, hostnameId: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
     const payload: Record<string, unknown> = {}
     if (Object.prototype.hasOwnProperty.call(data, 'custom_origin_server')) {
@@ -163,48 +200,73 @@ export class CloudflareCustomHostnameGateway {
       payload.ssl = ssl
     }
 
-    const response = await gateway.patch(
-      `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`,
-      payload
-    )
+    let response
+    try {
+      response = await gateway.patch(
+        `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`,
+        payload,
+      )
+    } catch (error) {
+      throw wrapProviderError(
+        'saas_hostname_update_failed',
+        'Cloudflare custom hostname update failed',
+        cloudflareProviderId,
+        error,
+        { zone: zoneId, hostname_id: hostnameId },
+      )
+    }
 
-    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
   }
 
   async delete(cloudflareProviderId: string, zoneId: string, hostnameId: string): Promise<{ id: string }> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
-    await gateway.delete(
-      `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
-    )
+    try {
+      await gateway.delete(
+        `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`,
+      )
+    } catch (error) {
+      throw wrapProviderError(
+        'saas_hostname_delete_failed',
+        'Cloudflare custom hostname delete failed',
+        cloudflareProviderId,
+        error,
+        { zone: zoneId, hostname_id: hostnameId },
+      )
+    }
 
-    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
     return { id: hostnameId }
   }
 
   async fallbackOriginInfo(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<{ origin?: string | null; status?: string | null; [key: string]: unknown }> {
     const cached = await withProviderCache<{ origin?: string | null; status?: string | null }>({
       key: `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`,
-      tags: [`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`],
+      tags: [customHostnameCacheTag(cloudflareProviderId, zoneId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-        const gateway = new CloudflareGateway(provider.api_token)
+        const gateway = this.gatewayFor(provider)
 
         let info: { origin?: string | null; status?: string | null }
         try {
           const response = await gateway.get(
-            `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`
+            `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`,
           )
           info = this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
         } catch (error) {
           if (error instanceof ApiError && error.statusCode === 404) {
             info = this.presentFallbackOrigin({})
           } else {
-            throw error
+            throw wrapProviderError(
+              'saas_fallback_origin_show_failed',
+              'Cloudflare fallback origin fetch failed',
+              cloudflareProviderId,
+              error,
+              { zone: zoneId },
+            )
           }
         }
         return info
@@ -215,28 +277,61 @@ export class CloudflareCustomHostnameGateway {
 
   async setFallbackOrigin(cloudflareProviderId: string, zoneId: string, origin: string): Promise<{ origin?: string | null; status?: string | null }> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.put(
-      `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`,
-      { origin }
-    )
+    let response
+    try {
+      response = await gateway.put(
+        `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`,
+        { origin },
+      )
+    } catch (error) {
+      throw wrapProviderError(
+        'saas_fallback_origin_set_failed',
+        'Cloudflare fallback origin update failed',
+        cloudflareProviderId,
+        error,
+        { zone: zoneId },
+      )
+    }
 
-    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    await emitSaasZoneCacheInvalidated({
+      cloudflareProviderId,
+      zoneId,
+      action: 'fallback_origin_set',
+    })
     return this.presentFallbackOrigin(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
   }
 
   async deleteFallbackOrigin(cloudflareProviderId: string, zoneId: string): Promise<{ origin?: string | null; status?: string | null }> {
     const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
-    await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
-    invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+    try {
+      await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
+    } catch (error) {
+      throw wrapProviderError(
+        'saas_fallback_origin_delete_failed',
+        'Cloudflare fallback origin delete failed',
+        cloudflareProviderId,
+        error,
+        { zone: zoneId },
+      )
+    }
+    await emitSaasZoneCacheInvalidated({
+      cloudflareProviderId,
+      zoneId,
+      action: 'fallback_origin_delete',
+    })
     return this.presentFallbackOrigin({})
   }
 
-  invalidate(cloudflareProviderId: string, zoneId: string): void {
-    void invalidateProviderCache([`cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`])
+  async invalidateCache(cloudflareProviderId: string, zoneId: string): Promise<void> {
+    await emitSaasZoneCacheInvalidated({
+      cloudflareProviderId,
+      zoneId,
+      action: 'refresh',
+    })
   }
 
   private async findIdInList(cloudflareProviderId: string, zoneId: string, fqdn: string, refresh: boolean): Promise<string | null> {
@@ -291,4 +386,9 @@ export class CloudflareCustomHostnameGateway {
       status: result.status ?? null,
     }
   }
+
+  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
+    return CloudflareGateway.forToken(provider.api_token)
+  }
+
 }

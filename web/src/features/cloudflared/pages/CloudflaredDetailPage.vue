@@ -21,12 +21,15 @@ import {
   TableRow, TableLoading } from '@/shared/ui/table'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { cloudflaredApi, tunnelStatusLabel } from '@/features/cloudflared/api/cloudflared'
+import { cloudflaredApi } from '@/features/cloudflared/api/cloudflared'
+import { tunnelStatusLabel } from '@/features/cloudflared/lib/status'
 import { providerPath } from '@/features/providers/lib/paths'
 import type { CloudflaredRoute, CloudflaredTunnel, Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
+import { useListPage } from '@/shared/lib/use-list-page'
+import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
+import { Spinner } from '@/shared/ui/spinner'
 import TunnelInstallPanel from '@/features/cloudflared/components/TunnelInstallPanel.vue'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 import {
@@ -38,10 +41,12 @@ import {
 } from '@/shared/ui/select'
 
 const props = defineProps<{ providerId: string; tunnelId: string }>()
+const { isBusy: isRowBusy, runBusy } = useRowBusy()
+function routeKey(record: CloudflaredRoute) {
+  return `${record.hostname || ''}|${record.path || ''}|${record.zone_id || ''}`
+}
 const router = useRouter()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const saving = ref(false)
 const tunnel = ref<CloudflaredTunnel | null>(null)
 const routes = ref<CloudflaredRoute[]>([])
@@ -58,33 +63,25 @@ const form = reactive({
 
 const title = computed(() => tunnel.value?.name || props.tunnelId)
 
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
+const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+  pageSizeScope: 'cloudflared-detail',
+  load: async (options = {}) => {
     try {
-    const [tunnelRes, routesRes, zonesRes, tokenRes] = await Promise.all([
-      cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh: options.refresh }),
-      cloudflaredApi.routes(props.providerId, props.tunnelId),
-      cloudflaredApi.zones(props.providerId),
-      cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).catch(() => null),
-    ])
-    tunnel.value = tunnelRes.data
-    routes.value = routesRes.data?.routes || []
-    zones.value = zonesRes.data || []
-    token.value = tokenRes?.data?.token || ''
+      const [tunnelRes, routesRes, zonesRes, tokenRes] = await Promise.all([
+        cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh: options.refresh }),
+        cloudflaredApi.routes(props.providerId, props.tunnelId),
+        cloudflaredApi.zones(props.providerId),
+        cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).catch(() => null),
+      ])
+      tunnel.value = tunnelRes.data
+      routes.value = routesRes.data?.routes || []
+      zones.value = zonesRes.data || []
+      token.value = tokenRes?.data?.token || ''
     } catch (error) {
-      toast.error(errorMessage(error))
+      fail(error)
     }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
-  }
-}
+  },
+})
 
 function openCreate() {
   editingRoute.value = null
@@ -131,7 +128,7 @@ async function saveRoute() {
       toast.success('路由已添加')
     }
     dialogOpen.value = false
-    await load({ refresh: true })
+    await runLoad({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -141,19 +138,22 @@ async function saveRoute() {
 
 async function removeRoute(record: CloudflaredRoute) {
   if (!(await confirmDelete(String(record.hostname || '')))) return
-  try {
-    await cloudflaredApi.deleteRoute(
-      props.providerId,
-      props.tunnelId,
-      String(record.hostname || ''),
-      String(record.path || ''),
-      String(record.zone_id || ''),
-    )
-    toast.success('已删除')
-    await load({ refresh: true })
-  } catch (error) {
-    toast.error(errorMessage(error))
-  }
+  const key = routeKey(record)
+  await runBusy(key, async () => {
+    try {
+      await cloudflaredApi.deleteRoute(
+        props.providerId,
+        props.tunnelId,
+        String(record.hostname || ''),
+        String(record.path || ''),
+        String(record.zone_id || ''),
+      )
+      toast.success('已删除')
+      removeListItem(routes, (item) => routeKey(item) === key)
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
+  })
 }
 
 async function rotateToken() {
@@ -178,10 +178,10 @@ async function copyToken() {
 
 watch(
   () => [props.providerId, props.tunnelId],
-  () => load(),
+  () => runLoad(),
 )
 
-onMounted(() => load())
+onMounted(() => runLoad())
 </script>
 
 <template>
@@ -257,15 +257,25 @@ onMounted(() => load())
           <TableRow v-if="!routes.length && !loading">
             <TableCell colspan="4" class="text-muted-foreground py-10 text-center">暂无路由</TableCell>
           </TableRow>
-          <TableRow v-for="(record, index) in routes" :key="`${record.hostname}-${record.path}-${index}`">
+          <TableRow
+            v-for="(record, index) in routes"
+            :key="`${record.hostname}-${record.path}-${index}`"
+            :class="isRowBusy(routeKey(record)) && 'bg-muted/40 opacity-80'"
+          >
             <TableCell class="px-4 font-medium">{{ record.hostname || '-' }}</TableCell>
             <TableCell class="max-w-[280px] truncate">{{ record.service || '-' }}</TableCell>
             <TableCell>{{ record.path || '/' }}</TableCell>
             <TableCell>
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>
-                  <Button variant="ghost" size="icon" class="size-8">
-                    <EllipsisVertical class="size-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="size-8"
+                    :disabled="isRowBusy(routeKey(record))"
+                  >
+                    <Spinner v-if="isRowBusy(routeKey(record))" class="size-4" />
+                    <EllipsisVertical v-else class="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">

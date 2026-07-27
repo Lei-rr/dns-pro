@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../provider/repository.js'
 import { CacheTtl, buildCacheKey, offsetPaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { emitDnsPodRecordMutated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
   dnspodRecordListResponseSchema,
@@ -69,7 +70,7 @@ export interface RecordMutationResult {
 }
 
 export class DnsPodRecordService {
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async list(providerId: string, domain: string, filters: RecordListFilters = {}): Promise<RecordListResult> {
     const normalized = this.normalizeListFilters(filters)
@@ -93,7 +94,7 @@ export class DnsPodRecordService {
       refresh,
       loader: async () => {
         const provider = await this.requireProvider(providerId)
-        const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+        const gateway = this.gatewayFor(provider)
 
         const payload: Record<string, unknown> = {
           Domain: domain,
@@ -109,7 +110,7 @@ export class DnsPodRecordService {
         try {
           response = await gateway.call('DescribeRecordList', payload)
         } catch (error) {
-          throw this.wrapError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
+          throw wrapProviderError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
             domain,
           })
         }
@@ -144,13 +145,13 @@ export class DnsPodRecordService {
   async create(providerId: string, domain: string, input: RecordCreateInput | Record<string, unknown>): Promise<RecordMutationResult> {
     const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
     const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const gateway = this.gatewayFor(provider)
 
     let response: unknown
     try {
       response = await gateway.call('CreateRecord', payload)
     } catch (error) {
-      throw this.wrapError('dnspod_record_create_failed', 'DNSPod record create failed', providerId, error, {
+      throw wrapProviderError('dnspod_record_create_failed', 'DNSPod record create failed', providerId, error, {
         domain,
       })
     }
@@ -174,13 +175,13 @@ export class DnsPodRecordService {
     payload.RecordId = Number(recordId)
 
     const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const gateway = this.gatewayFor(provider)
 
     let response: unknown
     try {
       response = await gateway.call('ModifyRecord', payload)
     } catch (error) {
-      throw this.wrapError('dnspod_record_update_failed', 'DNSPod record update failed', providerId, error, {
+      throw wrapProviderError('dnspod_record_update_failed', 'DNSPod record update failed', providerId, error, {
         domain,
       })
     }
@@ -196,7 +197,7 @@ export class DnsPodRecordService {
 
   async delete(providerId: string, domain: string, recordId: string): Promise<RecordMutationResult> {
     const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const gateway = this.gatewayFor(provider)
 
     let response: unknown
     try {
@@ -205,7 +206,7 @@ export class DnsPodRecordService {
         RecordId: Number(recordId),
       })
     } catch (error) {
-      throw this.wrapError('dnspod_record_delete_failed', 'DNSPod record delete failed', providerId, error, {
+      throw wrapProviderError('dnspod_record_delete_failed', 'DNSPod record delete failed', providerId, error, {
         domain,
       })
     }
@@ -325,27 +326,12 @@ export class DnsPodRecordService {
     )
   }
 
-  private wrapError(
-    code: string,
-    message: string,
-    providerId: string,
-    error: unknown,
-    details: Record<string, unknown> = {}
-  ): ApiError {
-    if (error instanceof ApiError) {
-      return error
-    }
-    const err = error instanceof Error ? error : new Error(String(error))
-    return new ApiError(
-      code,
-      message,
-      502,
-      {
-        ...details,
-        provider_id: providerId,
-        error: err.message,
-      }
-    )
+
+  private gatewayFor(provider: DnsPodProvider): DnsPodGateway {
+    return DnsPodGateway.forCredentials({
+      secretId: provider.secret_id,
+      secretKey: provider.secret_key,
+    })
   }
 }
 

@@ -1,23 +1,23 @@
 import http, { unwrapItems, withRefresh } from '@/shared/api/http'
 import { getCachedProvider } from '@/features/providers/stores/providers'
 import type { ApiResponse, DnsRecord, Zone } from '@/shared/types'
+import { encodePath } from '@/shared/lib/path'
 
-const path = (value: string) => encodeURIComponent(value)
 const providerType = (provider: string) => getCachedProvider(provider)?.type || 'dnspod'
-const providerBase = (provider: string) => `/${providerType(provider)}/providers/${path(provider)}`
-const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/zones/${path(zone)}`
+const providerBase = (provider: string) => `/${providerType(provider)}/providers/${encodePath(provider)}`
+const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/zones/${encodePath(zone)}`
 const endpoints = {
   zones: (provider: string) => `${providerBase(provider)}/zones`,
   zone: (provider: string, zone: string) => zoneBase(provider, zone),
   records: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records`,
-  record: (provider: string, zone: string, record: string) => `${zoneBase(provider, zone)}/records/${path(record)}`,
+  record: (provider: string, zone: string, record: string) => `${zoneBase(provider, zone)}/records/${encodePath(record)}`,
   recordsBatchCreate: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-create`,
   recordsBatchDelete: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-delete`,
   recordsBatchUpdate: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch-update`,
   recordsBatchActive: (provider: string, zone: string) => `${zoneBase(provider, zone)}/records/batch/active`,
-  recordsBatchJob: (provider: string, jobId: string) => `${providerBase(provider)}/records/batch/${path(jobId)}`,
+  recordsBatchJob: (provider: string, jobId: string) => `${providerBase(provider)}/records/batch/${encodePath(jobId)}`,
   recordsBatchRetry: (provider: string, jobId: string) =>
-    `${providerBase(provider)}/records/batch/${path(jobId)}/retry`,
+    `${providerBase(provider)}/records/batch/${encodePath(jobId)}/retry`,
 }
 
 function normalizedPaging(options: Record<string, unknown> = {}, defaultPerPage = 20) {

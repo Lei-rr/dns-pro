@@ -1,6 +1,11 @@
 import { cacheManager, globalCache, type CacheResult } from './cache-manager.js'
 import {
   buildCacheKey,
+  cloudflaredTunnelConfigCacheTag,
+  cloudflaredTunnelsCacheTag,
+  customHostnameCacheTag,
+  edgeoneDomainsCacheTag,
+  edgeoneZonesCacheTag,
   offsetPaginationMeta,
   pagePaginationMeta,
   providerCacheTag,
@@ -95,6 +100,11 @@ export function invalidateProviderCache(tags: string[]): void {
 export {
   buildCacheKey,
   cacheManager,
+  cloudflaredTunnelConfigCacheTag,
+  cloudflaredTunnelsCacheTag,
+  customHostnameCacheTag,
+  edgeoneDomainsCacheTag,
+  edgeoneZonesCacheTag,
   globalCache,
   offsetPaginationMeta,
   pagePaginationMeta,

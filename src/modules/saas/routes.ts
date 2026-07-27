@@ -10,17 +10,21 @@ import {
   fallbackOriginShow,
   fallbackOriginUpdate,
   fallbackOriginDelete,
+} from './controllers/hostname-controller.js'
+import {
   preferredApplyPreview,
   preferredApplyStore,
   preferredApplyShow,
   preferredApplyActive,
   preferredApplyRetry,
+} from './controllers/preferred-apply-controller.js'
+import {
   batchDeleteStore,
   batchUpdateStore,
   batchJobShow,
   batchJobActive,
   batchJobRetry,
-} from './controllers/saas-controller.js'
+} from './controllers/batch-controller.js'
 import {
   preferredDomainsIndex,
   preferredDomainsStore,

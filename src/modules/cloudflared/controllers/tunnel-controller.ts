@@ -9,7 +9,7 @@ import {
   queryString,
 } from '../../../lib/utils/request-parse.js'
 
-export async function cloudflaredTunnelsIndex(
+export async function tunnelsIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
@@ -21,7 +21,7 @@ export async function cloudflaredTunnelsIndex(
   return reply.send(success(result))
 }
 
-export async function cloudflaredTunnelsStore(
+export async function tunnelsStore(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
@@ -33,7 +33,7 @@ export async function cloudflaredTunnelsStore(
   return reply.status(201).send(success(result))
 }
 
-export async function cloudflaredTunnelShow(
+export async function tunnelShow(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -46,7 +46,7 @@ export async function cloudflaredTunnelShow(
   return reply.send(success(result))
 }
 
-export async function cloudflaredTunnelDelete(
+export async function tunnelDelete(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -57,7 +57,7 @@ export async function cloudflaredTunnelDelete(
   return reply.send(success(result))
 }
 
-export async function cloudflaredTunnelToken(
+export async function tunnelToken(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -68,7 +68,7 @@ export async function cloudflaredTunnelToken(
   return reply.send(success(result))
 }
 
-export async function cloudflaredTunnelTokenRotate(
+export async function tunnelTokenRotate(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -79,7 +79,7 @@ export async function cloudflaredTunnelTokenRotate(
   return reply.send(success(result))
 }
 
-export async function cloudflaredTunnelConfigShow(
+export async function tunnelConfigShow(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -104,7 +104,7 @@ function buildRoute(routeService: CloudflaredRouteService, body: Record<string, 
   }
 }
 
-export async function cloudflaredTunnelRouteStore(
+export async function tunnelRouteStore(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -118,7 +118,7 @@ export async function cloudflaredTunnelRouteStore(
   return reply.status(201).send(success(result))
 }
 
-export async function cloudflaredTunnelRouteUpdate(
+export async function tunnelRouteUpdate(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -143,7 +143,7 @@ export async function cloudflaredTunnelRouteUpdate(
   return reply.send(success(result))
 }
 
-export async function cloudflaredTunnelRouteDelete(
+export async function tunnelRouteDelete(
   request: FastifyRequest<{ Params: { providerId: string; tunnelId: string } }>,
   reply: FastifyReply,
 ) {
@@ -158,7 +158,7 @@ export async function cloudflaredTunnelRouteDelete(
   return reply.send(success(result))
 }
 
-export async function cloudflaredZonesIndex(
+export async function zonesIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {

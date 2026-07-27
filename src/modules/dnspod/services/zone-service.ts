@@ -1,7 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { CacheTtl, offsetPaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
 import { emitDnsPodZoneMutated } from '../events.js'
-import { ApiError } from '../../../lib/http/api-error.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
   dnspodDomainCreateResponseSchema,
@@ -61,7 +61,7 @@ export interface ZoneDeleteResult {
 }
 
 export class DnsPodZoneService {
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async list(providerId: string, filters: ZoneListFilters = {}): Promise<ZoneListResult> {
     const offset = Math.max(0, filters.offset ?? 0)
@@ -79,7 +79,7 @@ export class DnsPodZoneService {
       refresh,
       loader: async () => {
         const provider = await this.requireProvider(providerId)
-        const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+        const gateway = this.gatewayFor(provider)
 
         const payload: Record<string, unknown> = { Offset: offset, Limit: limit }
         if (keyword !== '') {
@@ -90,7 +90,7 @@ export class DnsPodZoneService {
         try {
           response = await gateway.call('DescribeDomainList', payload)
         } catch (error) {
-          throw this.wrapError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
+          throw wrapProviderError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
         }
 
         const parsed = dnspodDomainListResponseSchema.parse(response)
@@ -117,7 +117,7 @@ export class DnsPodZoneService {
 
   async create(providerId: string, zone: string): Promise<ZoneCreateResult> {
     const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const gateway = this.gatewayFor(provider)
 
     const domain = zone.toLowerCase().trim()
 
@@ -125,7 +125,7 @@ export class DnsPodZoneService {
     try {
       response = await gateway.call('CreateDomain', { Domain: domain })
     } catch (error) {
-      throw this.wrapError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
+      throw wrapProviderError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
     }
 
     await emitDnsPodZoneMutated(providerId, domain, 'create')
@@ -142,7 +142,7 @@ export class DnsPodZoneService {
 
   async delete(providerId: string, zone: string): Promise<ZoneDeleteResult> {
     const provider = await this.requireProvider(providerId)
-    const gateway = new DnsPodGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const gateway = this.gatewayFor(provider)
 
     const domain = zone.toLowerCase().trim()
 
@@ -150,7 +150,7 @@ export class DnsPodZoneService {
     try {
       response = await gateway.call('DeleteDomain', { Domain: domain })
     } catch (error) {
-      throw this.wrapError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
+      throw wrapProviderError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
     }
 
     await emitDnsPodZoneMutated(providerId, domain, 'delete')
@@ -171,27 +171,12 @@ export class DnsPodZoneService {
     )
   }
 
-  private wrapError(
-    code: string,
-    message: string,
-    providerId: string,
-    error: unknown,
-    details: Record<string, unknown> = {}
-  ): ApiError {
-    if (error instanceof ApiError) {
-      return error
-    }
-    const err = error instanceof Error ? error : new Error(String(error))
-    return new ApiError(
-      code,
-      message,
-      502,
-      {
-        ...details,
-        provider_id: providerId,
-        error: err.message,
-      }
-    )
+
+  private gatewayFor(provider: DnsPodProvider): DnsPodGateway {
+    return DnsPodGateway.forCredentials({
+      secretId: provider.secret_id,
+      secretKey: provider.secret_key,
+    })
   }
 }
 

@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../gateways/gateway.js'
 import { CacheTtl, pagePaginationMeta, providerCacheTag, recordCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { emitCloudflareRecordMutated } from '../events.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDnsRecordSchema,
@@ -69,7 +70,7 @@ interface RecordFilters {
 }
 
 export class CloudflareDnsRecordService {
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async list(providerId: string, zoneId: string, filters: RecordFilters = {}): Promise<RecordListResult> {
     const normalized = this.normalizeFilters(filters)
@@ -103,7 +104,14 @@ export class CloudflareDnsRecordService {
           query.search = normalized.search
         }
 
-        const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
+        let response
+        try {
+          response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
+        } catch (error) {
+          throw wrapProviderError('cloudflare_record_list_failed', 'Cloudflare record list failed', providerId, error, {
+            zone: zoneId,
+          })
+        }
         const parsed = parseCloudflareListResponse(response, cloudflareDnsRecordSchema)
         const resultInfo = parsed.result_info
         return {
@@ -127,10 +135,17 @@ export class CloudflareDnsRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.post(
-      `zones/${encodeURIComponent(zoneId)}/dns_records`,
-      this.recordPayload(normalized)
-    )
+    let response
+    try {
+      response = await gateway.post(
+        `zones/${encodeURIComponent(zoneId)}/dns_records`,
+        this.recordPayload(normalized)
+      )
+    } catch (error) {
+      throw wrapProviderError('cloudflare_record_create_failed', 'Cloudflare record create failed', providerId, error, {
+        zone: zoneId,
+      })
+    }
 
     await emitCloudflareRecordMutated(providerId, zoneId, 'create')
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
@@ -146,10 +161,18 @@ export class CloudflareDnsRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.put(
-      `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`,
-      this.recordPayload(normalized)
-    )
+    let response
+    try {
+      response = await gateway.put(
+        `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`,
+        this.recordPayload(normalized)
+      )
+    } catch (error) {
+      throw wrapProviderError('cloudflare_record_update_failed', 'Cloudflare record update failed', providerId, error, {
+        zone: zoneId,
+        record_id: recordId,
+      })
+    }
 
     await emitCloudflareRecordMutated(providerId, zoneId, 'update')
     return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
@@ -159,9 +182,17 @@ export class CloudflareDnsRecordService {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.delete(
-      `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`
-    )
+    let response
+    try {
+      response = await gateway.delete(
+        `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`
+      )
+    } catch (error) {
+      throw wrapProviderError('cloudflare_record_delete_failed', 'Cloudflare record delete failed', providerId, error, {
+        zone: zoneId,
+        record_id: recordId,
+      })
+    }
 
     await emitCloudflareRecordMutated(providerId, zoneId, 'delete')
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
@@ -237,6 +268,6 @@ export class CloudflareDnsRecordService {
   }
 
   private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
-    return new CloudflareGateway(provider.api_token)
+    return CloudflareGateway.forToken(provider.api_token)
   }
 }

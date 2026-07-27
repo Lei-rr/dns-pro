@@ -5,7 +5,7 @@ import { getProviderDefinition, getProviderDefinitionsList } from './definitions
 import { ProviderNormalizer } from './normalizer.js'
 import { ProviderPresenter } from './presenter.js'
 import { SaasPreferenceService } from '../saas/services/preference-service.js'
-import { eventBus } from '../../platform/events/event-bus.js'
+import { emitProviderMutated } from './events.js'
 
 interface DependencyInfo {
   kind: string
@@ -17,10 +17,24 @@ interface DependencyInfo {
 
 export class ProviderService {
   constructor(
-    private readonly providers: ProviderRepository = new ProviderRepository(),
-    private readonly normalizer: ProviderNormalizer = new ProviderNormalizer(),
-    private readonly presenter: ProviderPresenter = new ProviderPresenter(),
-    private readonly hostnamePreferences: SaasPreferenceService = new SaasPreferenceService()
+    private readonly providers: ProviderRepository,
+    private readonly normalizer: ProviderNormalizer,
+    private readonly presenter: ProviderPresenter,
+    private readonly hostnamePreferences: SaasPreferenceService,
+    private readonly probes: {
+      dnspodZones: { list(providerId: string, opts: { offset: number; limit: number; refresh: boolean }): Promise<{ items: unknown[]; pagination?: { total?: number | null } }> }
+      cloudflareZones: {
+        list(
+          providerId: string,
+          page: number,
+          perPage: number,
+          name: string,
+          refresh: boolean,
+        ): Promise<{ items: unknown[]; pagination?: { total_count?: number | null } }>
+      }
+      edgeoneZones: { zones(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
+      cloudflaredTunnels: { list(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
+    },
   ) {}
 
   definitions() {
@@ -54,10 +68,9 @@ export class ProviderService {
     })
 
     const presented = this.presenter.present(normalized as Provider)
-    await eventBus.emit({
-      type: 'provider.mutated',
-      provider_id: presented.id,
-      action: 'provider.create',
+    await emitProviderMutated({
+      providerId: presented.id,
+      action: 'create',
       target: presented.type,
     })
     return presented
@@ -86,10 +99,9 @@ export class ProviderService {
       throw new ApiError('server_error', 'Provider update failed', 500)
     }
     const presented = this.presenter.present(updated as Provider)
-    await eventBus.emit({
-      type: 'provider.mutated',
-      provider_id: presented.id,
-      action: 'provider.update',
+    await emitProviderMutated({
+      providerId: presented.id,
+      action: 'update',
       target: presented.type,
     })
     return presented
@@ -109,10 +121,9 @@ export class ProviderService {
       }
       return next
     })
-    await eventBus.emit({
-      type: 'provider.mutated',
-      provider_id: id,
-      action: 'provider.delete',
+    await emitProviderMutated({
+      providerId: id,
+      action: 'delete',
     })
   }
 
@@ -146,8 +157,7 @@ export class ProviderService {
     try {
       switch (provider.type) {
         case 'dnspod': {
-          const { DnsPodZoneService } = await import('../dnspod/services/zone-service.js')
-          const zones = await new DnsPodZoneService(this.providers).list(provider.id, {
+          const zones = await this.probes.dnspodZones.list(provider.id, {
             offset: 0,
             limit: 1,
             refresh: true,
@@ -160,8 +170,7 @@ export class ProviderService {
           }
         }
         case 'cloudflare': {
-          const { CloudflareZoneService } = await import('../cloudflare/services/zone-service.js')
-          const zones = await new CloudflareZoneService(this.providers).list(provider.id, 1, 1, '', true)
+          const zones = await this.probes.cloudflareZones.list(provider.id, 1, 1, '', true)
           return {
             ok: true,
             type: provider.type,
@@ -173,8 +182,7 @@ export class ProviderService {
           const linked = String((provider as Record<string, unknown>).dnspod_provider || '').trim()
           if (!linked) throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne 未关联 DNSPod', 422)
           await this.testConnection(linked)
-          const { EdgeOneZoneService } = await import('../edgeone/services/zone-service.js')
-          const zones = await new EdgeOneZoneService(this.providers).zones(provider.id, true)
+          const zones = await this.probes.edgeoneZones.zones(provider.id, true)
           return {
             ok: true,
             type: provider.type,
@@ -197,8 +205,7 @@ export class ProviderService {
           const cf = String((provider as Record<string, unknown>).cloudflare_provider || '').trim()
           if (!cf) throw new ApiError('cloudflared_cloudflare_provider_missing', 'Tunnel 未关联 Cloudflare', 422)
           await this.testConnection(cf)
-          const { CloudflaredTunnelService } = await import('../cloudflared/services/tunnel-service.js')
-          const tunnels = await new CloudflaredTunnelService(this.providers).list(provider.id, true)
+          const tunnels = await this.probes.cloudflaredTunnels.list(provider.id, true)
           return {
             ok: true,
             type: provider.type,

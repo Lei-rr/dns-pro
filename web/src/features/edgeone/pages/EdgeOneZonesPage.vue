@@ -12,19 +12,18 @@ import {
   TableCell,
   TableHead,
   TableHeader,
-  TableRow, TableLoading } from '@/shared/ui/table'
-import { edgeOneAccessLabel, edgeOneApi, edgeOneStatusLabel } from '@/features/edgeone/api/edgeone'
+  TableRow,
+  TableLoading,
+} from '@/shared/ui/table'
+import { edgeOneApi } from '@/features/edgeone/api/edgeone'
+import { edgeOneAccessLabel, edgeOneStatusLabel } from '@/features/edgeone/lib/status'
 import { providerChildPath } from '@/features/providers/lib/paths'
 import type { EdgeOneZone } from '@/shared/types'
-import { toast } from '@/shared/lib/toast'
-import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
+import { useListPage } from '@/shared/lib/use-list-page'
 
 const props = defineProps<{ providerId: string }>()
 const router = useRouter()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const zones = ref<EdgeOneZone[]>([])
 const keyword = ref('')
 
@@ -38,37 +37,28 @@ const filtered = computed(() => {
   )
 })
 
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
+const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+  pageSizeScope: 'edgeone-zones',
+  load: async (options = {}) => {
     try {
-    const response = await edgeOneApi.zones(props.providerId, { refresh: options.refresh })
-    zones.value = response.data || []
+      const response = await edgeOneApi.zones(props.providerId, { refresh: options.refresh })
+      zones.value = response.data || []
     } catch (error) {
-      toast.error(errorMessage(error))
+      fail(error)
     }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
-  }
-}
+  },
+})
 
 function openZone(zone: EdgeOneZone) {
-  // path second segment is zoneId for API; keep id, title page will resolve name
   router.push(providerChildPath(props.providerId, String(zone.id || zone.name)))
 }
 
 watch(
   () => props.providerId,
-  () => load(),
+  () => runLoad(),
 )
 
-onMounted(() => load())
+onMounted(() => runLoad())
 </script>
 
 <template>
@@ -82,8 +72,8 @@ onMounted(() => load())
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex items-center gap-2">
-        <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索站点" @keyup.enter="load()" />
-        <Button variant="outline" size="sm" :loading="loading" @click="load()">
+        <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索站点" @keyup.enter="runLoad()" />
+        <Button variant="outline" size="sm" :loading="loading" @click="runLoad()">
           <Search class="size-4" />
           搜索
         </Button>

@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { success, noContent } from '../../lib/http/api-response.js'
-import { bodyRecord, bodyString } from '../../lib/utils/request-parse.js'
+import { success, noContent } from '../../../lib/http/api-response.js'
+import { bodyRecord, bodyString } from '../../../lib/utils/request-parse.js'
 
 export async function sessionStore(request: FastifyRequest, reply: FastifyReply) {
   const body = bodyRecord(request)

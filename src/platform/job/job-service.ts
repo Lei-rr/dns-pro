@@ -38,7 +38,7 @@ export class JobService {
   >()
   private resumeStarted = false
 
-  constructor(private readonly store = new JsonStore<StoreShape>('jobs/jobs.json', { items: [] })) {}
+  constructor(private readonly store: JsonStore<StoreShape>) {}
 
   registerRunner(type: string, runner: (job: JobRecord) => Promise<void>): void {
     this.runners.set(type, runner)

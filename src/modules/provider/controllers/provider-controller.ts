@@ -1,7 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
-import { success, noContent } from '../../lib/http/api-response.js'
-import { ApiError } from '../../lib/http/api-error.js'
-import { bodyRecord } from '../../lib/utils/request-parse.js'
+import { success, noContent } from '../../../lib/http/api-response.js'
+import { ApiError } from '../../../lib/http/api-error.js'
+import { bodyRecord } from '../../../lib/utils/request-parse.js'
 
 export async function definitionsIndex(request: FastifyRequest, reply: FastifyReply) {
   return reply.send(success(request.server.ctx.providerService.definitions()))

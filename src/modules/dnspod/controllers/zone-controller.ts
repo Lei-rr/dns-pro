@@ -2,7 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
 
-export async function zoneIndex(
+export async function zonesIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {

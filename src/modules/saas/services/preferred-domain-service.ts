@@ -2,7 +2,7 @@ import { PreferredDomainRepository, type PreferredDomain } from '../repositories
 import { ApiError } from '../../../lib/http/api-error.js'
 
 export class PreferredDomainService {
-  constructor(private readonly store: PreferredDomainRepository = new PreferredDomainRepository()) {}
+  constructor(private readonly store: PreferredDomainRepository) {}
 
   async list(): Promise<PreferredDomain[]> {
     const domains = await this.readDomains()

@@ -82,3 +82,24 @@ export function zoneCacheTag(providerType: string, providerId: string): string {
 export function recordCacheTag(providerType: string, providerId: string, zone: string): string {
   return `${providerType}:records:${providerId}:${zone}`
 }
+
+/** Cloudflare for SaaS custom hostnames (+ fallback origin) share one zone-scoped tag. */
+export function customHostnameCacheTag(cloudflareProviderId: string, zoneId: string): string {
+  return `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`
+}
+
+export function edgeoneZonesCacheTag(providerId: string): string {
+  return `edgeone:zones:${providerId}`
+}
+
+export function edgeoneDomainsCacheTag(providerId: string, zoneId: string): string {
+  return `edgeone:domains:${providerId}:${zoneId}`
+}
+
+export function cloudflaredTunnelsCacheTag(providerId: string): string {
+  return `cloudflared:tunnels:${providerId}`
+}
+
+export function cloudflaredTunnelConfigCacheTag(providerId: string, tunnelId: string): string {
+  return `cloudflared:tunnel_config:${providerId}:${tunnelId}`
+}

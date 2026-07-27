@@ -19,18 +19,22 @@ import {
   TableHead,
   TableHeader,
   TableRow, TableLoading } from '@/shared/ui/table'
-import { edgeOneApi, edgeOneStatusLabel } from '@/features/edgeone/api/edgeone'
+import { edgeOneApi } from '@/features/edgeone/api/edgeone'
+import { edgeOneStatusLabel } from '@/features/edgeone/lib/status'
 import { providerPath } from '@/features/providers/lib/paths'
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
+import { useListPage } from '@/shared/lib/use-list-page'
+import { useRowBusy, removeListItem, patchListItem } from '@/shared/lib/row-busy'
+import { Spinner } from '@/shared/ui/spinner'
 import EdgeOneDomainForm from '@/features/edgeone/components/EdgeOneDomainForm.vue'
 import CertificateForm from '@/features/edgeone/components/CertificateForm.vue'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
+import { runProviderBatch } from '@/shared/lib/run-provider-batch'
 import { useRowSelection } from '@/shared/lib/row-selection'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
@@ -38,9 +42,8 @@ import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 const props = defineProps<{ providerId: string; zoneId: string }>()
 const router = useRouter()
 const jobProgress = useJobProgress()
+const { busyKey: rowBusyKey, isBusy: isRowBusy, runBusy } = useRowBusy()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const saving = ref(false)
 const domains = ref<EdgeOneAccelerationDomain[]>([])
 const zoneMeta = ref<EdgeOneZone | null>(null)
@@ -61,6 +64,21 @@ const filtered = computed(() => {
 const selection = useRowSelection(filtered, (row) => String(row.domain_name || row.name || ''))
 const selectedCount = computed(() => selection.selected.value.length)
 const pageTitle = computed(() => zoneMeta.value?.name || decodeURIComponent(props.zoneId))
+
+const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+  pageSizeScope: 'edgeone-records',
+  load: async (options = {}) => {
+    try {
+      if (options.refresh || !zoneMeta.value) await loadZoneMeta()
+      const response = await edgeOneApi.accelerationDomains(props.providerId, props.zoneId, {
+        refresh: options.refresh,
+      })
+      domains.value = response.data || []
+    } catch (error) {
+      fail(error)
+    }
+  },
+})
 
 function domainName(record: EdgeOneAccelerationDomain) {
   return String(record.domain_name || record.name || '')
@@ -83,29 +101,6 @@ async function loadZoneMeta() {
     }
   } catch {
     zoneMeta.value = null
-  }
-}
-
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
-    try {
-    if (options.refresh || !zoneMeta.value) await loadZoneMeta()
-    const response = await edgeOneApi.accelerationDomains(props.providerId, props.zoneId, {
-      refresh: options.refresh,
-    })
-    domains.value = response.data || []
-    } catch (error) {
-      toast.error(errorMessage(error))
-    }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
   }
 }
 
@@ -151,10 +146,10 @@ async function save(payload: Record<string, unknown>) {
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '加速域名已创建')
     }
     dialogOpen.value = false
-    await load({ refresh: true })
+    saving.value = false
+    await runLoad({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
-  } finally {
     saving.value = false
   }
 }
@@ -166,7 +161,8 @@ async function saveCertificate(payload: Record<string, unknown>) {
     await edgeOneApi.updateCertificate(props.providerId, props.zoneId, domainName(editingDomain.value), payload)
     toast.success('证书已更新')
     certDialogOpen.value = false
-    await load({ refresh: true })
+    saving.value = false
+    await runLoad({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -175,67 +171,65 @@ async function saveCertificate(payload: Record<string, unknown>) {
 }
 
 async function setStatus(record: EdgeOneAccelerationDomain, status: string) {
-  try {
-    await edgeOneApi.updateAccelerationDomainStatus(props.providerId, props.zoneId, domainName(record), status)
-    toast.success('状态已更新')
-    await load({ refresh: true })
-  } catch (error) {
-    toast.error(errorMessage(error))
-  }
+  const key = domainName(record)
+  await runBusy(key, async () => {
+    try {
+      await edgeOneApi.updateAccelerationDomainStatus(props.providerId, props.zoneId, key, status)
+      patchListItem(domains, (item) => domainName(item) === key, {
+        ...record,
+        status,
+        active_status: status,
+      })
+      toast.success('状态已更新')
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
+  })
 }
 
 async function syncCname(record: EdgeOneAccelerationDomain) {
-  try {
-    const response = await edgeOneApi.syncAccelerationDomainCname(
-      props.providerId,
-      props.zoneId,
-      domainName(record),
-    )
-    notifyDnsSideEffect((response as any).side_effects?.dns?.sync, 'CNAME 已同步')
-    await load({ refresh: true })
-  } catch (error) {
-    toast.error(errorMessage(error))
-  }
+  const key = domainName(record)
+  await runBusy(key, async () => {
+    try {
+      const response = await edgeOneApi.syncAccelerationDomainCname(props.providerId, props.zoneId, key)
+      notifyDnsSideEffect((response as any).side_effects?.dns?.sync, 'CNAME 已同步')
+      // CNAME 值可能变化，轻量整表刷新但不挡其它行操作过久：仍 silent 局部优先整表
+      await runLoad({ refresh: true })
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
+  })
 }
 
 async function removeDomain(record: EdgeOneAccelerationDomain) {
   const name = domainName(record)
   if (!(await confirmDelete(name))) return
-  try {
-    const response = await edgeOneApi.deleteAccelerationDomain(props.providerId, props.zoneId, name)
-    notifyDnsSideEffect((response as any).side_effects?.dns?.cleanup, '已删除')
-    await load({ refresh: true })
-  } catch (error) {
-    toast.error(errorMessage(error))
-  }
+  await runBusy(name, async () => {
+    try {
+      const response = await edgeOneApi.deleteAccelerationDomain(props.providerId, props.zoneId, name)
+      notifyDnsSideEffect((response as any).side_effects?.dns?.cleanup, '已删除')
+      removeListItem(domains, (item) => domainName(item) === name)
+      selection.clear()
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
+  })
 }
 
 async function runEdgeBatch(
   create: () => Promise<{ data?: unknown }>,
   label: string,
 ) {
-  const created = await create()
-  const jobId = String((created.data as { id?: string } | null | undefined)?.id || '')
-  if (!jobId) throw new Error(`${label}任务创建失败`)
-  const poll = () =>
-    jobProgress.pollJob(jobId, {
-      label,
-      fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as any) || {},
-    })
-  const job = await poll()
-  const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
-  if (failed.length) {
-    await showBatchFailures(job?.message || `${label}完成`, failed, '个', {
-      onRetry: async () => {
-        await edgeOneApi.batchRetry(props.providerId, jobId)
-        return poll()
-      },
-    })
-  } else {
-    toast.success(job?.message || `${label}完成`)
-  }
-  selection.clear()
-  await load({ refresh: true })
+  await runProviderBatch({
+    label,
+    create,
+    fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as Record<string, unknown>) || {},
+    retry: (id) => edgeOneApi.batchRetry(props.providerId, id),
+    clearSelection: () => selection.clear(),
+    onDone: () => runLoad({ refresh: true }),
+    failureUnit: '个',
+    jobProgress,
+  })
 }
 
 async function batchDisableSelected() {
@@ -286,7 +280,7 @@ async function resumeJobs() {
     if (failed.length) {
       showBatchFailures(finished.message || 'EdgeOne 批量完成', failed.map((i) => formatFailedJobItem(i)), '个')
     }
-    await load({ refresh: true })
+    await runLoad({ refresh: true })
   }
 }
 
@@ -294,12 +288,12 @@ watch(
   () => [props.providerId, props.zoneId],
   () => {
     selection.clear()
-    void load().then(() => resumeJobs())
+    void runLoad().then(() => resumeJobs())
   },
 )
 
 onMounted(() => {
-  void load().then(() => resumeJobs())
+  void runLoad().then(() => resumeJobs())
 })
 </script>
 
@@ -331,13 +325,13 @@ onMounted(() => {
           v-model="keyword"
           class="h-8 w-full sm:w-72"
           placeholder="搜索加速域名 / CNAME"
-          @keyup.enter="load()"
+          @keyup.enter="runLoad()"
         />
-        <Button variant="outline" size="sm" :loading="loading" @click="load()">
+        <Button variant="outline" size="sm" :loading="loading" @click="runLoad()">
           <Search class="size-4" />
           搜索
         </Button>
-        <template v-if="selectedCount">
+        <template v-if="selectedCount && !jobProgress.running.value">
           <span class="text-muted-foreground text-sm">已选 {{ selectedCount }}</span>
           <Button variant="outline" size="sm" :disabled="jobProgress.running.value" @click="batchDisableSelected">
             批量停用
@@ -380,7 +374,11 @@ onMounted(() => {
             <TableRow v-if="!filtered.length && !loading">
               <TableCell colspan="6" class="text-muted-foreground py-10 text-center">暂无加速域名</TableCell>
             </TableRow>
-            <TableRow v-for="record in filtered" :key="domainName(record)">
+            <TableRow
+              v-for="record in filtered"
+              :key="domainName(record)"
+              :class="isRowBusy(domainName(record)) && 'bg-muted/40 opacity-80'"
+            >
               <TableCell class="px-3">
                 <Checkbox
                   :model-value="selection.isSelected(record)"
@@ -399,12 +397,23 @@ onMounted(() => {
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" class="size-8">
-                      <EllipsisVertical class="size-4" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="size-8"
+                      :disabled="isRowBusy(domainName(record))"
+                    >
+                      <Spinner v-if="isRowBusy(domainName(record))" class="size-4" />
+                      <EllipsisVertical v-else class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem @click="syncCname(record)">同步 CNAME</DropdownMenuItem>
+                    <DropdownMenuItem
+                      :disabled="isRowBusy(domainName(record))"
+                      @click="syncCname(record)"
+                    >
+                      同步 CNAME
+                    </DropdownMenuItem>
                     <DropdownMenuItem @click="openEdit(record)">编辑</DropdownMenuItem>
                     <DropdownMenuItem @click="openCert(record)">HTTPS 配置</DropdownMenuItem>
                     <DropdownMenuItem @click="setStatus(record, 'online')">启用</DropdownMenuItem>

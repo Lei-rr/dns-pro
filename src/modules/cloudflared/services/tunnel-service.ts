@@ -1,7 +1,8 @@
 import crypto from 'node:crypto'
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
+import { CacheTtl, cloudflaredTunnelsCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { emitTunnelMutated } from '../events.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
@@ -24,27 +25,32 @@ export interface CloudflaredTunnel {
 }
 
 export class CloudflaredTunnelService {
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async list(providerId: string, refresh = false): Promise<{ items: CloudflaredTunnel[] }> {
     const cached = await withProviderCache<{ items: CloudflaredTunnel[] }>({
       key: `cloudflared:tunnels:${providerId}`,
-      tags: [`cloudflared:tunnels:${providerId}`],
+      tags: [cloudflaredTunnelsCacheTag(providerId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const [provider, accountId] = await this.requireProvider(providerId)
-        const gateway = new CloudflareGateway(provider.api_token)
+        const gateway = this.gatewayFor(provider)
 
         const items: CloudflaredTunnel[] = []
         let page = 1
         let hasMore = true
         while (hasMore) {
-          const response = await gateway.get(`accounts/${accountId}/cfd_tunnel`, {
-            is_deleted: 'false',
-            page,
-            per_page: 100,
-          })
+          let response
+          try {
+            response = await gateway.get(`accounts/${accountId}/cfd_tunnel`, {
+              is_deleted: 'false',
+              page,
+              per_page: 100,
+            })
+          } catch (error) {
+            throw wrapProviderError('cloudflared_tunnel_list_failed', 'Cloudflare Tunnel list failed', providerId, error)
+          }
           const batch = parseCloudflareListResponse(response, cloudflareTunnelSchema).result
           for (const tunnel of batch) {
             items.push(this.presentTunnel(tunnel))
@@ -63,14 +69,21 @@ export class CloudflaredTunnelService {
   async show(providerId: string, tunnelId: string, refresh = false): Promise<CloudflaredTunnel> {
     const cached = await withProviderCache<CloudflaredTunnel>({
       key: `cloudflared:tunnel:${providerId}:${tunnelId}`,
-      tags: [`cloudflared:tunnels:${providerId}`],
+      tags: [cloudflaredTunnelsCacheTag(providerId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const [provider, accountId] = await this.requireProvider(providerId)
-        const gateway = new CloudflareGateway(provider.api_token)
+        const gateway = this.gatewayFor(provider)
 
-        const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+        let response
+        try {
+          response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+        } catch (error) {
+          throw wrapProviderError('cloudflared_tunnel_show_failed', 'Cloudflare Tunnel show failed', providerId, error, {
+            tunnel_id: tunnelId,
+          })
+        }
         const result = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
         return result
       },
@@ -80,13 +93,18 @@ export class CloudflaredTunnelService {
 
   async create(providerId: string, name: string): Promise<{ tunnel: CloudflaredTunnel; token: string }> {
     const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.post(`accounts/${accountId}/cfd_tunnel`, {
-      name: name.trim(),
-      config_src: 'cloudflare',
-      tunnel_secret: crypto.randomBytes(32).toString('base64'),
-    })
+    let response
+    try {
+      response = await gateway.post(`accounts/${accountId}/cfd_tunnel`, {
+        name: name.trim(),
+        config_src: 'cloudflare',
+        tunnel_secret: crypto.randomBytes(32).toString('base64'),
+      })
+    } catch (error) {
+      throw wrapProviderError('cloudflared_tunnel_create_failed', 'Cloudflare Tunnel create failed', providerId, error)
+    }
 
     await emitTunnelMutated({ providerId, action: 'create' })
     const tunnel = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
@@ -96,15 +114,29 @@ export class CloudflaredTunnelService {
 
   async delete(providerId: string, tunnelId: string): Promise<{ id: string }> {
     const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
     try {
       await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}/connections`)
     } catch (error) {
-      if (!(error instanceof ApiError && error.statusCode === 404)) throw error
+      if (!(error instanceof ApiError && error.statusCode === 404)) {
+        throw wrapProviderError(
+          'cloudflared_tunnel_connections_delete_failed',
+          'Cloudflare Tunnel connections delete failed',
+          providerId,
+          error,
+          { tunnel_id: tunnelId },
+        )
+      }
     }
 
-    await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+    try {
+      await gateway.delete(`accounts/${accountId}/cfd_tunnel/${tunnelId}`)
+    } catch (error) {
+      throw wrapProviderError('cloudflared_tunnel_delete_failed', 'Cloudflare Tunnel delete failed', providerId, error, {
+        tunnel_id: tunnelId,
+      })
+    }
     await emitTunnelMutated({ providerId, tunnelId, action: 'delete' })
     return { id: tunnelId }
   }
@@ -117,11 +149,17 @@ export class CloudflaredTunnelService {
 
   async rotateToken(providerId: string, tunnelId: string): Promise<{ token: string }> {
     const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = new CloudflareGateway(provider.api_token)
+    const gateway = this.gatewayFor(provider)
 
-    await gateway.patch(`accounts/${accountId}/cfd_tunnel/${tunnelId}`, {
-      tunnel_secret: crypto.randomBytes(32).toString('base64'),
-    })
+    try {
+      await gateway.patch(`accounts/${accountId}/cfd_tunnel/${tunnelId}`, {
+        tunnel_secret: crypto.randomBytes(32).toString('base64'),
+      })
+    } catch (error) {
+      throw wrapProviderError('cloudflared_tunnel_token_rotate_failed', 'Cloudflare Tunnel token rotate failed', providerId, error, {
+        tunnel_id: tunnelId,
+      })
+    }
 
     await emitTunnelMutated({ providerId, tunnelId, action: 'token' })
     const token = await this.fetchToken(provider, accountId, tunnelId)
@@ -151,8 +189,19 @@ export class CloudflaredTunnelService {
   }
 
   private async fetchToken(provider: CloudflareProvider, accountId: string, tunnelId: string): Promise<string> {
-    const gateway = new CloudflareGateway(provider.api_token)
-    const response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/token`)
+    const gateway = this.gatewayFor(provider)
+    let response
+    try {
+      response = await gateway.get(`accounts/${accountId}/cfd_tunnel/${tunnelId}/token`)
+    } catch (error) {
+      throw wrapProviderError(
+        'cloudflared_tunnel_token_failed',
+        'Cloudflare Tunnel token fetch failed',
+        provider.id,
+        error,
+        { tunnel_id: tunnelId },
+      )
+    }
     const result = parseCloudflareItemResponse(response).result
     if (typeof result === 'string') return result
     if (result && typeof result === 'object') {
@@ -186,6 +235,11 @@ export class CloudflaredTunnelService {
       opened_at: conn.opened_at,
       origin_ip: conn.origin_ip,
     }
+  }
+
+
+  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
+    return CloudflareGateway.forToken(provider.api_token)
   }
 
 }

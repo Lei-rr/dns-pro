@@ -16,7 +16,7 @@ import './types/fastify.d.ts'
  * modules/*  = business features (routes + services)
  * platform/* = job store + event bus + data dirs
  *
- * See docs/FOUNDATION.md
+ * Composition: plugins = HTTP shell; modules = business; platform = jobs/events.
  */
 export async function buildApp(config: AppConfig) {
   const DEFAULT_SESSION_SECRET = 'dns-pro-secure-session'

@@ -8,7 +8,7 @@ import {
   providerDelete,
   providerSort,
   providerTest,
-} from './controller.js'
+} from './controllers/provider-controller.js'
 
 export async function routes(app: FastifyInstance) {
   app.get('/definitions', definitionsIndex)

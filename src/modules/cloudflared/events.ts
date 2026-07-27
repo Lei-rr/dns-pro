@@ -1,4 +1,8 @@
 import { eventBus } from '../../platform/events/event-bus.js'
+import {
+  cloudflaredTunnelConfigCacheTag,
+  cloudflaredTunnelsCacheTag,
+} from '../../lib/cache/provider-cache.js'
 
 export async function emitTunnelMutated(input: {
   providerId: string
@@ -10,7 +14,7 @@ export async function emitTunnelMutated(input: {
     provider_id: input.providerId,
     target: input.tunnelId,
     action: `cloudflared.tunnel.${input.action}`,
-    cache_tags: [`cloudflared:tunnels:${input.providerId}`],
+    cache_tags: [cloudflaredTunnelsCacheTag(input.providerId)],
   })
 }
 
@@ -27,8 +31,8 @@ export async function emitTunnelRouteMutated(input: {
     hostname: input.hostname,
     action: `cloudflared.route.${input.action}`,
     cache_tags: [
-      `cloudflared:tunnel_config:${input.providerId}:${input.tunnelId}`,
-      `cloudflared:tunnels:${input.providerId}`,
+      cloudflaredTunnelConfigCacheTag(input.providerId, input.tunnelId),
+      cloudflaredTunnelsCacheTag(input.providerId),
     ],
   })
 }

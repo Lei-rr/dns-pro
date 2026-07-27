@@ -16,21 +16,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoa
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { saasApi } from '@/features/saas/api/saas'
+import { preferredDomainApi, saasApi } from '@/features/saas/api/saas'
 import { providerPath } from '@/features/providers/lib/paths'
 import type { SaaSHostname, Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
-import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
+import { useListPage } from '@/shared/lib/use-list-page'
+import { removeListItem } from '@/shared/lib/row-busy'
+import { runProviderBatch } from '@/shared/lib/run-provider-batch'
 import PreferredDomainsDialog from '@/features/saas/components/PreferredDomainsDialog.vue'
 import FallbackOriginDialog from '@/features/saas/components/FallbackOriginDialog.vue'
+import SaasDetailDialog from '@/features/saas/components/SaasDetailDialog.vue'
+import HostnameFormDialog from '@/features/saas/components/HostnameFormDialog.vue'
+import { statusLabel, statusVariant } from '@/features/saas/lib/status'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { useRowSelection } from '@/shared/lib/row-selection'
 import { Checkbox } from '@/shared/ui/checkbox'
-import { preferredDomainApi } from '@/features/saas/api/saas'
+import { Spinner } from '@/shared/ui/spinner'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 import {
   Select,
@@ -48,17 +52,20 @@ const props = defineProps<{ providerId: string; zoneName: string }>()
 const router = useRouter()
 const jobProgress = useJobProgress()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const saving = ref(false)
 const applyingPreferred = ref(false)
 const hostnames = ref<SaaSHostname[]>([])
 const keyword = ref('')
 const page = ref(1)
-const pageSize = ref(loadPageSize('saas-hosts'))
 const total = ref(0)
 const dialogOpen = ref(false)
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detailRefreshing = ref(false)
+const rowRefreshing = ref('')
+const detailRecord = ref<SaaSHostname | null>(null)
 const batchPreferredOpen = ref(false)
+const batchSubmitting = ref(false)
 const batchPreferredDomain = ref('')
 const preferredOptions = ref<Array<{ domain: string }>>([])
 const editing = ref<SaaSHostname | null>(null)
@@ -119,11 +126,6 @@ const originSuggestions = computed(() => {
   return list
 })
 const originSuggestOpen = ref(false)
-const filteredOriginSuggestions = computed(() => {
-  const q = form.custom_origin_server.trim().toLowerCase()
-  if (!q) return originSuggestions.value
-  return originSuggestions.value.filter((item) => item.toLowerCase().includes(q))
-})
 function pickOriginSuggestion(value: string) {
   form.custom_origin_server = value
   originSuggestOpen.value = false
@@ -140,6 +142,40 @@ const filtered = computed(() => {
 })
 const selection = useRowSelection(filtered, (row) => String(row.hostname || ''))
 const selectedCount = computed(() => selection.selected.value.length)
+
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
+  pageSizeScope: 'saas-hosts',
+  load: async (options = {}) => {
+    try {
+      const response = await saasApi.hostnames(props.providerId, decodedZone.value, {
+        page: page.value,
+        per_page: pageSize.value,
+        refresh: options.refresh,
+      })
+      hostnames.value = response.data || []
+      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
+      const rawTotal = meta.total_count ?? meta.total ?? meta.count
+      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : hostnames.value.length || 0)
+    } catch (error) {
+      fail(error)
+    }
+  },
+})
+
+
+function patchHostnameRow(data: SaaSHostname | null | undefined) {
+  if (!data) return
+  const key = String(data.id || data.hostname || '')
+  if (!key) return
+  const idx = hostnames.value.findIndex(
+    (item) => String(item.id || item.hostname) === key || String(item.hostname) === String(data.hostname),
+  )
+  if (idx >= 0) hostnames.value[idx] = data
+  else hostnames.value = [data, ...hostnames.value]
+  if (detailOpen.value && detailRecord.value?.hostname === data.hostname) {
+    detailRecord.value = data
+  }
+}
 
 async function loadSyncZones() {
   const providerId = form.sync_provider_id
@@ -196,55 +232,24 @@ function resetForm() {
   void loadSyncZones()
 }
 
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
-    try {
-      const response = await saasApi.hostnames(props.providerId, decodedZone.value, {
-        page: page.value,
-        per_page: pageSize.value,
-        refresh: options.refresh,
-      })
-      hostnames.value = response.data || []
-      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
-      // CF pagination uses total_count; unwrapItems maps pagination into meta
-      const rawTotal = meta.total_count ?? meta.total ?? meta.count
-      total.value = Number(
-        rawTotal != null && rawTotal !== '' ? rawTotal : hostnames.value.length || 0,
-      )
-    } catch (error) {
-      toast.error(errorMessage(error))
-    }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-    await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
-  }
-}
-
 function onPageChange(next: number) {
   page.value = next
   selection.clear()
-  void load()
+  void runLoad()
 }
 
 function onPageSizeChange(next: number) {
-  pageSize.value = next
-  savePageSize('saas-hosts', next)
+  setPageSize(next)
   page.value = 1
   selection.clear()
-  void load()
+  void runLoad()
 }
 
 function onSearch() {
   // CF hostnames API 无 keyword 参数：回第一页 + 本页过滤
   page.value = 1
   selection.clear()
-  void load()
+  void runLoad()
 }
 
 async function openCreate() {
@@ -256,6 +261,7 @@ async function openCreate() {
 }
 
 function openEdit(record: SaaSHostname) {
+  detailOpen.value = false
   editing.value = record
   form.hostname = record.hostname
   form.hostname_prefix = ''
@@ -272,6 +278,44 @@ function openEdit(record: SaaSHostname) {
   void loadPreferredOptions()
   void loadSyncZones()
   dialogOpen.value = true
+}
+
+async function openDetails(record: SaaSHostname) {
+  detailRecord.value = {
+    ...record,
+    ssl: { ...(record.ssl || {}) },
+  }
+  detailOpen.value = true
+  detailLoading.value = true
+  try {
+    const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname, {
+      refresh: true,
+    })
+    if (response.data) {
+      detailRecord.value = response.data
+      patchHostnameRow(response.data)
+    }
+  } catch (error) {
+    // list payload still usable; only toast if detail is empty-ish
+    toast.error(errorMessage(error))
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+async function refreshDetailHostname(record: SaaSHostname) {
+  detailRefreshing.value = true
+  try {
+    const response = await saasApi.refreshHostname(props.providerId, decodedZone.value, record.hostname)
+    if (response.data) {
+      patchHostnameRow(response.data)
+    }
+    toast.success('已刷新')
+  } catch (error) {
+    toast.error(errorMessage(error))
+  } finally {
+    detailRefreshing.value = false
+  }
 }
 
 async function save() {
@@ -314,6 +358,9 @@ async function save() {
         { autoSync: form.auto_sync },
       )
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '主机名已更新')
+      dialogOpen.value = false
+      if (response.data) patchHostnameRow(response.data)
+      else await runLoad({ refresh: true })
     } else {
       if (form.sync_provider_id) {
         payload.sync_provider_id = form.sync_provider_id
@@ -328,9 +375,10 @@ async function save() {
         { autoSync: form.auto_sync && !!payload.sync_target },
       )
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '主机名已创建')
+      dialogOpen.value = false
+      // 新建影响分页 total / 排序，整表刷新更稳
+      await runLoad({ refresh: true })
     }
-    dialogOpen.value = false
-    await load({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -340,22 +388,40 @@ async function save() {
 
 async function removeHostname(record: SaaSHostname) {
   if (!(await confirmDelete(record.hostname))) return
+  const key = String(record.hostname || record.id || '')
+  rowRefreshing.value = key
   try {
     const response = await saasApi.deleteHostname(props.providerId, decodedZone.value, record.hostname)
     notifyDnsSideEffect((response as any).side_effects?.dns?.cleanup, '已删除')
-    await load({ refresh: true })
+    removeListItem(
+      hostnames,
+      (item) => String(item.hostname) === String(record.hostname) || String(item.id) === String(record.id),
+    )
+    if (total.value > 0) total.value -= 1
+    selection.clear()
+    if (detailOpen.value && detailRecord.value?.hostname === record.hostname) {
+      detailOpen.value = false
+      detailRecord.value = null
+    }
   } catch (error) {
     toast.error(errorMessage(error))
+  } finally {
+    rowRefreshing.value = ''
   }
 }
 
 async function refreshHostname(record: SaaSHostname) {
+  const key = String(record.hostname || record.id || '')
+  if (!key || rowRefreshing.value) return
+  rowRefreshing.value = key
   try {
-    await saasApi.refreshHostname(props.providerId, decodedZone.value, record.hostname)
+    const response = await saasApi.refreshHostname(props.providerId, decodedZone.value, record.hostname)
+    patchHostnameRow(response.data || null)
     toast.success('已刷新')
-    await load({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
+  } finally {
+    rowRefreshing.value = ''
   }
 }
 
@@ -380,28 +446,15 @@ async function applyPreferred(payload: {
       )
       return
     }
-    const created = await saasApi.preferredApply(props.providerId, decodedZone.value, body)
-    const jobId = String((created.data as { id?: string } | undefined)?.id || '')
-    if (!jobId) throw new Error('创建优选切换任务失败')
-    const job = await jobProgress.pollJob(jobId, {
+    await runProviderBatch({
       label: '后台切换',
-      fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+      create: () => saasApi.preferredApply(props.providerId, decodedZone.value, body),
+      fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as Record<string, unknown>) || {},
+      retry: (id) => saasApi.preferredApplyRetry(id),
+      onDone: () => runLoad({ refresh: true }),
+      failureUnit: '个',
+      jobProgress,
     })
-    const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
-    if (failed.length) {
-      await showBatchFailures(job?.message || '优选切换完成', failed, '个', {
-        onRetry: async () => {
-          await saasApi.preferredApplyRetry(jobId)
-          return jobProgress.pollJob(jobId, {
-            label: '后台切换',
-            fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
-          })
-        },
-      })
-    } else {
-      toast.success(job?.message || '优选切换完成')
-    }
-    await load({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -413,28 +466,16 @@ async function runBatchJob(
   create: () => Promise<{ data?: unknown }>,
   label: string,
 ) {
-  const created = await create()
-  const jobId = String((created.data as { id?: string } | null | undefined)?.id || '')
-  if (!jobId) throw new Error(`${label}任务创建失败`)
-  const poll = () =>
-    jobProgress.pollJob(jobId, {
-      label,
-      fetchJob: async (id) => ((await saasApi.batchJob(id)).data as any) || {},
-    })
-  const job = await poll()
-  const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
-  if (failed.length) {
-    await showBatchFailures(job?.message || `${label}完成`, failed, '个', {
-      onRetry: async () => {
-        await saasApi.batchRetry(jobId)
-        return poll()
-      },
-    })
-  } else {
-    toast.success(job?.message || `${label}完成`)
-  }
-  selection.clear()
-  await load({ refresh: true })
+  await runProviderBatch({
+    label,
+    create,
+    fetchJob: async (id) => ((await saasApi.batchJob(id)).data as Record<string, unknown>) || {},
+    retry: (id) => saasApi.batchRetry(id),
+    clearSelection: () => selection.clear(),
+    onDone: () => runLoad({ refresh: true }),
+    failureUnit: '个',
+    jobProgress,
+  })
 }
 
 async function batchDeleteSelected() {
@@ -479,8 +520,9 @@ async function batchUpdatePreferred() {
     toast.warning('请选择优选域名')
     return
   }
+  batchSubmitting.value = true
+  batchPreferredOpen.value = false
   try {
-    batchPreferredOpen.value = false
     await runBatchJob(
       () =>
         saasApi.batchUpdate(props.providerId, decodedZone.value, {
@@ -492,6 +534,8 @@ async function batchUpdatePreferred() {
     )
   } catch (error) {
     toast.error(errorMessage(error))
+  } finally {
+    batchSubmitting.value = false
   }
 }
 
@@ -519,7 +563,7 @@ async function resumeJobs() {
       if (failed.length) {
         showBatchFailures(finished.message || `${item.label}完成`, failed.map((i) => formatFailedJobItem(i)), '个')
       }
-      await load({ refresh: true })
+      await runLoad({ refresh: true })
       break
     }
   }
@@ -530,7 +574,7 @@ watch(
   () => {
     page.value = 1
     selection.clear()
-    void load().then(() => resumeJobs())
+    void runLoad().then(() => resumeJobs())
   },
 )
 
@@ -538,7 +582,7 @@ onMounted(async () => {
   await loadProviders()
 
   void loadPreferredOptions()
-  void load().then(() => resumeJobs())
+  void runLoad().then(() => resumeJobs())
 })
 </script>
 
@@ -578,9 +622,9 @@ onMounted(async () => {
           <Search class="size-4" />
           搜索
         </Button>
-        <template v-if="selectedCount">
+        <template v-if="selectedCount && !jobProgress.running.value && !applyingPreferred">
           <span class="text-muted-foreground text-sm">已选 {{ selectedCount }}</span>
-          <Button variant="outline" size="sm" :disabled="jobProgress.running.value" @click="openBatchPreferred">
+          <Button variant="outline" size="sm" :disabled="jobProgress.running.value || batchSubmitting" @click="openBatchPreferred">
             批量改优选
           </Button>
           <Button
@@ -622,7 +666,11 @@ onMounted(async () => {
             <TableRow v-if="!filtered.length && !loading">
               <TableCell colspan="7" class="text-muted-foreground py-10 text-center">暂无自定义主机名</TableCell>
             </TableRow>
-            <TableRow v-for="record in filtered" :key="String(record.id || record.hostname)">
+            <TableRow
+              v-for="record in filtered"
+              :key="String(record.id || record.hostname)"
+              :class="rowRefreshing === String(record.hostname || record.id || '') && 'bg-muted/40 opacity-80'"
+            >
               <TableCell class="px-3">
                 <Checkbox
                   :model-value="selection.isSelected(record)"
@@ -630,12 +678,21 @@ onMounted(async () => {
                 @click.stop
                 />
               </TableCell>
-              <TableCell class="font-medium">{{ record.hostname }}</TableCell>
-              <TableCell>
-                <Badge variant="secondary">{{ record.status || '-' }}</Badge>
+              <TableCell class="font-medium">
+                <button
+                  type="button"
+                  class="table-link-ellipsis max-w-[220px] text-left hover:underline"
+                  :title="record.hostname"
+                  @click="openDetails(record)"
+                >
+                  {{ record.hostname }}
+                </button>
               </TableCell>
               <TableCell>
-                <Badge variant="outline">{{ record.ssl?.status || '-' }}</Badge>
+                <Badge :variant="statusVariant(record.status)">{{ statusLabel(record.status) }}</Badge>
+              </TableCell>
+              <TableCell>
+                <Badge :variant="statusVariant(record.ssl?.status)">{{ statusLabel(record.ssl?.status) }}</Badge>
               </TableCell>
               <TableCell class="max-w-[180px] truncate">
                 {{ record.custom_origin_server || '默认回源' }}
@@ -646,12 +703,31 @@ onMounted(async () => {
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" class="size-8">
-                      <EllipsisVertical class="size-4" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="size-8"
+                      :disabled="rowRefreshing === String(record.hostname || record.id || '')"
+                    >
+                      <Spinner
+                        v-if="rowRefreshing === String(record.hostname || record.id || '')"
+                        class="size-4"
+                      />
+                      <EllipsisVertical v-else class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem @click="refreshHostname(record)">刷新</DropdownMenuItem>
+                    <DropdownMenuItem @click="openDetails(record)">详情</DropdownMenuItem>
+                    <DropdownMenuItem
+                      :disabled="rowRefreshing === String(record.hostname || record.id || '')"
+                      @click="refreshHostname(record)"
+                    >
+                      <Spinner
+                        v-if="rowRefreshing === String(record.hostname || record.id || '')"
+                        class="mr-2 size-3.5"
+                      />
+                      刷新
+                    </DropdownMenuItem>
                     <DropdownMenuItem @click="openEdit(record)">编辑</DropdownMenuItem>
                     <DropdownMenuItem variant="destructive" @click="removeHostname(record)">删除</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -672,147 +748,20 @@ onMounted(async () => {
       />
     </div>
 
-    <AppDialog
+    <HostnameFormDialog
       v-model:open="dialogOpen"
-      :title="editing ? '编辑主机名' : '新增主机名'"
-      description="创建/更新 Cloudflare for SaaS 自定义主机名。"
-      content-class="sm:max-w-xl"
-    >
-      <FieldGroup>
-        <template v-if="editing">
-          <Field>
-            <FieldLabel>主机名</FieldLabel>
-            <Input v-model="form.hostname" disabled />
-          </Field>
-        </template>
-        <template v-else>
-          <Field v-if="syncProviders.length">
-            <FieldLabel>同步服务商</FieldLabel>
-            <Select v-model="form.sync_provider_id">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="选择同步服务商" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="item in syncProviders" :key="item.id" :value="item.id">
-                  {{ item.name }}（{{ item.type === 'dnspod' ? 'DNSPod' : 'Cloudflare' }}）
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <div v-if="form.sync_provider_id" class="grid grid-cols-2 gap-3">
-            <Field>
-              <FieldLabel>主机名前缀</FieldLabel>
-              <Input v-model="form.hostname_prefix" placeholder="如 app；留空表示根域名" />
-            </Field>
-            <Field>
-              <FieldLabel>同步域名</FieldLabel>
-              <Select v-model="form.sync_zone">
-                <SelectTrigger class="w-full">
-                  <SelectValue :placeholder="'选择域名'" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem v-for="zone in syncZones" :key="String(zone.name)" :value="String(zone.name)">
-                    {{ zone.name }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-          <Field v-if="!form.sync_provider_id">
-            <FieldLabel>主机名</FieldLabel>
-            <Input v-model="form.hostname" placeholder="www.example.com" />
-          </Field>
-        </template>
-
-        <div class="grid grid-cols-2 gap-3">
-          <Field>
-            <FieldLabel>DCV 认证</FieldLabel>
-            <Select v-model="form.method">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="选择验证方式" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="txt">TXT 验证（推荐）</SelectItem>
-                <SelectItem value="http">HTTP 验证</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel>最低 TLS 版本</FieldLabel>
-            <Select v-model="form.min_tls">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="TLS" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1.0">TLS 1.0</SelectItem>
-                <SelectItem value="1.1">TLS 1.1</SelectItem>
-                <SelectItem value="1.2">TLS 1.2</SelectItem>
-                <SelectItem value="1.3">TLS 1.3</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-
-        <Field orientation="horizontal">
-          <Switch v-model="form.use_custom_origin_server" />
-          <FieldLabel>自定义源服务器</FieldLabel>
-        </Field>
-        <Field v-if="form.use_custom_origin_server" class="relative">
-          <!-- 对齐旧版 a-auto-complete：可输可选，下拉已用源服务器 -->
-          <Input
-            v-model="form.custom_origin_server"
-            placeholder="输入或从已用源服务器选择，如 origin.example.com"
-            autocomplete="off"
-            @focus="originSuggestOpen = true"
-            @input="originSuggestOpen = true"
-            @keydown.escape="originSuggestOpen = false"
-          />
-          <div
-            v-if="originSuggestOpen && filteredOriginSuggestions.length"
-            class="bg-popover text-popover-foreground absolute top-full z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border shadow-md"
-            @mousedown.prevent
-          >
-            <button
-              v-for="item in filteredOriginSuggestions"
-              :key="item"
-              type="button"
-              class="hover:bg-accent hover:text-accent-foreground flex w-full items-center px-3 py-2 text-left text-sm"
-              @click="pickOriginSuggestion(item)"
-            >
-              {{ item }}
-            </button>
-          </div>
-        </Field>
-
-        <Field orientation="horizontal">
-          <Switch v-model="form.auto_preferred" />
-          <FieldLabel>自动优选</FieldLabel>
-        </Field>
-        <Field v-if="form.auto_preferred">
-          <FieldLabel>优选域名</FieldLabel>
-          <Select v-model="form.preferred_domain">
-            <SelectTrigger class="w-full">
-              <SelectValue placeholder="选择优选域名" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none">不使用优选</SelectItem>
-              <SelectItem v-for="item in preferredOptions" :key="item.domain" :value="item.domain">
-                {{ item.domain }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field orientation="horizontal">
-          <Switch v-model="form.auto_sync" />
-          <FieldLabel>同步写回 DNS</FieldLabel>
-        </Field>
-      </FieldGroup>
-      <template #footer>
-        <Button variant="outline" @click="dialogOpen = false">取消</Button>
-        <Button :loading="saving" @click="save">保存</Button>
-      </template>
-    </AppDialog>
+      v-model:form="form"
+      :editing="!!editing"
+      :saving="saving"
+      :sync-providers="syncProviders"
+      :sync-zones="syncZones"
+      :preferred-options="preferredOptions"
+      :origin-suggestions="originSuggestions"
+      :origin-suggest-open="originSuggestOpen"
+      @update:origin-suggest-open="originSuggestOpen = $event"
+      @pick-origin="pickOriginSuggestion"
+      @save="save"
+    />
 
     <AppDialog
       v-model:open="batchPreferredOpen"
@@ -838,6 +787,14 @@ onMounted(async () => {
       </template>
     </AppDialog>
 
+    <SaasDetailDialog
+      v-model:open="detailOpen"
+      :hostname="detailRecord"
+      :loading="detailLoading"
+      :refreshing="detailRefreshing"
+      @edit="openEdit"
+      @refresh="refreshDetailHostname"
+    />
     <PreferredDomainsDialog
       v-model:open="showPreferred"
       :host-count="filtered.length"

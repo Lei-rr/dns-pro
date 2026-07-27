@@ -13,8 +13,6 @@ import {
 } from '@/shared/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { TablePagination } from '@/shared/ui/pagination'
-import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { EllipsisVertical, Plus, RefreshCw, Search, ChevronRight, ChevronDown, Copy } from '@lucide/vue'
 import { dnsApi } from '@/features/dns/api/dns'
 import { getCachedProvider, loadProviders } from '@/features/providers/stores/providers'
@@ -30,37 +28,33 @@ import {
 import type { DnsRecord } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
-import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
+import { useListPage } from '@/shared/lib/use-list-page'
+import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
+import { Spinner } from '@/shared/ui/spinner'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
+import { runProviderBatch } from '@/shared/lib/run-provider-batch'
+import RecordFormDialog from '@/features/dns/components/RecordFormDialog.vue'
+import BatchEditDialog from '@/features/dns/components/BatchEditDialog.vue'
 import { useRowSelection } from '@/shared/lib/row-selection'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select'
 
 const props = defineProps<{ providerId: string; zoneId: string }>()
 const router = useRouter()
 const jobProgress = useJobProgress()
+const { isBusy: isRowBusy, runBusy } = useRowBusy()
 
-const loading = ref(false)
-const refreshing = ref(false)
 const saving = ref(false)
 const records = ref<DnsRecord[]>([])
 const keyword = ref('')
 const typeFilter = ref('all')
 const page = ref(1)
-const pageSize = ref(loadPageSize('dns-records'))
 const total = ref(0)
 const dialogOpen = ref(false)
 const batchEditOpen = ref(false)
+const batchSubmitting = ref(false)
 const editing = ref<DnsRecord | null>(null)
 const form = reactive({
   name: '',
@@ -227,6 +221,26 @@ const selection = useRowSelection(filteredRecords, (row) =>
 )
 const selectedCount = computed(() => selection.selected.value.length)
 
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
+  pageSizeScope: 'dns-records',
+  load: async (options = {}) => {
+    try {
+      const response = await dnsApi.records(props.providerId, props.zoneId, {
+        page: page.value,
+        per_page: pageSize.value,
+        keyword: keyword.value,
+        refresh: options.refresh,
+      })
+      records.value = response.data || []
+      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
+      const rawTotal = meta.total ?? meta.count
+      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : records.value.length || 0)
+    } catch (error) {
+      fail(error)
+    }
+  },
+})
+
 async function ensureProvider() {
   if (!getCachedProvider(props.providerId)) await loadProviders({ refresh: true })
   if (!getCachedProvider(props.providerId)) {
@@ -235,57 +249,26 @@ async function ensureProvider() {
   }
 }
 
-async function load(options: { refresh?: boolean } = {}) {
-  await withMinLoading(loading, async () => {
-    try {
-      const response = await dnsApi.records(props.providerId, props.zoneId, {
-        page: page.value,
-        per_page: pageSize.value,
-        keyword: keyword.value,
-        // Type filter is client-side only so chips stay fixed and complete.
-        refresh: options.refresh,
-      })
-      records.value = response.data || []
-      const meta = (response as any).meta || {}
-      // API total must win; never fall back to current page length when total present as 0-ish wrongly
-      const rawTotal = meta.total ?? meta.count
-      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : records.value.length || 0)
-    } catch (error) {
-      toast.error(errorMessage(error))
-    }
-  })
-}
-
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await handleRefresh(loading, load, toast.success)
-  } finally {
-    refreshing.value = false
-  }
-}
-
 function onPageChange(next: number) {
   page.value = next
   selection.clear()
   expandedHosts.value = {}
-  void load()
+  void runLoad()
 }
 
 function onPageSizeChange(next: number) {
-  pageSize.value = next
-  savePageSize('dns-records', next)
+  setPageSize(next)
   page.value = 1
   selection.clear()
   expandedHosts.value = {}
-  void load()
+  void runLoad()
 }
 
 function onSearch() {
   page.value = 1
   selection.clear()
   expandedHosts.value = {}
-  void load()
+  void runLoad()
 }
 
 function setTypeFilter(next: string) {
@@ -364,6 +347,8 @@ async function save() {
         { zoneName: zoneName.value },
       )
       toast.success('记录已更新')
+      dialogOpen.value = false
+      await runLoad({ refresh: true })
     } else if (names.length === 1) {
       await dnsApi.createRecord(
         props.providerId,
@@ -372,36 +357,25 @@ async function save() {
         { zoneName: zoneName.value },
       )
       toast.success('记录已创建')
+      dialogOpen.value = false
+      await runLoad({ refresh: true })
     } else {
-      const created = await dnsApi.batchCreateRecords(props.providerId, props.zoneId, {
-        zone_name: zoneName.value,
-        records: names.map((name) => ({ ...base, name })),
+      // 先关弹窗，才能看到页顶 JobProgressAlert
+      dialogOpen.value = false
+      saving.value = false
+      await runProviderBatch({
+        label: '批量创建',
+        create: () => dnsApi.batchCreateRecords(props.providerId, props.zoneId, {
+          zone_name: zoneName.value,
+          records: names.map((name) => ({ ...base, name })),
+        }),
+        fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as Record<string, unknown>) || {},
+        retry: (id) => dnsApi.batchRetry(props.providerId, id),
+        onDone: () => runLoad({ refresh: true }),
+        jobProgress,
       })
-      const jobId = String((created.data as { id?: string } | undefined)?.id || '')
-      if (!jobId) {
-        toast.success(`已提交批量创建（${names.length} 条）`)
-      } else {
-        const poll = () =>
-          jobProgress.pollJob(jobId, {
-            label: '批量创建',
-            fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
-          })
-        const job = await poll()
-        const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
-        if (failed.length) {
-          await showBatchFailures(job?.message || '批量创建完成', failed, '条', {
-            onRetry: async () => {
-              await dnsApi.batchRetry(props.providerId, jobId)
-              return poll()
-            },
-          })
-        } else {
-          toast.success(job?.message || `批量创建完成（${names.length} 条）`)
-        }
-      }
+      return
     }
-    dialogOpen.value = false
-    await load({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -411,13 +385,27 @@ async function save() {
 
 async function removeRecord(record: DnsRecord) {
   if (!(await confirmDelete(`${record.name} · ${record.type}`))) return
-  try {
-    await dnsApi.deleteRecord(props.providerId, props.zoneId, String(record.id || ''))
-    toast.success('已删除')
-    await load({ refresh: true })
-  } catch (error) {
-    toast.error(errorMessage(error))
-  }
+  const key = String(record.id || `${record.name}-${record.type}-${record.value || ''}`)
+  await runBusy(key, async () => {
+    try {
+      await dnsApi.deleteRecord(props.providerId, props.zoneId, String(record.id || ''))
+      toast.success('已删除')
+      removeListItem(
+        records,
+        (item) => String(item.id || '') === String(record.id || '') && String(item.id || '') !== '',
+      )
+      // id 可能空：按复合键再试
+      removeListItem(
+        records,
+        (item) =>
+          String(item.id || `${item.name}-${item.type}-${item.value || ''}`) === key,
+      )
+      if (total.value > 0) total.value -= 1
+      selection.clear()
+    } catch (error) {
+      toast.error(errorMessage(error))
+    }
+  })
 }
 
 async function copyRecordValue(record: DnsRecord | { value?: string; content?: string }) {
@@ -438,30 +426,15 @@ async function runDnsBatch(
   create: () => Promise<{ data?: unknown }>,
   label: string,
 ) {
-  const created = await create()
-  const jobId = String((created.data as { id?: string } | null | undefined)?.id || '')
-  if (!jobId) throw new Error(`${label}任务创建失败`)
-
-  const poll = () =>
-    jobProgress.pollJob(jobId, {
-      label,
-      fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
-    })
-
-  const job = await poll()
-  const failed = jobProgress.failedItems(job).map((item) => formatFailedJobItem(item))
-  if (failed.length) {
-    await showBatchFailures(job?.message || `${label}完成`, failed, '条', {
-      onRetry: async () => {
-        await dnsApi.batchRetry(props.providerId, jobId)
-        return poll()
-      },
-    })
-  } else {
-    toast.success(job?.message || `${label}完成`)
-  }
-  selection.clear()
-  await load({ refresh: true })
+  await runProviderBatch({
+    label,
+    create,
+    fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as Record<string, unknown>) || {},
+    retry: (id) => dnsApi.batchRetry(props.providerId, id),
+    clearSelection: () => selection.clear(),
+    onDone: () => runLoad({ refresh: true }),
+    jobProgress,
+  })
 }
 
 async function batchDeleteSelected() {
@@ -526,8 +499,9 @@ async function batchUpdateSelected() {
     priority: row.priority ?? row.mx,
     proxied: row.proxied,
   }))
+  batchSubmitting.value = true
+  batchEditOpen.value = false
   try {
-    batchEditOpen.value = false
     await runDnsBatch(
       () =>
         dnsApi.batchUpdateRecords(props.providerId, props.zoneId, {
@@ -538,6 +512,8 @@ async function batchUpdateSelected() {
     )
   } catch (error) {
     toast.error(errorMessage(error))
+  } finally {
+    batchSubmitting.value = false
   }
 }
 
@@ -555,7 +531,7 @@ async function resumeJobs() {
     if (failed.length) {
       showBatchFailures(finished.message || 'DNS 批量完成', failed.map((i) => formatFailedJobItem(i)), '条')
     }
-    await load({ refresh: true })
+    await runLoad({ refresh: true })
   }
 }
 
@@ -564,14 +540,14 @@ watch(
   async () => {
     selection.clear()
     await ensureProvider()
-    await load()
+    await runLoad()
     await resumeJobs()
   },
 )
 
 onMounted(async () => {
   await ensureProvider()
-  await load()
+  await runLoad()
   await resumeJobs()
 })
 </script>
@@ -759,20 +735,37 @@ onMounted(async () => {
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" class="size-8">
-                      <EllipsisVertical class="size-4" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="size-8"
+                      :disabled="isRowBusy(recordRowKey(record))"
+                    >
+                      <Spinner v-if="isRowBusy(recordRowKey(record))" class="size-4" />
+                      <EllipsisVertical v-else class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem @click="openEdit(record)">编辑</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" @click="removeRecord(record)">删除</DropdownMenuItem>
+                    <DropdownMenuItem
+                      :disabled="isRowBusy(recordRowKey(record))"
+                      @click="openEdit(record)"
+                    >
+                      编辑
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      :disabled="isRowBusy(recordRowKey(record))"
+                      @click="removeRecord(record)"
+                    >
+                      删除
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
             </TableRow>
 
             <!-- 普通单行 -->
-            <TableRow v-if="row.kind === 'single'">
+            <TableRow v-if="row.kind === 'single'" :class="isRowBusy(recordRowKey(row.record)) && 'bg-muted/40 opacity-80'">
               <TableCell class="px-3">
                 <Checkbox
                   :model-value="selection.isSelected(row.record)"
@@ -824,13 +817,30 @@ onMounted(async () => {
               <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" class="size-8">
-                      <EllipsisVertical class="size-4" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="size-8"
+                      :disabled="isRowBusy(recordRowKey(row.record))"
+                    >
+                      <Spinner v-if="isRowBusy(recordRowKey(row.record))" class="size-4" />
+                      <EllipsisVertical v-else class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem @click="openEdit(row.record)">编辑</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" @click="removeRecord(row.record)">删除</DropdownMenuItem>
+                    <DropdownMenuItem
+                      :disabled="isRowBusy(recordRowKey(row.record))"
+                      @click="openEdit(row.record)"
+                    >
+                      编辑
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      :disabled="isRowBusy(recordRowKey(row.record))"
+                      @click="removeRecord(row.record)"
+                    >
+                      删除
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </TableCell>
@@ -851,7 +861,7 @@ onMounted(async () => {
 
     <!-- 勾选后：底部居中操作条 -->
     <div
-      v-if="selectedCount"
+      v-if="selectedCount && !jobProgress.running.value"
       class="pointer-events-none sticky bottom-4 z-20 flex justify-center px-2"
     >
       <div
@@ -860,14 +870,14 @@ onMounted(async () => {
         <span class="text-muted-foreground px-1 text-sm whitespace-nowrap">
           已选 {{ selectedCount }}
         </span>
-        <Button size="sm" :disabled="jobProgress.running.value" @click="openBatchEdit">
+        <Button size="sm" :disabled="jobProgress.running.value || batchSubmitting" @click="openBatchEdit">
           批量管理
         </Button>
         <Button
           size="sm"
           variant="outline"
           class="text-destructive"
-          :disabled="jobProgress.running.value"
+          :disabled="jobProgress.running.value || batchSubmitting"
           @click="batchDeleteSelected"
         >
           批量删除
@@ -876,134 +886,24 @@ onMounted(async () => {
       </div>
     </div>
 
-    <AppDialog
+    <RecordFormDialog
       v-model:open="dialogOpen"
-      :title="editing ? '编辑解析记录' : '添加解析记录'"
-      description="新增时主机记录可用英文/中文逗号批量填写，例如 www,api"
-    >
-      <FieldGroup>
-        <Field>
-          <FieldLabel>主机记录</FieldLabel>
-          <Input v-model="form.name" placeholder="例如：www 或 www,ggg；根记录填 @" />
-        </Field>
-        <div :class="isCloudflare ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'">
-          <Field>
-            <FieldLabel>类型</FieldLabel>
-            <Select v-model="form.type">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="选择类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="item in typeOptions" :key="item" :value="item">{{ item }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          <!-- Cloudflare 默认自动 TTL(1)，添加/编辑不展示 -->
-          <Field v-if="!isCloudflare">
-            <FieldLabel>TTL</FieldLabel>
-            <Input v-model="form.ttl" />
-          </Field>
-        </div>
-        <Field>
-          <FieldLabel>记录值</FieldLabel>
-          <Input v-model="form.value" placeholder="IP / 域名 / 文本" />
-        </Field>
-        <Field v-if="!isCloudflare">
-          <FieldLabel>线路</FieldLabel>
-          <Select v-model="form.line">
-            <SelectTrigger class="w-full">
-              <SelectValue placeholder="选择线路" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem
-                v-for="item in dnspodLineOptions"
-                :key="item.value"
-                :value="item.value"
-              >
-                {{ item.label }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field v-if="form.type === 'MX'">
-          <FieldLabel>MX 优先级</FieldLabel>
-          <Input v-model="form.priority" type="number" min="0" max="65535" placeholder="10" />
-        </Field>
-        <Field v-if="isCloudflare" orientation="horizontal">
-          <Checkbox id="proxied" v-model="form.proxied" />
-          <FieldLabel for="proxied">启用代理</FieldLabel>
-        </Field>
-        <Field>
-          <FieldLabel>备注</FieldLabel>
-          <Input v-model="form.remark" placeholder="可选" />
-        </Field>
-      </FieldGroup>
-      <template #footer>
-        <Button variant="outline" @click="dialogOpen = false">取消</Button>
-        <Button :loading="saving" @click="save">保存</Button>
-      </template>
-    </AppDialog>
+      v-model:form="form"
+      :editing="!!editing"
+      :saving="saving"
+      :is-cloudflare="isCloudflare"
+      :type-options="typeOptions"
+      :line-options="dnspodLineOptions"
+      @save="save"
+    />
 
-    <AppDialog
+    <BatchEditDialog
       v-model:open="batchEditOpen"
-      title="批量修改记录"
-      :description="`仅填写需要改的字段，将应用到已选 ${selectedCount} 条记录。`"
-    >
-      <FieldGroup>
-        <Field>
-          <FieldLabel>记录值</FieldLabel>
-          <Input v-model="batchPatch.value" placeholder="留空不改" />
-        </Field>
-        <div :class="isCloudflare ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'">
-          <Field v-if="!isCloudflare">
-            <FieldLabel>TTL</FieldLabel>
-            <Input v-model="batchPatch.ttl" placeholder="留空不改" />
-          </Field>
-          <Field v-if="!isCloudflare">
-            <FieldLabel>线路</FieldLabel>
-            <Select v-model="batchPatch.line">
-              <SelectTrigger class="w-full">
-                <SelectValue placeholder="留空不改" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__keep">不改</SelectItem>
-                <SelectItem
-                  v-for="item in dnspodLineOptions"
-                  :key="item.value"
-                  :value="item.value"
-                >
-                  {{ item.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-        </div>
-        <Field>
-          <FieldLabel>备注</FieldLabel>
-          <Input v-model="batchPatch.remark" placeholder="留空不改" />
-        </Field>
-        <Field v-if="isCloudflare">
-          <FieldLabel>代理</FieldLabel>
-<Select v-model="batchPatch.proxied">
-            <SelectTrigger class="w-full">
-              <SelectValue placeholder="代理设置" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__keep">不改</SelectItem>
-              <SelectItem value="true">开启代理</SelectItem>
-              <SelectItem value="false">仅 DNS</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel>MX 优先级</FieldLabel>
-          <Input v-model="batchPatch.priority" placeholder="留空不改" />
-        </Field>
-      </FieldGroup>
-      <template #footer>
-        <Button variant="outline" @click="batchEditOpen = false">取消</Button>
-        <Button @click="batchUpdateSelected">开始修改</Button>
-      </template>
-    </AppDialog>
+      v-model:patch="batchPatch"
+      :selected-count="selectedCount"
+      :is-cloudflare="isCloudflare"
+      :line-options="dnspodLineOptions"
+      @submit="batchUpdateSelected"
+    />
   </div>
 </template>

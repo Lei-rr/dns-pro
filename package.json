@@ -54,5 +54,13 @@
     "cloudflared",
     "dns-management"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lei-rr/dns-pro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lei-rr/dns-pro/issues"
+  },
+  "homepage": "https://github.com/lei-rr/dns-pro#readme"
 }

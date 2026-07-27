@@ -7,7 +7,7 @@
  * - Fastify plugins live in src/plugins/* only
  */
 import type { AppConfig } from './config/app.js'
-import { AppConfigRepository } from './lib/auth/app-config-repository.js'
+import { AppConfigRepository, DEFAULT_APP_CONFIG } from './lib/auth/app-config-repository.js'
 import { AuthConfig } from './lib/auth/auth-config.js'
 import { SessionService } from './modules/auth/service.js'
 import { ProviderRepository } from './modules/provider/repository.js'
@@ -28,6 +28,7 @@ import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
 import { DnsPodRecordService } from './modules/dnspod/services/record-service.js'
 import { CloudflareCustomHostnameGateway } from './modules/saas/gateways/custom-hostname-gateway.js'
 import { SaasHostnameService } from './modules/saas/services/hostname-service.js'
+import { SaasSyncConfigService } from './modules/saas/services/sync-config-service.js'
 import { DnsPodRecordOps } from './modules/sync/services/dnspod-record-ops.js'
 import { SyncOrchestrator } from './modules/sync/services/sync-orchestrator.js'
 import { SaasWorkflowService } from './modules/saas/services/workflow-service.js'
@@ -39,29 +40,29 @@ import { CloudflaredDnsService } from './modules/cloudflared/services/dns-servic
 import { CloudflaredRouteService } from './modules/cloudflared/services/route-service.js'
 import { EdgeOneBatchJobService } from './modules/edgeone/services/batch-job-service.js'
 import { JobService } from './platform/job/job-service.js'
+import { JsonStore } from './lib/storage/json-store.js'
 import { registerEventSubscribers } from './platform/events/subscribers.js'
 
 export async function createAppContext(config: AppConfig) {
   // Side-effect bus (cache invalidate)
   registerEventSubscribers()
 
-  const appConfigRepository = new AppConfigRepository()
+  const appConfigRepository = new AppConfigRepository(new JsonStore('config.json', DEFAULT_APP_CONFIG))
   const authConfig = new AuthConfig(appConfigRepository)
   const sessionService = new SessionService(authConfig)
 
-  const providerRepository = new ProviderRepository()
-  const preferredDomainRepository = new PreferredDomainRepository()
-  const saasPreferenceRepository = new SaasPreferenceRepository()
+  const providerRepository = new ProviderRepository(
+    new JsonStore('providers.json', { items: [] }),
+  )
+  const preferredDomainRepository = new PreferredDomainRepository(
+    new JsonStore('saas/preferred-domains.json', { items: [] }),
+  )
+  const saasPreferenceRepository = new SaasPreferenceRepository(
+    new JsonStore('saas/preferences.json', { items: {} }),
+  )
 
   const preferredDomainService = new PreferredDomainService(preferredDomainRepository)
   const saasPreferenceService = new SaasPreferenceService(saasPreferenceRepository)
-
-  const providerService = new ProviderService(
-    providerRepository,
-    new ProviderNormalizer(),
-    new ProviderPresenter(),
-    saasPreferenceService,
-  )
 
   const cloudflareZoneService = new CloudflareZoneService(providerRepository)
   const cloudflareDnsRecordService = new CloudflareDnsRecordService(providerRepository)
@@ -69,12 +70,13 @@ export async function createAppContext(config: AppConfig) {
   const dnspodRecordService = new DnsPodRecordService(providerRepository)
 
   const customHostnameGateway = new CloudflareCustomHostnameGateway(providerRepository)
+  const saasSyncConfigService = new SaasSyncConfigService(providerRepository, saasPreferenceService)
   const saasHostnameService = new SaasHostnameService(
-    providerRepository,
     cloudflareZoneService,
     customHostnameGateway,
     preferredDomainService,
     saasPreferenceService,
+    saasSyncConfigService,
   )
   const dnsPodRecordOps = new DnsPodRecordOps(providerRepository, dnspodZoneService, dnspodRecordService)
   const syncOrchestrator = new SyncOrchestrator(
@@ -90,14 +92,14 @@ export async function createAppContext(config: AppConfig) {
   const edgeoneDomainService = new EdgeOneDomainService(providerRepository)
   const edgeoneWorkflowService = new EdgeOneWorkflowService(edgeoneDomainService, syncOrchestrator)
 
-  const jobService = new JobService()
+  const jobService = new JobService(new JsonStore('jobs/jobs.json', { items: [] }))
   // Constructing batch services registers Job runners
   const saasPreferredApplyService = new SaasPreferredApplyService(
     jobService,
     saasWorkflowService,
     saasHostnameService,
   )
-  const saasBatchJobService = new SaasBatchJobService(jobService, saasWorkflowService)
+  const saasBatchJobService = new SaasBatchJobService(jobService, saasWorkflowService, saasHostnameService)
   const dnsBatchJobService = new DnsBatchJobService(jobService, {
     dnspod: dnspodRecordService,
     // CF batch must resolve zone name → zone id (single-record controllers already do this).
@@ -115,6 +117,19 @@ export async function createAppContext(config: AppConfig) {
     providerRepository,
     cloudflareZoneService,
     cloudflaredDnsService,
+  )
+
+  const providerService = new ProviderService(
+    providerRepository,
+    new ProviderNormalizer(),
+    new ProviderPresenter(),
+    saasPreferenceService,
+    {
+      dnspodZones: dnspodZoneService,
+      cloudflareZones: cloudflareZoneService,
+      edgeoneZones: edgeoneZoneService,
+      cloudflaredTunnels: cloudflaredTunnelService,
+    },
   )
 
   await jobService.resumeActiveJobs()

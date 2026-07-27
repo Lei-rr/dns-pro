@@ -1,8 +1,9 @@
 /**
  * Table / list loading helpers.
  *
- * - First load: no artificial delay (faster perceived open).
- * - Explicit refresh: short min paint so RefreshCw spin + top bar are visible.
+ * - First load: no artificial delay (faster open).
+ * - Explicit refresh: short min paint so RefreshCw spin is visible.
+ * - Soft dim is delayed inside TableLoading when rows already exist (no flash).
  */
 
 export async function withMinLoading(
@@ -37,7 +38,8 @@ export async function handleRefresh(
     async () => {
       await load({ refresh: true })
     },
-    160,
+    // slightly shorter than before: RefreshCw already signals work
+    120,
   )
   toastSuccess('已刷新')
 }

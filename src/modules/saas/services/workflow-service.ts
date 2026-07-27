@@ -4,19 +4,20 @@ import { SyncOrchestrator } from '../../sync/services/sync-orchestrator.js'
 import type { SyncRecord } from '../../sync/types.js'
 import { isHostnameActive } from '../utils/host-status.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
+import { emitSaasHostnameMutated } from '../events.js'
 import { SaasHostnameService } from './hostname-service.js'
 import { SaasPreferenceService } from './preference-service.js'
-import { eventBus } from '../../../platform/events/event-bus.js'
 
 /**
  * SaaS host lifecycle workflow.
  * DNS create/update/cleanup is delegated to the shared SyncOrchestrator.
+ * Cache invalidation: emit saas.hostname.mutated with CF provider id + zone id tags.
  */
 export class SaasWorkflowService {
   constructor(
-    private readonly hostnames: SaasHostnameService = new SaasHostnameService(),
-    private readonly preferences: SaasPreferenceService = new SaasPreferenceService(),
-    private readonly sync: SyncOrchestrator = new SyncOrchestrator(),
+    private readonly hostnames: SaasHostnameService,
+    private readonly preferences: SaasPreferenceService,
+    private readonly sync: SyncOrchestrator,
   ) {}
 
   async listHostnames(
@@ -67,12 +68,9 @@ export class SaasWorkflowService {
     }
 
     const result = await this.hostnames.createHostname(providerId, zoneName, data)
-    await eventBus.emit({
-      type: 'saas.hostname.mutated',
-      provider_id: providerId,
-      zone: zoneName,
+    await this.emitMutated(providerId, zoneName, {
       hostname: String(result.hostname ?? data.hostname ?? ''),
-      action: 'saas.hostname.create',
+      action: 'create',
     })
 
     if (autoSync && result.hostname) {
@@ -111,12 +109,9 @@ export class SaasWorkflowService {
     }
 
     const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data)
-    await eventBus.emit({
-      type: 'saas.hostname.mutated',
-      provider_id: providerId,
-      zone: zoneName,
+    await this.emitMutated(providerId, zoneName, {
       hostname: hostnameFqdn,
-      action: 'saas.hostname.update',
+      action: 'update',
       target: data.preferred_domain ? String(data.preferred_domain) : undefined,
     })
 
@@ -172,12 +167,9 @@ export class SaasWorkflowService {
       if (code !== 'saas_hostname_not_found') throw error
     }
 
-    await eventBus.emit({
-      type: 'saas.hostname.mutated',
-      provider_id: providerId,
-      zone: zoneName,
+    await this.emitMutated(providerId, zoneName, {
       hostname: hostnameFqdn,
-      action: 'saas.hostname.delete',
+      action: 'delete',
     })
 
     if (collected && collected.records.length > 0 && String(collected.hostname_fqdn ?? '') !== '') {
@@ -196,6 +188,27 @@ export class SaasWorkflowService {
     }
 
     return result
+  }
+
+  private async emitMutated(
+    providerId: string,
+    zoneName: string,
+    fields: { hostname?: string; action: string; target?: string },
+  ): Promise<void> {
+    try {
+      const zone = await this.hostnames.resolveZoneRef(providerId, zoneName)
+      await emitSaasHostnameMutated({
+        saasProviderId: providerId,
+        cloudflareProviderId: zone.cloudflareProviderId,
+        zoneName,
+        zoneId: zone.zoneId,
+        hostname: fields.hostname,
+        action: fields.action,
+        target: fields.target,
+      })
+    } catch {
+      // Best-effort: mutation already applied; miss cache invalidate rather than fail the request.
+    }
   }
 
   private async shouldCleanupOwnershipTxt(

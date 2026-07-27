@@ -9,7 +9,7 @@ export interface SessionState {
 }
 
 export class SessionService {
-  constructor(private readonly authConfig: AuthConfig = new AuthConfig()) {}
+  constructor(private readonly authConfig: AuthConfig) {}
 
   async login(request: FastifyRequest, username: string, password: string): Promise<SessionState> {
     const valid = await this.authConfig.verifyCredentials(username, password)

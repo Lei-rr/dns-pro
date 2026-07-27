@@ -31,9 +31,9 @@ export interface DnsPodSyncRecord extends SyncRecord {
 
 export class DnsPodRecordOps {
   constructor(
-    private readonly providers: ProviderRepository = new ProviderRepository(),
-    private readonly zones: DnsPodZoneService = new DnsPodZoneService(),
-    private readonly records: DnsPodRecordService = new DnsPodRecordService()
+    private readonly providers: ProviderRepository,
+    private readonly zones: DnsPodZoneService,
+    private readonly records: DnsPodRecordService
   ) {}
 
   async lookupDnspodProviderId(providerId: string, providerType: string, label: string): Promise<string> {

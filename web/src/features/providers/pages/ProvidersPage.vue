@@ -3,7 +3,6 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
-import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import {
   DropdownMenu,
@@ -20,26 +19,16 @@ import {
   TableRow,
   TableLoading,
 } from '@/shared/ui/table'
-import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select'
 import { providersApi } from '@/features/providers/api/providers'
 import { loadProviders, replaceProvidersCache } from '@/features/providers/stores/providers'
 import { providerTypeLabel } from '@/features/providers/lib/paths'
 import type { Provider, ProviderDefinition } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { withMinLoading } from '@/shared/lib/loading'
+import { useListPage } from '@/shared/lib/use-list-page'
 import { confirmDelete } from '@/shared/ui/confirm'
+import ProviderFormDialog from '@/features/providers/components/ProviderFormDialog.vue'
 
-const loading = ref(false)
-const refreshing = ref(false)
 const saving = ref(false)
 const providers = ref<Provider[]>([])
 const definitions = ref<ProviderDefinition[]>([])
@@ -54,25 +43,26 @@ const form = reactive({
 const operatingId = ref('')
 const typeFilter = ref('all')
 
+const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+  pageSizeScope: 'providers',
+  load: async () => {
+    try {
+      const [listRes, defRes] = await Promise.all([providersApi.list(), providersApi.definitions()])
+      providers.value = listRes.data
+      definitions.value = defRes.data.types
+      labels.value = defRes.data.labels
+      replaceProvidersCache(listRes.data.filter((item) => item.configured))
+    } catch (error) {
+      fail(error)
+    }
+  },
+})
+
 const currentDefinition = computed(() => definitions.value.find((item) => item.type === form.type) || null)
 const filteredProviders = computed(() => {
   if (typeFilter.value === 'all') return providers.value
   return providers.value.filter((item) => item.type === typeFilter.value)
 })
-
-async function refresh() {
-  await withMinLoading(loading, async () => {
-    try {
-    const [listRes, defRes] = await Promise.all([providersApi.list(), providersApi.definitions()])
-    providers.value = listRes.data
-    definitions.value = defRes.data.types
-    labels.value = defRes.data.labels
-    replaceProvidersCache(listRes.data.filter((item) => item.configured))
-    } catch (error) {
-      toast.error(errorMessage(error))
-    }
-  })
-}
 
 function fieldLabel(key: string) {
   return labels.value[key] || key
@@ -226,7 +216,7 @@ async function save() {
       toast.success('服务商已创建')
     }
     dialogOpen.value = false
-    await refresh()
+    await runLoad()
     await loadProviders({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
@@ -253,7 +243,7 @@ async function removeProvider(record: Provider) {
   try {
     await providersApi.remove(record.id)
     toast.success('已删除')
-    await refresh()
+    await runLoad()
     await loadProviders({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
@@ -262,17 +252,8 @@ async function removeProvider(record: Provider) {
   }
 }
 
-async function onRefresh() {
-  refreshing.value = true
-  try {
-      await refresh()
-      toast.success('已刷新')
-  } finally {
-    refreshing.value = false
-  }
-}
 
-onMounted(refresh)
+onMounted(() => runLoad())
 </script>
 
 <template>
@@ -377,66 +358,16 @@ onMounted(refresh)
       </TableLoading>
     </div>
 
-    <AppDialog
+    <ProviderFormDialog
       v-model:open="dialogOpen"
-      :title="editing ? `更新 ${editing.name}` : '新增服务商'"
-      description="留空的字段不会覆盖现有配置；密钥留空表示不修改。"
-    >
-      <FieldGroup>
-        <Field v-if="!editing">
-          <FieldLabel>类型</FieldLabel>
-          <Select
-            :model-value="form.type"
-            @update:model-value="(v) => onCreateTypeChange(String(v || ''))"
-          >
-            <SelectTrigger class="w-full">
-              <SelectValue placeholder="选择类型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="item in definitions" :key="item.type" :value="item.type">
-                {{ item.name || item.type }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field>
-          <FieldLabel>名称</FieldLabel>
-          <Input v-model="form.name" placeholder="显示名称" />
-        </Field>
-        <Field v-for="field in dialogFields()" :key="field">
-          <FieldLabel>{{ fieldLabel(field) }}</FieldLabel>
-          <Select v-if="isProviderSelectField(field)" v-model="form.fields[field]">
-            <SelectTrigger class="w-full">
-              <SelectValue :placeholder="selectFieldPlaceholder(field)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem
-                v-for="item in selectFieldProviders(field)"
-                :key="item.id"
-                :value="item.id"
-              >
-                {{ item.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <Input
-            v-else-if="isSecretField(field)"
-            v-model="form.fields[field]"
-            type="password"
-            autocomplete="new-password"
-            :placeholder="editing?.fields?.[field] || '未配置（留空不改）'"
-          />
-          <Input
-            v-else
-            v-model="form.fields[field]"
-            :placeholder="editing?.fields?.[field] || fieldLabel(field)"
-          />
-        </Field>
-      </FieldGroup>
-      <template #footer>
-        <Button variant="outline" @click="dialogOpen = false">取消</Button>
-        <Button :loading="saving" @click="save">保存</Button>
-      </template>
-    </AppDialog>
+      v-model:form="form"
+      :editing="editing"
+      :saving="saving"
+      :definitions="definitions"
+      :labels="labels"
+      :providers="providers"
+      @save="save"
+      @change-type="onCreateTypeChange"
+    />
   </div>
 </template>

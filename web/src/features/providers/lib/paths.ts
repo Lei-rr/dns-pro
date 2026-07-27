@@ -1,9 +1,11 @@
+import { encodePath } from '@/shared/lib/path'
+
 export function providerPath(providerId: string) {
-  return '/' + encodeURIComponent(providerId)
+  return '/' + encodePath(providerId)
 }
 
 export function providerChildPath(providerId: string, childId: string) {
-  return providerPath(providerId) + '/' + encodeURIComponent(childId)
+  return providerPath(providerId) + '/' + encodePath(childId)
 }
 
 export function selectedMenuKey(path: string) {

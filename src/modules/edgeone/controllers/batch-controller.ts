@@ -16,7 +16,7 @@ function domainList(body: Record<string, unknown>): string[] {
   return []
 }
 
-export async function edgeOneBatchDisableStore(
+export async function batchDisableStore(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string } }>,
   reply: FastifyReply,
 ) {
@@ -29,7 +29,7 @@ export async function edgeOneBatchDisableStore(
   return reply.status(201).send(success(result))
 }
 
-export async function edgeOneBatchDeleteStore(
+export async function batchDeleteStore(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string } }>,
   reply: FastifyReply,
 ) {
@@ -43,7 +43,7 @@ export async function edgeOneBatchDeleteStore(
   return reply.status(201).send(success(result))
 }
 
-export async function edgeOneBatchJobShow(
+export async function batchJobShow(
   request: FastifyRequest<{ Params: { jobId: string } }>,
   reply: FastifyReply,
 ) {
@@ -51,7 +51,7 @@ export async function edgeOneBatchJobShow(
   return reply.send(success(result))
 }
 
-export async function edgeOneBatchJobActive(
+export async function batchJobActive(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string } }>,
   reply: FastifyReply,
 ) {
@@ -62,7 +62,7 @@ export async function edgeOneBatchJobActive(
   return reply.send(success(result))
 }
 
-export async function edgeOneBatchJobRetry(
+export async function batchJobRetry(
   request: FastifyRequest<{ Params: { jobId: string } }>,
   reply: FastifyReply,
 ) {

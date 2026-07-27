@@ -3,6 +3,7 @@ import { CloudflareGateway } from '../gateways/gateway.js'
 import { CacheTtl, buildCacheKey, pagePaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
 import { emitCloudflareZoneMutated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDcvDelegationSchema,
@@ -56,7 +57,7 @@ interface CreateZonePayload {
 }
 
 export class CloudflareZoneService {
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async list(
     providerId: string,
@@ -87,7 +88,12 @@ export class CloudflareZoneService {
           query.name = name
         }
 
-        const response = await gateway.get('zones', query)
+        let response
+        try {
+          response = await gateway.get('zones', query)
+        } catch (error) {
+          throw wrapProviderError('cloudflare_zone_list_failed', 'Cloudflare zone list failed', providerId, error)
+        }
         const parsed = parseCloudflareListResponse(response, cloudflareZoneSchema)
         const resultInfo = parsed.result_info
         const result: ZoneListResult = {
@@ -123,7 +129,14 @@ export class CloudflareZoneService {
       type,
     }
 
-    const response = await gateway.post('zones', body)
+    let response
+    try {
+      response = await gateway.post('zones', body)
+    } catch (error) {
+      throw wrapProviderError('cloudflare_zone_create_failed', 'Cloudflare zone create failed', providerId, error, {
+        zone: name,
+      })
+    }
     await emitCloudflareZoneMutated(providerId, name, 'create')
 
     return this.presentZone(parseCloudflareItemResponse(response, cloudflareZoneSchema).result)
@@ -133,7 +146,14 @@ export class CloudflareZoneService {
     const provider = await this.requireProvider(providerId)
     const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}`)
+    let response
+    try {
+      response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}`)
+    } catch (error) {
+      throw wrapProviderError('cloudflare_zone_delete_failed', 'Cloudflare zone delete failed', providerId, error, {
+        zone: zoneId,
+      })
+    }
     await emitCloudflareZoneMutated(providerId, zoneId, 'delete')
 
     const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
@@ -176,7 +196,14 @@ export class CloudflareZoneService {
       loader: async () => {
         const provider = await this.requireProvider(providerId)
         const gateway = this.gatewayFor(provider)
-        const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
+        let response
+        try {
+          response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
+        } catch (error) {
+          throw wrapProviderError('cloudflare_dcv_failed', 'Cloudflare DCV delegation fetch failed', providerId, error, {
+            zone: zoneId,
+          })
+        }
         const uuid = parseCloudflareItemResponse(response, cloudflareDcvDelegationSchema).result.uuid ?? ''
         return { uuid }
       },
@@ -194,7 +221,7 @@ export class CloudflareZoneService {
   }
 
   private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
-    return new CloudflareGateway(provider.api_token)
+    return CloudflareGateway.forToken(provider.api_token)
   }
 
   private presentZone(zone: unknown): ZonePresentation {

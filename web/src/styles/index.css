@@ -149,6 +149,16 @@
   transform: translateY(-4px);
 }
 
+/* table bare links / clickable hostnames */
+.table-link-ellipsis {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
 /* fallback spinner if tw-animate-css animate-spin is missing */
 @keyframes dns-pro-spin {
   to {

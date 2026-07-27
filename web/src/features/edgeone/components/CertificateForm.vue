@@ -6,7 +6,7 @@ import { Badge } from '@/shared/ui/badge'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { toast } from '@/shared/lib/toast'
-import { certificateStatusLabel } from '@/features/edgeone/api/edgeone'
+import { certificateStatusLabel } from '@/features/edgeone/lib/status'
 import {
   Select,
   SelectContent,

@@ -1,6 +1,7 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
-import { CacheTtl, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
+import { CacheTtl, edgeoneDomainsCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { emitEdgeDomainMutated } from '../events.js'
 import { EdgeOneGateway } from '../gateways/gateway.js'
 import {
@@ -9,7 +10,8 @@ import {
   edgeoneAccelerationDomainListResponseSchema,
   edgeoneMutationResponseSchema,
 } from '../../../lib/providers/edgeone-response.js'
-import type { DnsPodProvider, EdgeOneProvider } from '../../provider/types.js'
+import type { DnsPodProvider } from '../../provider/types.js'
+import { resolveEdgeOneApiCredentials } from '../credentials.js'
 
 export interface EdgeOneAccelerationDomain {
   zone_id: string
@@ -39,9 +41,7 @@ export interface AccelerationDomainPayload {
 }
 
 export class EdgeOneDomainService {
-  private credentialCache = new Map<string, DnsPodProvider>()
-
-  constructor(private readonly providers: ProviderRepository = new ProviderRepository()) {}
+  constructor(private readonly providers: ProviderRepository) {}
 
   async accelerationDomains(providerId: string, zoneId: string, offset = 0, limit = 20, refresh = false): Promise<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
     // 查询参数常为字符串，EdgeOne 要求 Offset/Limit 为 int64，这里强制转数字。
@@ -49,18 +49,25 @@ export class EdgeOneDomainService {
     const safeLimit = Math.max(1, Number(limit) || 20)
     const cached = await withProviderCache<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown>; request_id?: string }>({
       key: `edgeone:domains:${providerId}:${zoneId}:${safeOffset}:${safeLimit}`,
-      tags: [`edgeone:domains:${providerId}:${zoneId}`],
+      tags: [edgeoneDomainsCacheTag(providerId, zoneId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
-        const provider = await this.credentialProvider(providerId)
-        const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+        const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+        const gateway = this.gatewayFor(provider)
 
-        const response = await gateway.call('DescribeAccelerationDomains', {
-          ZoneId: zoneId,
-          Offset: safeOffset,
-          Limit: safeLimit,
-        })
+        let response
+        try {
+          response = await gateway.call('DescribeAccelerationDomains', {
+            ZoneId: zoneId,
+            Offset: safeOffset,
+            Limit: safeLimit,
+          })
+        } catch (error) {
+          throw wrapProviderError('edgeone_domain_list_failed', 'EdgeOne acceleration domain list failed', providerId, error, {
+            zone: zoneId,
+          })
+        }
         const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
 
         const items = (Array.isArray(parsed.AccelerationDomains) ? parsed.AccelerationDomains : []).map((domain) =>
@@ -87,22 +94,30 @@ export class EdgeOneDomainService {
 
   async createAccelerationDomain(providerId: string, zoneId: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
     const normalized = this.normalizeDomainData(data)
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+    const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.call('CreateAccelerationDomain', {
-      ZoneId: zoneId,
-      DomainName: normalized.domain_name,
-      OriginInfo: this.buildOriginInfo(normalized),
-      OriginProtocol: normalized.origin_protocol,
-      IPv6Status: normalized.ipv6_status,
-      ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTP'
-        ? { HttpOriginPort: normalized.http_origin_port }
-        : {}),
-      ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTPS'
-        ? { HttpsOriginPort: normalized.https_origin_port }
-        : {}),
-    })
+    let response
+    try {
+      response = await gateway.call('CreateAccelerationDomain', {
+        ZoneId: zoneId,
+        DomainName: normalized.domain_name,
+        OriginInfo: this.buildOriginInfo(normalized),
+        OriginProtocol: normalized.origin_protocol,
+        IPv6Status: normalized.ipv6_status,
+        ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTP'
+          ? { HttpOriginPort: normalized.http_origin_port }
+          : {}),
+        ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTPS'
+          ? { HttpsOriginPort: normalized.https_origin_port }
+          : {}),
+      })
+    } catch (error) {
+      throw wrapProviderError('edgeone_domain_create_failed', 'EdgeOne acceleration domain create failed', providerId, error, {
+        zone: zoneId,
+        domain: normalized.domain_name,
+      })
+    }
 
     await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'create' })
     const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
@@ -111,51 +126,75 @@ export class EdgeOneDomainService {
 
   async updateAccelerationDomain(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
     const normalized = this.normalizeDomainData({ ...data, domain_name: domainName })
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+    const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.call('ModifyAccelerationDomain', {
-      ZoneId: zoneId,
-      DomainName: normalized.domain_name,
-      OriginInfo: this.buildOriginInfo(normalized),
-      OriginProtocol: normalized.origin_protocol,
-      IPv6Status: normalized.ipv6_status,
-      ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTP'
-        ? { HttpOriginPort: normalized.http_origin_port }
-        : {}),
-      ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTPS'
-        ? { HttpsOriginPort: normalized.https_origin_port }
-        : {}),
-    })
+    let response
+    try {
+      response = await gateway.call('ModifyAccelerationDomain', {
+        ZoneId: zoneId,
+        DomainName: normalized.domain_name,
+        OriginInfo: this.buildOriginInfo(normalized),
+        OriginProtocol: normalized.origin_protocol,
+        IPv6Status: normalized.ipv6_status,
+        ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTP'
+          ? { HttpOriginPort: normalized.http_origin_port }
+          : {}),
+        ...(normalized.origin_protocol === 'FOLLOW' || normalized.origin_protocol === 'HTTPS'
+          ? { HttpsOriginPort: normalized.https_origin_port }
+          : {}),
+      })
+    } catch (error) {
+      throw wrapProviderError('edgeone_domain_update_failed', 'EdgeOne acceleration domain update failed', providerId, error, {
+        zone: zoneId,
+        domain: normalized.domain_name,
+      })
+    }
 
     await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'update' })
     return { name: normalized.domain_name, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
   async deleteAccelerationDomain(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+    const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.call('DeleteAccelerationDomains', {
-      ZoneId: zoneId,
-      DomainNames: [domainName],
-      Force: false,
-    })
+    let response
+    try {
+      response = await gateway.call('DeleteAccelerationDomains', {
+        ZoneId: zoneId,
+        DomainNames: [domainName],
+        Force: false,
+      })
+    } catch (error) {
+      throw wrapProviderError('edgeone_domain_delete_failed', 'EdgeOne acceleration domain delete failed', providerId, error, {
+        zone: zoneId,
+        domain: domainName,
+      })
+    }
 
     await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'delete' })
     return { name: domainName, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
   async updateAccelerationDomainStatus(providerId: string, zoneId: string, domainName: string, status: string): Promise<Record<string, unknown>> {
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+    const gateway = this.gatewayFor(provider)
 
-    const response = await gateway.call('ModifyAccelerationDomainStatuses', {
-      ZoneId: zoneId,
-      DomainNames: [domainName],
-      Status: status,
-      Force: false,
-    })
+    let response
+    try {
+      response = await gateway.call('ModifyAccelerationDomainStatuses', {
+        ZoneId: zoneId,
+        DomainNames: [domainName],
+        Status: status,
+        Force: false,
+      })
+    } catch (error) {
+      throw wrapProviderError('edgeone_domain_status_failed', 'EdgeOne acceleration domain status update failed', providerId, error, {
+        zone: zoneId,
+        domain: domainName,
+      })
+    }
 
     await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'status' })
     return { name: domainName, status, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
@@ -168,8 +207,8 @@ export class EdgeOneDomainService {
       throw new ApiError('validation_failed', 'Certificate id is required when https_mode is sslcert', 422)
     }
 
-    const provider = await this.credentialProvider(providerId)
-    const gateway = new EdgeOneGateway({ secretId: provider.secret_id, secretKey: provider.secret_key })
+    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
+    const gateway = this.gatewayFor(provider)
 
     const payload: Record<string, unknown> = {
       ZoneId: zoneId,
@@ -180,7 +219,15 @@ export class EdgeOneDomainService {
       payload.ServerCertInfo = [{ CertId: certId }]
     }
 
-    const response = await gateway.call('ModifyHostsCertificate', payload)
+    let response
+    try {
+      response = await gateway.call('ModifyHostsCertificate', payload)
+    } catch (error) {
+      throw wrapProviderError('edgeone_domain_certificate_failed', 'EdgeOne certificate update failed', providerId, error, {
+        zone: zoneId,
+        domain: domainName,
+      })
+    }
     await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'certificate' })
     return { name: domainName, https_mode: httpsMode, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
@@ -203,21 +250,6 @@ export class EdgeOneDomainService {
     }
 
     throw new ApiError('edgeone_acceleration_domain_not_found', `EdgeOne acceleration domain ${domainName} not found`, 404)
-  }
-
-  private async credentialProvider(providerId: string): Promise<DnsPodProvider> {
-    const cached = this.credentialCache.get(providerId)
-    if (cached) return cached
-
-    const edgeoneProvider = await this.providers.requireType<EdgeOneProvider>(providerId, 'edgeone', 'EdgeOne provider not found', 'edgeone_provider_not_found')
-    const dnspodProviderId = edgeoneProvider.dnspod_provider.trim()
-    if (dnspodProviderId === '') {
-      throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne provider is not linked to a DNSPod provider', 422)
-    }
-
-    const dnspodProvider = await this.providers.requireType<DnsPodProvider>(dnspodProviderId, 'dnspod', 'DNSPod provider not found', 'dnspod_provider_not_found')
-    this.credentialCache.set(providerId, dnspodProvider)
-    return dnspodProvider
   }
 
   private normalizeDomainData(data: Record<string, unknown>): AccelerationDomainPayload & { domain_name: string } {
@@ -283,4 +315,12 @@ export class EdgeOneDomainService {
       modified_on: domain.ModifiedOn ?? undefined,
     }
   }
+
+  private gatewayFor(provider: DnsPodProvider): EdgeOneGateway {
+    return EdgeOneGateway.forCredentials({
+      secretId: provider.secret_id,
+      secretKey: provider.secret_key,
+    })
+  }
+
 }

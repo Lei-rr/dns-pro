@@ -2,7 +2,7 @@ import { AppConfigRepository } from './app-config-repository.js'
 import { ApiError } from '../http/api-error.js'
 
 export class AuthConfig {
-  constructor(private readonly repository: AppConfigRepository = new AppConfigRepository()) {}
+  constructor(private readonly repository: AppConfigRepository) {}
 
   async verifyCredentials(username: string, password: string): Promise<boolean> {
     const config = await this.repository.read()

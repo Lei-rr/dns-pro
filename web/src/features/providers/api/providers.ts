@@ -1,8 +1,8 @@
 import http from '@/shared/api/http'
 import { presentProvider } from '@/features/providers/lib/presenter'
 import type { ApiResponse, Provider, ProviderDefinition, ProviderDefinitions } from '@/shared/types'
+import { encodePath } from '@/shared/lib/path'
 
-const path = (value: string) => encodeURIComponent(value)
 
 function presentDefinitions(definitions: ProviderDefinition[]): ApiResponse<ProviderDefinitions> {
   const labels: Record<string, string> = {}
@@ -29,9 +29,9 @@ export const providersApi = {
   definitions: async (): Promise<ApiResponse<ProviderDefinitions>> =>
     presentDefinitions((await http.get<ProviderDefinition[]>('/providers/definitions')).data),
   create: (data: Record<string, unknown>) => http.post('/providers', data),
-  update: (provider: string, data: Record<string, unknown>) => http.put(`/providers/${path(provider)}`, data),
-  remove: (provider: string) => http.delete(`/providers/${path(provider)}`),
-  test: (provider: string) => http.post(`/providers/${path(provider)}/test`),
+  update: (provider: string, data: Record<string, unknown>) => http.put(`/providers/${encodePath(provider)}`, data),
+  remove: (provider: string) => http.delete(`/providers/${encodePath(provider)}`),
+  test: (provider: string) => http.post(`/providers/${encodePath(provider)}/test`),
   reorder: async (order: string[]): Promise<ApiResponse<Provider[]>> => {
     const response = await http.put<Provider[]>('/providers/sort-order', { order })
     return { ...response, data: response.data.map(presentProvider) }

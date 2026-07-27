@@ -4,8 +4,8 @@ import type { DnsOperationResult } from '../../../lib/utils/side-effect-result.j
 
 export class CloudflaredDnsService {
   constructor(
-    private readonly cfZones: CloudflareZoneService = new CloudflareZoneService(),
-    private readonly dns: CloudflareDnsRecordService = new CloudflareDnsRecordService()
+    private readonly cfZones: CloudflareZoneService,
+    private readonly dns: CloudflareDnsRecordService
   ) {}
 
   async safeEnsureCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<DnsOperationResult> {
