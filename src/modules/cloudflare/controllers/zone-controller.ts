@@ -1,18 +1,14 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { bodyRecord, queryBool, queryRecord } from '../../../lib/utils/request-parse.js'
 
 export async function zonesIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
   reply: FastifyReply,
 ) {
   const q = queryRecord(request)
-  const keyword = queryString(q, 'name') || queryString(q, 'keyword') || ''
-  const result = await request.server.ctx.cloudflareZoneService.list(
+  const result = await request.server.ctx.cloudflareZoneService.listAll(
     request.params.providerId,
-    queryInt(q, 'page', 1),
-    queryInt(q, 'per_page', 20),
-    keyword,
     queryBool(q, 'refresh'),
   )
   return reply.send(success(result))

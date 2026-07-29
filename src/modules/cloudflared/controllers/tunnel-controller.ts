@@ -1,4 +1,3 @@
-import type { CloudflaredRouteService } from '../services/route-service.js'
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
 import {
@@ -92,14 +91,10 @@ export async function tunnelConfigShow(
   return reply.send(success(result))
 }
 
-function buildRoute(routeService: CloudflaredRouteService, body: Record<string, unknown>) {
+function buildRoute(body: Record<string, unknown>) {
   return {
     hostname: bodyString(body, 'hostname'),
-    service: routeService.buildServiceUrl(
-      bodyString(body, 'protocol', 'http'),
-      bodyString(body, 'address'),
-    ),
-    zone_id: bodyString(body, 'zone_id') || undefined,
+    service: bodyString(body, 'service'),
     path: bodyString(body, 'path'),
   }
 }
@@ -113,7 +108,7 @@ export async function tunnelRouteStore(
   const result = await routeService.addRoute(
     request.params.providerId,
     request.params.tunnelId,
-    buildRoute(routeService, body),
+    buildRoute(body),
   )
   return reply.status(201).send(success(result))
 }
@@ -138,7 +133,7 @@ export async function tunnelRouteUpdate(
     request.params.tunnelId,
     originalHostname,
     originalPath,
-    buildRoute(routeService, body),
+    buildRoute(body),
   )
   return reply.send(success(result))
 }
@@ -153,19 +148,6 @@ export async function tunnelRouteDelete(
     request.params.tunnelId,
     queryString(q, 'hostname'),
     queryString(q, 'path'),
-    queryString(q, 'zone_id'),
-  )
-  return reply.send(success(result))
-}
-
-export async function zonesIndex(
-  request: FastifyRequest<{ Params: { providerId: string } }>,
-  reply: FastifyReply,
-) {
-  const q = queryRecord(request)
-  const result = await request.server.ctx.cloudflaredRouteService.listZones(
-    request.params.providerId,
-    queryBool(q, 'refresh'),
   )
   return reply.send(success(result))
 }

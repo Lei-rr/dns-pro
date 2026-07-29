@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from './app.js'
 import { loadAppConfig, type AppConfig } from './config/app.js'
+import { resolveSessionSecret } from './config/session-secret.js'
 import { setDataRoot } from './lib/storage/json-store.js'
 import { setDefaultHttpTimeout } from './lib/http/base-gateway.js'
 import { globalCache } from './lib/cache/cache-service.js'
@@ -48,17 +49,21 @@ function registerShutdownHooks(app: FastifyInstance) {
   }
 }
 
-const config = (() => {
+const baseConfig = (() => {
   try {
     return loadAppConfig(parseCliOverrides())
   } catch (err) {
     printConfigError(err)
   }
 })()
-setDataRoot(config.dataDir)
+setDataRoot(baseConfig.dataDir)
+await ensureDataDirs(baseConfig.dataDir)
+const config: AppConfig = {
+  ...baseConfig,
+  sessionSecret: await resolveSessionSecret(baseConfig.dataDir, baseConfig.sessionSecret),
+}
 setDefaultHttpTimeout(config.httpTimeoutMs)
 globalCache.updateOptions({ maxEntries: config.cacheMaxEntries, sweepIntervalMs: config.cacheSweepIntervalMs })
-await ensureDataDirs(config.dataDir)
 
 const app = await buildApp(config)
 

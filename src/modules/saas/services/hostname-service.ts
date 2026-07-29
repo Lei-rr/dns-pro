@@ -1,6 +1,7 @@
 import { ApiError } from '../../../lib/http/api-error.js'
 import { CloudflareZoneService, type ZoneListResult } from '../../cloudflare/services/zone-service.js'
 import { CloudflareCustomHostnameGateway, type CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
+import { CloudflareFallbackOriginGateway, type FallbackOriginInfo } from '../gateways/fallback-origin-gateway.js'
 import { PreferredDomainService } from './preferred-domain-service.js'
 import { SaasPreferenceService, type HostnamePreference } from './preference-service.js'
 import { SaasSyncConfigService } from './sync-config-service.js'
@@ -19,13 +20,14 @@ export class SaasHostnameService {
   constructor(
     private readonly cloudflareZones: CloudflareZoneService,
     private readonly cloudflareHostnames: CloudflareCustomHostnameGateway,
+    private readonly fallbackOrigins: CloudflareFallbackOriginGateway,
     private readonly preferredDomains: PreferredDomainService,
     private readonly preferences: SaasPreferenceService,
     private readonly syncConfigs: SaasSyncConfigService,
   ) {}
 
-  async zones(providerId: string, page = 1, perPage = 100, name = '', refresh = false): Promise<ZoneListResult> {
-    return this.cloudflareZones.list(await this.cloudflareProviderId(providerId), page, perPage, name, refresh)
+  async zones(providerId: string, refresh = false): Promise<ZoneListResult> {
+    return this.cloudflareZones.listAll(await this.cloudflareProviderId(providerId), refresh)
   }
 
   cloudflareProviderIdFor(providerId: string): Promise<string> {
@@ -41,13 +43,13 @@ export class SaasHostnameService {
     return { cloudflareProviderId, zoneId }
   }
 
-  async hostnames(providerId: string, zoneName: string, page = 1, perPage = 20, refresh = false): Promise<HostnameListResult> {
+  async hostnames(providerId: string, zoneName: string, refresh = false): Promise<HostnameListResult> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
 
     const previousStatusMap = new Map<string, string>()
     if (refresh) {
       try {
-        const cached = await this.cloudflareHostnames.list(cfId, zoneId, page, perPage, false)
+        const cached = await this.cloudflareHostnames.listAll(cfId, zoneId, false)
         for (const item of cached.items) {
           const id = item.id
           if (id !== '') previousStatusMap.set(id, item.status ?? '')
@@ -57,7 +59,7 @@ export class SaasHostnameService {
       }
     }
 
-    const result = await this.cloudflareHostnames.list(cfId, zoneId, page, perPage, refresh)
+    const result = await this.cloudflareHostnames.listAll(cfId, zoneId, refresh)
     const preferenceMap = await this.preferences.listByProvider(cfId)
 
     const items = await Promise.all(
@@ -74,6 +76,10 @@ export class SaasHostnameService {
     )
 
     return { ...result, items }
+  }
+
+  async allHostnames(providerId: string, zoneName: string, refresh = false): Promise<CloudflareCustomHostname[]> {
+    return (await this.hostnames(providerId, zoneName, refresh)).items
   }
 
   async showHostname(providerId: string, zoneName: string, hostnameFqdn: string, refresh = false): Promise<CloudflareCustomHostname> {
@@ -182,20 +188,17 @@ export class SaasHostnameService {
   }
 
   async deleteHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<{ id: string }> {
-    let cfId = ''
-    let zoneId = ''
-    let hostnameId = ''
+    let resolved: [string, string, string]
     try {
-      ;[cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
+      resolved = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     } catch {
       await this.clearPreferencesForFqdn(providerId, hostnameFqdn)
       return { id: '' }
     }
 
-    if (hostnameId !== '') {
-      await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
-      await this.preferences.clear(cfId, hostnameId)
-    }
+    const [cfId, zoneId, hostnameId] = resolved
+    await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
+    await this.preferences.clear(cfId, hostnameId)
     return { id: hostnameId }
   }
 
@@ -203,9 +206,9 @@ export class SaasHostnameService {
     providerId: string,
     zoneName: string,
     refresh = false,
-  ): Promise<{ origin?: string | null; status?: string | null; [key: string]: unknown }> {
+  ): Promise<FallbackOriginInfo> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
-    return this.cloudflareHostnames.fallbackOriginInfo(cfId, zoneId, refresh)
+    return this.fallbackOrigins.show(cfId, zoneId, refresh)
   }
 
   async setFallbackOrigin(
@@ -218,7 +221,7 @@ export class SaasHostnameService {
     if (normalized == null) {
       throw new ApiError('fallback_origin_invalid', `Fallback origin must be a subdomain of ${zoneName}`, 422)
     }
-    return this.cloudflareHostnames.setFallbackOrigin(cfId, zoneId, normalized)
+    return this.fallbackOrigins.set(cfId, zoneId, normalized)
   }
 
   async deleteFallbackOrigin(
@@ -226,7 +229,7 @@ export class SaasHostnameService {
     zoneName: string,
   ): Promise<{ origin?: string | null; status?: string | null }> {
     const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
-    return this.cloudflareHostnames.deleteFallbackOrigin(cfId, zoneId)
+    return this.fallbackOrigins.delete(cfId, zoneId)
   }
 
   async fallbackOrigin(providerId: string, zoneName: string): Promise<string | null> {
@@ -291,7 +294,7 @@ export class SaasHostnameService {
   private async resolveHostnameByFqdn(providerId: string, hostnameFqdn: string): Promise<[string, string, string]> {
     const cfId = await this.cloudflareProviderId(providerId)
     const fqdn = hostnameFqdn.toLowerCase().trim()
-    const zones = await this.zones(providerId, 1, 1000, '', false)
+    const zones = await this.zones(providerId)
 
     for (const zone of zones.items ?? []) {
       const zoneName = String(zone.name ?? '')

@@ -22,7 +22,7 @@ export class EdgeOneWorkflowService {
     const result = await this.edgeone.createAccelerationDomain(providerId, zoneId, data)
 
     if (autoSync && result.name) {
-      const cname = await this.edgeone.assignedCname(providerId, zoneId, String(result.name)).catch(() => '')
+      const cname = await this.edgeone.assignedCname(providerId, zoneId, String(result.name))
       const sync = await this.sync.syncEdgeOneCname(providerId, String(result.name), cname)
       return {
         ...result,

@@ -7,19 +7,10 @@ const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/
 const domainBase = (provider: string, zone: string, domain: string) =>
   `${zoneBase(provider, zone)}/records/${encodePath(domain)}`
 
-function edgeOneQuery(options: Record<string, unknown> = {}, defaultPerPage = 20) {
-  const page = Math.max(1, Number(options.page) || 1)
-  const perPage = Math.max(1, Number(options.per_page) || defaultPerPage)
-  return {
-    offset: (page - 1) * perPage,
-    limit: perPage,
-  }
-}
-
 export const edgeOneApi = {
   zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<EdgeOneZone[]>> =>
     unwrapItems<EdgeOneZone[]>(
-      await http.get(`${providerBase(provider)}/zones`, withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh })),
+      await http.get(`${providerBase(provider)}/zones`, withRefresh({ refresh: options?.refresh })),
     ),
   zone: (provider: string, zoneId: string): Promise<ApiResponse<EdgeOneZone>> =>
     http.get(`${providerBase(provider)}/zones/${encodePath(zoneId)}`),
@@ -31,7 +22,7 @@ export const edgeOneApi = {
     unwrapItems<EdgeOneAccelerationDomain[]>(
       await http.get(
         `${zoneBase(provider, zone)}/records`,
-        withRefresh({ params: edgeOneQuery(options, 20), refresh: options?.refresh }),
+        withRefresh({ refresh: options?.refresh }),
       ),
     ),
   createAccelerationDomain: (

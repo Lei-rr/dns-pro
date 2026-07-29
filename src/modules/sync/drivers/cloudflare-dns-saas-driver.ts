@@ -7,6 +7,7 @@ import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js
 import { SaasHostnameService } from '../../saas/services/hostname-service.js'
 import { isHostnameActive } from '../../saas/utils/host-status.js'
 import type { SyncDriver, SyncRecord } from '../types.js'
+import { deleteRemovedSyncRecords, syncRecordIdentity, withSyncPurpose } from '../lib/record-reconciliation.js'
 
 export interface CloudflareDnsSyncRecord extends SyncRecord {
   zone_name?: string
@@ -49,7 +50,7 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     const records = this.collectRecords(hostname, effectiveOrigin, zoneName, cloudflareProviderId)
     if (records.length === 0) throw new ApiError('saas_no_sync_records', 'No records available for sync', 422)
 
-    const results = await Promise.all(records.map((record) => this.withPurpose(record, this.syncRecord(cloudflareProviderId, zoneId, record))))
+    const results = await Promise.all(records.map((record) => withSyncPurpose(record, this.syncRecord(cloudflareProviderId, zoneId, record))))
     return { hostname_fqdn: fqdn, hostname: fqdn, cloudflare_provider_id: cloudflareProviderId, cloudflare_zone: zoneName, records: results }
   }
 
@@ -67,7 +68,7 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
 
     const afterRecords = this.collectRecords(hostname, effectiveOrigin, zoneName, cloudflareProviderId)
     const deleted = await this.deleteMissingRecords(cloudflareProviderId, zoneId, beforeRecords, afterRecords)
-    const results = await Promise.all(afterRecords.map((record) => this.withPurpose(record, this.syncRecord(cloudflareProviderId, zoneId, record))))
+    const results = await Promise.all(afterRecords.map((record) => withSyncPurpose(record, this.syncRecord(cloudflareProviderId, zoneId, record))))
 
     return {
       hostname_fqdn: fqdn,
@@ -93,7 +94,7 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
       return { cleaned: 0, records: [], reason: 'cloudflare_zone_not_found' }
     }
 
-    const results = await Promise.all(records.map((record) => this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record))))
+    const results = await Promise.all(records.map((record) => withSyncPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record))))
     return { cleaned: results.filter((r) => r.status === 'deleted').length, cloudflare_zone: zoneName, records: results }
   }
 
@@ -252,11 +253,6 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     }
   }
 
-  private async withPurpose(record: SyncRecord, resultPromise: Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
-    const result = await resultPromise
-    return { purpose: record.purpose, ...result }
-  }
-
   private async syncRecord(cloudflareProviderId: string, zoneId: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const base = { type: record.type, name: record.name, value: record.value }
     try {
@@ -315,7 +311,7 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
   private async exactMatches(cloudflareProviderId: string, zoneId: string, fqdn: string, type: string): Promise<Array<Record<string, unknown>>> {
     const matches: Array<Record<string, unknown>> = []
     let page = 1
-    let totalPages = 1
+    let totalPages: number
 
     do {
       const result = await this.records.list(cloudflareProviderId, zoneId, { type, search: fqdn, page, per_page: 100 })
@@ -346,27 +342,13 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     cloudflareProviderId: string,
     zoneId: string,
     beforeRecords: SyncRecord[],
-    afterRecords: CloudflareDnsSyncRecord[]
+    afterRecords: CloudflareDnsSyncRecord[],
   ): Promise<Record<string, unknown>[]> {
-    // Identity is type+name. Value/comment changes are handled by syncRecord() as update.
-    const afterMap = new Set(afterRecords.map((record) => this.recordIdentity(record)))
-    const deleted: Record<string, unknown>[] = []
-    const seen = new Set<string>()
-
-    for (const record of beforeRecords) {
-      const identity = this.recordIdentity(record)
-      if (identity === '' || seen.has(identity) || afterMap.has(identity)) continue
-      seen.add(identity)
-      deleted.push(await this.withPurpose(record, this.deleteRecord(cloudflareProviderId, zoneId, record)))
-    }
-
-    return deleted
-  }
-
-  private recordIdentity(record: SyncRecord): string {
-    const type = String(record.type ?? '').toUpperCase().trim()
-    const name = String(record.name ?? '').toLowerCase().replace(/\.$/, '').trim()
-    if (type === '' || name === '') return ''
-    return [type, name].join('|')
+    return deleteRemovedSyncRecords(
+      beforeRecords,
+      afterRecords,
+      (record) => syncRecordIdentity(record),
+      (record) => this.deleteRecord(cloudflareProviderId, zoneId, record),
+    )
   }
 }

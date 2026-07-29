@@ -1,13 +1,13 @@
 import http, { unwrapItems, withRefresh } from '@/shared/api/http'
-import type { ApiResponse, CloudflaredRoute, CloudflaredTunnel, Zone } from '@/shared/types'
+import type { ApiResponse, CloudflaredRoute, CloudflaredTunnel, SideEffects } from '@/shared/types'
 import { encodePath } from '@/shared/lib/path'
+
+type RouteMutationResult = CloudflaredRoute & { side_effects?: SideEffects }
 
 const providerBase = (provider: string) => `/cloudflared/providers/${encodePath(provider)}`
 const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provider)}/tunnels/${encodePath(tunnelId)}`
 
 export const cloudflaredApi = {
-  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<Zone[]>> =>
-    unwrapItems<Zone[]>(await http.get(`${providerBase(provider)}/zones`, withRefresh({ refresh: options?.refresh }))),
   tunnels: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<CloudflaredTunnel[]>> =>
     unwrapItems<CloudflaredTunnel[]>(
       await http.get(`${providerBase(provider)}/tunnels`, withRefresh({ refresh: options?.refresh })),
@@ -24,7 +24,7 @@ export const cloudflaredApi = {
   routes: (provider: string, tunnelId: string) =>
     http.get<{ routes: CloudflaredRoute[] }>(`${tunnelBase(provider, tunnelId)}/routes`),
   addRoute: (provider: string, tunnelId: string, data: Record<string, unknown>) =>
-    http.post<CloudflaredRoute>(`${tunnelBase(provider, tunnelId)}/routes`, data),
+    http.post<RouteMutationResult>(`${tunnelBase(provider, tunnelId)}/routes`, data),
   updateRoute: (
     provider: string,
     tunnelId: string,
@@ -32,12 +32,12 @@ export const cloudflaredApi = {
     originalHostname: string,
     originalPath: string,
   ) =>
-    http.put<CloudflaredRoute>(`${tunnelBase(provider, tunnelId)}/routes`, data, {
+    http.put<RouteMutationResult>(`${tunnelBase(provider, tunnelId)}/routes`, data, {
       params: { original_hostname: originalHostname, original_path: originalPath || '' },
     }),
-  deleteRoute: (provider: string, tunnelId: string, hostname: string, pathValue: string, zoneId: string) =>
-    http.delete(`${tunnelBase(provider, tunnelId)}/routes`, {
-      params: { hostname, path: pathValue || '', zone_id: zoneId || '' },
+  deleteRoute: (provider: string, tunnelId: string, hostname: string, pathValue: string) =>
+    http.delete<RouteMutationResult>(`${tunnelBase(provider, tunnelId)}/routes`, {
+      params: { hostname, path: pathValue || '' },
     }),
 }
 

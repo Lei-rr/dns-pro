@@ -20,6 +20,8 @@ import { edgeOneAccessLabel, edgeOneStatusLabel } from '@/features/edgeone/lib/s
 import { providerChildPath } from '@/features/providers/lib/paths'
 import type { EdgeOneZone } from '@/shared/types'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
+import { TablePagination } from '@/shared/ui/pagination'
 
 const props = defineProps<{ providerId: string }>()
 const router = useRouter()
@@ -37,17 +39,26 @@ const filtered = computed(() => {
   )
 })
 
-const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'edgeone-zones',
   load: async (options = {}) => {
     try {
       const response = await edgeOneApi.zones(props.providerId, { refresh: options.refresh })
+      if (options.isLatest && !options.isLatest()) return false
       zones.value = response.data || []
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
+const { page, total, pagedItems: pagedZones, resetPage } = useLocalPagination(filtered, pageSize)
+watch(keyword, resetPage)
+
+function onPageSizeChange(next: number) {
+  setPageSize(next)
+  resetPage()
+}
 
 function openZone(zone: EdgeOneZone) {
   router.push(providerChildPath(props.providerId, String(zone.id || zone.name)))
@@ -72,8 +83,8 @@ onMounted(() => runLoad())
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex items-center gap-2">
-        <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索站点" @keyup.enter="runLoad()" />
-        <Button variant="outline" size="sm" :loading="loading" @click="runLoad()">
+        <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索站点" @keyup.enter="resetPage()" />
+        <Button variant="outline" size="sm" @click="resetPage()">
           <Search class="size-4" />
           搜索
         </Button>
@@ -95,7 +106,7 @@ onMounted(() => runLoad())
             <TableRow v-if="!filtered.length && !loading">
               <TableCell colspan="6" class="text-muted-foreground py-10 text-center">暂无 EdgeOne 站点</TableCell>
             </TableRow>
-            <TableRow v-for="zone in filtered" :key="String(zone.id || zone.name)">
+            <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">
                 <button class="font-medium hover:underline" @click="openZone(zone)">{{ zone.name }}</button>
               </TableCell>
@@ -116,6 +127,14 @@ onMounted(() => runLoad())
           </TableBody>
         </Table>
       </TableLoading>
+      <TablePagination
+        :page="page"
+        :page-size="pageSize"
+        :total="total"
+        :disabled="loading"
+        @update:page="page = $event"
+        @update:page-size="onPageSizeChange"
+      />
     </div>
   </div>
 </template>

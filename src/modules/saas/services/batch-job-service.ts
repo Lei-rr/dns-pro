@@ -2,7 +2,6 @@ import { ApiError } from '../../../lib/http/api-error.js'
 import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import {
-  assertNoActiveBatchJob,
   dedupeStrings,
   findActiveBatchJob,
   finishBatchJob,
@@ -63,12 +62,7 @@ export class SaasBatchJobService {
     const hostnames = dedupeStrings(input.hostnames)
     if (!hostnames.length) throw new ApiError('batch_empty', 'No hostnames selected', 422)
 
-    await assertNoActiveBatchJob(this.jobs, [...SAAS_ZONE_JOB_TYPES], {
-      provider_id: input.providerId,
-      zone_name: input.zoneName,
-    })
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       SAAS_BATCH_DELETE_JOB,
       {
         provider_id: input.providerId,
@@ -76,6 +70,7 @@ export class SaasBatchJobService {
         auto_cleanup: input.autoCleanup !== false,
       },
       hostnames.map((hostname) => ({ hostname, status: 'pending' })),
+      { types: [...SAAS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_name: input.zoneName } },
       { message: '批量删除任务已创建' },
     )
     return this.present(job)
@@ -96,12 +91,7 @@ export class SaasBatchJobService {
       throw new ApiError('batch_patch_empty', 'No fields to update', 422)
     }
 
-    await assertNoActiveBatchJob(this.jobs, [...SAAS_ZONE_JOB_TYPES], {
-      provider_id: input.providerId,
-      zone_name: input.zoneName,
-    })
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       SAAS_BATCH_UPDATE_JOB,
       {
         provider_id: input.providerId,
@@ -110,6 +100,7 @@ export class SaasBatchJobService {
         auto_sync: input.autoSync !== false,
       },
       hostnames.map((hostname) => ({ hostname, status: 'pending' })),
+      { types: [...SAAS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_name: input.zoneName } },
       { message: '批量修改任务已创建' },
     )
     return this.present(job)
@@ -130,7 +121,11 @@ export class SaasBatchJobService {
     await this.require(jobId)
     const raw = await this.jobs.get(jobId)
     if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const requeued = await requeueFailedBatchItems(this.jobs, raw)
+    const payload = raw.payload || {}
+    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
+      types: [...SAAS_ZONE_JOB_TYPES],
+      scope: { provider_id: String(payload.provider_id || ''), zone_name: String(payload.zone_name || '') },
+    })
     return this.present(requeued)
   }
 
@@ -145,10 +140,29 @@ export class SaasBatchJobService {
       runningMessage: '删除中',
       progressMessage: '批量删除执行中',
       execute: async (_item, hostname) => {
-        await this.workflow.deleteHostname(providerId, zoneName, hostname, autoCleanup)
+        const result = await this.workflow.deleteHostname(providerId, zoneName, hostname, autoCleanup)
+        const cleanup = (
+          result as { side_effects?: { dns?: { cleanup?: { status?: string; message?: string } } } }
+        )?.side_effects?.dns?.cleanup
+        if (autoCleanup && cleanup?.status === 'failed') {
+          return {
+            status: 'failed',
+            message: `主机名已删除，但 DNS 清理失败：${cleanup.message || '未知错误'}`,
+            extra: { dns_cleanup_status: 'failed' },
+          }
+        }
+        const message =
+          !autoCleanup
+            ? '已删除'
+            : cleanup?.status === 'completed'
+              ? '已删除（DNS 已清理）'
+              : cleanup?.status === 'skipped'
+                ? `已删除（DNS 跳过：${cleanup.message || '已跳过'}）`
+                : '已删除（无 DNS 记录需清理）'
         return {
           status: 'success',
-          message: autoCleanup ? '已删除（含 DNS 清理）' : '已删除',
+          message,
+          extra: { dns_cleanup_status: cleanup?.status || 'none' },
         }
       },
     })

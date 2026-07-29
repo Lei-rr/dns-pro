@@ -10,17 +10,9 @@ export interface CloudflareApiResponse<T = unknown> {
 }
 
 export class CloudflareGateway extends BaseGateway {
-  private static readonly byToken = new Map<string, CloudflareGateway>()
-
-  /** Reuse gateway instances per API token within the process. */
+  /** Create a short-lived gateway so replaced credentials are not retained in a process-global map. */
   static forToken(apiToken: string): CloudflareGateway {
-    const key = apiToken.trim()
-    let gateway = this.byToken.get(key)
-    if (!gateway) {
-      gateway = new CloudflareGateway(key)
-      this.byToken.set(key, gateway)
-    }
-    return gateway
+    return new CloudflareGateway(apiToken.trim())
   }
 
   constructor(apiToken: string) {

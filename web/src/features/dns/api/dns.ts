@@ -20,55 +20,6 @@ const endpoints = {
     `${providerBase(provider)}/records/batch/${encodePath(jobId)}/retry`,
 }
 
-function normalizedPaging(options: Record<string, unknown> = {}, defaultPerPage = 20) {
-  const page = Math.max(1, Number(options.page) || 1)
-  const perPage = Math.max(1, Number(options.per_page) || defaultPerPage)
-  return { page, per_page: perPage }
-}
-
-function zoneQuery(provider: string, options: Record<string, unknown> = {}) {
-  const type = providerType(provider)
-  const paging = normalizedPaging(options, 20)
-  const keyword = String(options.keyword || '').trim()
-
-  if (type === 'cloudflare' || type === 'saas') {
-    return {
-      page: paging.page,
-      per_page: paging.per_page,
-      name: keyword || undefined,
-    }
-  }
-
-  return {
-    offset: (paging.page - 1) * paging.per_page,
-    limit: paging.per_page,
-    keyword,
-  }
-}
-
-function recordQuery(provider: string, options: Record<string, unknown> = {}) {
-  const type = providerType(provider)
-  const paging = normalizedPaging(options, 20)
-  const keyword = String((options.keyword ?? options.search) || '').trim()
-
-  if (type === 'cloudflare') {
-    return {
-      page: paging.page,
-      per_page: paging.per_page,
-      type: options.type,
-      search: keyword || undefined,
-    }
-  }
-
-  return {
-    offset: (paging.page - 1) * paging.per_page,
-    limit: paging.per_page,
-    subdomain: options.subdomain,
-    record_type: options.record_type,
-    keyword,
-  }
-}
-
 function recordPayload(
   provider: string,
   zone: string,
@@ -169,7 +120,7 @@ export const dnsApi = {
     const response = unwrapItems<Zone[]>(
       await http.get(
         endpoints.zones(provider),
-        withRefresh({ params: zoneQuery(provider, options), refresh: options?.refresh })
+        withRefresh({ refresh: options?.refresh })
       )
     )
     return { ...response, data: response.data.map((domain) => presentDomain(provider, domain)) }
@@ -181,7 +132,7 @@ export const dnsApi = {
     const response = unwrapItems<DnsRecord[]>(
       await http.get(
         endpoints.records(provider, domain),
-        withRefresh({ params: recordQuery(provider, options), refresh: options?.refresh })
+        withRefresh({ refresh: options?.refresh })
       )
     )
     return { ...response, data: response.data.map((record) => presentRecord(provider, domain, record)) }

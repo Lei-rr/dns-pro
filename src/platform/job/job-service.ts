@@ -2,6 +2,7 @@ import * as crypto from 'node:crypto'
 import { JsonStore } from '../../lib/storage/json-store.js'
 import type { JobRecord, JobStatus } from './types.js'
 import { ApiError } from '../../lib/http/api-error.js'
+import { summarizeJobItems } from './job-summary.js'
 
 export type { JobRecord, JobStatus } from './types.js'
 
@@ -28,6 +29,7 @@ export class JobService {
   private readonly runners = new Map<string, (job: JobRecord) => Promise<void>>()
   private readonly inflight = new Map<string, Promise<void>>()
   private readonly progressTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly progressFlushes = new Map<string, Promise<void>>()
   private readonly pendingProgress = new Map<
     string,
     {
@@ -50,6 +52,17 @@ export class JobService {
     items: Array<Record<string, unknown>>,
     options: { start?: boolean; message?: string } = {},
   ): Promise<JobRecord> {
+    return this.createExclusive(type, payload, items, undefined, options)
+  }
+
+  /** Atomically reject another active job in the same domain scope, then persist the new job. */
+  async createExclusive(
+    type: string,
+    payload: Record<string, unknown>,
+    items: Array<Record<string, unknown>>,
+    lock: { types: string[]; scope: Record<string, string>; message?: string } | undefined,
+    options: { start?: boolean; message?: string } = {},
+  ): Promise<JobRecord> {
     const now = Date.now()
     const job: JobRecord = {
       id: crypto.randomBytes(8).toString('hex'),
@@ -67,9 +80,24 @@ export class JobService {
       message: options.message || 'pending',
     }
 
-    await this.store.transaction((current) => ({
-      next: { items: this.compactList([...(current.items ?? []), job]) },
-    }))
+    await this.store.transaction((current) => {
+      if (lock) {
+        const active = (current.items ?? []).find((candidate) => {
+          if (!ACTIVE.includes(candidate.status) || !lock.types.includes(candidate.type)) return false
+          const candidatePayload = candidate.payload || {}
+          return Object.entries(lock.scope).every(([key, value]) => String(candidatePayload[key] ?? '') === value)
+        })
+        if (active) {
+          throw new ApiError(
+            'batch_job_running',
+            lock.message || 'A batch job is already running for this scope',
+            409,
+            { job_id: active.id },
+          )
+        }
+      }
+      return { next: { items: this.compactList([...(current.items ?? []), job]) } }
+    })
 
     if (options.start !== false) this.ensureBackground(job.id)
     return job
@@ -164,19 +192,50 @@ export class JobService {
     return this.previewWithPending(id)
   }
 
-  /** Re-queue a finished job (e.g. retry failed items already rewritten as pending). */
-  async requeue(id: string, patch: Partial<JobRecord> = {}): Promise<JobRecord> {
+  /** Re-queue a finished job, optionally enforcing the same domain lock as creation. */
+  async requeue(
+    id: string,
+    patch: Partial<JobRecord> = {},
+    lock?: { types: string[]; scope: Record<string, string>; message?: string },
+  ): Promise<JobRecord> {
     await this.flushProgress(id)
-    const job = await this.get(id)
-    if (!job) throw new ApiError('job_not_found', `Job ${id} not found`, 404)
-    if (ACTIVE.includes(job.status)) {
-      throw new ApiError('job_running', 'Job is still running', 409, { job_id: id })
-    }
-    const updated = await this.patch(id, {
-      status: 'pending',
-      finished_at: undefined,
-      message: patch.message || 'requeued',
-      ...patch,
+    let updated: JobRecord | null = null
+    await this.store.transaction((current) => {
+      const source = (current.items ?? []).find((job) => job.id === id)
+      if (!source) throw new ApiError('job_not_found', `Job ${id} not found`, 404)
+      if (ACTIVE.includes(source.status)) {
+        throw new ApiError('job_running', 'Job is still running', 409, { job_id: id })
+      }
+      if (lock) {
+        const active = (current.items ?? []).find((candidate) => {
+          if (candidate.id === id || !ACTIVE.includes(candidate.status) || !lock.types.includes(candidate.type)) {
+            return false
+          }
+          const candidatePayload = candidate.payload || {}
+          return Object.entries(lock.scope).every(([key, value]) => String(candidatePayload[key] ?? '') === value)
+        })
+        if (active) {
+          throw new ApiError(
+            'batch_job_running',
+            lock.message || 'A batch job is already running for this scope',
+            409,
+            { job_id: active.id },
+          )
+        }
+      }
+      updated = {
+        ...source,
+        status: 'pending',
+        finished_at: undefined,
+        message: patch.message || 'requeued',
+        ...patch,
+        updated_at: Date.now(),
+      }
+      return {
+        next: {
+          items: (current.items ?? []).map((job) => (job.id === id ? updated! : job)),
+        },
+      }
     })
     this.ensureBackground(id)
     return updated!
@@ -208,14 +267,27 @@ export class JobService {
     }
     const timer = setTimeout(() => {
       this.progressTimers.delete(id)
-      void this.flushProgress(id)
+      void this.flushProgress(id).catch(() => {
+        // Keep queued progress durable-by-retry without creating an unhandled rejection.
+        if (this.pendingProgress.get(id)?.length) this.scheduleProgressFlush(id, PROGRESS_FLUSH_MS)
+      })
     }, delayMs)
     // Don't keep process alive solely for progress timers.
     if (typeof timer.unref === 'function') timer.unref()
     this.progressTimers.set(id, timer)
   }
 
-  private async flushProgress(id: string): Promise<void> {
+  private flushProgress(id: string): Promise<void> {
+    const previous = this.progressFlushes.get(id) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(() => this.flushProgressBatch(id))
+    this.progressFlushes.set(id, current)
+    void current.finally(() => {
+      if (this.progressFlushes.get(id) === current) this.progressFlushes.delete(id)
+    }).catch(() => undefined)
+    return current
+  }
+
+  private async flushProgressBatch(id: string): Promise<void> {
     const timer = this.progressTimers.get(id)
     if (timer) {
       clearTimeout(timer)
@@ -223,39 +295,39 @@ export class JobService {
     }
     const queue = this.pendingProgress.get(id)
     if (!queue?.length) return
+    // Detach only the batch being flushed. Entries appended while disk I/O is in flight
+    // stay in a fresh queue and must not be removed when this flush completes.
     this.pendingProgress.delete(id)
 
-    let updated: JobRecord | null = null
-    await this.store.transaction((current) => {
-      const items = (current.items ?? []).map((job) => {
-        if (job.id !== id) return job
-        let nextItems = job.items
-        let nextJob: JobRecord = { ...job }
-        for (const entry of queue) {
-          nextItems = nextItems.map((item) => (entry.match(item) ? { ...item, ...entry.itemPatch } : item))
-          nextJob = {
-            ...nextJob,
-            ...entry.jobPatch,
-            items: nextItems,
+    try {
+      await this.store.transaction((current) => {
+        const items = (current.items ?? []).map((job) => {
+          if (job.id !== id) return job
+          let nextItems = job.items
+          let nextJob: JobRecord = { ...job }
+          for (const entry of queue) {
+            nextItems = nextItems.map((item) => (entry.match(item) ? { ...item, ...entry.itemPatch } : item))
+            nextJob = {
+              ...nextJob,
+              ...entry.jobPatch,
+              items: nextItems,
+            }
           }
-        }
-        const done = nextItems.filter((i) => ['success', 'failed', 'skipped'].includes(String(i.status))).length
-        const success = nextItems.filter((i) => i.status === 'success').length
-        const failed = nextItems.filter((i) => i.status === 'failed').length
-        const skipped = nextItems.filter((i) => i.status === 'skipped').length
-        updated = {
-          ...nextJob,
-          items: nextItems,
-          done,
-          success,
-          failed,
-          skipped,
-          updated_at: Date.now(),
-        }
-        return updated
+          return {
+            ...nextJob,
+            items: nextItems,
+            ...summarizeJobItems(nextItems),
+            updated_at: Date.now(),
+          }
+        })
+        return { next: { items } }
       })
-      return { next: { items } }
-    })
+    } catch (error) {
+      // Restore failed entries ahead of newer ones so no progress transition is lost.
+      const newer = this.pendingProgress.get(id) ?? []
+      this.pendingProgress.set(id, [...queue, ...newer])
+      throw error
+    }
     return
   }
 
@@ -271,17 +343,10 @@ export class JobService {
       nextItems = nextItems.map((item) => (entry.match(item) ? { ...item, ...entry.itemPatch } : item))
       nextJob = { ...nextJob, ...entry.jobPatch, items: nextItems }
     }
-    const done = nextItems.filter((i) => ['success', 'failed', 'skipped'].includes(String(i.status))).length
-    const success = nextItems.filter((i) => i.status === 'success').length
-    const failed = nextItems.filter((i) => i.status === 'failed').length
-    const skipped = nextItems.filter((i) => i.status === 'skipped').length
     return {
       ...nextJob,
       items: nextItems,
-      done,
-      success,
-      failed,
-      skipped,
+      ...summarizeJobItems(nextItems),
       updated_at: Date.now(),
     }
   }

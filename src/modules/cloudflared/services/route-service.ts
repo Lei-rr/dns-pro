@@ -14,7 +14,6 @@ export interface CloudflaredRoute {
   hostname: string
   service: string
   path: string
-  zone_id?: string
 }
 
 export class CloudflaredRouteService {
@@ -54,7 +53,9 @@ export class CloudflaredRouteService {
   }
 
   async addRoute(providerId: string, tunnelId: string, route: CloudflaredRoute): Promise<Record<string, unknown>> {
+    const cfProviderId = await this.cfProviderIdOf(providerId)
     const normalized = this.normalizeRoute(route)
+    const zoneId = await this.requireZoneId(cfProviderId, normalized.hostname)
     const current = await this.fetchRoutes(providerId, tunnelId)
 
     for (const existing of current) {
@@ -66,8 +67,7 @@ export class CloudflaredRouteService {
     const newRoutes = [...current, normalized]
     await this.writeIngress(providerId, tunnelId, newRoutes)
 
-    const cfProviderId = await this.cfProviderIdOf(providerId)
-    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
+    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
     await emitTunnelRouteMutated({ providerId, tunnelId, hostname: String(route.hostname || ''), action: 'create' })
 
     return {
@@ -79,8 +79,9 @@ export class CloudflaredRouteService {
   }
 
   async updateRoute(providerId: string, tunnelId: string, originalHostname: string, originalPath: string, route: CloudflaredRoute): Promise<Record<string, unknown>> {
-    const normalized = this.normalizeRoute(route)
     const cfProviderId = await this.cfProviderIdOf(providerId)
+    const normalized = this.normalizeRoute(route)
+    const zoneId = await this.requireZoneId(cfProviderId, normalized.hostname)
     const current = await this.fetchRoutes(providerId, tunnelId)
 
     let found = false
@@ -113,7 +114,7 @@ export class CloudflaredRouteService {
       }
     }
 
-    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, normalized.zone_id ?? '', normalized.hostname, tunnelId)
+    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
     await emitTunnelRouteMutated({ providerId, tunnelId, hostname: String(route.hostname || originalHostname || ''), action: 'update' })
 
     return {
@@ -124,7 +125,7 @@ export class CloudflaredRouteService {
     }
   }
 
-  async deleteRoute(providerId: string, tunnelId: string, hostname: string, path: string, zoneId: string): Promise<Record<string, unknown>> {
+  async deleteRoute(providerId: string, tunnelId: string, hostname: string, path: string): Promise<Record<string, unknown>> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const current = await this.fetchRoutes(providerId, tunnelId)
     const normalizedHostname = hostname.toLowerCase().trim()
@@ -150,7 +151,7 @@ export class CloudflaredRouteService {
     if (stillUsed.length > 0) {
       dnsResult = { action: 'kept', reason: 'hostname_still_used' }
     } else {
-      dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, zoneId, normalizedHostname, tunnelId)
+      dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, '', normalizedHostname, tunnelId)
     }
 
     await emitTunnelRouteMutated({ providerId, tunnelId, hostname: String(hostname || ''), action: 'delete' })
@@ -160,18 +161,6 @@ export class CloudflaredRouteService {
       path,
       side_effects: this.dnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 清理') }),
     }
-  }
-
-  async listZones(providerId: string, refresh = false): Promise<{ items: Array<Record<string, unknown>> }> {
-    const cfProviderId = await this.cfProviderIdOf(providerId)
-    const result = await this.cfZones.list(cfProviderId, 1, 100, '', refresh)
-    return { items: result.items }
-  }
-
-  buildServiceUrl(protocol: string, address: string): string {
-    const p = protocol.toLowerCase().trim()
-    const valid = ['http', 'https', 'tcp', 'ssh', 'rdp', 'smb']
-    return `${valid.includes(p) ? p : 'http'}://${address.trim()}`
   }
 
   private async fetchRoutes(providerId: string, tunnelId: string): Promise<CloudflaredRoute[]> {
@@ -199,14 +188,13 @@ export class CloudflaredRouteService {
   }
 
   private normalizeRoute(route: CloudflaredRoute): CloudflaredRoute {
-    const hostname = route.hostname.toLowerCase().trim()
+    const hostname = route.hostname.toLowerCase().trim().replace(/\.$/, '')
     const service = route.service.trim()
-    const zoneId = (route.zone_id ?? '').trim()
     const path = (route.path ?? '').trim()
-    if (hostname === '' || service === '' || zoneId === '') {
-      throw new ApiError('cloudflared_route_invalid', 'hostname, service and zone_id are required', 422)
+    if (hostname === '' || service === '') {
+      throw new ApiError('cloudflared_route_invalid', 'hostname and service are required', 422)
     }
-    return { hostname, service, zone_id: zoneId, path }
+    return { hostname, service, path }
   }
 
   private isSameRouteKey(a: CloudflaredRoute, b: CloudflaredRoute): boolean {
@@ -237,6 +225,30 @@ export class CloudflaredRouteService {
     }
 
     return { routes, catch_all: catchAll, version: config.version ?? 0 }
+  }
+
+  private async requireZoneId(cfProviderId: string, hostname: string): Promise<string> {
+    const zoneId = await this.resolveZoneId(cfProviderId, hostname)
+    if (zoneId === '') {
+      throw new ApiError('cloudflared_zone_not_found', `No Cloudflare zone matches ${hostname}`, 422)
+    }
+    return zoneId
+  }
+
+  private async resolveZoneId(cfProviderId: string, hostname: string): Promise<string> {
+    const normalized = hostname.toLowerCase().trim().replace(/\.$/, '')
+    let bestName = ''
+    let bestId = ''
+    for (const zone of (await this.cfZones.listAll(cfProviderId, false)).items) {
+      const name = String(zone.name ?? '').toLowerCase().trim().replace(/\.$/, '')
+      const id = String(zone.id ?? '')
+      if (name === '' || id === '') continue
+      if ((normalized === name || normalized.endsWith(`.${name}`)) && name.length > bestName.length) {
+        bestName = name
+        bestId = id
+      }
+    }
+    return bestId
   }
 
   private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {

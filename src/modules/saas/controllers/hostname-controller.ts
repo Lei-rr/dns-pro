@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { bodyRecord, queryBool, queryRecord } from '../../../lib/utils/request-parse.js'
 import { hostnameFqdnParam, zoneNameParam } from './request-params.js'
 
 export async function zonesIndex(
@@ -10,9 +10,6 @@ export async function zonesIndex(
   const q = queryRecord(request)
   const result = await request.server.ctx.saasHostnameService.zones(
     request.params.providerId,
-    queryInt(q, 'page', 1, 1),
-    queryInt(q, 'per_page', 100, 1, 500),
-    queryString(q, 'name'),
     queryBool(q, 'refresh'),
   )
   return reply.send(success(result))
@@ -26,8 +23,6 @@ export async function hostnamesIndex(
   const result = await request.server.ctx.saasWorkflowService.listHostnames(
     request.params.providerId,
     zoneNameParam(request),
-    queryInt(q, 'page', 1, 1),
-    queryInt(q, 'per_page', 20, 1, 200),
     queryBool(q, 'refresh'),
   )
   return reply.send(success(result))

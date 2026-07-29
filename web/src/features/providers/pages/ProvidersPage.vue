@@ -45,57 +45,28 @@ const typeFilter = ref('all')
 
 const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
   pageSizeScope: 'providers',
-  load: async () => {
+  load: async (options = {}) => {
     try {
       const [listRes, defRes] = await Promise.all([providersApi.list(), providersApi.definitions()])
+      if (options.isLatest && !options.isLatest()) return false
       providers.value = listRes.data
       definitions.value = defRes.data.types
       labels.value = defRes.data.labels
       replaceProvidersCache(listRes.data.filter((item) => item.configured))
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
 
-const currentDefinition = computed(() => definitions.value.find((item) => item.type === form.type) || null)
 const filteredProviders = computed(() => {
   if (typeFilter.value === 'all') return providers.value
   return providers.value.filter((item) => item.type === typeFilter.value)
 })
 
-function fieldLabel(key: string) {
-  return labels.value[key] || key
-}
-
 function isSecretField(field: string) {
   return /key|token|secret|password/i.test(field)
-}
-
-function isProviderSelectField(field: string) {
-  return field === 'dnspod_provider' || field === 'cloudflare_provider' || field === 'cloudflare_dns_provider'
-}
-
-function selectFieldProviders(field: string): Provider[] {
-  if (field === 'dnspod_provider') {
-    return providers.value.filter((item) => item.type === 'dnspod' && item.configured)
-  }
-  if (field === 'cloudflare_provider' || field === 'cloudflare_dns_provider') {
-    return providers.value.filter((item) => item.type === 'cloudflare' && item.configured)
-  }
-  return []
-}
-
-function selectFieldPlaceholder(field: string) {
-  if (field === 'dnspod_provider') return '选择 DNSPod'
-  if (field === 'cloudflare_provider') return '选择 Cloudflare'
-  if (field === 'cloudflare_dns_provider') return '选择 Cloudflare DNS'
-  return '请选择'
-}
-
-function dialogFields(): string[] {
-  if (editing.value?.editable_fields?.length) return editing.value.editable_fields
-  return currentDefinition.value?.fields || []
 }
 
 function resetFormFields(type: string) {

@@ -130,6 +130,40 @@ export class CloudflareDnsRecordService {
     return cached.value
   }
 
+  async listAll(providerId: string, zoneId: string, refresh = false): Promise<RecordListResult> {
+    const pageSize = 100
+    const items: RecordPresentation[] = []
+    let page = 1
+
+    while (true) {
+      const result = await this.list(providerId, zoneId, { page, per_page: pageSize, refresh })
+      items.push(...result.items)
+      const totalPages = Number(result.pagination.total_pages ?? 0)
+      if (totalPages > 0 ? page >= totalPages : result.items.length < pageSize) break
+      page++
+    }
+
+    return {
+      items,
+      pagination: {
+        page: 1,
+        per_page: items.length,
+        count: items.length,
+        total_count: items.length,
+        total_pages: 1,
+      },
+      meta: {
+        page: 1,
+        per_page: items.length,
+        offset: 0,
+        limit: items.length,
+        count: items.length,
+        total: items.length,
+        total_pages: 1,
+      },
+    }
+  }
+
   async create(providerId: string, zoneId: string, data: RecordPayload | Record<string, unknown>): Promise<RecordPresentation> {
     const normalized = this.normalizeRecordData(data)
     const provider = await this.requireProvider(providerId)

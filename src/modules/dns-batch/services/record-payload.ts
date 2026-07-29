@@ -20,6 +20,13 @@ export type BatchRecordInput = {
   weight?: number | string
 }
 
+export type BatchRecordPatch = Partial<Pick<
+  BatchRecordInput,
+  'value' | 'content' | 'ttl' | 'line' | 'record_line' | 'record_line_id' | 'mx' | 'priority' | 'remark' | 'comment' | 'proxied' | 'status' | 'weight'
+>>
+
+export type ProviderRecordBody = Record<string, unknown>
+
 function cloudflareFqdn(nameRaw: string, zone: string): string {
   if (nameRaw === '@') return zone
   const lower = nameRaw.toLowerCase()

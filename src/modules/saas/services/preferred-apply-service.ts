@@ -3,7 +3,6 @@ import type { JobRecord } from '../../../platform/job/types.js'
 import type { JobService } from '../../../platform/job/job-service.js'
 import type { CloudflareCustomHostname } from '../gateways/custom-hostname-gateway.js'
 import {
-  assertNoActiveBatchJob,
   findActiveBatchJob,
   finishBatchJob,
   presentBatchJobBase,
@@ -86,13 +85,6 @@ export class SaasPreferredApplyService {
     const preferred = String(input.preferredDomain || '').trim()
     if (!preferred) throw new ApiError('preferred_domain_invalid', 'Preferred domain is required', 422)
 
-    await assertNoActiveBatchJob(
-      this.jobs,
-      [...SAAS_ZONE_JOB_TYPES],
-      { provider_id: input.providerId, zone_name: input.zoneName },
-      'A SaaS batch or preferred-domain apply job is already running for this zone',
-    )
-
     const targets = await this.resolveTargets(
       input.providerId,
       input.zoneName,
@@ -119,10 +111,17 @@ export class SaasPreferredApplyService {
     }))
 
     if (input.dryRun) {
-      const job = await this.jobs.create(PREFERRED_APPLY_JOB_TYPE, payload, items, {
-        start: false,
-        message: '预览任务已创建',
-      })
+      const job = await this.jobs.createExclusive(
+        PREFERRED_APPLY_JOB_TYPE,
+        payload,
+        items,
+        {
+          types: [...SAAS_ZONE_JOB_TYPES],
+          scope: { provider_id: input.providerId, zone_name: input.zoneName },
+          message: 'A SaaS batch or preferred-domain apply job is already running for this zone',
+        },
+        { start: false, message: '预览任务已创建' },
+      )
       const dryItems = items.map((item) => {
         const willChange = String(item.current_preferred || '') !== preferred
         return {
@@ -146,9 +145,17 @@ export class SaasPreferredApplyService {
       return this.present(updated!)
     }
 
-    const job = await this.jobs.create(PREFERRED_APPLY_JOB_TYPE, payload, items, {
-      message: '任务已创建，等待后台执行',
-    })
+    const job = await this.jobs.createExclusive(
+      PREFERRED_APPLY_JOB_TYPE,
+      payload,
+      items,
+      {
+        types: [...SAAS_ZONE_JOB_TYPES],
+        scope: { provider_id: input.providerId, zone_name: input.zoneName },
+        message: 'A SaaS batch or preferred-domain apply job is already running for this zone',
+      },
+      { message: '任务已创建，等待后台执行' },
+    )
     return this.present(job)
   }
 
@@ -166,7 +173,12 @@ export class SaasPreferredApplyService {
     await this.require(jobId)
     const raw = await this.jobs.get(jobId)
     if (!raw) throw new ApiError('preferred_apply_not_found', 'Preferred apply job not found', 404, { job_id: jobId })
-    const requeued = await requeueFailedBatchItems(this.jobs, raw)
+    const payload = raw.payload || {}
+    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
+      types: [...SAAS_ZONE_JOB_TYPES],
+      scope: { provider_id: String(payload.provider_id || ''), zone_name: String(payload.zone_name || '') },
+      message: 'A SaaS batch or preferred-domain apply job is already running for this zone',
+    })
     return this.present(requeued)
   }
 
@@ -231,8 +243,7 @@ export class SaasPreferredApplyService {
     hostnames?: string[],
     onlyAutoPreferred = false,
   ): Promise<CloudflareCustomHostname[]> {
-    const listing = await this.hostnames.hostnames(providerId, zoneName, 1, 200, false)
-    let items = listing.items ?? []
+    let items = await this.hostnames.allHostnames(providerId, zoneName)
     if (hostnames?.length) {
       const set = new Set(hostnames.map((h) => h.toLowerCase().trim()))
       items = items.filter((item) => set.has(String(item.hostname || '').toLowerCase()))

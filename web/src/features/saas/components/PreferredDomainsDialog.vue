@@ -15,11 +15,10 @@ import { AppDialog } from '@/shared/ui/dialog'
 import { preferredDomainApi } from '@/features/saas/api/saas'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { withMinLoading } from '@/shared/lib/loading'
 import { confirmDelete } from '@/shared/ui/confirm'
 
 const open = defineModel<boolean>('open', { default: false })
-const props = withDefaults(
+withDefaults(
   defineProps<{
     hostCount?: number
     applying?: boolean

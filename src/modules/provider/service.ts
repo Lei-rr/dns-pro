@@ -1,40 +1,20 @@
 import { ProviderRepository } from './repository.js'
 import { ApiError } from '../../lib/http/api-error.js'
-import type { PresentedProvider, Provider, ProviderInput, ProviderType } from './types.js'
+import type { PresentedProvider, Provider, ProviderInput } from './types.js'
 import { getProviderDefinition, getProviderDefinitionsList } from './definitions.js'
 import { ProviderNormalizer } from './normalizer.js'
 import { ProviderPresenter } from './presenter.js'
-import { SaasPreferenceService } from '../saas/services/preference-service.js'
+import { ProviderConnectionService, type ProviderConnectionResult } from './services/connection-service.js'
+import { ProviderDependencyService } from './services/dependency-service.js'
 import { emitProviderMutated } from './events.js'
-
-interface DependencyInfo {
-  kind: string
-  type: string
-  id: string
-  name: string
-  reason: string
-}
 
 export class ProviderService {
   constructor(
     private readonly providers: ProviderRepository,
     private readonly normalizer: ProviderNormalizer,
     private readonly presenter: ProviderPresenter,
-    private readonly hostnamePreferences: SaasPreferenceService,
-    private readonly probes: {
-      dnspodZones: { list(providerId: string, opts: { offset: number; limit: number; refresh: boolean }): Promise<{ items: unknown[]; pagination?: { total?: number | null } }> }
-      cloudflareZones: {
-        list(
-          providerId: string,
-          page: number,
-          perPage: number,
-          name: string,
-          refresh: boolean,
-        ): Promise<{ items: unknown[]; pagination?: { total_count?: number | null } }>
-      }
-      edgeoneZones: { zones(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
-      cloudflaredTunnels: { list(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
-    },
+    private readonly dependencies: ProviderDependencyService,
+    private readonly connections: ProviderConnectionService,
   ) {}
 
   definitions() {
@@ -145,87 +125,8 @@ export class ProviderService {
     }))
   }
 
-  /**
-   * Lightweight connectivity check — list a small page from the vendor API.
-   * Linked providers (edgeone/saas/cloudflared) resolve their linked CF/DNSPod first.
-   */
-  async testConnection(id: string): Promise<{ ok: true; type: string; message: string; details?: Record<string, unknown> }> {
-    const providers = await this.providers.all()
-    const provider = providers.find((item) => item.id === id)
-    if (!provider) throw new ApiError('provider_not_found', 'Provider not found', 404)
-
-    try {
-      switch (provider.type) {
-        case 'dnspod': {
-          const zones = await this.probes.dnspodZones.list(provider.id, {
-            offset: 0,
-            limit: 1,
-            refresh: true,
-          })
-          return {
-            ok: true,
-            type: provider.type,
-            message: `DNSPod 连接正常（域名 ${zones.pagination?.total ?? zones.items.length} 个）`,
-            details: { total: zones.pagination?.total ?? zones.items.length },
-          }
-        }
-        case 'cloudflare': {
-          const zones = await this.probes.cloudflareZones.list(provider.id, 1, 1, '', true)
-          return {
-            ok: true,
-            type: provider.type,
-            message: `Cloudflare 连接正常（站点 ${zones.pagination?.total_count ?? zones.items.length} 个）`,
-            details: { total: zones.pagination?.total_count ?? zones.items.length },
-          }
-        }
-        case 'edgeone': {
-          const linked = String((provider as Record<string, unknown>).dnspod_provider || '').trim()
-          if (!linked) throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne 未关联 DNSPod', 422)
-          await this.testConnection(linked)
-          const zones = await this.probes.edgeoneZones.zones(provider.id, true)
-          return {
-            ok: true,
-            type: provider.type,
-            message: `EdgeOne 连接正常（站点 ${zones.items.length} 个）`,
-            details: { total: zones.items.length, dnspod_provider: linked },
-          }
-        }
-        case 'saas': {
-          const cf = String((provider as Record<string, unknown>).cloudflare_provider || '').trim()
-          if (!cf) throw new ApiError('saas_cloudflare_provider_missing', 'SaaS 未关联 Cloudflare', 422)
-          await this.testConnection(cf)
-          return {
-            ok: true,
-            type: provider.type,
-            message: 'SaaS 关联的 Cloudflare 连接正常',
-            details: { cloudflare_provider: cf },
-          }
-        }
-        case 'cloudflared': {
-          const cf = String((provider as Record<string, unknown>).cloudflare_provider || '').trim()
-          if (!cf) throw new ApiError('cloudflared_cloudflare_provider_missing', 'Tunnel 未关联 Cloudflare', 422)
-          await this.testConnection(cf)
-          const tunnels = await this.probes.cloudflaredTunnels.list(provider.id, true)
-          return {
-            ok: true,
-            type: provider.type,
-            message: `Cloudflare Tunnel 连接正常（隧道 ${tunnels.items.length} 个）`,
-            details: { total: tunnels.items.length, cloudflare_provider: cf },
-          }
-        }
-        default: {
-          const unknownType = String((provider as { type?: string }).type || 'unknown')
-          throw new ApiError('provider_test_unsupported', `Unsupported provider type: ${unknownType}`, 422)
-        }
-      }
-    } catch (error) {
-      if (error instanceof ApiError) throw error
-      const msg = error instanceof Error ? error.message : String(error)
-      throw new ApiError('provider_test_failed', msg || 'Provider test failed', 502, {
-        provider_id: id,
-        type: String((provider as { type?: string }).type || ''),
-      })
-    }
+  async testConnection(id: string): Promise<ProviderConnectionResult> {
+    return this.connections.test(id)
   }
 
   private definitionFor(type: string) {
@@ -238,69 +139,12 @@ export class ProviderService {
     return definition
   }
 
-  private async dependencyMap(providers: Provider[]): Promise<Record<string, DependencyInfo[]>> {
-    const map: Record<string, DependencyInfo[]> = {}
-
-    for (const provider of providers) {
-      const providerId = provider.id
-      const type = provider.type
-
-      const rules: Array<{ field: string; targetType: string; label: string; appliesTo: ProviderType[] }> = [
-        { field: 'dnspod_provider', targetType: 'dnspod', label: 'EdgeOne 关联 DNSPod', appliesTo: ['edgeone'] },
-        { field: 'cloudflare_provider', targetType: 'cloudflare', label: 'SaaS 关联 Cloudflare', appliesTo: ['saas'] },
-        {
-          field: 'cloudflare_dns_provider',
-          targetType: 'cloudflare',
-          label: 'SaaS Cloudflare DNS 同步',
-          appliesTo: ['saas'],
-        },
-        { field: 'dnspod_provider', targetType: 'dnspod', label: 'SaaS DNSPod 同步', appliesTo: ['saas'] },
-        {
-          field: 'cloudflare_provider',
-          targetType: 'cloudflare',
-          label: 'Cloudflare Tunnel 关联 Cloudflare',
-          appliesTo: ['cloudflared'],
-        },
-      ]
-
-      for (const rule of rules) {
-        if (!rule.appliesTo.includes(type)) continue
-        const targetId = String((provider as Record<string, unknown>)[rule.field] ?? '').trim()
-        if (targetId === '') continue
-
-        if (!map[targetId]) map[targetId] = []
-        map[targetId].push({
-          kind: 'provider',
-          type,
-          id: providerId,
-          name: provider.name || providerId,
-          reason: rule.label,
-        })
-      }
-    }
-
-    const preferences = await this.hostnamePreferences.listAll()
-    for (const [key, preference] of Object.entries(preferences)) {
-      const syncProviderId = String(preference.sync_provider_id ?? '').trim()
-      if (syncProviderId === '') continue
-
-      const hostname = String(preference.hostname ?? '').trim()
-      if (!map[syncProviderId]) map[syncProviderId] = []
-      map[syncProviderId].push({
-        kind: 'hostname_sync',
-        type: 'saas',
-        id: String(key),
-        name: hostname || String(key),
-        reason: 'SaaS 同步服务商',
-      })
-    }
-
-    return map
+  private dependencyMap(providers: Provider[]) {
+    return this.dependencies.map(providers)
   }
 
-  private async dependenciesFor(id: string, providers: Provider[]): Promise<DependencyInfo[]> {
-    const map = await this.dependencyMap(providers)
-    return map[id] ?? []
+  private dependenciesFor(id: string, providers: Provider[]) {
+    return this.dependencies.forProvider(id, providers)
   }
 
   private validateSortOrder(ids: string[], providers: Provider[]): void {

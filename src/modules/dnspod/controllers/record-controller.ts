@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { queryBool, queryInt, queryRecord, queryString, bodyRecord } from '../../../lib/utils/request-parse.js'
+import { queryBool, queryRecord, bodyRecord } from '../../../lib/utils/request-parse.js'
 
 export async function recordsIndex(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
@@ -11,11 +11,6 @@ export async function recordsIndex(
     request.params.providerId,
     request.params.zone,
     {
-      offset: queryInt(q, 'offset', 0),
-      limit: queryInt(q, 'limit', 100),
-      subdomain: queryString(q, 'subdomain') || undefined,
-      record_type: queryString(q, 'record_type') || undefined,
-      keyword: queryString(q, 'keyword') || undefined,
       refresh: queryBool(q, 'refresh'),
     },
   )

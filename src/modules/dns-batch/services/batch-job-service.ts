@@ -10,7 +10,6 @@ import {
 import { emitCloudflareRecordMutated } from '../../cloudflare/events.js'
 import { emitDnsPodRecordMutated } from '../../dnspod/events.js'
 import {
-  assertNoActiveBatchJob,
   findActiveBatchJob,
   finishBatchJob,
   presentBatchJobBase,
@@ -92,13 +91,7 @@ export class DnsBatchJobService {
     if (!records.length) throw new ApiError('batch_empty', 'No records to create', 422)
     this.requireService(input.providerType)
 
-    await assertNoActiveBatchJob(
-      this.jobs,
-      [...DNS_ZONE_JOB_TYPES],
-      { provider_id: input.providerId, zone: input.zone },
-    )
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       DNS_BATCH_CREATE_JOB,
       {
         provider_type: input.providerType,
@@ -107,6 +100,7 @@ export class DnsBatchJobService {
         zone_name: input.zoneName || input.zone,
       },
       records.map((record) => ({ ...record, status: 'pending' })),
+      { types: [...DNS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone: input.zone } },
       { message: '批量添加 DNS 记录任务已创建' },
     )
     return this.present(job)
@@ -122,13 +116,7 @@ export class DnsBatchJobService {
     if (!records.length) throw new ApiError('batch_empty', 'No records selected', 422)
     this.requireService(input.providerType)
 
-    await assertNoActiveBatchJob(
-      this.jobs,
-      [...DNS_ZONE_JOB_TYPES],
-      { provider_id: input.providerId, zone: input.zone },
-    )
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       DNS_BATCH_DELETE_JOB,
       {
         provider_type: input.providerType,
@@ -141,6 +129,7 @@ export class DnsBatchJobService {
         type: record.type || '',
         status: 'pending',
       })),
+      { types: [...DNS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone: input.zone } },
       { message: '批量删除 DNS 记录任务已创建' },
     )
     return this.present(job)
@@ -162,13 +151,7 @@ export class DnsBatchJobService {
       throw new ApiError('batch_patch_empty', 'No fields to update', 422)
     }
 
-    await assertNoActiveBatchJob(
-      this.jobs,
-      [...DNS_ZONE_JOB_TYPES],
-      { provider_id: input.providerId, zone: input.zone },
-    )
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       DNS_BATCH_UPDATE_JOB,
       {
         provider_type: input.providerType,
@@ -196,6 +179,7 @@ export class DnsBatchJobService {
         weight: record.weight ?? '',
         status: 'pending',
       })),
+      { types: [...DNS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone: input.zone } },
       { message: '批量修改 DNS 记录任务已创建' },
     )
     return this.present(job)
@@ -215,7 +199,11 @@ export class DnsBatchJobService {
     await this.require(jobId)
     const raw = await this.jobs.get(jobId)
     if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const requeued = await requeueFailedBatchItems(this.jobs, raw)
+    const payload = raw.payload || {}
+    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
+      types: [...DNS_ZONE_JOB_TYPES],
+      scope: { provider_id: String(payload.provider_id || ''), zone: String(payload.zone || '') },
+    })
     return this.present(requeued)
   }
 

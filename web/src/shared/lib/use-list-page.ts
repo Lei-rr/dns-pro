@@ -1,10 +1,14 @@
 import { ref, type Ref } from 'vue'
-import { handleRefresh, withMinLoading } from '@/shared/lib/loading'
 import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 
-type LoadFn = (options?: { refresh?: boolean }) => Promise<void>
+type LoadContext = {
+  refresh?: boolean
+  isLatest?: () => boolean
+}
+
+type LoadFn = (options?: LoadContext) => Promise<boolean | void>
 
 /**
  * Shared list-page chrome: loading/refresh flags, pageSize memory, refresh action.
@@ -18,24 +22,48 @@ export function useListPage(options: {
   const loading = ref(false)
   const refreshing = ref(false)
   const pageSize = ref(loadPageSize(options.pageSizeScope, options.defaultPageSize ?? 20))
+  let requestVersion = 0
+  let activeLoads = 0
+
+  function nextLoad(refresh?: boolean) {
+    const version = ++requestVersion
+    return options.load({
+      refresh,
+      isLatest: () => version === requestVersion,
+    })
+  }
+
+  async function trackedLoad(refresh?: boolean) {
+    activeLoads += 1
+    loading.value = true
+    try {
+      return (await nextLoad(refresh)) !== false
+    } finally {
+      activeLoads -= 1
+      loading.value = activeLoads > 0
+    }
+  }
 
   async function runLoad(opts: { refresh?: boolean; silent?: boolean } = {}) {
     // Mutations often call runLoad({ refresh:true }) — keep table soft-load, but
     // allow silent:true to skip the global loading flag when patching a single row elsewhere.
     if (opts.silent) {
-      await options.load(opts)
+      await nextLoad(opts.refresh)
       return
     }
-    await withMinLoading(loading, async () => {
-      await options.load(opts)
-    })
+    await trackedLoad(opts.refresh)
   }
 
   async function onRefresh() {
     if (refreshing.value || loading.value) return
     refreshing.value = true
+    const started = Date.now()
     try {
-      await handleRefresh(loading, options.load, toast.success)
+      const succeeded = await trackedLoad(true)
+      if (!succeeded) return
+      const wait = Math.max(0, 120 - (Date.now() - started))
+      if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
+      toast.success('已刷新')
     } finally {
       refreshing.value = false
     }

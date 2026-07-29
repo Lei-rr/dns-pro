@@ -23,11 +23,9 @@ export class SaasWorkflowService {
   async listHostnames(
     providerId: string,
     zoneName: string,
-    page: number,
-    perPage: number,
     refresh = false,
   ): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown>; side_effects?: SideEffects }> {
-    const result = await this.hostnames.hostnames(providerId, zoneName, page, perPage, refresh)
+    const result = await this.hostnames.hostnames(providerId, zoneName, refresh)
 
     if (!refresh) return result
 

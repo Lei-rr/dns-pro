@@ -53,14 +53,15 @@ export class EdgeOneZoneService {
           const parsed = edgeoneZoneListResponseSchema.parse(response)
 
           requestId = parsed.RequestId ?? undefined
-          const pageItems = (Array.isArray(parsed.Zones) ? parsed.Zones : [])
+          const vendorPageItems = Array.isArray(parsed.Zones) ? parsed.Zones : []
+          const pageItems = vendorPageItems
             .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
             .filter((zone) => !['pages', 'ai'].includes(String(zone.type ?? '').toLowerCase()))
           items.push(...pageItems)
 
-          pageOffset += pageItems.length
-          const total = Number(parsed.TotalCount ?? items.length)
-          hasMore = pageItems.length >= pageLimit && pageOffset < total
+          pageOffset += vendorPageItems.length
+          const total = Number(parsed.TotalCount ?? pageOffset)
+          hasMore = vendorPageItems.length >= pageLimit && pageOffset < total
         }
 
         const total = items.length

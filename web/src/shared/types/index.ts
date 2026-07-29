@@ -187,7 +187,6 @@ export interface CloudflaredRoute {
   hostname?: string
   service?: string
   path?: string
-  zone_id?: string
   [key: string]: unknown
 }
 

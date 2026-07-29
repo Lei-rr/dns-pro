@@ -64,55 +64,55 @@ export class DnsPodZoneService {
   constructor(private readonly providers: ProviderRepository) {}
 
   async list(providerId: string, filters: ZoneListFilters = {}): Promise<ZoneListResult> {
-    const offset = Math.max(0, filters.offset ?? 0)
-    const limit = Math.min(100, Math.max(1, filters.limit ?? 20))
-    const keyword = (filters.keyword ?? '').trim()
+    const keyword = (filters.keyword ?? '').trim().toLowerCase()
     const refresh = filters.refresh ?? false
-
-    const cached = await withProviderCache({
-      key: {
-        prefix: `${PROVIDER_TYPE}:zones`,
-        parts: { provider_id: providerId, offset, limit, keyword },
-      },
+    const cached = await withProviderCache<ZoneListResult>({
+      key: { prefix: `${PROVIDER_TYPE}:zones`, parts: { provider_id: providerId } },
       tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const provider = await this.requireProvider(providerId)
         const gateway = this.gatewayFor(provider)
+        const pageSize = 100
+        const items: ZoneListItem[] = []
+        let offset = 0
+        let requestId: string | undefined
 
-        const payload: Record<string, unknown> = { Offset: offset, Limit: limit }
-        if (keyword !== '') {
-          payload.Keyword = keyword
+        while (true) {
+          let response: unknown
+          try {
+            response = await gateway.call('DescribeDomainList', { Offset: offset, Limit: pageSize })
+          } catch (error) {
+            throw wrapProviderError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
+          }
+          const parsed = dnspodDomainListResponseSchema.parse(response)
+          const pageItems = (Array.isArray(parsed.DomainList) ? parsed.DomainList : [])
+            .map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
+          items.push(...pageItems)
+          const total = Number(parsed.DomainCountInfo?.DomainTotal ?? items.length)
+          requestId = parsed.RequestId ?? requestId
+          offset += pageItems.length
+          if (pageItems.length < pageSize || (total > 0 && offset >= total)) break
         }
 
-        let response: unknown
-        try {
-          response = await gateway.call('DescribeDomainList', payload)
-        } catch (error) {
-          throw wrapProviderError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
+        return {
+          items,
+          pagination: { offset: 0, limit: items.length, total: items.length },
+          request_id: requestId,
+          meta: offsetPaginationMeta({ offset: 0, limit: items.length || 1, total: items.length }),
         }
-
-        const parsed = dnspodDomainListResponseSchema.parse(response)
-        const rawDomainList = Array.isArray(parsed.DomainList) ? parsed.DomainList : []
-        const domainList = rawDomainList.map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
-        const total = Number(parsed.DomainCountInfo?.DomainTotal ?? 0)
-
-        const result: ZoneListResult = {
-          items: domainList,
-          pagination: {
-            offset,
-            limit,
-            total,
-          },
-          request_id: parsed.RequestId ?? undefined,
-          meta: offsetPaginationMeta({ offset, limit, total }),
-        }
-        return result
       },
     })
 
-    return cached.value
+    if (!keyword) return cached.value
+    const items = cached.value.items.filter((zone) => zone.name.toLowerCase().includes(keyword))
+    return {
+      ...cached.value,
+      items,
+      pagination: { offset: 0, limit: items.length, total: items.length },
+      meta: offsetPaginationMeta({ offset: 0, limit: items.length || 1, total: items.length }),
+    }
   }
 
   async create(providerId: string, zone: string): Promise<ZoneCreateResult> {

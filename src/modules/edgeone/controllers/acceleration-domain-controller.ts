@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { bodyRecord, bodyString, queryBool, queryInt, queryRecord } from '../../../lib/utils/request-parse.js'
+import { bodyRecord, bodyString, queryBool, queryRecord } from '../../../lib/utils/request-parse.js'
 
 function domainNameParam(request: { params: { domainName: string } }): string {
   return decodeURIComponent(request.params.domainName).trim()
@@ -14,8 +14,6 @@ export async function domainsIndex(
   const result = await request.server.ctx.edgeoneDomainService.accelerationDomains(
     request.params.providerId,
     request.params.zoneId,
-    queryInt(q, 'offset', 0),
-    queryInt(q, 'limit', 20, 1, 200),
     queryBool(q, 'refresh'),
   )
   return reply.send(success(result))

@@ -23,7 +23,7 @@ const DEFAULT_CONFIG: AppConfig = {
   dataDir: path.resolve('data'),
   cacheMaxEntries: 1000,
   cacheSweepIntervalMs: 10 * 60 * 1000,
-  sessionSecret: 'dns-pro-secure-session',
+  sessionSecret: '',
   sessionCookieName: 'dns_pro_session',
   sessionMaxAgeSeconds: 7 * 24 * 60 * 60,
   cookieSecure: false,
@@ -32,6 +32,13 @@ const DEFAULT_CONFIG: AppConfig = {
   httpTimeoutMs: 30000,
 }
 
-export function loadAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return { ...DEFAULT_CONFIG, ...overrides }
+export function loadAppConfig(
+  overrides: Partial<AppConfig> = {},
+  env: NodeJS.ProcessEnv = process.env,
+): AppConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    sessionSecret: String(env.SESSION_SECRET ?? '').trim(),
+    ...overrides,
+  }
 }

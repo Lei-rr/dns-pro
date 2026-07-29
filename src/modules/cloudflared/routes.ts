@@ -10,11 +10,9 @@ import {
   tunnelRouteStore,
   tunnelRouteUpdate,
   tunnelRouteDelete,
-  zonesIndex,
 } from './controllers/tunnel-controller.js'
 
 export async function routes(app: FastifyInstance) {
-  app.get('/zones', zonesIndex)
   app.get('/tunnels', tunnelsIndex)
   app.post('/tunnels', tunnelsStore)
   app.get('/tunnels/:tunnelId', tunnelShow)

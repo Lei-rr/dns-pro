@@ -41,7 +41,7 @@
 
 ### 环境要求
 
-- Node.js `>= 20`
+- Node.js `>= 20.19.0`
 - npm `>= 10`
 - 可选：Docker / Docker Compose
 
@@ -68,7 +68,7 @@ http://127.0.0.1:2022
 密码：admin
 ```
 
-> 首次部署后请立即修改默认账号密码，并更换 `sessionSecret`。
+> 首次部署后请立即修改默认账号密码。Session 密钥优先读取 `SESSION_SECRET`；未设置时会在 `data/session-secret` 自动生成并持久化，升级时请保留该文件。
 
 ## Docker 部署
 
@@ -160,19 +160,13 @@ src/
 - 缓存失效通过 `eventBus.emit` + `cache_tags` 统一路径
 - 批量任务循环、互斥、计数、finish 通过 `platform/job/batch-helpers.ts`
 
-## 配置
+## 运行参数
 
-| 变量 | 说明 | 默认值 |
-|---|---|---|
-| `PORT` | HTTP 监听端口 | `2022` |
-| `HOST` | 监听地址 | `0.0.0.0` |
-| `DATA_DIR` | 数据持久化目录 | `./data` |
-| `SESSION_SECRET` | 会话加密密钥 | `dns-pro-secure-session` |
-| `TRUST_PROXY` | 是否信任反向代理 IP | `false` |
-| `LOG_LEVEL` | 日志级别 | `info` |
-| `HTTP_TIMEOUT_MS` | 上游 API 超时 | `30000` |
-| `CACHE_MAX_ENTRIES` | 内存缓存最大条目 | `1000` |
-| `CACHE_SWEEP_INTERVAL_MS` | 缓存清理间隔 | `600000` |
+应用默认监听 `0.0.0.0:2022`，数据目录为 `./data`。端口与日志级别通过启动参数覆盖；Session 密钥可通过 `SESSION_SECRET` 覆盖，否则自动使用 `data/session-secret`：
+
+```bash
+SESSION_SECRET='至少 32 位随机字符串' node dist/server.js --port 2022 --log-level info
+```
 
 ## 常用命令
 
@@ -188,7 +182,7 @@ src/
 
 ## 安全建议
 
-- 生产环境务必设置强 `SESSION_SECRET`
+- 生产环境建议设置强 `SESSION_SECRET`，或妥善保留自动生成的 `data/session-secret`
 - 启用 HTTPS 反向代理
 - 修改默认 `admin` 密码
 

@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { bodyRecord, queryBool, queryInt, queryRecord, queryString } from '../../../lib/utils/request-parse.js'
+import { bodyRecord, queryBool, queryRecord } from '../../../lib/utils/request-parse.js'
 
 export async function zonesIndex(
   request: FastifyRequest<{ Params: { providerId: string } }>,
@@ -8,9 +8,6 @@ export async function zonesIndex(
 ) {
   const q = queryRecord(request)
   const result = await request.server.ctx.dnspodZoneService.list(request.params.providerId, {
-    offset: queryInt(q, 'offset', 0),
-    limit: queryInt(q, 'limit', 20),
-    keyword: queryString(q, 'keyword') || undefined,
     refresh: queryBool(q, 'refresh'),
   })
   return reply.send(success(result))

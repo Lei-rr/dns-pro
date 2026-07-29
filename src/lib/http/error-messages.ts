@@ -12,7 +12,6 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   internal_error: '服务内部错误',
   request_error: '请求错误',
   validation_error: '参数校验失败',
-  rate_limited: '请求过于频繁，请稍后再试',
   service_unavailable: '服务暂时不可用，请稍后重试',
   health_check_failed: '健康检查失败',
   service_not_registered: '服务未注册（平台模块装载异常）',

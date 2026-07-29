@@ -6,6 +6,7 @@ import { cn } from '@/shared/lib/utils'
 const props = defineProps<{
   checked?: boolean | 'indeterminate'
   class?: string
+  ariaLabel?: string
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +24,7 @@ const state = computed(() => {
   <button
     type="button"
     role="checkbox"
+    :aria-label="ariaLabel"
     :aria-checked="state === 'checked' ? 'true' : state === 'indeterminate' ? 'mixed' : 'false'"
     :data-state="state"
     :class="

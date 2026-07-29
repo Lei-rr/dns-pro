@@ -18,7 +18,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 
-RUN npm ci --omit=dev --ignore-scripts \
+RUN npm ci --omit=dev --ignore-scripts --workspaces=false \
   && node <<'NODE'
 const fs = require('node:fs')
 const path = require('node:path')
@@ -73,8 +73,7 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
 COPY docker/entrypoint.sh /entrypoint.sh
 
-RUN chmod +x /entrypoint.sh \
-  && mkdir -p /app/data/saas
+RUN mkdir -p /app/data/saas /app/data/jobs
 
 VOLUME ["/app/data"]
 

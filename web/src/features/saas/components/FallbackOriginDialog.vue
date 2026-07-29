@@ -9,8 +9,7 @@ import { Switch } from '@/shared/ui/switch'
 import { saasApi } from '@/features/saas/api/saas'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { withMinLoading } from '@/shared/lib/loading'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
+import { confirmDialog } from '@/shared/ui/confirm'
 
 const open = defineModel<boolean>('open', { default: false })
 const props = defineProps<{

@@ -8,7 +8,6 @@ import {
 } from '../job-types.js'
 import { emitEdgeDomainMutated } from '../events.js'
 import {
-  assertNoActiveBatchJob,
   dedupeStrings,
   findActiveBatchJob,
   finishBatchJob,
@@ -60,12 +59,7 @@ export class EdgeOneBatchJobService {
     const domains = dedupeStrings(input.domains)
     if (!domains.length) throw new ApiError('batch_empty', 'No domains selected', 422)
 
-    await assertNoActiveBatchJob(this.jobs, [...EDGEONE_ZONE_JOB_TYPES], {
-      provider_id: input.providerId,
-      zone_id: input.zoneId,
-    })
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       EDGEONE_BATCH_DISABLE_JOB,
       {
         provider_id: input.providerId,
@@ -73,6 +67,7 @@ export class EdgeOneBatchJobService {
         status: 'offline',
       },
       domains.map((domain) => ({ domain, status: 'pending' })),
+      { types: [...EDGEONE_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_id: input.zoneId } },
       { message: '批量停用任务已创建' },
     )
     return this.present(job)
@@ -87,12 +82,7 @@ export class EdgeOneBatchJobService {
     const domains = dedupeStrings(input.domains)
     if (!domains.length) throw new ApiError('batch_empty', 'No domains selected', 422)
 
-    await assertNoActiveBatchJob(this.jobs, [...EDGEONE_ZONE_JOB_TYPES], {
-      provider_id: input.providerId,
-      zone_id: input.zoneId,
-    })
-
-    const job = await this.jobs.create(
+    const job = await this.jobs.createExclusive(
       EDGEONE_BATCH_DELETE_JOB,
       {
         provider_id: input.providerId,
@@ -100,6 +90,7 @@ export class EdgeOneBatchJobService {
         auto_cleanup: input.autoCleanup !== false,
       },
       domains.map((domain) => ({ domain, status: 'pending' })),
+      { types: [...EDGEONE_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_id: input.zoneId } },
       { message: '批量删除任务已创建' },
     )
     return this.present(job)
@@ -120,7 +111,11 @@ export class EdgeOneBatchJobService {
     await this.require(jobId)
     const raw = await this.jobs.get(jobId)
     if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const requeued = await requeueFailedBatchItems(this.jobs, raw)
+    const payload = raw.payload || {}
+    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
+      types: [...EDGEONE_ZONE_JOB_TYPES],
+      scope: { provider_id: String(payload.provider_id || ''), zone_id: String(payload.zone_id || '') },
+    })
     return this.present(requeued)
   }
 

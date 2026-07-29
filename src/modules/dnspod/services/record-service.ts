@@ -74,72 +74,65 @@ export class DnsPodRecordService {
 
   async list(providerId: string, domain: string, filters: RecordListFilters = {}): Promise<RecordListResult> {
     const normalized = this.normalizeListFilters(filters)
-    const { offset, limit, subdomain, record_type, keyword, refresh } = normalized
-
+    const { subdomain, record_type, keyword, refresh } = normalized
     const cached = await withProviderCache<RecordListResult>({
-      key: buildCacheKey(`${PROVIDER_TYPE}:records`, {
-      provider_id: providerId,
-      domain,
-      offset,
-      limit,
-      subdomain,
-      record_type,
-      keyword,
-    }),
-      tags: [
-      providerCacheTag(providerId),
-      recordCacheTag(PROVIDER_TYPE, providerId, domain),
-    ],
+      key: buildCacheKey(`${PROVIDER_TYPE}:records`, { provider_id: providerId, domain }),
+      tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const provider = await this.requireProvider(providerId)
         const gateway = this.gatewayFor(provider)
+        const pageSize = 100
+        const items: RecordListItem[] = []
+        let offset = 0
+        let requestId: string | undefined
 
-        const payload: Record<string, unknown> = {
-          Domain: domain,
-          Offset: offset,
-          Limit: limit,
-          ErrorOnEmpty: 'no',
+        while (true) {
+          let response: unknown
+          try {
+            response = await gateway.call('DescribeRecordList', {
+              Domain: domain,
+              Offset: offset,
+              Limit: pageSize,
+              ErrorOnEmpty: 'no',
+            })
+          } catch (error) {
+            throw wrapProviderError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, { domain })
+          }
+          const parsed = dnspodRecordListResponseSchema.parse(response)
+          const pageItems = (Array.isArray(parsed.RecordList) ? parsed.RecordList : [])
+            .map((record) => presentRecord(dnspodRecordSchema.parse(record)))
+          items.push(...pageItems)
+          const total = Number(parsed.RecordCountInfo?.TotalCount ?? items.length)
+          requestId = parsed.RequestId ?? requestId
+          offset += pageItems.length
+          if (pageItems.length < pageSize || (total > 0 && offset >= total)) break
         }
-        if (subdomain !== '') payload.Subdomain = subdomain
-        if (record_type !== '') payload.RecordType = record_type
-        if (keyword !== '') payload.Keyword = keyword
 
-        let response: unknown
-        try {
-          response = await gateway.call('DescribeRecordList', payload)
-        } catch (error) {
-          throw wrapProviderError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
-            domain,
-          })
+        return {
+          items,
+          pagination: { offset: 0, limit: items.length, count: items.length, total: items.length },
+          request_id: requestId,
+          meta: offsetPaginationMeta({ offset: 0, limit: items.length || 1, total: items.length }),
         }
-
-        const parsed = dnspodRecordListResponseSchema.parse(response)
-        const rawRecordList = Array.isArray(parsed.RecordList) ? parsed.RecordList : []
-        const recordList = rawRecordList.map((record) => presentRecord(dnspodRecordSchema.parse(record)))
-        const countInfo = parsed.RecordCountInfo
-
-        const result: RecordListResult = {
-          items: recordList,
-          pagination: {
-            offset,
-            limit,
-            count: Number(countInfo?.ListCount ?? 0),
-            total: Number(countInfo?.TotalCount ?? 0),
-          },
-          request_id: parsed.RequestId ?? undefined,
-          meta: offsetPaginationMeta({
-            offset,
-            limit,
-            total: Number(countInfo?.TotalCount ?? 0),
-          }),
-        }
-        return result
       },
     })
 
-    return cached.value
+    const search = keyword.toLowerCase()
+    const items = cached.value.items.filter((record) => {
+      if (subdomain && !record.name.toLowerCase().includes(subdomain.toLowerCase())) return false
+      if (record_type && record.type.toUpperCase() !== record_type) return false
+      if (!search) return true
+      return [record.name, record.type, record.value, record.line, record.remark]
+        .some((value) => String(value).toLowerCase().includes(search))
+    })
+    return {
+      ...cached.value,
+      items,
+      pagination: { offset: 0, limit: items.length, count: items.length, total: items.length },
+      meta: offsetPaginationMeta({ offset: 0, limit: items.length || 1, total: items.length }),
+    }
   }
 
   async create(providerId: string, domain: string, input: RecordCreateInput | Record<string, unknown>): Promise<RecordMutationResult> {

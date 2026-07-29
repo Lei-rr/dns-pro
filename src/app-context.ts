@@ -14,6 +14,8 @@ import { ProviderRepository } from './modules/provider/repository.js'
 import { ProviderNormalizer } from './modules/provider/normalizer.js'
 import { ProviderPresenter } from './modules/provider/presenter.js'
 import { ProviderService } from './modules/provider/service.js'
+import { ProviderConnectionService } from './modules/provider/services/connection-service.js'
+import { ProviderDependencyService } from './modules/provider/services/dependency-service.js'
 import { PreferredDomainRepository } from './modules/saas/repositories/preferred-domain-repository.js'
 import { SaasPreferenceRepository } from './modules/saas/repositories/preference-repository.js'
 import { PreferredDomainService } from './modules/saas/services/preferred-domain-service.js'
@@ -27,6 +29,7 @@ import { CloudflareDnsRecordService } from './modules/cloudflare/services/dns-re
 import { DnsPodZoneService } from './modules/dnspod/services/zone-service.js'
 import { DnsPodRecordService } from './modules/dnspod/services/record-service.js'
 import { CloudflareCustomHostnameGateway } from './modules/saas/gateways/custom-hostname-gateway.js'
+import { CloudflareFallbackOriginGateway } from './modules/saas/gateways/fallback-origin-gateway.js'
 import { SaasHostnameService } from './modules/saas/services/hostname-service.js'
 import { SaasSyncConfigService } from './modules/saas/services/sync-config-service.js'
 import { DnsPodRecordOps } from './modules/sync/services/dnspod-record-ops.js'
@@ -70,10 +73,12 @@ export async function createAppContext(config: AppConfig) {
   const dnspodRecordService = new DnsPodRecordService(providerRepository)
 
   const customHostnameGateway = new CloudflareCustomHostnameGateway(providerRepository)
+  const fallbackOriginGateway = new CloudflareFallbackOriginGateway(providerRepository)
   const saasSyncConfigService = new SaasSyncConfigService(providerRepository, saasPreferenceService)
   const saasHostnameService = new SaasHostnameService(
     cloudflareZoneService,
     customHostnameGateway,
+    fallbackOriginGateway,
     preferredDomainService,
     saasPreferenceService,
     saasSyncConfigService,
@@ -119,17 +124,19 @@ export async function createAppContext(config: AppConfig) {
     cloudflaredDnsService,
   )
 
+  const providerDependencies = new ProviderDependencyService(providerRepository, saasPreferenceService)
+  const providerConnections = new ProviderConnectionService(providerRepository, {
+    dnspodZones: dnspodZoneService,
+    cloudflareZones: cloudflareZoneService,
+    edgeoneZones: edgeoneZoneService,
+    cloudflaredTunnels: cloudflaredTunnelService,
+  })
   const providerService = new ProviderService(
     providerRepository,
     new ProviderNormalizer(),
     new ProviderPresenter(),
-    saasPreferenceService,
-    {
-      dnspodZones: dnspodZoneService,
-      cloudflareZones: cloudflareZoneService,
-      edgeoneZones: edgeoneZoneService,
-      cloudflaredTunnels: cloudflaredTunnelService,
-    },
+    providerDependencies,
+    providerConnections,
   )
 
   await jobService.resumeActiveJobs()

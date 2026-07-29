@@ -24,33 +24,28 @@ import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { cloudflaredApi } from '@/features/cloudflared/api/cloudflared'
 import { tunnelStatusLabel } from '@/features/cloudflared/lib/status'
 import { providerPath } from '@/features/providers/lib/paths'
-import type { CloudflaredRoute, CloudflaredTunnel, Zone } from '@/shared/types'
+import type { CloudflaredRoute, CloudflaredTunnel } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
+import { TablePagination } from '@/shared/ui/pagination'
 import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
 import { Spinner } from '@/shared/ui/spinner'
 import TunnelInstallPanel from '@/features/cloudflared/components/TunnelInstallPanel.vue'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select'
+import { confirmDelete } from '@/shared/ui/confirm'
+import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 
 const props = defineProps<{ providerId: string; tunnelId: string }>()
 const { isBusy: isRowBusy, runBusy } = useRowBusy()
 function routeKey(record: CloudflaredRoute) {
-  return `${record.hostname || ''}|${record.path || ''}|${record.zone_id || ''}`
+  return `${record.hostname || ''}|${record.path || ''}`
 }
 const router = useRouter()
 
 const saving = ref(false)
 const tunnel = ref<CloudflaredTunnel | null>(null)
 const routes = ref<CloudflaredRoute[]>([])
-const zones = ref<Zone[]>([])
 const token = ref('')
 const dialogOpen = ref(false)
 const editingRoute = ref<CloudflaredRoute | null>(null)
@@ -58,37 +53,42 @@ const form = reactive({
   hostname: '',
   service: 'http://localhost:8080',
   path: '',
-  zone_id: '',
 })
 
 const title = computed(() => tunnel.value?.name || props.tunnelId)
 
-const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'cloudflared-detail',
   load: async (options = {}) => {
     try {
-      const [tunnelRes, routesRes, zonesRes, tokenRes] = await Promise.all([
+      const [tunnelRes, routesRes, tokenRes] = await Promise.all([
         cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh: options.refresh }),
         cloudflaredApi.routes(props.providerId, props.tunnelId),
-        cloudflaredApi.zones(props.providerId),
         cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).catch(() => null),
       ])
+      if (options.isLatest && !options.isLatest()) return false
       tunnel.value = tunnelRes.data
       routes.value = routesRes.data?.routes || []
-      zones.value = zonesRes.data || []
       token.value = tokenRes?.data?.token || ''
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
+const routeItems = computed(() => routes.value)
+const { page, total, pagedItems: pagedRoutes, resetPage } = useLocalPagination(routeItems, pageSize)
+
+function onPageSizeChange(next: number) {
+  setPageSize(next)
+  resetPage()
+}
 
 function openCreate() {
   editingRoute.value = null
   form.hostname = ''
   form.service = 'http://localhost:8080'
   form.path = ''
-  form.zone_id = zones.value[0] ? String(zones.value[0].id || '') : '__none'
   dialogOpen.value = true
 }
 
@@ -97,7 +97,6 @@ function openEditRoute(record: CloudflaredRoute) {
   form.hostname = String(record.hostname || '')
   form.service = String(record.service || 'http://localhost:8080')
   form.path = String(record.path || '')
-  form.zone_id = String(record.zone_id || zones.value[0]?.id || '__none')
   dialogOpen.value = true
 }
 
@@ -112,20 +111,19 @@ async function saveRoute() {
       hostname: form.hostname.trim(),
       service: form.service.trim(),
       path: form.path.trim() || undefined,
-      zone_id: form.zone_id && form.zone_id !== '__none' ? form.zone_id : undefined,
     }
     if (editingRoute.value) {
-      await cloudflaredApi.updateRoute(
+      const response = await cloudflaredApi.updateRoute(
         props.providerId,
         props.tunnelId,
         data,
         String(editingRoute.value.hostname || ''),
         String(editingRoute.value.path || ''),
       )
-      toast.success('路由已更新')
+      notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已更新')
     } else {
-      await cloudflaredApi.addRoute(props.providerId, props.tunnelId, data)
-      toast.success('路由已添加')
+      const response = await cloudflaredApi.addRoute(props.providerId, props.tunnelId, data)
+      notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已添加')
     }
     dialogOpen.value = false
     await runLoad({ refresh: true })
@@ -141,14 +139,13 @@ async function removeRoute(record: CloudflaredRoute) {
   const key = routeKey(record)
   await runBusy(key, async () => {
     try {
-      await cloudflaredApi.deleteRoute(
+      const response = await cloudflaredApi.deleteRoute(
         props.providerId,
         props.tunnelId,
         String(record.hostname || ''),
         String(record.path || ''),
-        String(record.zone_id || ''),
       )
-      toast.success('已删除')
+      notifyDnsSideEffect(response.data?.side_effects?.dns?.cleanup, '已删除')
       removeListItem(routes, (item) => routeKey(item) === key)
     } catch (error) {
       toast.error(errorMessage(error))
@@ -258,7 +255,7 @@ onMounted(() => runLoad())
             <TableCell colspan="4" class="text-muted-foreground py-10 text-center">暂无路由</TableCell>
           </TableRow>
           <TableRow
-            v-for="(record, index) in routes"
+            v-for="(record, index) in pagedRoutes"
             :key="`${record.hostname}-${record.path}-${index}`"
             :class="isRowBusy(routeKey(record)) && 'bg-muted/40 opacity-80'"
           >
@@ -288,6 +285,14 @@ onMounted(() => runLoad())
         </TableBody>
       </Table>
     </TableLoading>
+    <TablePagination
+      :page="page"
+      :page-size="pageSize"
+      :total="total"
+      :disabled="loading"
+      @update:page="page = $event"
+      @update:page-size="onPageSizeChange"
+    />
 
     <AppDialog v-model:open="dialogOpen" :title="editingRoute ? '编辑路由' : '添加路由'" description="把公网 hostname 映射到本地服务。">
       <FieldGroup>
@@ -302,20 +307,6 @@ onMounted(() => runLoad())
         <Field>
           <FieldLabel>Path（可选）</FieldLabel>
           <Input v-model="form.path" placeholder="/" />
-        </Field>
-        <Field>
-          <FieldLabel>Zone ID（可选）</FieldLabel>
-          <Select v-model="form.zone_id">
-            <SelectTrigger class="w-full">
-              <SelectValue placeholder="不指定 Zone" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__none">不指定</SelectItem>
-              <SelectItem v-for="zone in zones" :key="String(zone.id)" :value="String(zone.id)">
-                {{ zone.name }} ({{ zone.id }})
-              </SelectItem>
-            </SelectContent>
-          </Select>
         </Field>
       </FieldGroup>
       <template #footer>

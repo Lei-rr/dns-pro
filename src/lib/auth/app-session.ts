@@ -167,6 +167,7 @@ function cookieBaseOptions(options: SessionOptions) {
     path: '/',
     secure: options.secure,
     httpOnly: true,
+    maxAge: options.maxAgeSeconds,
     sameSite: options.sameSite,
   } as const
 }

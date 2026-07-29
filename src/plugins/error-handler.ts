@@ -36,12 +36,12 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
       return reply.status(err.statusCode).send(error(err.code, err.statusCode, err.code, err.details))
     }
 
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
-      return reply.status(err.statusCode).send(error(err.message, err.statusCode, 'request_error'))
-    }
-
     if (err.code === 'FST_ERR_VALIDATION' || err.statusCode === 400) {
       return reply.status(400).send(error(err.message, 400, 'validation_error'))
+    }
+
+    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.status(err.statusCode).send(error(err.message, err.statusCode, 'request_error'))
     }
 
     return reply.status(500).send(error('internal_error', 500, 'internal_error'))

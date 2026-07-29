@@ -1,6 +1,7 @@
 import { ApiError } from '../../lib/http/api-error.js'
 import type { JobService } from './job-service.js'
 import type { JobRecord } from './types.js'
+import { summarizeJobItems } from './job-summary.js'
 
 /** Shared batch job fields presented to API clients. */
 export type BatchJobViewBase = {
@@ -33,9 +34,7 @@ export type BatchItemResult = {
 export async function finishBatchJob(jobs: JobService, jobId: string, label: string): Promise<JobRecord | null> {
   const finalJob = await jobs.get(jobId)
   if (!finalJob) return null
-  const success = finalJob.items.filter((i) => i.status === 'success').length
-  const failed = finalJob.items.filter((i) => i.status === 'failed').length
-  const skipped = finalJob.items.filter((i) => i.status === 'skipped').length
+  const { success, failed, skipped } = summarizeJobItems(finalJob.items)
   return jobs.patch(jobId, {
     status: failed > 0 && success === 0 ? 'failed' : 'completed',
     success,
@@ -85,21 +84,24 @@ export async function assertNoActiveBatchJob(
 /**
  * Re-queue failed items as pending (shared counters).
  */
-export async function requeueFailedBatchItems(jobs: JobService, job: JobRecord, message = '失败项重试中'): Promise<JobRecord> {
+export async function requeueFailedBatchItems(
+  jobs: JobService,
+  job: JobRecord,
+  lock: { types: string[]; scope: Record<string, string>; message?: string },
+  message = '失败项重试中',
+): Promise<JobRecord> {
   const failed = job.items.filter((i) => i.status === 'failed')
   if (!failed.length) throw new ApiError('batch_no_failed', 'No failed items to retry', 422)
 
   const items = job.items.map((item) =>
     item.status === 'failed' ? { ...item, status: 'pending', message: undefined } : item,
   )
+  const summary = summarizeJobItems(items)
   return jobs.requeue(job.id, {
     items,
-    done: items.filter((i) => ['success', 'skipped'].includes(String(i.status))).length,
-    failed: 0,
-    success: items.filter((i) => i.status === 'success').length,
-    skipped: items.filter((i) => i.status === 'skipped').length,
+    ...summary,
     message,
-  })
+  }, lock)
 }
 
 /**

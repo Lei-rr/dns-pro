@@ -4,6 +4,7 @@ import type { CloudflareCustomHostname } from '../../saas/gateways/custom-hostna
 import { SaasHostnameService } from '../../saas/services/hostname-service.js'
 import { isHostnameActive } from '../../saas/utils/host-status.js'
 import type { SyncDriver, SyncRecord } from '../types.js'
+import { deleteRemovedSyncRecords, syncRecordIdentity, withSyncPurpose } from '../lib/record-reconciliation.js'
 
 export class DnspodSaasDriver implements SyncDriver {
   private readonly purposeLabels: Record<string, string> = {
@@ -46,7 +47,7 @@ export class DnspodSaasDriver implements SyncDriver {
     }
 
     const precleaned = await this.support.precleanConflicts(dnspodProviderId, dnspodZone, fqdn)
-    const results = await Promise.all(records.map((record) => this.withPurpose(record, this.support.sync(dnspodProviderId, dnspodZone, record))))
+    const results = await Promise.all(records.map((record) => withSyncPurpose(record, this.support.sync(dnspodProviderId, dnspodZone, record))))
 
     return { hostname_fqdn: fqdn, hostname: fqdn, dnspod_zone: dnspodZone, precleaned, records: results }
   }
@@ -74,7 +75,7 @@ export class DnspodSaasDriver implements SyncDriver {
     const afterRecords = this.collectRecords(hostname, effectiveOrigin, dnspodProviderId, dnspodZone)
     const deleted = await this.deleteMissingRecords(dnspodProviderId, dnspodZone, beforeRecords, afterRecords)
     const precleaned = afterRecords.length === 0 ? [] : await this.support.precleanConflicts(dnspodProviderId, dnspodZone, fqdn)
-    const results = await Promise.all(afterRecords.map((record) => this.withPurpose(record, this.support.sync(dnspodProviderId, dnspodZone, record))))
+    const results = await Promise.all(afterRecords.map((record) => withSyncPurpose(record, this.support.sync(dnspodProviderId, dnspodZone, record))))
 
     return {
       hostname: fqdn,
@@ -101,7 +102,7 @@ export class DnspodSaasDriver implements SyncDriver {
       }
     }
 
-    const results = await Promise.all(records.map((record) => this.withPurpose(record, this.support.delete(dnspodProviderId, dnspodZone, record))))
+    const results = await Promise.all(records.map((record) => withSyncPurpose(record, this.support.delete(dnspodProviderId, dnspodZone, record))))
     return { cleaned: results.filter((r) => r.status === 'deleted').length, dnspod_zone: dnspodZone, records: results }
   }
 
@@ -115,7 +116,7 @@ export class DnspodSaasDriver implements SyncDriver {
     const dnspodProviderId = await this.resolveDnspodProviderId(providerId, hostname)
     if (dnspodProviderId === '') return { cleaned: 0, reason: 'dnspod_provider_missing' }
 
-    let dnspodZone = ''
+    let dnspodZone: string
     try {
       dnspodZone = await this.resolveTargetZone(providerId, dnspodProviderId, fqdn)
     } catch {
@@ -261,37 +262,17 @@ export class DnspodSaasDriver implements SyncDriver {
     }
   }
 
-  private async withPurpose(record: SyncRecord, resultPromise: Promise<Record<string, unknown>>): Promise<Record<string, unknown>> {
-    const result = await resultPromise
-    return { purpose: record.purpose, ...result }
-  }
-
   private async deleteMissingRecords(
     dnspodProviderId: string,
     dnspodZone: string,
     beforeRecords: SyncRecord[],
-    afterRecords: DnsPodSyncRecord[]
+    afterRecords: DnsPodSyncRecord[],
   ): Promise<Record<string, unknown>[]> {
-    // Identity is type+name+line. Value changes are handled by sync() as update, not delete+create.
-    const afterMap = new Set(afterRecords.map((record) => this.recordIdentity(record)))
-    const deleted: Record<string, unknown>[] = []
-    const seen = new Set<string>()
-
-    for (const record of beforeRecords) {
-      const identity = this.recordIdentity(record)
-      if (identity === '' || seen.has(identity) || afterMap.has(identity)) continue
-      seen.add(identity)
-      deleted.push(await this.withPurpose(record, this.support.delete(dnspodProviderId, dnspodZone, record)))
-    }
-
-    return deleted
-  }
-
-  private recordIdentity(record: SyncRecord): string {
-    const type = String(record.type ?? '').toUpperCase().trim()
-    const name = String(record.name ?? '').toLowerCase().replace(/\.$/, '').trim()
-    const line = String(record.line ?? this.defaultLine).trim()
-    if (type === '' || name === '') return ''
-    return [type, name, line].join('|')
+    return deleteRemovedSyncRecords(
+      beforeRecords,
+      afterRecords,
+      (record) => syncRecordIdentity(record, this.defaultLine),
+      (record) => this.support.delete(dnspodProviderId, dnspodZone, record),
+    )
   }
 }

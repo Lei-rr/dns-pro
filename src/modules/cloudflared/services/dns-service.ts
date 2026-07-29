@@ -83,7 +83,7 @@ export class CloudflaredDnsService {
   private async exactCnameMatches(cfProviderId: string, zoneId: string, hostname: string): Promise<Array<Record<string, unknown>>> {
     const matches: Array<Record<string, unknown>> = []
     let page = 1
-    let totalPages = 1
+    let totalPages: number
 
     do {
       const result = await this.dns.list(cfProviderId, zoneId, { type: 'CNAME', search: hostname, page, per_page: 100 })
@@ -121,17 +121,6 @@ export class CloudflaredDnsService {
   }
 
   private async allZones(cfProviderId: string): Promise<Array<Record<string, unknown>>> {
-    const items: Array<Record<string, unknown>> = []
-    let page = 1
-    let totalPages = 1
-
-    do {
-      const result = await this.cfZones.list(cfProviderId, page, 100, '', page === 1)
-      items.push(...result.items)
-      totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
-      page++
-    } while (page <= totalPages)
-
-    return items
+    return (await this.cfZones.listAll(cfProviderId, true)).items
   }
 }

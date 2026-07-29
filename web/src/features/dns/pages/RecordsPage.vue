@@ -3,42 +3,28 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
-import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/shared/ui/dropdown-menu'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { TablePagination } from '@/shared/ui/pagination'
-import { EllipsisVertical, Plus, RefreshCw, Search, ChevronRight, ChevronDown, Copy } from '@lucide/vue'
+import { Plus } from '@lucide/vue'
 import { dnsApi } from '@/features/dns/api/dns'
 import { getCachedProvider, loadProviders } from '@/features/providers/stores/providers'
 import { providerPath } from '@/features/providers/lib/paths'
 import { parseRecordNames } from '@/features/dns/lib/record-names'
-import {
-  compareRecordsForGroup,
-  recordHostKey,
-  hostGroupLabel,
-  orderedPurposeLabels,
-  shouldCollapseHostGroup,
-} from '@/features/dns/lib/record-remark'
+import { buildDnsRecordDisplayRows, dnsRecordMatchesKeyword, dnsRecordRowKey } from '@/features/dns/lib/record-display'
 import type { DnsRecord } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
-import { Spinner } from '@/shared/ui/spinner'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { runProviderBatch } from '@/shared/lib/run-provider-batch'
 import RecordFormDialog from '@/features/dns/components/RecordFormDialog.vue'
 import BatchEditDialog from '@/features/dns/components/BatchEditDialog.vue'
+import RecordsToolbar from '@/features/dns/components/RecordsToolbar.vue'
+import RecordsTable from '@/features/dns/components/RecordsTable.vue'
 import { useRowSelection } from '@/shared/lib/row-selection'
-import { Checkbox } from '@/shared/ui/checkbox'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 
 const props = defineProps<{ providerId: string; zoneId: string }>()
@@ -50,8 +36,6 @@ const saving = ref(false)
 const records = ref<DnsRecord[]>([])
 const keyword = ref('')
 const typeFilter = ref('all')
-const page = ref(1)
-const total = ref(0)
 const dialogOpen = ref(false)
 const batchEditOpen = ref(false)
 const batchSubmitting = ref(false)
@@ -90,156 +74,53 @@ const dnspodLineOptions = [
   { label: '境外', value: '境外' },
 ]
 const filteredRecords = computed(() => {
-  const list =
-    typeFilter.value === 'all'
-      ? [...records.value]
-      : records.value.filter((r) => String(r.type || '').toUpperCase() === typeFilter.value)
-  // 同主机（备注 FQDN / 主机名）聚组：默认回源 → 优选 → DCV → 其它
-  list.sort((a, b) => compareRecordsForGroup(a, b, zoneName.value))
-  return list
+  const q = keyword.value.trim().toLowerCase()
+  return records.value.filter((record) => {
+    if (typeFilter.value !== 'all' && String(record.type || '').toUpperCase() !== typeFilter.value) return false
+    return !q || dnsRecordMatchesKeyword(record, q)
+  })
 })
-
-type DisplayRow =
-  | { kind: 'single'; record: DnsRecord; key: string }
-  | { kind: 'group'; hostKey: string; label: string; records: DnsRecord[]; key: string }
-
-/**
- * 当前页按主机前缀 / 邮箱套件聚组：
- * - api(默认)+api(境内)+_acme-challenge.api
- * - MX/SPF/DKIM/DMARC → @zone
- * 折叠组一律置顶，避免和普通单行穿插。
- */
-const displayRows = computed((): DisplayRow[] => {
-  const list = filteredRecords.value
-  const zone = zoneName.value
-  const groups: DisplayRow[] = []
-  const singles: DisplayRow[] = []
-  let i = 0
-  while (i < list.length) {
-    const rec = list[i]
-    const hk = recordHostKey(rec, zone)
-    let j = i + 1
-    while (j < list.length && recordHostKey(list[j], zone) === hk) j++
-    const chunk = list.slice(i, j)
-    if (shouldCollapseHostGroup(chunk, zone)) {
-      groups.push({
-        kind: 'group',
-        hostKey: hk,
-        label: hostGroupLabel(hk, zone),
-        records: chunk,
-        key: `g:${hk}`,
-      })
-    } else {
-      for (const r of chunk) {
-        singles.push({
-          kind: 'single',
-          record: r,
-          key: `r:${String(r.id || `${r.name}-${r.type}-${r.value}-${r.line}`)}`,
-        })
-      }
-    }
-    i = j
-  }
-  return [...groups, ...singles]
-})
-
-/** 折叠状态：默认收起；搜索命中自动展开 */
-const expandedHosts = ref<Record<string, boolean>>({})
-
-function isHostExpanded(hostKey: string) {
-  return expandedHosts.value[hostKey] === true
-}
-
-function toggleHost(hostKey: string) {
-  expandedHosts.value = {
-    ...expandedHosts.value,
-    [hostKey]: !isHostExpanded(hostKey),
-  }
-}
-
-function groupPurposeLabels(groupRecords: DnsRecord[]) {
-  return orderedPurposeLabels(groupRecords, zoneName.value)
-}
-
-function recordMatchesKeyword(record: DnsRecord, q: string) {
-  if (!q) return false
-  const blob = [
-    record.name,
-    record.type,
-    record.value,
-    record.content,
-    record.remark,
-    record.comment,
-    record.line,
-  ]
-    .map((x) => String(x || '').toLowerCase())
-    .join(' ')
-  return blob.includes(q)
-}
-
-watch(
-  [() => keyword.value, displayRows],
-  () => {
-    const q = keyword.value.trim().toLowerCase()
-    if (!q) return
-    const next = { ...expandedHosts.value }
-    let changed = false
-    for (const row of displayRows.value) {
-      if (row.kind !== 'group') continue
-      if (row.records.some((r) => recordMatchesKeyword(r, q)) || row.label.toLowerCase().includes(q)) {
-        if (!next[row.hostKey]) {
-          next[row.hostKey] = true
-          changed = true
-        }
-      }
-    }
-    if (changed) expandedHosts.value = next
-  },
-  { flush: 'post' },
-)
-
-function groupAllSelected(groupRecords: DnsRecord[]) {
-  return groupRecords.length > 0 && groupRecords.every((r) => selection.isSelected(r))
-}
-
-function groupSomeSelected(groupRecords: DnsRecord[]) {
-  const n = groupRecords.filter((r) => selection.isSelected(r)).length
-  return n > 0 && n < groupRecords.length
-}
-
-function toggleGroupSelect(groupRecords: DnsRecord[]) {
-  const all = groupAllSelected(groupRecords)
-  for (const r of groupRecords) selection.toggle(r, !all)
-}
-
-function recordRowKey(record: DnsRecord) {
-  return String(record.id || `${record.name || ''}·${record.type || ''}·${record.value || ''}·${record.line || ''}`)
-}
-
-const selection = useRowSelection(filteredRecords, (row) =>
-  String(row.id || `${row.name}-${row.type}-${row.value || ''}-${row.line || ''}`),
-)
-const selectedCount = computed(() => selection.selected.value.length)
 
 const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'dns-records',
   load: async (options = {}) => {
     try {
-      const response = await dnsApi.records(props.providerId, props.zoneId, {
-        page: page.value,
-        per_page: pageSize.value,
-        keyword: keyword.value,
-        refresh: options.refresh,
-      })
+      const response = await dnsApi.records(props.providerId, props.zoneId, { refresh: options.refresh })
+      if (options.isLatest && !options.isLatest()) return false
       records.value = response.data || []
-      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
-      const rawTotal = meta.total ?? meta.count
-      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : records.value.length || 0)
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
+
+const { page, total, pagedItems: pagedRecords, resetPage } = useLocalPagination(filteredRecords, pageSize)
+const displayRows = computed(() => buildDnsRecordDisplayRows(pagedRecords.value, zoneName.value))
+/** 折叠状态：默认收起；搜索命中自动展开。 */
+const expandedHosts = ref<Record<string, boolean>>({})
+const selection = useRowSelection(pagedRecords, dnsRecordRowKey)
+const selectedCount = computed(() => selection.selected.value.length)
+watch([keyword, typeFilter], () => {
+  resetPage()
+  selection.clear()
+  expandedHosts.value = {}
+})
+watch(
+  [keyword, displayRows],
+  () => {
+    const q = keyword.value.trim().toLowerCase()
+    if (!q) return
+    const next: Record<string, boolean> = {}
+    for (const row of displayRows.value) {
+      if (row.kind === 'group' && (row.records.some((record) => dnsRecordMatchesKeyword(record, q)) || row.label.toLowerCase().includes(q))) {
+        next[row.hostKey] = true
+      }
+    }
+    expandedHosts.value = next
+  },
+  { flush: 'post' },
+)
 
 async function ensureProvider() {
   if (!getCachedProvider(props.providerId)) await loadProviders({ refresh: true })
@@ -253,35 +134,25 @@ function onPageChange(next: number) {
   page.value = next
   selection.clear()
   expandedHosts.value = {}
-  void runLoad()
 }
 
 function onPageSizeChange(next: number) {
   setPageSize(next)
-  page.value = 1
+  resetPage()
   selection.clear()
   expandedHosts.value = {}
-  void runLoad()
 }
 
 function onSearch() {
-  page.value = 1
-  selection.clear()
-  expandedHosts.value = {}
-  void runLoad()
+  resetPage()
 }
 
 function setTypeFilter(next: string) {
   typeFilter.value = next
-  selection.clear()
-  // client-side type filter only — no page reset needed for server page
 }
 
-/** Cloudflare ttl=1 表示自动 */
-function ttlDisplay(ttl?: number | string | null) {
-  if (ttl === 1 || ttl === '1') return '自动'
-  if (ttl == null || ttl === '') return '-'
-  return String(ttl)
+function setSelectedKeys(keys: string[]) {
+  selection.selected.value = keys
 }
 
 function openCreate() {
@@ -400,7 +271,6 @@ async function removeRecord(record: DnsRecord) {
         (item) =>
           String(item.id || `${item.name}-${item.type}-${item.value || ''}`) === key,
       )
-      if (total.value > 0) total.value -= 1
       selection.clear()
     } catch (error) {
       toast.error(errorMessage(error))
@@ -570,285 +440,32 @@ onMounted(async () => {
       :percent="jobProgress.percent.value"
     />
 
-    <div class="flex flex-col gap-3">
-      <div class="flex flex-wrap items-center gap-2">
-        <Input
-          v-model="keyword"
-          class="h-8 w-full sm:w-72"
-          placeholder="搜索主机 / 记录值"
-          @keyup.enter="onSearch()"
-        />
-        <Button variant="outline" size="sm" :loading="loading" @click="onSearch()">
-          <Search class="size-4" />
-          搜索
-        </Button>
-        <Button variant="outline" size="sm" :disabled="loading" @click="onRefresh()">
-          <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
-          刷新
-        </Button>
-      </div>
+    <RecordsToolbar
+      v-model:keyword="keyword"
+      :type-filter="typeFilter"
+      :type-options="typeOptions"
+      :loading="loading"
+      :refreshing="refreshing"
+      @search="onSearch"
+      @refresh="onRefresh"
+      @update:type-filter="setTypeFilter"
+    />
 
-      <div class="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          :variant="typeFilter === 'all' ? 'default' : 'outline'"
-          @click="setTypeFilter('all')"
-        >
-          全部
-        </Button>
-        <Button
-          v-for="item in typeOptions"
-          :key="item"
-          size="sm"
-          :variant="typeFilter === item ? 'default' : 'outline'"
-          @click="setTypeFilter(item)"
-        >
-          {{ item }}
-        </Button>
-      </div>
-    </div>
-
-    <TableLoading :loading="loading" :empty="!filteredRecords.length">
-      <Table>
-        <TableHeader class="bg-muted/50">
-          <TableRow class="!border-0">
-            <TableHead class="w-10 rounded-l-lg px-3">
-              <button
-                type="button"
-                class="border-input text-primary-foreground flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs outline-none transition-colors"
-                :class="selection.headerChecked.value ? 'bg-primary border-primary' : 'bg-transparent'"
-                @click="selection.toggleAll()"
-              >
-                <svg v-if="selection.headerChecked.value === true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="size-3"><path d="M20 6 9 17l-5-5"/></svg>
-                <svg v-else-if="selection.headerChecked.value === 'indeterminate'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="size-3"><path d="M5 12h14"/></svg>
-              </button>
-            </TableHead>
-            <TableHead class="w-[7rem] max-w-[7rem]">主机</TableHead>
-            <TableHead class="w-[5.5rem]">类型</TableHead>
-            <TableHead class="w-[14rem] max-w-[18rem]">记录值</TableHead>
-            <TableHead class="w-[5rem]">TTL</TableHead>
-            <TableHead class="w-[6rem]">线路</TableHead>
-            <TableHead class="min-w-[6rem] max-w-[10rem]">备注</TableHead>
-            <TableHead class="w-12 rounded-r-lg" />
-          </TableRow>
-        </TableHeader>
-        <TableBody class="**:data-[slot=table-cell]:py-2.5">
-          <TableRow v-if="!filteredRecords.length && !loading">
-            <TableCell colspan="8" class="text-muted-foreground py-10 text-center">暂无记录</TableCell>
-          </TableRow>
-
-          <template v-for="row in displayRows" :key="row.key">
-            <!-- 可折叠组头：默认回源 / 优选 / DCV 同主机 -->
-            <TableRow v-if="row.kind === 'group'" class="bg-muted/30 hover:bg-muted/40">
-              <TableCell class="px-3">
-                <Checkbox
-                  :model-value="
-                    groupAllSelected(row.records)
-                      ? true
-                      : groupSomeSelected(row.records)
-                        ? 'indeterminate'
-                        : false
-                  "
-                  @update:model-value="() => toggleGroupSelect(row.records)"
-                  @click.stop
-                />
-              </TableCell>
-              <TableCell colspan="6" class="px-2">
-                <button
-                  type="button"
-                  class="flex w-full min-w-0 items-center gap-2 text-left"
-                  @click="toggleHost(row.hostKey)"
-                >
-                  <ChevronDown v-if="isHostExpanded(row.hostKey)" class="text-muted-foreground size-4 shrink-0" />
-                  <ChevronRight v-else class="text-muted-foreground size-4 shrink-0" />
-                  <span class="min-w-0 truncate font-medium">{{ row.label }}</span>
-                  <span class="text-muted-foreground shrink-0 text-xs">{{ row.records.length }} 条</span>
-                  <span class="flex min-w-0 flex-wrap items-center gap-1">
-                    <Badge
-                      v-for="label in groupPurposeLabels(row.records)"
-                      :key="label"
-                      variant="outline"
-                      class="text-[11px] font-normal"
-                    >
-                      {{ label }}
-                    </Badge>
-                  </span>
-                </button>
-              </TableCell>
-              <TableCell class="w-12" />
-            </TableRow>
-
-            <!-- 组内子行（展开时） -->
-            <TableRow
-              v-for="record in row.kind === 'group' && isHostExpanded(row.hostKey) ? row.records : []"
-              :key="recordRowKey(record)"
-              class="bg-muted/10"
-            >
-              <TableCell class="px-3">
-                <Checkbox
-                  :model-value="selection.isSelected(record)"
-                  @update:model-value="(v: boolean | 'indeterminate') => selection.toggle(record, v === true)"
-                  @click.stop
-                />
-              </TableCell>
-              <TableCell class="max-w-[7rem] truncate font-medium pl-8" :title="String(record.name || '@')">
-                {{ record.name || '@' }}
-              </TableCell>
-              <TableCell>
-                <Badge variant="secondary">{{ record.type }}</Badge>
-              </TableCell>
-              <TableCell class="w-[14rem] max-w-[18rem]">
-                <div class="flex min-w-0 items-center gap-1">
-                  <div class="min-w-0 flex-1 truncate" :title="String(record.value || record.content || '')">
-                    {{ record.value || record.content || '-' }}
-                  </div>
-                  <Button
-                    v-if="record.value || record.content"
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    class="size-7 shrink-0"
-                    title="复制记录值"
-                    @click.stop="copyRecordValue(record)"
-                  >
-                    <Copy class="size-3.5" />
-                  </Button>
-                </div>
-              </TableCell>
-              <TableCell>{{ ttlDisplay(record.ttl) }}</TableCell>
-              <TableCell>
-                <template v-if="isCloudflare">
-                  <Badge :variant="record.proxied ? 'default' : 'outline'">
-                    {{ record.proxied ? '代理' : '仅 DNS' }}
-                  </Badge>
-                </template>
-                <template v-else>{{ record.line || '默认' }}</template>
-              </TableCell>
-              <TableCell>
-                <div
-                  class="text-muted-foreground max-w-[10rem] truncate text-sm"
-                  :title="String(record.remark || record.comment || '')"
-                >
-                  {{ record.remark || record.comment || '—' }}
-                </div>
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="size-8"
-                      :disabled="isRowBusy(recordRowKey(record))"
-                    >
-                      <Spinner v-if="isRowBusy(recordRowKey(record))" class="size-4" />
-                      <EllipsisVertical v-else class="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      :disabled="isRowBusy(recordRowKey(record))"
-                      @click="openEdit(record)"
-                    >
-                      编辑
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      :disabled="isRowBusy(recordRowKey(record))"
-                      @click="removeRecord(record)"
-                    >
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-
-            <!-- 普通单行 -->
-            <TableRow v-if="row.kind === 'single'" :class="isRowBusy(recordRowKey(row.record)) && 'bg-muted/40 opacity-80'">
-              <TableCell class="px-3">
-                <Checkbox
-                  :model-value="selection.isSelected(row.record)"
-                  @update:model-value="(v: boolean | 'indeterminate') => selection.toggle(row.record, v === true)"
-                  @click.stop
-                />
-              </TableCell>
-              <TableCell class="max-w-[7rem] truncate font-medium" :title="String(row.record.name || '@')">
-                {{ row.record.name || '@' }}
-              </TableCell>
-              <TableCell>
-                <Badge variant="secondary">{{ row.record.type }}</Badge>
-              </TableCell>
-              <TableCell class="w-[14rem] max-w-[18rem]">
-                <div class="flex min-w-0 items-center gap-1">
-                  <div class="min-w-0 flex-1 truncate" :title="String(row.record.value || row.record.content || '')">
-                    {{ row.record.value || row.record.content || '-' }}
-                  </div>
-                  <Button
-                    v-if="row.record.value || row.record.content"
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    class="size-7 shrink-0"
-                    title="复制记录值"
-                    @click.stop="copyRecordValue(row.record)"
-                  >
-                    <Copy class="size-3.5" />
-                  </Button>
-                </div>
-              </TableCell>
-              <TableCell>{{ ttlDisplay(row.record.ttl) }}</TableCell>
-              <TableCell>
-                <template v-if="isCloudflare">
-                  <Badge :variant="row.record.proxied ? 'default' : 'outline'">
-                    {{ row.record.proxied ? '代理' : '仅 DNS' }}
-                  </Badge>
-                </template>
-                <template v-else>{{ row.record.line || '默认' }}</template>
-              </TableCell>
-              <TableCell>
-                <div
-                  class="text-muted-foreground max-w-[10rem] truncate text-sm"
-                  :title="String(row.record.remark || row.record.comment || '')"
-                >
-                  {{ row.record.remark || row.record.comment || '—' }}
-                </div>
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="size-8"
-                      :disabled="isRowBusy(recordRowKey(row.record))"
-                    >
-                      <Spinner v-if="isRowBusy(recordRowKey(row.record))" class="size-4" />
-                      <EllipsisVertical v-else class="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      :disabled="isRowBusy(recordRowKey(row.record))"
-                      @click="openEdit(row.record)"
-                    >
-                      编辑
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      variant="destructive"
-                      :disabled="isRowBusy(recordRowKey(row.record))"
-                      @click="removeRecord(row.record)"
-                    >
-                      删除
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          </template>
-        </TableBody>
-      </Table>
-    </TableLoading>
+    <RecordsTable
+      :rows="displayRows"
+      :records="pagedRecords"
+      :selected-keys="selection.selected.value"
+      :expanded-hosts="expandedHosts"
+      :zone-name="zoneName"
+      :is-cloudflare="isCloudflare"
+      :loading="loading"
+      :busy="isRowBusy"
+      @update:selected-keys="setSelectedKeys"
+      @update:expanded-hosts="expandedHosts = $event"
+      @edit="openEdit"
+      @remove="removeRecord"
+      @copy="copyRecordValue"
+    />
 
     <TablePagination
       :page="page"

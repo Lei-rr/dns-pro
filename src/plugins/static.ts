@@ -30,14 +30,14 @@ const staticPluginImpl: FastifyPluginAsync = async (app) => {
     wildcard: false,
     index: false,
     decorateReply: true,
-    setHeaders(res, filePath) {
+    setHeaders(reply, filePath) {
       if (filePath.endsWith('index.html')) {
-        res.setHeader('Cache-Control', 'no-store, must-revalidate')
+        reply.header('Cache-Control', 'no-store, must-revalidate')
       } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+        reply.header('Cache-Control', 'public, max-age=31536000, immutable')
       } else {
         // favicon / manifest etc.
-        res.setHeader('Cache-Control', 'public, max-age=3600')
+        reply.header('Cache-Control', 'public, max-age=3600')
       }
     },
   })

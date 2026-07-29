@@ -114,6 +114,40 @@ export class CloudflareZoneService {
     return cached.value
   }
 
+  async listAll(providerId: string, refresh = false): Promise<ZoneListResult> {
+    const pageSize = 100
+    const items: ZonePresentation[] = []
+    let page = 1
+
+    while (true) {
+      const result = await this.list(providerId, page, pageSize, '', refresh)
+      items.push(...result.items)
+      const totalPages = Number(result.pagination.total_pages ?? 0)
+      if (totalPages > 0 ? page >= totalPages : result.items.length < pageSize) break
+      page++
+    }
+
+    return {
+      items,
+      pagination: {
+        page: 1,
+        per_page: items.length,
+        count: items.length,
+        total_count: items.length,
+        total_pages: 1,
+      },
+      meta: {
+        page: 1,
+        per_page: items.length,
+        offset: 0,
+        limit: items.length,
+        count: items.length,
+        total: items.length,
+        total_pages: 1,
+      },
+    }
+  }
+
   async create(providerId: string, name: string, type = 'full'): Promise<ZonePresentation> {
     const provider = await this.requireProvider(providerId)
     const accountId = provider.account_id.trim()
@@ -163,7 +197,7 @@ export class CloudflareZoneService {
   async idByName(providerId: string, name: string, refresh = false): Promise<string> {
     const normalizedName = name.toLowerCase().trim()
     let page = 1
-    let totalPages = 1
+    let totalPages: number
 
     do {
       const zones = await this.list(providerId, page, 100, normalizedName, refresh)

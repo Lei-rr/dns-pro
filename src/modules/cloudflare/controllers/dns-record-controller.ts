@@ -1,6 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { success } from '../../../lib/http/api-response.js'
-import { queryBool, queryInt, queryRecord, queryString, bodyRecord } from '../../../lib/utils/request-parse.js'
+import { queryBool, queryRecord, bodyRecord } from '../../../lib/utils/request-parse.js'
 
 export async function recordsIndex(
   request: FastifyRequest<{ Params: { providerId: string; zone: string } }>,
@@ -11,16 +11,10 @@ export async function recordsIndex(
     request.params.providerId,
     request.params.zone,
   )
-  const result = await request.server.ctx.cloudflareDnsRecordService.list(
+  const result = await request.server.ctx.cloudflareDnsRecordService.listAll(
     request.params.providerId,
     zoneId,
-    {
-      page: queryInt(q, 'page', 1),
-      per_page: queryInt(q, 'per_page', 100),
-      type: queryString(q, 'type') || undefined,
-      search: queryString(q, 'search') || queryString(q, 'keyword') || undefined,
-      refresh: queryBool(q, 'refresh'),
-    },
+    queryBool(q, 'refresh'),
   )
   return reply.send(success(result))
 }

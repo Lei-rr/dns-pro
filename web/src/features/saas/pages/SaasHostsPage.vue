@@ -1,40 +1,30 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { EllipsisVertical, Plus, RefreshCw, Search } from '@lucide/vue'
+import { Plus, RefreshCw, Search } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
-import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/shared/ui/dropdown-menu'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldLabel } from '@/shared/ui/field'
 import { preferredDomainApi, saasApi } from '@/features/saas/api/saas'
 import { providerPath } from '@/features/providers/lib/paths'
 import type { SaaSHostname, Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { removeListItem } from '@/shared/lib/row-busy'
 import { runProviderBatch } from '@/shared/lib/run-provider-batch'
 import PreferredDomainsDialog from '@/features/saas/components/PreferredDomainsDialog.vue'
 import FallbackOriginDialog from '@/features/saas/components/FallbackOriginDialog.vue'
 import SaasDetailDialog from '@/features/saas/components/SaasDetailDialog.vue'
 import HostnameFormDialog from '@/features/saas/components/HostnameFormDialog.vue'
-import { statusLabel, statusVariant } from '@/features/saas/lib/status'
+import SaasHostsTable from '@/features/saas/components/SaasHostsTable.vue'
 import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { useRowSelection } from '@/shared/lib/row-selection'
-import { Checkbox } from '@/shared/ui/checkbox'
-import { Spinner } from '@/shared/ui/spinner'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 import {
   Select,
@@ -43,7 +33,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/shared/ui/select'
-import { Switch } from '@/shared/ui/switch'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { loadProviders, useProviderStore } from '@/features/providers/stores/providers'
 import { dnsApi } from '@/features/dns/api/dns'
@@ -56,8 +45,6 @@ const saving = ref(false)
 const applyingPreferred = ref(false)
 const hostnames = ref<SaaSHostname[]>([])
 const keyword = ref('')
-const page = ref(1)
-const total = ref(0)
 const dialogOpen = ref(false)
 const detailOpen = ref(false)
 const detailLoading = ref(false)
@@ -105,7 +92,6 @@ const hostnamePreview = computed(() => {
   const prefix = form.hostname_prefix.trim().toLowerCase()
   return prefix ? `${prefix}.${form.sync_zone}` : form.sync_zone
 })
-const preferredLabel = computed(() => '优选域名')
 /** 与旧版一致：优先 custom_metadata，再顶层 preferred_domain */
 function preferredDomainOf(record: SaaSHostname | null | undefined) {
   if (!record) return ''
@@ -134,32 +120,31 @@ const showPreferred = ref(false)
 const showFallback = ref(false)
 
 const decodedZone = computed(() => decodeURIComponent(props.zoneName))
-/** 当前页数据 + 本页关键字过滤（CF 列表为服务端分页，搜索仅过滤当前页） */
+/** 全量主机名本地过滤，输入即生效。 */
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return hostnames.value
   return hostnames.value.filter((item) => String(item.hostname || '').toLowerCase().includes(q))
 })
-const selection = useRowSelection(filtered, (row) => String(row.hostname || ''))
-const selectedCount = computed(() => selection.selected.value.length)
-
 const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'saas-hosts',
   load: async (options = {}) => {
     try {
-      const response = await saasApi.hostnames(props.providerId, decodedZone.value, {
-        page: page.value,
-        per_page: pageSize.value,
-        refresh: options.refresh,
-      })
+      const response = await saasApi.hostnames(props.providerId, decodedZone.value, { refresh: options.refresh })
+      if (options.isLatest && !options.isLatest()) return false
       hostnames.value = response.data || []
-      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
-      const rawTotal = meta.total_count ?? meta.total ?? meta.count
-      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : hostnames.value.length || 0)
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
+})
+const { page, total, pagedItems: pagedHostnames, resetPage } = useLocalPagination(filtered, pageSize)
+const selection = useRowSelection(pagedHostnames, (row) => String(row.hostname || ''))
+const selectedCount = computed(() => selection.selected.value.length)
+watch(keyword, () => {
+  resetPage()
+  selection.clear()
 })
 
 
@@ -235,21 +220,16 @@ function resetForm() {
 function onPageChange(next: number) {
   page.value = next
   selection.clear()
-  void runLoad()
 }
 
 function onPageSizeChange(next: number) {
   setPageSize(next)
-  page.value = 1
+  resetPage()
   selection.clear()
-  void runLoad()
 }
 
 function onSearch() {
-  // CF hostnames API 无 keyword 参数：回第一页 + 本页过滤
-  page.value = 1
-  selection.clear()
-  void runLoad()
+  resetPage()
 }
 
 async function openCreate() {
@@ -397,7 +377,6 @@ async function removeHostname(record: SaaSHostname) {
       hostnames,
       (item) => String(item.hostname) === String(record.hostname) || String(item.id) === String(record.id),
     )
-    if (total.value > 0) total.value -= 1
     selection.clear()
     if (detailOpen.value && detailRecord.value?.hostname === record.hostname) {
       detailOpen.value = false
@@ -572,9 +551,9 @@ async function resumeJobs() {
 watch(
   () => [props.providerId, props.zoneName],
   () => {
-    page.value = 1
+    resetPage()
     selection.clear()
-    void runLoad().then(() => resumeJobs())
+    void runLoad().then(() => resumeJobs()).catch(fail)
   },
 )
 
@@ -582,7 +561,7 @@ onMounted(async () => {
   await loadProviders()
 
   void loadPreferredOptions()
-  void runLoad().then(() => resumeJobs())
+  void runLoad().then(() => resumeJobs()).catch(fail)
 })
 </script>
 
@@ -615,7 +594,7 @@ onMounted(async () => {
         <Input
           v-model="keyword"
           class="h-8 w-full sm:w-72"
-          placeholder="搜索主机名（当前页）"
+          placeholder="搜索主机名"
           @keyup.enter="onSearch"
         />
         <Button variant="outline" size="sm" @click="onSearch">
@@ -639,104 +618,18 @@ onMounted(async () => {
         </template>
       </div>
 
-      <TableLoading :loading="loading" :empty="!filtered.length">
-        <Table>
-          <TableHeader class="bg-muted/50">
-            <TableRow class="!border-0">
-              <TableHead class="w-10 rounded-l-lg px-3">
-                              <button
-                type="button"
-                class="border-input text-primary-foreground flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs outline-none transition-colors"
-                :class="selection.headerChecked.value ? 'bg-primary border-primary' : 'bg-transparent'"
-                @click="selection.toggleAll()"
-              >
-                <svg v-if="selection.headerChecked.value === true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="size-3"><path d="M20 6 9 17l-5-5"/></svg>
-                <svg v-else-if="selection.headerChecked.value === 'indeterminate'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="size-3"><path d="M5 12h14"/></svg>
-              </button>
-              </TableHead>
-              <TableHead>主机名</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead>证书</TableHead>
-              <TableHead>回源</TableHead>
-              <TableHead>优选域名</TableHead>
-              <TableHead class="rounded-r-lg w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody class="**:data-[slot=table-cell]:py-2.5">
-            <TableRow v-if="!filtered.length && !loading">
-              <TableCell colspan="7" class="text-muted-foreground py-10 text-center">暂无自定义主机名</TableCell>
-            </TableRow>
-            <TableRow
-              v-for="record in filtered"
-              :key="String(record.id || record.hostname)"
-              :class="rowRefreshing === String(record.hostname || record.id || '') && 'bg-muted/40 opacity-80'"
-            >
-              <TableCell class="px-3">
-                <Checkbox
-                  :model-value="selection.isSelected(record)"
-                  @update:model-value="(v: boolean | 'indeterminate') => selection.toggle(record, v === true)"
-                @click.stop
-                />
-              </TableCell>
-              <TableCell class="font-medium">
-                <button
-                  type="button"
-                  class="table-link-ellipsis max-w-[220px] text-left hover:underline"
-                  :title="record.hostname"
-                  @click="openDetails(record)"
-                >
-                  {{ record.hostname }}
-                </button>
-              </TableCell>
-              <TableCell>
-                <Badge :variant="statusVariant(record.status)">{{ statusLabel(record.status) }}</Badge>
-              </TableCell>
-              <TableCell>
-                <Badge :variant="statusVariant(record.ssl?.status)">{{ statusLabel(record.ssl?.status) }}</Badge>
-              </TableCell>
-              <TableCell class="max-w-[180px] truncate">
-                {{ record.custom_origin_server || '默认回源' }}
-              </TableCell>
-              <TableCell class="max-w-[160px] truncate" :title="preferredDomainOf(record) || undefined">
-                {{ preferredDomainOf(record) || '—' }}
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="size-8"
-                      :disabled="rowRefreshing === String(record.hostname || record.id || '')"
-                    >
-                      <Spinner
-                        v-if="rowRefreshing === String(record.hostname || record.id || '')"
-                        class="size-4"
-                      />
-                      <EllipsisVertical v-else class="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem @click="openDetails(record)">详情</DropdownMenuItem>
-                    <DropdownMenuItem
-                      :disabled="rowRefreshing === String(record.hostname || record.id || '')"
-                      @click="refreshHostname(record)"
-                    >
-                      <Spinner
-                        v-if="rowRefreshing === String(record.hostname || record.id || '')"
-                        class="mr-2 size-3.5"
-                      />
-                      刷新
-                    </DropdownMenuItem>
-                    <DropdownMenuItem @click="openEdit(record)">编辑</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" @click="removeHostname(record)">删除</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </TableLoading>
+      <SaasHostsTable
+        :hostnames="pagedHostnames"
+        :selected-hostnames="selection.selected.value"
+        :loading="loading"
+        :refreshing-hostname="rowRefreshing"
+        :preferred-domain="preferredDomainOf"
+        @update:selected-hostnames="selection.selected.value = $event"
+        @detail="openDetails"
+        @refresh="refreshHostname"
+        @edit="openEdit"
+        @remove="removeHostname"
+      />
 
       <TablePagination
         :page="page"

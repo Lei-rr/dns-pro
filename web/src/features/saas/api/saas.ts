@@ -12,7 +12,7 @@ export const saasApi = {
     options: Record<string, unknown> = {},
   ): Promise<ApiResponse<SaaSHostname[]>> =>
     unwrapItems<SaaSHostname[]>(
-      await http.get(`${zoneBase(provider, zone)}/hostnames`, withRefresh({ params: options, refresh: options?.refresh })),
+      await http.get(`${zoneBase(provider, zone)}/hostnames`, withRefresh({ refresh: options?.refresh })),
     ),
   hostname: async (
     provider: string,
@@ -23,7 +23,7 @@ export const saasApi = {
     unwrapItems<SaaSHostname>(
       await http.get(
         `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
-        withRefresh({ params: options, refresh: options?.refresh }),
+        withRefresh({ refresh: options?.refresh }),
       ),
     ),
   createHostname: (
@@ -93,5 +93,5 @@ export const preferredDomainApi = {
     http.put(`/saas/preferred-domains/${encodePath(oldDomain)}`, { domain: newDomain }),
   delete: (domain: string) => http.delete(`/saas/preferred-domains/${encodePath(domain)}`),
   sort: async (domains: string[]): Promise<ApiResponse<Array<{ domain: string }>>> =>
-    unwrapItems<Array<{ domain: string }>>(await http.put('/saas/preferred-domains/sort', { domains })),
+    unwrapItems<Array<{ domain: string }>>(await http.put('/saas/preferred-domains/sort-order', { domains })),
 }

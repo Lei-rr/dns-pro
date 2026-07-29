@@ -36,7 +36,7 @@ import {
 async function preferredDomainRoutes(app: FastifyInstance) {
   app.get('/', preferredDomainsIndex)
   app.post('/', preferredDomainsStore)
-  app.put('/sort', preferredDomainsSort)
+  app.put('/sort-order', preferredDomainsSort)
   app.put('/:domain', preferredDomainsUpdate)
   app.delete('/:domain', preferredDomainsDelete)
 }

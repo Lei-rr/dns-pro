@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
@@ -30,6 +30,8 @@ import type { CloudflaredTunnel } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
+import { TablePagination } from '@/shared/ui/pagination'
 import { removeListItem } from '@/shared/lib/row-busy'
 
 const props = defineProps<{ providerId: string }>()
@@ -40,17 +42,26 @@ const tunnels = ref<CloudflaredTunnel[]>([])
 const dialogOpen = ref(false)
 const name = ref('')
 
-const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'cloudflared-tunnels',
   load: async (options = {}) => {
     try {
       const response = await cloudflaredApi.tunnels(props.providerId, { refresh: options.refresh })
+      if (options.isLatest && !options.isLatest()) return false
       tunnels.value = response.data || []
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
+const tunnelItems = computed(() => tunnels.value)
+const { page, total, pagedItems: pagedTunnels, resetPage } = useLocalPagination(tunnelItems, pageSize)
+
+function onPageSizeChange(next: number) {
+  setPageSize(next)
+  resetPage()
+}
 
 function openDetail(record: CloudflaredTunnel) {
   router.push(providerChildPath(props.providerId, String(record.id || record.name)))
@@ -128,7 +139,7 @@ onMounted(() => runLoad())
               暂无隧道，点击「创建隧道」开始
             </TableCell>
           </TableRow>
-          <TableRow v-for="record in tunnels" :key="String(record.id || record.name)">
+          <TableRow v-for="record in pagedTunnels" :key="String(record.id || record.name)">
             <TableCell class="px-4">
               <button class="font-medium hover:underline" @click="openDetail(record)">{{ record.name }}</button>
             </TableCell>
@@ -156,6 +167,14 @@ onMounted(() => runLoad())
         </TableBody>
       </Table>
     </TableLoading>
+    <TablePagination
+      :page="page"
+      :page-size="pageSize"
+      :total="total"
+      :disabled="loading"
+      @update:page="page = $event"
+      @update:page-size="onPageSizeChange"
+    />
 
     <AppDialog v-model:open="dialogOpen" title="创建隧道" description="创建一个新的 Cloudflare Tunnel。">
       <FieldGroup>

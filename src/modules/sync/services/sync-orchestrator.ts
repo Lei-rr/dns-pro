@@ -47,8 +47,9 @@ export class SyncOrchestrator {
     try {
       const driver = await this.driverForSaasHostname(providerId, zoneName, hostnameFqdn)
       return await driver.collectRecordsFor(providerId, zoneName, hostnameFqdn)
-    } catch {
-      // CF custom hostname may already be gone; still build DNS cleanup list from local preference.
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === 'saas_hostname_not_found')) throw error
+      // CF custom hostname is already gone: rebuild the cleanup set from durable local preference.
       return this.collectSaasRecordsFallback(providerId, hostnameFqdn)
     }
   }
@@ -226,7 +227,7 @@ export class SyncOrchestrator {
       if (dnspodProviderId === '') return { cleaned: 0, records: [], reason: 'dnspod_provider_missing' }
 
       const fqdn = domainName.toLowerCase().trim()
-      let dnspodZone = ''
+      let dnspodZone: string
       try {
         dnspodZone = await this.support.resolveDnspodZone(dnspodProviderId, fqdn, 'edgeone')
       } catch {

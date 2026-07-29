@@ -27,6 +27,8 @@ import { toast } from '@/shared/lib/toast'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { errorMessage } from '@/shared/lib/errors'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
+import { TablePagination } from '@/shared/ui/pagination'
 import { useRowBusy, removeListItem, patchListItem } from '@/shared/lib/row-busy'
 import { Spinner } from '@/shared/ui/spinner'
 import EdgeOneDomainForm from '@/features/edgeone/components/EdgeOneDomainForm.vue'
@@ -36,13 +38,13 @@ import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { runProviderBatch } from '@/shared/lib/run-provider-batch'
 import { useRowSelection } from '@/shared/lib/row-selection'
-import { Checkbox } from '@/shared/ui/checkbox'
+import { Checkbox, SelectAllCheckbox } from '@/shared/ui/checkbox'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 
 const props = defineProps<{ providerId: string; zoneId: string }>()
 const router = useRouter()
 const jobProgress = useJobProgress()
-const { busyKey: rowBusyKey, isBusy: isRowBusy, runBusy } = useRowBusy()
+const { isBusy: isRowBusy, runBusy } = useRowBusy()
 
 const saving = ref(false)
 const domains = ref<EdgeOneAccelerationDomain[]>([])
@@ -61,46 +63,67 @@ const filtered = computed(() => {
     return name.includes(q) || cname.includes(q)
   })
 })
-const selection = useRowSelection(filtered, (row) => String(row.domain_name || row.name || ''))
-const selectedCount = computed(() => selection.selected.value.length)
 const pageTitle = computed(() => zoneMeta.value?.name || decodeURIComponent(props.zoneId))
 
-const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'edgeone-records',
   load: async (options = {}) => {
     try {
-      if (options.refresh || !zoneMeta.value) await loadZoneMeta()
+      if (options.refresh || !zoneMeta.value) {
+        const meta = await loadZoneMeta()
+        if (options.isLatest && !options.isLatest()) return false
+        zoneMeta.value = meta
+      }
       const response = await edgeOneApi.accelerationDomains(props.providerId, props.zoneId, {
         refresh: options.refresh,
       })
+      if (options.isLatest && !options.isLatest()) return false
       domains.value = response.data || []
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
+const { page, total, pagedItems: pagedDomains, resetPage } = useLocalPagination(filtered, pageSize)
+const selection = useRowSelection(pagedDomains, (row) => String(row.domain_name || row.name || ''))
+const selectedCount = computed(() => selection.selected.value.length)
+watch(keyword, () => {
+  resetPage()
+  selection.clear()
+})
+
+function onPageChange(next: number) {
+  page.value = next
+  selection.clear()
+}
+
+function onPageSizeChange(next: number) {
+  setPageSize(next)
+  resetPage()
+  selection.clear()
+}
 
 function domainName(record: EdgeOneAccelerationDomain) {
   return String(record.domain_name || record.name || '')
 }
 
-async function loadZoneMeta() {
+async function loadZoneMeta(): Promise<EdgeOneZone | null> {
   try {
     // Prefer list match so we get name without extra endpoint failures
     const response = await edgeOneApi.zones(props.providerId)
     const list = response.data || []
-    zoneMeta.value =
+    const matched =
       list.find((z) => String(z.id) === props.zoneId || String(z.name) === props.zoneId) || null
-    if (!zoneMeta.value) {
-      try {
-        const one = await edgeOneApi.zone(props.providerId, props.zoneId)
-        zoneMeta.value = one.data || null
-      } catch {
-        zoneMeta.value = null
-      }
+    if (matched) return matched
+    try {
+      const one = await edgeOneApi.zone(props.providerId, props.zoneId)
+      return one.data || null
+    } catch {
+      return null
     }
   } catch {
-    zoneMeta.value = null
+    return null
   }
 }
 
@@ -288,12 +311,13 @@ watch(
   () => [props.providerId, props.zoneId],
   () => {
     selection.clear()
-    void runLoad().then(() => resumeJobs())
+    zoneMeta.value = null
+    void runLoad().then(() => resumeJobs()).catch(fail)
   },
 )
 
 onMounted(() => {
-  void runLoad().then(() => resumeJobs())
+  void runLoad().then(() => resumeJobs()).catch(fail)
 })
 </script>
 
@@ -325,9 +349,9 @@ onMounted(() => {
           v-model="keyword"
           class="h-8 w-full sm:w-72"
           placeholder="搜索加速域名 / CNAME"
-          @keyup.enter="runLoad()"
+          @keyup.enter="resetPage()"
         />
-        <Button variant="outline" size="sm" :loading="loading" @click="runLoad()">
+        <Button variant="outline" size="sm" @click="resetPage()">
           <Search class="size-4" />
           搜索
         </Button>
@@ -353,15 +377,11 @@ onMounted(() => {
           <TableHeader class="bg-muted/50">
             <TableRow class="!border-0">
               <TableHead class="w-10 rounded-l-lg px-3">
-                              <button
-                type="button"
-                class="border-input text-primary-foreground flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs outline-none transition-colors"
-                :class="selection.headerChecked.value ? 'bg-primary border-primary' : 'bg-transparent'"
+              <SelectAllCheckbox
+                :checked="selection.headerChecked.value"
+                aria-label="全选当前列表"
                 @click="selection.toggleAll()"
-              >
-                <svg v-if="selection.headerChecked.value === true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="size-3"><path d="M20 6 9 17l-5-5"/></svg>
-                <svg v-else-if="selection.headerChecked.value === 'indeterminate'" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" class="size-3"><path d="M5 12h14"/></svg>
-              </button>
+              />
               </TableHead>
               <TableHead>加速域名</TableHead>
               <TableHead>状态</TableHead>
@@ -375,7 +395,7 @@ onMounted(() => {
               <TableCell colspan="6" class="text-muted-foreground py-10 text-center">暂无加速域名</TableCell>
             </TableRow>
             <TableRow
-              v-for="record in filtered"
+              v-for="record in pagedDomains"
               :key="domainName(record)"
               :class="isRowBusy(domainName(record)) && 'bg-muted/40 opacity-80'"
             >
@@ -426,6 +446,15 @@ onMounted(() => {
           </TableBody>
         </Table>
       </TableLoading>
+
+      <TablePagination
+        :page="page"
+        :page-size="pageSize"
+        :total="total"
+        :disabled="loading"
+        @update:page="onPageChange"
+        @update:page-size="onPageSizeChange"
+      />
     </div>
 
     <EdgeOneDomainForm

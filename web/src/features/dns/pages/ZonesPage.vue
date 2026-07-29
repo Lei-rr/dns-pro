@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -23,17 +23,15 @@ import type { Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { useListPage } from '@/shared/lib/use-list-page'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { removeListItem } from '@/shared/lib/row-busy'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
+import { confirmDelete } from '@/shared/ui/confirm'
 
 const props = defineProps<{ providerId: string }>()
-const route = useRoute()
 const router = useRouter()
 
 const zones = ref<Zone[]>([])
 const keyword = ref('')
-const page = ref(1)
-const total = ref(0)
 const showAdd = ref(false)
 const adding = ref(false)
 const domainInput = ref('')
@@ -45,18 +43,12 @@ const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: set
   pageSizeScope: 'dns-zones',
   load: async (options = {}) => {
     try {
-      const response = await dnsApi.zones(props.providerId, {
-        page: page.value,
-        per_page: pageSize.value,
-        keyword: keyword.value,
-        refresh: options.refresh,
-      })
+      const response = await dnsApi.zones(props.providerId, { refresh: options.refresh })
+      if (options.isLatest && !options.isLatest()) return false
       zones.value = response.data || []
-      const meta = (response as { meta?: Record<string, unknown> }).meta || {}
-      const rawTotal = meta.total ?? meta.count
-      total.value = Number(rawTotal != null && rawTotal !== '' ? rawTotal : zones.value.length || 0)
     } catch (error) {
-      fail(error)
+      if (!options.isLatest || options.isLatest()) fail(error)
+      return false
     }
   },
 })
@@ -65,6 +57,9 @@ const filtered = computed(() => {
   if (!q) return zones.value
   return zones.value.filter((zone) => String(zone.name || '').toLowerCase().includes(q))
 })
+
+const { page, total, pagedItems: pagedZones, resetPage } = useLocalPagination(filtered, pageSize)
+watch(keyword, resetPage)
 
 async function ensureProvider() {
   if (!getCachedProvider(props.providerId)) {
@@ -78,18 +73,15 @@ async function ensureProvider() {
 
 function onPageChange(next: number) {
   page.value = next
-  void runLoad()
 }
 
 function onPageSizeChange(next: number) {
   setPageSize(next)
-  page.value = 1
-  void runLoad()
+  resetPage()
 }
 
 function onSearch() {
-  page.value = 1
-  void runLoad()
+  resetPage()
 }
 
 async function createZone() {
@@ -126,7 +118,6 @@ async function removeZone(zone: Zone) {
     await dnsApi.deleteZone(props.providerId, zoneRouteKey(zone))
     toast.success('已删除')
     removeListItem(zones, (item) => String(item.id || item.name) === String(zone.id || zone.name))
-    if (total.value > 0) total.value -= 1
   } catch (error) {
     toast.error(errorMessage(error))
   }
@@ -139,7 +130,7 @@ async function openRecords(zone: Zone) {
 watch(
   () => props.providerId,
   async () => {
-    page.value = 1
+    resetPage()
     await ensureProvider()
     await runLoad()
   },
@@ -189,7 +180,7 @@ onMounted(async () => {
             <TableRow v-if="!filtered.length && !loading">
               <TableCell colspan="4" class="text-muted-foreground py-10 text-center">暂无域名</TableCell>
             </TableRow>
-            <TableRow v-for="zone in filtered" :key="String(zone.id || zone.name)">
+            <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">
                 <button class="text-left font-medium hover:underline" @click="openRecords(zone)">
                   {{ zone.name }}

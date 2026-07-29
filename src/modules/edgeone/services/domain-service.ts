@@ -43,49 +43,46 @@ export interface AccelerationDomainPayload {
 export class EdgeOneDomainService {
   constructor(private readonly providers: ProviderRepository) {}
 
-  async accelerationDomains(providerId: string, zoneId: string, offset = 0, limit = 20, refresh = false): Promise<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
-    // 查询参数常为字符串，EdgeOne 要求 Offset/Limit 为 int64，这里强制转数字。
-    const safeOffset = Math.max(0, Number(offset) || 0)
-    const safeLimit = Math.max(1, Number(limit) || 20)
+  async accelerationDomains(providerId: string, zoneId: string, refresh = false): Promise<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
     const cached = await withProviderCache<{ items: EdgeOneAccelerationDomain[]; pagination: Record<string, unknown>; meta: Record<string, unknown>; request_id?: string }>({
-      key: `edgeone:domains:${providerId}:${zoneId}:${safeOffset}:${safeLimit}`,
+      key: `edgeone:domains:${providerId}:${zoneId}`,
       tags: [edgeoneDomainsCacheTag(providerId, zoneId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
         const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
         const gateway = this.gatewayFor(provider)
+        const pageSize = 100
+        const items: EdgeOneAccelerationDomain[] = []
+        let offset = 0
+        let requestId: string | undefined
 
-        let response
-        try {
-          response = await gateway.call('DescribeAccelerationDomains', {
-            ZoneId: zoneId,
-            Offset: safeOffset,
-            Limit: safeLimit,
-          })
-        } catch (error) {
-          throw wrapProviderError('edgeone_domain_list_failed', 'EdgeOne acceleration domain list failed', providerId, error, {
-            zone: zoneId,
-          })
+        while (true) {
+          let response
+          try {
+            response = await gateway.call('DescribeAccelerationDomains', {
+              ZoneId: zoneId,
+              Offset: offset,
+              Limit: pageSize,
+            })
+          } catch (error) {
+            throw wrapProviderError('edgeone_domain_list_failed', 'EdgeOne acceleration domain list failed', providerId, error, { zone: zoneId })
+          }
+          const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
+          const pageItems = (Array.isArray(parsed.AccelerationDomains) ? parsed.AccelerationDomains : [])
+            .map((domain) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
+          items.push(...pageItems)
+          const total = Number(parsed.TotalCount ?? items.length)
+          requestId = parsed.RequestId ?? requestId
+          offset += pageItems.length
+          if (pageItems.length < pageSize || (total > 0 && offset >= total)) break
         }
-        const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
 
-        const items = (Array.isArray(parsed.AccelerationDomains) ? parsed.AccelerationDomains : []).map((domain) =>
-          this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId)
-        )
-        const total = Number(parsed.TotalCount ?? items.length)
         return {
           items,
-          pagination: { offset: safeOffset, limit: safeLimit, total },
-          meta: {
-            page: safeLimit > 0 ? Math.floor(safeOffset / safeLimit) + 1 : 1,
-            per_page: safeLimit,
-            offset: safeOffset,
-            limit: safeLimit,
-            total,
-            total_pages: safeLimit > 0 ? Math.ceil(total / safeLimit) : 1,
-          },
-          request_id: parsed.RequestId ?? undefined,
+          pagination: { offset: 0, limit: items.length, total: items.length },
+          meta: { page: 1, per_page: items.length, offset: 0, limit: items.length, total: items.length, total_pages: 1 },
+          request_id: requestId,
         }
       },
     })
@@ -238,16 +235,9 @@ export class EdgeOneDomainService {
   }
 
   private async findAccelerationDomain(providerId: string, zoneId: string, domainName: string): Promise<EdgeOneAccelerationDomain> {
-    let offset = 0
-    let hasMore = true
-    while (hasMore) {
-      const domains = await this.accelerationDomains(providerId, zoneId, offset, 200)
-      for (const domain of domains.items) {
-        if (domain.name === domainName) return domain
-      }
-      hasMore = domains.items.length >= 200
-      offset += 200
-    }
+    const domains = await this.accelerationDomains(providerId, zoneId)
+    const domain = domains.items.find((item) => item.name === domainName)
+    if (domain) return domain
 
     throw new ApiError('edgeone_acceleration_domain_not_found', `EdgeOne acceleration domain ${domainName} not found`, 404)
   }

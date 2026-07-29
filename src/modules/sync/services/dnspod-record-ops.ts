@@ -90,19 +90,14 @@ export class DnsPodRecordOps {
 
   async precleanConflicts(dnspodProviderId: string, dnspodZone: string, fqdn: string): Promise<PrecleanedRecord[]> {
     const subdomain = this.subdomainFromFqdn(fqdn, dnspodZone)
-    let listing
-    try {
-      listing = await this.records.list(dnspodProviderId, dnspodZone, {
-        offset: 0,
-        limit: 100,
-        subdomain,
-        record_type: '',
-        keyword: '',
-        refresh: true,
-      })
-    } catch {
-      return []
-    }
+    const listing = await this.records.list(dnspodProviderId, dnspodZone, {
+      offset: 0,
+      limit: 100,
+      subdomain,
+      record_type: '',
+      keyword: '',
+      refresh: true,
+    })
 
     const keepTypes = new Set(['CNAME', 'TXT'])
     const deleted: PrecleanedRecord[] = []
@@ -136,19 +131,14 @@ export class DnsPodRecordOps {
 
   async deleteRecordsByNameType(dnspodProviderId: string, dnspodZone: string, fqdn: string, type: string, line = '默认'): Promise<DeletedRecord[]> {
     const subdomain = this.subdomainFromFqdn(fqdn, dnspodZone)
-    let listing
-    try {
-      listing = await this.records.list(dnspodProviderId, dnspodZone, {
-        offset: 0,
-        limit: 100,
-        subdomain,
-        record_type: type,
-        keyword: '',
-        refresh: true,
-      })
-    } catch {
-      return []
-    }
+    const listing = await this.records.list(dnspodProviderId, dnspodZone, {
+      offset: 0,
+      limit: 100,
+      subdomain,
+      record_type: type,
+      keyword: '',
+      refresh: true,
+    })
 
     const results: DeletedRecord[] = []
     for (const item of listing.items ?? []) {
