@@ -98,6 +98,22 @@ function recordValue(record: RecordLike): string {
   return String(record.value || record.content || '').trim()
 }
 
+const ALIYUN_MAIL_AUX_HOSTS = new Set(['imap', 'mail', 'pop3', 'smtp'])
+
+/** 阿里企业邮箱辅助 CNAME：归入根域名邮箱套件，而不是各自形成主机组。 */
+function isAliyunMailAuxRecord(record: RecordLike, zoneName = ''): boolean {
+  if (String(record.type || '').toUpperCase() !== 'CNAME') return false
+  const rel = relativeHostLabel(record.name, zoneName)
+  if (!ALIYUN_MAIL_AUX_HOSTS.has(rel)) return false
+  const target = recordValue(record).toLowerCase().replace(/\.$/, '')
+  return /^(?:imap|pop|smtp)\.qiye\.aliyun\.com$/.test(target) || target === 'qiye.aliyun.com'
+}
+
+function emailBaseHostForRecord(record: RecordLike, zoneName = ''): string {
+  if (isAliyunMailAuxRecord(record, zoneName)) return '@'
+  return emailBaseHost(relativeHostLabel(record.name, zoneName))
+}
+
 /**
  * 邮箱业务主机：把 DKIM / DMARC 前缀剥掉，归到对应邮箱主机。
  * cf2024-1._domainkey → @
@@ -169,7 +185,7 @@ export function recordHostKey(record: RecordLike, zoneName = ''): string {
   }
 
   if (isEmailRecord(record, zoneName)) {
-    return `${MAIL_KEY_PREFIX}${emailBaseHost(rel)}`
+    return `${MAIL_KEY_PREFIX}${emailBaseHostForRecord(record, zoneName)}`
   }
 
   return rel
@@ -202,7 +218,7 @@ export function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaa
   const remark = String(record.remark || record.comment || '').trim()
   const val = recordValue(record)
   const baseKey = isEmailRecord(record, zoneName)
-    ? emailBaseHost(rel)
+    ? emailBaseHostForRecord(record, zoneName)
     : recordHostKey(record, zoneName).startsWith(MAIL_KEY_PREFIX)
       ? emailBaseHost(rel)
       : recordHostKey(record, zoneName).replace(MAIL_KEY_PREFIX, '')
