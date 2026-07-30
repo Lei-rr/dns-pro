@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed, ref, watch } from 'vue'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
-import { toast } from '@/shared/lib/toast'
 import {
   Select,
   SelectContent,
@@ -19,11 +18,14 @@ const props = defineProps<{
   zoneName: string
   dnspodLinked?: boolean
   editing?: boolean
+  errors?: Record<string, string>
 }>()
 const emit = defineEmits<{
   save: [payload: Record<string, unknown>]
 }>()
 
+const localErrors = ref<Record<string, string>>({})
+const errors = computed(() => ({ ...(props.errors || {}), ...localErrors.value }))
 const form = reactive({
   prefix: '',
   origin_type: 'IP_DOMAIN',
@@ -48,6 +50,7 @@ const showHttpsPort = computed(() => ['FOLLOW', 'HTTPS'].includes(form.origin_pr
 const showHostHeader = computed(() => form.origin_type === 'IP_DOMAIN')
 
 watch(open, (value) => {
+  if (value) localErrors.value = {}
   if (value && !props.editing) {
     form.prefix = ''
     form.origin_type = 'IP_DOMAIN'
@@ -63,12 +66,10 @@ watch(open, (value) => {
 })
 
 function submit() {
-  if (!form.origin.trim()) {
-    toast.warning('请填写源站地址')
-    return
-  }
+  localErrors.value = {}
+  if (!form.origin.trim()) localErrors.value.origin = '请填写源站地址'
+  if (Object.keys(localErrors.value).length) return
   emit('save', { ...form, fullDomain: fullDomain.value })
-  open.value = false
 }
 </script>
 
@@ -107,9 +108,10 @@ function submit() {
             </SelectContent>
           </Select>
         </Field>
-        <Field>
+        <Field :data-invalid="!!errors.origin">
           <FieldLabel>源站地址</FieldLabel>
           <Input v-model="form.origin" :placeholder="form.origin_type === 'IP_DOMAIN' ? '1.2.3.4 或 origin.example.com' : ''" />
+          <FieldError :errors="errors.origin ? [errors.origin] : []" />
         </Field>
       </div>
 

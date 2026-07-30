@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow, TableLoading } from '@/shared/ui/table'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { cloudflaredApi } from '@/features/cloudflared/api/cloudflared'
 import { tunnelStatusLabel } from '@/features/cloudflared/lib/status'
 import { providerPath } from '@/features/providers/lib/paths'
@@ -35,6 +35,7 @@ import { Spinner } from '@/shared/ui/spinner'
 import TunnelInstallPanel from '@/features/cloudflared/components/TunnelInstallPanel.vue'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
+import { serverFieldErrors } from '@/shared/lib/field-errors'
 
 const props = defineProps<{ providerId: string; tunnelId: string }>()
 const { isBusy: isRowBusy, runBusy } = useRowBusy()
@@ -49,6 +50,7 @@ const routes = ref<CloudflaredRoute[]>([])
 const token = ref('')
 const dialogOpen = ref(false)
 const editingRoute = ref<CloudflaredRoute | null>(null)
+const routeErrors = ref<Record<string, string>>({})
 const form = reactive({
   hostname: '',
   service: 'http://localhost:8080',
@@ -89,6 +91,7 @@ function openCreate() {
   form.hostname = ''
   form.service = 'http://localhost:8080'
   form.path = ''
+  routeErrors.value = {}
   dialogOpen.value = true
 }
 
@@ -97,14 +100,15 @@ function openEditRoute(record: CloudflaredRoute) {
   form.hostname = String(record.hostname || '')
   form.service = String(record.service || 'http://localhost:8080')
   form.path = String(record.path || '')
+  routeErrors.value = {}
   dialogOpen.value = true
 }
 
 async function saveRoute() {
-  if (!form.hostname.trim() || !form.service.trim()) {
-    toast.warning('请填写 hostname 和 service')
-    return
-  }
+  routeErrors.value = {}
+  if (!form.hostname.trim()) routeErrors.value.hostname = '请填写 Hostname'
+  if (!form.service.trim()) routeErrors.value.service = '请填写 Service'
+  if (Object.keys(routeErrors.value).length) return
   saving.value = true
   try {
     const data = {
@@ -128,6 +132,7 @@ async function saveRoute() {
     dialogOpen.value = false
     await runLoad()
   } catch (error) {
+    routeErrors.value = { ...routeErrors.value, ...serverFieldErrors(error) }
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -296,13 +301,15 @@ onMounted(() => runLoad())
 
     <AppDialog v-model:open="dialogOpen" :title="editingRoute ? '编辑路由' : '添加路由'" description="把公网 hostname 映射到本地服务。">
       <FieldGroup>
-        <Field>
+        <Field :data-invalid="!!routeErrors.hostname">
           <FieldLabel>Hostname</FieldLabel>
           <Input v-model="form.hostname" placeholder="app.example.com" />
+          <FieldError :errors="routeErrors.hostname ? [routeErrors.hostname] : []" />
         </Field>
-        <Field>
+        <Field :data-invalid="!!routeErrors.service">
           <FieldLabel>Service</FieldLabel>
           <Input v-model="form.service" placeholder="http://localhost:8080" />
+          <FieldError :errors="routeErrors.service ? [routeErrors.service] : []" />
         </Field>
         <Field>
           <FieldLabel>Path（可选）</FieldLabel>

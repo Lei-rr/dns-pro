@@ -13,6 +13,7 @@ import { buildDnsRecordDisplayRows, dnsRecordMatchesKeyword, dnsRecordRowKey } f
 import type { DnsRecord } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
@@ -39,7 +40,9 @@ const typeFilter = ref('all')
 const dialogOpen = ref(false)
 const batchEditOpen = ref(false)
 const batchSubmitting = ref(false)
+const batchEditError = ref('')
 const editing = ref<DnsRecord | null>(null)
+const formErrors = ref<FieldErrors>({})
 const form = reactive({
   name: '',
   type: 'A',
@@ -157,6 +160,7 @@ function setSelectedKeys(keys: string[]) {
 
 function openCreate() {
   editing.value = null
+  formErrors.value = {}
   form.name = ''
   form.type = 'A'
   form.value = ''
@@ -170,6 +174,7 @@ function openCreate() {
 
 function openEdit(record: DnsRecord) {
   editing.value = record
+  formErrors.value = {}
   form.name = String(record.name || '')
   form.type = String(record.type || 'A')
   form.value = String(record.value || record.content || '')
@@ -182,20 +187,14 @@ function openEdit(record: DnsRecord) {
 }
 
 async function save() {
+  const errors: FieldErrors = {}
   const names = parseRecordNames(form.name)
   const value = form.value.trim()
-  if (!names.length) {
-    toast.warning('主机记录不能为空')
-    return
-  }
-  if (!value) {
-    toast.warning('记录值不能为空')
-    return
-  }
-  if (editing.value && names.length !== 1) {
-    toast.warning('编辑时只能填写一个主机记录')
-    return
-  }
+  if (!names.length) errors.name = '主机记录不能为空'
+  if (!value) errors.value = '记录值不能为空'
+  if (editing.value && names.length !== 1) errors.name = '编辑时只能填写一个主机记录'
+  formErrors.value = errors
+  if (Object.keys(errors).length) return
 
   saving.value = true
   try {
@@ -248,6 +247,14 @@ async function save() {
       return
     }
   } catch (error) {
+    formErrors.value = {
+      ...formErrors.value,
+      ...serverFieldErrors(error, {
+        subdomain: 'name',
+        record_type: 'type',
+        content: 'value',
+      }),
+    }
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -341,6 +348,7 @@ function openBatchEdit() {
   batchPatch.remark = ''
   batchPatch.priority = ''
   batchPatch.proxied = '__keep'
+  batchEditError.value = ''
   batchEditOpen.value = true
 }
 
@@ -354,10 +362,8 @@ async function batchUpdateSelected() {
   if (batchPatch.proxied === 'true' || batchPatch.proxied === 'false') {
     patch.proxied = batchPatch.proxied === 'true'
   }
-  if (!Object.keys(patch).length) {
-    toast.warning('请至少填写一项要修改的字段')
-    return
-  }
+  batchEditError.value = Object.keys(patch).length ? '' : '请至少填写一项要修改的字段'
+  if (batchEditError.value) return
   const payload = selection.selectedRows.value.map((row) => ({
     id: String(row.id || ''),
     name: String(row.name || ''),
@@ -511,6 +517,7 @@ onMounted(async () => {
       :is-cloudflare="isCloudflare"
       :type-options="typeOptions"
       :line-options="dnspodLineOptions"
+      :errors="formErrors"
       @save="save"
     />
 
@@ -520,6 +527,7 @@ onMounted(async () => {
       :selected-count="selectedCount"
       :is-cloudflare="isCloudflare"
       :line-options="dnspodLineOptions"
+      :error="batchEditError"
       @submit="batchUpdateSelected"
     />
   </div>

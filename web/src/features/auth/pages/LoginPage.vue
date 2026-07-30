@@ -10,6 +10,7 @@ import {
 } from '@/shared/ui/card'
 import {
   Field,
+  FieldError,
   FieldGroup,
   FieldLabel,
 } from '@/shared/ui/field'
@@ -25,15 +26,16 @@ const session = useSessionStore()
 const username = ref('')
 const password = ref('')
 const loading = ref(false)
+const errors = ref<Record<string, string>>({})
 
 async function submit() {
   const user = username.value.trim()
   const pass = password.value
-  if (!user || !pass || loading.value) return
-  if (/\s/.test(pass)) {
-    toast.warning('密码不能包含空格')
-    return
-  }
+  errors.value = {}
+  if (!user) errors.value.username = '请输入用户名'
+  if (!pass) errors.value.password = '请输入密码'
+  else if (/\s/.test(pass)) errors.value.password = '密码不能包含空格'
+  if (Object.keys(errors.value).length || loading.value) return
   loading.value = true
   try {
     await session.login(user, pass)
@@ -60,7 +62,7 @@ async function submit() {
           <CardContent>
             <form @submit.prevent="submit">
               <FieldGroup>
-                <Field>
+                <Field :data-invalid="!!errors.username">
                   <FieldLabel for="username">用户名</FieldLabel>
                   <Input
                     id="username"
@@ -69,8 +71,9 @@ async function submit() {
                     autocomplete="username"
                     required
                   />
+                  <FieldError :errors="errors.username ? [errors.username] : []" />
                 </Field>
-                <Field>
+                <Field :data-invalid="!!errors.password">
                   <FieldLabel for="password">密码</FieldLabel>
                   <Input
                     id="password"
@@ -80,6 +83,7 @@ async function submit() {
                     autocomplete="current-password"
                     required
                   />
+                  <FieldError :errors="errors.password ? [errors.password] : []" />
                 </Field>
                 <Field>
                   <Button

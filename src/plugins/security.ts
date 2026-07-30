@@ -2,7 +2,6 @@ import type { FastifyReply, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import fastifyCookie from '@fastify/cookie'
 import fastifyHelmet from '@fastify/helmet'
-import fastifySensible from '@fastify/sensible'
 import type { AppConfig } from '../config/app.js'
 import { attachAppSession, writeAppSessionCookie, type AppSession } from '../lib/auth/app-session.js'
 
@@ -19,7 +18,6 @@ export type SecurityPluginOptions = {
  * Official security stack:
  * - @fastify/helmet
  * - @fastify/cookie
- * - @fastify/sensible
  * + app-session cookie (domain-specific AES-GCM; no sodium/secure-session)
  *
  * fp: session decoration must be root-visible.
@@ -68,7 +66,6 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
     writeAppSessionCookie(request, reply, sessionOptions)
   })
 
-  await app.register(fastifySensible)
 }
 
 export const securityPlugin = fp(securityPluginImpl, {

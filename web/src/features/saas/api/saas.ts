@@ -32,7 +32,7 @@ export const saasApi = {
     data: Record<string, unknown>,
     options: Record<string, unknown> = {},
   ): Promise<ApiResponse<SaaSHostname>> =>
-    http.post(`${zoneBase(provider, zone)}/hostnames`, data, options.autoSync ? { params: { auto_sync: 1 } } : {}),
+    http.post(`${zoneBase(provider, zone)}/hostnames`, data, options.autoSync ? { params: { auto_sync: true } } : {}),
   updateHostname: (
     provider: string,
     zone: string,
@@ -43,7 +43,7 @@ export const saasApi = {
     http.put(
       `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
       data,
-      options.autoSync ? { params: { auto_sync: 1 } } : {},
+      options.autoSync ? { params: { auto_sync: true } } : {},
     ),
   deleteHostname: (
     provider: string,
@@ -53,7 +53,7 @@ export const saasApi = {
   ): Promise<ApiResponse<SaaSHostname>> =>
     http.delete(
       `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
-      options.skipCleanup ? { params: { auto_cleanup: 0 } } : {},
+      options.skipCleanup ? { params: { auto_cleanup: false } } : {},
     ),
   reconcileHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/reconcile`),

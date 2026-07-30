@@ -2,7 +2,7 @@
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import {
   Select,
   SelectContent,
@@ -27,6 +27,7 @@ defineProps<{
   selectedCount: number
   isCloudflare: boolean
   lineOptions: Array<{ label: string; value: string }>
+  error: string
 }>()
 
 const emit = defineEmits<{
@@ -87,6 +88,7 @@ const emit = defineEmits<{
         <Input v-model="patch.priority" placeholder="留空不改" />
       </Field>
     </FieldGroup>
+    <FieldError :errors="error ? [error] : []" />
     <template #footer>
       <Button variant="outline" @click="open = false">取消</Button>
       <Button @click="emit('submit')">开始修改</Button>

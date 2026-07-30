@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { reactive, computed, watch } from 'vue'
+import { reactive, computed, ref, watch } from 'vue'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { toast } from '@/shared/lib/toast'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { certificateStatusLabel } from '@/features/edgeone/lib/status'
 import {
   Select,
@@ -18,11 +17,14 @@ import {
 const open = defineModel<boolean>('open', { default: false })
 const props = defineProps<{
   certificate?: { mode?: string; items?: Array<{ cert_id?: string; status?: string; type?: string; expire_time?: string }>; list?: Array<{ cert_id?: string; status?: string; type?: string; expire_time?: string }> }
+  errors?: Record<string, string>
 }>()
 const emit = defineEmits<{
   save: [payload: Record<string, unknown>]
 }>()
 
+const localErrors = ref<Record<string, string>>({})
+const errors = computed(() => ({ ...(props.errors || {}), ...localErrors.value }))
 const form = reactive({
   https_mode: 'disable',
   cert_id: '',
@@ -38,18 +40,17 @@ const currentCert = computed(() => {
 
 watch(open, (value) => {
   if (value) {
+    localErrors.value = {}
     form.https_mode = props.certificate?.mode || 'disable'
     form.cert_id = currentCert.value?.cert_id || ''
   }
 })
 
 function submit() {
-  if (showCertId.value && !form.cert_id.trim()) {
-    toast.warning('证书 ID 不能为空')
-    return
-  }
+  localErrors.value = {}
+  if (showCertId.value && !form.cert_id.trim()) localErrors.value.cert_id = '证书 ID 不能为空'
+  if (Object.keys(localErrors.value).length) return
   emit('save', { ...form })
-  open.value = false
 }
 </script>
 
@@ -88,9 +89,10 @@ function submit() {
           </Select>
       </Field>
 
-      <Field v-if="showCertId">
+      <Field v-if="showCertId" :data-invalid="!!errors.cert_id">
         <FieldLabel>证书 ID</FieldLabel>
         <Input v-model="form.cert_id" placeholder="请输入证书 ID" />
+        <FieldError :errors="errors.cert_id ? [errors.cert_id] : []" />
       </Field>
     </FieldGroup>
 

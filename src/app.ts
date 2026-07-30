@@ -32,6 +32,7 @@ export async function buildApp(config: AppConfig) {
       if (typeof incoming === 'string' && incoming.trim()) return incoming.trim()
       return `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
     },
+    ajv: { customOptions: { coerceTypes: false, removeAdditional: false } },
   })
 
   const ctx = await createAppContext(config)
@@ -39,13 +40,12 @@ export async function buildApp(config: AppConfig) {
   await app.register(appContextPlugin, { ctx })
   await app.register(securityPlugin, { config })
   await app.register(staticPlugin)
+  await app.register(errorHandlerPlugin)
 
   // Keep /api — no version prefix (personal panel, no public API versioning)
   await app.register(async function api(scope) {
     await registerApiRoutes(scope)
   }, { prefix: '/api' })
-
-  await app.register(errorHandlerPlugin)
 
   return app
 }

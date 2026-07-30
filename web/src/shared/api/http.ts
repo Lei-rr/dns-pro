@@ -152,7 +152,7 @@ export function withRefresh(options: Record<string, unknown> = {}) {
     if (key === 'refresh' || value === undefined || value === null || value === '') delete queryParams[key]
   }
 
-  return { params: refresh ? { ...queryParams, refresh: 1 } : queryParams }
+  return { params: refresh ? { ...queryParams, refresh: true } : queryParams }
 }
 
 function isListResponse<T>(data: unknown): data is ListResponse<T> {

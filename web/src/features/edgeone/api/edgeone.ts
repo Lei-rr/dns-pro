@@ -37,7 +37,7 @@ export const edgeOneApi = {
     http.post(
       `${zoneBase(provider, zone)}/records`,
       data,
-      options.autoSync ? { params: { auto_sync: 1 } } : {},
+      options.autoSync ? { params: { auto_sync: true } } : {},
     ),
   updateAccelerationDomain: (provider: string, zone: string, domain: string, data: Record<string, unknown>) =>
     http.put(domainBase(provider, zone, domain), data),
@@ -53,7 +53,7 @@ export const edgeOneApi = {
   ) =>
     http.delete(
       domainBase(provider, zone, domain),
-      options.skipCleanup ? { params: { auto_cleanup: 0 } } : {},
+      options.skipCleanup ? { params: { auto_cleanup: false } } : {},
     ),
   syncAccelerationDomainCname: (provider: string, zone: string, domain: string) =>
     http.post(`${domainBase(provider, zone, domain)}/cname-sync`),

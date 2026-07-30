@@ -6,12 +6,13 @@ import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldLabel } from '@/shared/ui/field'
 import { preferredDomainApi, saasApi } from '@/features/saas/api/saas'
 import { providerPath } from '@/features/providers/lib/paths'
 import type { SaaSHostname, Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { removeListItem } from '@/shared/lib/row-busy'
@@ -54,8 +55,10 @@ const detailRecord = ref<SaaSHostname | null>(null)
 const batchPreferredOpen = ref(false)
 const batchSubmitting = ref(false)
 const batchPreferredDomain = ref('')
+const batchPreferredError = ref('')
 const preferredOptions = ref<Array<{ domain: string }>>([])
 const editing = ref<SaaSHostname | null>(null)
+const formErrors = ref<FieldErrors>({})
 const form = reactive({
   hostname: '',
   hostname_prefix: '',
@@ -234,6 +237,7 @@ function onSearch() {
 
 async function openCreate() {
   editing.value = null
+  formErrors.value = {}
   await loadProviders()
   await loadPreferredOptions()
   resetForm()
@@ -243,6 +247,7 @@ async function openCreate() {
 function openEdit(record: SaaSHostname) {
   detailOpen.value = false
   editing.value = record
+  formErrors.value = {}
   form.hostname = record.hostname
   form.hostname_prefix = ''
   form.sync_provider_id = String(record.sync_provider_id || (record as any).effective_sync_provider_id || '')
@@ -298,18 +303,12 @@ async function refreshDetailHostname(record: SaaSHostname) {
 
 async function save() {
   const hostname = (usesGuidedHostname.value ? hostnamePreview.value : form.hostname).trim()
-  if (!hostname) {
-    toast.warning(usesGuidedHostname.value ? '请选择同步域名' : '请填写主机名')
-    return
-  }
-  if (form.use_custom_origin_server && !form.custom_origin_server.trim()) {
-    toast.warning('请填写自定义源服务器，或关闭该开关')
-    return
-  }
-  if (form.auto_preferred && form.preferred_domain === '__none') {
-    toast.warning('开启自动优选时请选择优选域名')
-    return
-  }
+  const errors: FieldErrors = {}
+  if (!hostname) errors.hostname = usesGuidedHostname.value ? '请选择同步域名' : '请填写主机名'
+  if (form.use_custom_origin_server && !form.custom_origin_server.trim()) errors.custom_origin_server = '请填写自定义源服务器，或关闭该开关'
+  if (form.auto_preferred && form.preferred_domain === '__none') errors.preferred_domain = '开启自动优选时请选择优选域名'
+  formErrors.value = errors
+  if (Object.keys(errors).length) return
   saving.value = true
   try {
     const preferred = form.preferred_domain === '__none' ? '' : form.preferred_domain
@@ -358,6 +357,7 @@ async function save() {
       await runLoad()
     }
   } catch (error) {
+    formErrors.value = { ...formErrors.value, ...serverFieldErrors(error) }
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -485,6 +485,7 @@ async function openBatchPreferred() {
       return
     }
     batchPreferredDomain.value = preferredOptions.value[0]?.domain || ''
+    batchPreferredError.value = ''
     batchPreferredOpen.value = true
   } catch (error) {
     toast.error(errorMessage(error))
@@ -493,10 +494,8 @@ async function openBatchPreferred() {
 
 async function batchUpdatePreferred() {
   const preferred = batchPreferredDomain.value.trim()
-  if (!preferred) {
-    toast.warning('请选择优选域名')
-    return
-  }
+  batchPreferredError.value = preferred ? '' : '请选择优选域名'
+  if (batchPreferredError.value) return
   batchSubmitting.value = true
   batchPreferredOpen.value = false
   try {
@@ -649,6 +648,7 @@ onMounted(async () => {
       :preferred-options="preferredOptions"
       :origin-suggestions="originSuggestions"
       :origin-suggest-open="originSuggestOpen"
+      :errors="formErrors"
       @update:origin-suggest-open="originSuggestOpen = $event"
       @pick-origin="pickOriginSuggestion"
       @save="save"
@@ -659,7 +659,7 @@ onMounted(async () => {
       title="批量修改优选域名"
       :description="`将把已选 ${selectedCount} 个主机名的优选域名改为：`"
     >
-      <Field>
+      <Field :data-invalid="!!batchPreferredError">
         <FieldLabel>优选域名</FieldLabel>
         <Select v-model="batchPreferredDomain">
           <SelectTrigger class="w-full">
@@ -671,6 +671,7 @@ onMounted(async () => {
             </SelectItem>
           </SelectContent>
         </Select>
+        <FieldError :errors="batchPreferredError ? [batchPreferredError] : []" />
       </Field>
       <template #footer>
         <Button variant="outline" @click="batchPreferredOpen = false">取消</Button>

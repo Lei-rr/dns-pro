@@ -33,7 +33,7 @@ export type CachedResult<T> = {
 
 /** Shared TTL presets for dns-pro provider data. */
 export const CacheTtl = {
-  /** Provider query data lives for the process lifetime; mutations invalidate and refresh=1 overwrites it. */
+  /** Provider query data lives for the process lifetime; mutations invalidate and refresh=true overwrites it. */
   providerData: Number.POSITIVE_INFINITY,
   /** Short-lived operational lookups if needed later. */
   short: 5 * 60 * 1000,
@@ -41,11 +41,7 @@ export const CacheTtl = {
 
 export function parseRefreshFlag(value: unknown): boolean {
   if (typeof value === 'boolean') return value
-  if (typeof value === 'number') return value !== 0
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase()
-    return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on'
-  }
+  if (typeof value === 'string') return value.trim().toLowerCase() === 'true'
   return false
 }
 

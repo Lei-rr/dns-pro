@@ -3,6 +3,7 @@ import { onMounted, ref, watch } from 'vue'
 import { ArrowDown, ArrowUp } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
+import { Field, FieldError } from '@/shared/ui/field'
 import {
   Table,
   TableBody,
@@ -15,6 +16,7 @@ import { AppDialog } from '@/shared/ui/dialog'
 import { preferredDomainApi } from '@/features/saas/api/saas'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { confirmDelete } from '@/shared/ui/confirm'
 
 const open = defineModel<boolean>('open', { default: false })
@@ -37,6 +39,8 @@ const newDomain = ref('')
 const editingDomain = ref<string | null>(null)
 const editingValue = ref('')
 const applyingDomain = ref('')
+const newDomainError = ref('')
+const editingError = ref('')
 
 async function load() {
   loading.value = true
@@ -54,10 +58,8 @@ async function load() {
 
 async function addDomain() {
   const domain = newDomain.value.trim()
-  if (!domain) {
-    toast.warning('请输入优选域名')
-    return
-  }
+  newDomainError.value = domain ? '' : '请输入优选域名'
+  if (newDomainError.value) return
   saving.value = true
   try {
     await preferredDomainApi.create(domain)
@@ -65,6 +67,7 @@ async function addDomain() {
     toast.success('已添加')
     await load()
   } catch (error) {
+    newDomainError.value = serverFieldErrors(error).domain || newDomainError.value
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -74,6 +77,7 @@ async function addDomain() {
 function startEdit(record: { domain: string }) {
   editingDomain.value = record.domain
   editingValue.value = record.domain
+  editingError.value = ''
 }
 
 function cancelEdit() {
@@ -84,10 +88,8 @@ function cancelEdit() {
 async function saveEdit() {
   if (!editingDomain.value) return
   const next = editingValue.value.trim()
-  if (!next) {
-    toast.warning('域名不能为空')
-    return
-  }
+  editingError.value = next ? '' : '域名不能为空'
+  if (editingError.value) return
   saving.value = true
   try {
     await preferredDomainApi.rename(editingDomain.value, next)
@@ -95,6 +97,7 @@ async function saveEdit() {
     cancelEdit()
     await load()
   } catch (error) {
+    editingError.value = serverFieldErrors(error).domain || editingError.value
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -161,10 +164,13 @@ onMounted(() => {
     description="支持排序；创建/编辑主机名时可选择境内优选 CNAME，也可对当前列表一键切换。"
     content-class="sm:max-w-3xl"
   >
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <Input v-model="newDomain" class="h-9 flex-1" placeholder="如 saas.sin.fan" @keyup.enter="addDomain" />
-      <Button size="sm" :loading="saving" @click="addDomain">添加</Button>
-    </div>
+    <Field :data-invalid="!!newDomainError" class="flex flex-col gap-1">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Input v-model="newDomain" class="h-9 flex-1" placeholder="如 saas.sin.fan" @keyup.enter="addDomain" />
+        <Button size="sm" :loading="saving" @click="addDomain">添加</Button>
+      </div>
+      <FieldError :errors="newDomainError ? [newDomainError] : []" />
+    </Field>
 
     <div class="rounded-lg">
       <Table>
@@ -204,12 +210,14 @@ onMounted(() => {
               </div>
             </TableCell>
             <TableCell>
-              <Input
-                v-if="editingDomain === record.domain"
-                v-model="editingValue"
-                class="h-8"
-                @keyup.enter="saveEdit"
-              />
+              <Field v-if="editingDomain === record.domain" :data-invalid="!!editingError">
+                <Input
+                  v-model="editingValue"
+                  class="h-8"
+                  @keyup.enter="saveEdit"
+                />
+                <FieldError :errors="editingError ? [editingError] : []" />
+              </Field>
               <span v-else class="font-medium">{{ record.domain }}</span>
             </TableCell>
             <TableCell class="text-right">

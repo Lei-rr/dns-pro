@@ -26,6 +26,7 @@ import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
@@ -53,6 +54,8 @@ const keyword = ref('')
 const dialogOpen = ref(false)
 const certDialogOpen = ref(false)
 const editingDomain = ref<EdgeOneAccelerationDomain | null>(null)
+const formErrors = ref<FieldErrors>({})
+const certErrors = ref<FieldErrors>({})
 
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -129,40 +132,45 @@ async function loadZoneMeta(refresh = false): Promise<EdgeOneZone | null> {
 
 function openCreate() {
   editingDomain.value = null
+  formErrors.value = {}
   dialogOpen.value = true
 }
 
 function openEdit(record: EdgeOneAccelerationDomain) {
   editingDomain.value = record
+  formErrors.value = {}
   dialogOpen.value = true
 }
 
 function openCert(record: EdgeOneAccelerationDomain) {
   editingDomain.value = record
+  certErrors.value = {}
   certDialogOpen.value = true
 }
 
 async function save(payload: Record<string, unknown>) {
   saving.value = true
   try {
+    const data: Record<string, unknown> = {
+      origin_type: payload.origin_type as string,
+      origin: payload.origin as string,
+    }
+    if (!editingDomain.value) data.domain_name = payload.fullDomain as string
+    if (payload.origin_protocol) data.origin_protocol = payload.origin_protocol
+    if (payload.http_origin_port) data.http_origin_port = payload.http_origin_port
+    if (payload.https_origin_port) data.https_origin_port = payload.https_origin_port
+    if (payload.ipv6_status) data.ipv6_status = payload.ipv6_status
+    if (payload.host_header) data.host_header = payload.host_header
+
     if (editingDomain.value) {
       const response = await edgeOneApi.updateAccelerationDomain(
         props.providerId,
         props.zoneId,
         domainName(editingDomain.value),
-        payload,
+        data,
       )
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '加速域名已更新')
     } else {
-      const data: Record<string, unknown> = {
-        domain_name: payload.fullDomain as string,
-        origin: { type: payload.origin_type as string, value: payload.origin as string },
-      }
-      if (payload.origin_protocol) data.origin_protocol = payload.origin_protocol
-      if (payload.http_origin_port) data.http_origin_port = payload.http_origin_port
-      if (payload.https_origin_port) data.https_origin_port = payload.https_origin_port
-      if (payload.ipv6_status) data.ipv6_status = payload.ipv6_status
-      if (payload.host_header) (data.origin as Record<string, unknown>).host_header = payload.host_header
       const response = await edgeOneApi.createAccelerationDomain(props.providerId, props.zoneId, data, {
         autoSync: !!payload.autoSync,
       })
@@ -172,6 +180,7 @@ async function save(payload: Record<string, unknown>) {
     saving.value = false
     await runLoad()
   } catch (error) {
+    formErrors.value = { ...formErrors.value, ...serverFieldErrors(error) }
     toast.error(errorMessage(error))
     saving.value = false
   }
@@ -187,6 +196,7 @@ async function saveCertificate(payload: Record<string, unknown>) {
     saving.value = false
     await runLoad()
   } catch (error) {
+    certErrors.value = { ...certErrors.value, ...serverFieldErrors(error) }
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -461,11 +471,13 @@ onMounted(() => {
       v-model:open="dialogOpen"
       :zone-name="pageTitle"
       :editing="!!editingDomain"
+      :errors="formErrors"
       @save="save"
     />
     <CertificateForm
       v-model:open="certDialogOpen"
       :certificate="editingDomain?.certificate"
+      :errors="certErrors"
       @save="saveCertificate"
     />
   </div>

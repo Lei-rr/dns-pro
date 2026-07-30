@@ -14,7 +14,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { EllipsisVertical, Plus, RefreshCw, Search } from '@lucide/vue'
 import { dnsApi } from '@/features/dns/api/dns'
 import { getCachedProvider, loadProviders } from '@/features/providers/stores/providers'
@@ -22,6 +22,7 @@ import { providerChildPath, providerTypeLabel } from '@/features/providers/lib/p
 import type { Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { removeListItem } from '@/shared/lib/row-busy'
@@ -35,6 +36,7 @@ const keyword = ref('')
 const showAdd = ref(false)
 const adding = ref(false)
 const domainInput = ref('')
+const domainError = ref('')
 
 const provider = computed(() => getCachedProvider(props.providerId))
 const title = computed(() => provider.value?.name || props.providerId)
@@ -84,12 +86,15 @@ function onSearch() {
   resetPage()
 }
 
+function openAdd() {
+  domainError.value = ''
+  showAdd.value = true
+}
+
 async function createZone() {
   const domain = domainInput.value.trim()
-  if (!domain) {
-    toast.warning('请输入域名')
-    return
-  }
+  domainError.value = domain ? '' : '请输入域名'
+  if (domainError.value) return
   adding.value = true
   try {
     await dnsApi.createZone(props.providerId, { domain })
@@ -98,6 +103,8 @@ async function createZone() {
     domainInput.value = ''
     await runLoad()
   } catch (error) {
+    const fields = serverFieldErrors(error, { name: 'domain' })
+    domainError.value = fields.domain || domainError.value
     toast.error(errorMessage(error))
   } finally {
     adding.value = false
@@ -149,7 +156,7 @@ onMounted(async () => {
         <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
         刷新
       </Button>
-      <Button size="sm" @click="showAdd = true">
+      <Button size="sm" @click="openAdd">
         <Plus class="size-4" />
         添加域名
       </Button>
@@ -222,9 +229,10 @@ onMounted(async () => {
 
     <AppDialog v-model:open="showAdd" title="添加域名" description="创建后会同步到对应云服务商。">
       <FieldGroup>
-        <Field>
+        <Field :data-invalid="!!domainError">
           <FieldLabel>域名</FieldLabel>
           <Input v-model="domainInput" placeholder="example.com" @keyup.enter="createZone" />
+          <FieldError :errors="domainError ? [domainError] : []" />
         </Field>
       </FieldGroup>
       <template #footer>

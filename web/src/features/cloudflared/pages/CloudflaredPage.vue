@@ -22,7 +22,7 @@ import {
   TableLoading,
 } from '@/shared/ui/table'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { cloudflaredApi } from '@/features/cloudflared/api/cloudflared'
 import { tunnelStatusLabel } from '@/features/cloudflared/lib/status'
 import { providerChildPath } from '@/features/providers/lib/paths'
@@ -33,6 +33,7 @@ import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
 import { removeListItem } from '@/shared/lib/row-busy'
+import { serverFieldErrors } from '@/shared/lib/field-errors'
 
 const props = defineProps<{ providerId: string }>()
 const router = useRouter()
@@ -41,6 +42,7 @@ const creating = ref(false)
 const tunnels = ref<CloudflaredTunnel[]>([])
 const dialogOpen = ref(false)
 const name = ref('')
+const nameError = ref('')
 
 const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: setPageSize, fail } = useListPage({
   pageSizeScope: 'cloudflared-tunnels',
@@ -67,12 +69,15 @@ function openDetail(record: CloudflaredTunnel) {
   router.push(providerChildPath(props.providerId, String(record.id || record.name)))
 }
 
+function openCreate() {
+  nameError.value = ''
+  dialogOpen.value = true
+}
+
 async function createTunnel() {
   const value = name.value.trim()
-  if (!value) {
-    toast.warning('请填写隧道名称')
-    return
-  }
+  nameError.value = value ? '' : '请填写隧道名称'
+  if (nameError.value) return
   creating.value = true
   try {
     await cloudflaredApi.createTunnel(props.providerId, value)
@@ -81,6 +86,7 @@ async function createTunnel() {
     name.value = ''
     await runLoad()
   } catch (error) {
+    nameError.value = serverFieldErrors(error).name || nameError.value
     fail(error)
   } finally {
     creating.value = false
@@ -116,7 +122,7 @@ onMounted(() => runLoad())
         <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
         刷新
       </Button>
-      <Button size="sm" @click="dialogOpen = true">
+      <Button size="sm" @click="openCreate">
         <Plus class="size-4" />
         创建隧道
       </Button>
@@ -178,9 +184,10 @@ onMounted(() => runLoad())
 
     <AppDialog v-model:open="dialogOpen" title="创建隧道" description="创建一个新的 Cloudflare Tunnel。">
       <FieldGroup>
-        <Field>
+        <Field :data-invalid="!!nameError">
           <FieldLabel>隧道名称</FieldLabel>
           <Input v-model="name" placeholder="my-tunnel" @keyup.enter="createTunnel" />
+          <FieldError :errors="nameError ? [nameError] : []" />
         </Field>
       </FieldGroup>
       <template #footer>

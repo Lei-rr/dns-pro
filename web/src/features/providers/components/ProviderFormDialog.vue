@@ -2,7 +2,8 @@
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { fieldError, type FieldErrors } from '@/shared/lib/field-errors'
 import {
   Select,
   SelectContent,
@@ -13,6 +14,7 @@ import {
 import type { Provider, ProviderDefinition } from '@/shared/types'
 
 export type ProviderFormModel = {
+  id: string
   type: string
   name: string
   fields: Record<string, string>
@@ -27,6 +29,7 @@ const props = defineProps<{
   definitions: ProviderDefinition[]
   labels: Record<string, string>
   providers: Provider[]
+  errors: FieldErrors
 }>()
 
 const emit = defineEmits<{
@@ -77,7 +80,12 @@ function dialogFields(): string[] {
     description="留空的字段不会覆盖现有配置；密钥留空表示不修改。"
   >
     <FieldGroup>
-      <Field v-if="!editing">
+      <Field v-if="!editing" :data-invalid="!!errors.id">
+        <FieldLabel>ID</FieldLabel>
+        <Input v-model="form.id" placeholder="如 cloudflare-main" aria-describedby="provider-id-error" />
+        <FieldError id="provider-id-error" :errors="fieldError(errors, 'id')" />
+      </Field>
+      <Field v-if="!editing" :data-invalid="!!errors.type">
         <FieldLabel>类型</FieldLabel>
         <Select
           :model-value="form.type"
@@ -92,12 +100,14 @@ function dialogFields(): string[] {
             </SelectItem>
           </SelectContent>
         </Select>
+        <FieldError :errors="fieldError(errors, 'type')" />
       </Field>
-      <Field>
+      <Field :data-invalid="!!errors.name">
         <FieldLabel>名称</FieldLabel>
         <Input v-model="form.name" placeholder="显示名称" />
+        <FieldError :errors="fieldError(errors, 'name')" />
       </Field>
-      <Field v-for="field in dialogFields()" :key="field">
+      <Field v-for="field in dialogFields()" :key="field" :data-invalid="!!errors[field]">
         <FieldLabel>{{ fieldLabel(field) }}</FieldLabel>
         <Select v-if="isProviderSelectField(field)" v-model="form.fields[field]">
           <SelectTrigger class="w-full">
@@ -125,6 +135,7 @@ function dialogFields(): string[] {
           v-model="form.fields[field]"
           :placeholder="editing?.fields?.[field] || fieldLabel(field)"
         />
+        <FieldError :errors="fieldError(errors, field)" />
       </Field>
     </FieldGroup>
     <template #footer>

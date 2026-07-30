@@ -4,11 +4,12 @@ import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import { saasApi } from '@/features/saas/api/saas'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { confirmDialog } from '@/shared/ui/confirm'
 
 const open = defineModel<boolean>('open', { default: false })
@@ -28,6 +29,7 @@ const origin = ref('')
 const currentOrigin = ref('')
 const status = ref('')
 const errors = ref<string[]>([])
+const originError = ref('')
 
 const statusLabel = computed(() => {
   return (
@@ -65,10 +67,8 @@ async function load() {
 }
 
 async function save() {
-  if (!canSave.value) {
-    toast.warning('请填写源服务器')
-    return
-  }
+  originError.value = canSave.value ? '' : '请填写源服务器'
+  if (originError.value) return
   saving.value = true
   try {
     if (!enabled.value) {
@@ -82,6 +82,7 @@ async function save() {
     }
     open.value = false
   } catch (error) {
+    originError.value = serverFieldErrors(error).origin || originError.value
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -129,9 +130,10 @@ watch(open, (value) => {
         <Switch v-model="enabled" />
         <FieldLabel>启用默认回源</FieldLabel>
       </Field>
-      <Field v-if="enabled">
+      <Field v-if="enabled" :data-invalid="!!originError">
         <FieldLabel>源服务器</FieldLabel>
         <Input v-model="origin" :placeholder="`origin.${zoneName}`" @keyup.enter="save" />
+        <FieldError :errors="originError ? [originError] : []" />
       </Field>
       <div v-if="currentOrigin">
         <Button variant="outline" class="text-destructive" :loading="deleting" @click="removeOrigin">

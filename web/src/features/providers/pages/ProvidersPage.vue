@@ -25,6 +25,7 @@ import { providerTypeLabel } from '@/features/providers/lib/paths'
 import type { Provider, ProviderDefinition } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { confirmDelete } from '@/shared/ui/confirm'
 import ProviderFormDialog from '@/features/providers/components/ProviderFormDialog.vue'
@@ -36,10 +37,12 @@ const labels = ref<Record<string, string>>({})
 const dialogOpen = ref(false)
 const editing = ref<Provider | null>(null)
 const form = reactive({
+  id: '',
   type: 'dnspod',
   name: '',
   fields: {} as Record<string, string>,
 })
+const formErrors = ref<FieldErrors>({})
 const operatingId = ref('')
 const typeFilter = ref('all')
 
@@ -79,7 +82,9 @@ function resetFormFields(type: string) {
 
 function openCreate() {
   editing.value = null
+  form.id = ''
   form.name = ''
+  formErrors.value = {}
   resetFormFields(definitions.value[0]?.type || 'dnspod')
   dialogOpen.value = true
 }
@@ -91,7 +96,9 @@ function onCreateTypeChange(type: string) {
 
 function openEdit(record: Provider) {
   editing.value = record
+  form.id = record.id
   form.type = record.type
+  formErrors.value = {}
   form.name = record.name
   form.fields = {}
   // 编辑时密钥只回填「已配置」占位，提交空串表示不改
@@ -160,16 +167,19 @@ function configItems(provider: Provider): Array<{ key: string; value: string; ok
 }
 
 async function save() {
-  if (!form.name.trim()) {
-    toast.warning('请填写服务商名称')
-    return
-  }
+  const errors: FieldErrors = {}
+  if (!editing.value && !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(form.id.trim())) errors.id = '请输入合法 ID（字母或数字开头，可含 _ 和 -）'
+  if (!form.type) errors.type = '请选择服务商类型'
+  if (!form.name.trim()) errors.name = '请填写服务商名称'
+  formErrors.value = errors
+  if (Object.keys(errors).length) return
   saving.value = true
   try {
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
     }
     if (!editing.value) {
+      payload.id = form.id.trim()
       payload.type = form.type
     }
     // 空字段不覆盖；密钥留空=不修改
@@ -189,6 +199,7 @@ async function save() {
     dialogOpen.value = false
     await runLoad()
   } catch (error) {
+    formErrors.value = { ...formErrors.value, ...serverFieldErrors(error) }
     toast.error(errorMessage(error))
   } finally {
     saving.value = false
@@ -335,6 +346,7 @@ onMounted(() => runLoad())
       :definitions="definitions"
       :labels="labels"
       :providers="providers"
+      :errors="formErrors"
       @save="save"
       @change-type="onCreateTypeChange"
     />

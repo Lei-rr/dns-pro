@@ -10,23 +10,33 @@ import {
   batchJobRetry,
 } from '../dns-batch/controllers/batch-controller.js'
 import { withDnsProviderType } from '../dns-batch/with-provider-type.js'
+import { dnsBatchBodySchema, dnsJobParamsSchema, dnsZoneParamsSchema } from '../dns-batch/schemas.js'
+import {
+  dnspodRecordParamsSchema,
+  dnspodRecordStoreSchema,
+  dnspodRecordUpdateSchema,
+  dnspodRecordsIndexSchema,
+  dnspodZoneParamsSchema,
+  dnspodZoneStoreSchema,
+  dnspodZonesIndexSchema,
+} from './schemas.js'
 
 export async function routes(app: FastifyInstance) {
   await withDnsProviderType(app, 'dnspod')
 
-  app.get('/zones', zonesIndex)
-  app.post('/zones', zoneStore)
-  app.delete('/zones/:zone', zoneDelete)
+  app.get('/zones', { schema: dnspodZonesIndexSchema }, zonesIndex)
+  app.post('/zones', { schema: dnspodZoneStoreSchema }, zoneStore)
+  app.delete('/zones/:zone', { schema: dnspodZoneParamsSchema }, zoneDelete)
 
-  app.get('/zones/:zone/records', recordsIndex)
-  app.post('/zones/:zone/records', recordStore)
-  app.put('/zones/:zone/records/:recordId', recordUpdate)
-  app.delete('/zones/:zone/records/:recordId', recordDelete)
+  app.get('/zones/:zone/records', { schema: dnspodRecordsIndexSchema }, recordsIndex)
+  app.post('/zones/:zone/records', { schema: dnspodRecordStoreSchema }, recordStore)
+  app.put('/zones/:zone/records/:recordId', { schema: dnspodRecordUpdateSchema }, recordUpdate)
+  app.delete('/zones/:zone/records/:recordId', { schema: dnspodRecordParamsSchema }, recordDelete)
 
-  app.post('/zones/:zone/records/batch-create', batchCreateStore)
-  app.post('/zones/:zone/records/batch-delete', batchDeleteStore)
-  app.post('/zones/:zone/records/batch-update', batchUpdateStore)
-  app.get('/zones/:zone/records/batch/active', batchJobActive)
-  app.get('/records/batch/:jobId', batchJobShow)
-  app.post('/records/batch/:jobId/retry', batchJobRetry)
+  app.post('/zones/:zone/records/batch-create', { schema: dnsBatchBodySchema('create') }, batchCreateStore)
+  app.post('/zones/:zone/records/batch-delete', { schema: dnsBatchBodySchema('delete') }, batchDeleteStore)
+  app.post('/zones/:zone/records/batch-update', { schema: dnsBatchBodySchema('update') }, batchUpdateStore)
+  app.get('/zones/:zone/records/batch/active', { schema: dnsZoneParamsSchema }, batchJobActive)
+  app.get('/records/batch/:jobId', { schema: dnsJobParamsSchema }, batchJobShow)
+  app.post('/records/batch/:jobId/retry', { schema: dnsJobParamsSchema }, batchJobRetry)
 }

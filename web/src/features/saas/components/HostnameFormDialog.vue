@@ -3,7 +3,8 @@ import { AppDialog } from '@/shared/ui/dialog'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Switch } from '@/shared/ui/switch'
-import { Field, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
+import type { FieldErrors } from '@/shared/lib/field-errors'
 import {
   Select,
   SelectContent,
@@ -38,6 +39,7 @@ const props = defineProps<{
   preferredOptions: Array<{ domain: string }>
   originSuggestions: string[]
   originSuggestOpen: boolean
+  errors: FieldErrors
 }>()
 
 const emit = defineEmits<{
@@ -86,7 +88,7 @@ const filteredOriginSuggestions = () => {
             <FieldLabel>主机名前缀</FieldLabel>
             <Input v-model="form.hostname_prefix" placeholder="如 app；留空表示根域名" />
           </Field>
-          <Field>
+          <Field :data-invalid="!!errors.hostname">
             <FieldLabel>同步域名</FieldLabel>
             <Select v-model="form.sync_zone">
               <SelectTrigger class="w-full">
@@ -98,11 +100,13 @@ const filteredOriginSuggestions = () => {
                 </SelectItem>
               </SelectContent>
             </Select>
+            <FieldError :errors="errors.hostname ? [errors.hostname] : []" />
           </Field>
         </div>
-        <Field v-if="!form.sync_provider_id">
+        <Field v-if="!form.sync_provider_id" :data-invalid="!!errors.hostname">
           <FieldLabel>主机名</FieldLabel>
           <Input v-model="form.hostname" placeholder="www.example.com" />
+          <FieldError :errors="errors.hostname ? [errors.hostname] : []" />
         </Field>
       </template>
 
@@ -139,7 +143,7 @@ const filteredOriginSuggestions = () => {
         <Switch v-model="form.use_custom_origin_server" />
         <FieldLabel>自定义源服务器</FieldLabel>
       </Field>
-      <Field v-if="form.use_custom_origin_server" class="relative">
+      <Field v-if="form.use_custom_origin_server" class="relative" :data-invalid="!!errors.custom_origin_server">
         <Input
           v-model="form.custom_origin_server"
           placeholder="输入或从已用源服务器选择，如 origin.example.com"
@@ -148,6 +152,7 @@ const filteredOriginSuggestions = () => {
           @input="emit('update:originSuggestOpen', true)"
           @keydown.escape="emit('update:originSuggestOpen', false)"
         />
+        <FieldError :errors="errors.custom_origin_server ? [errors.custom_origin_server] : []" />
         <div
           v-if="originSuggestOpen && filteredOriginSuggestions().length"
           class="bg-popover text-popover-foreground absolute top-full z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border shadow-md"
@@ -169,7 +174,7 @@ const filteredOriginSuggestions = () => {
         <Switch v-model="form.auto_preferred" />
         <FieldLabel>自动优选</FieldLabel>
       </Field>
-      <Field v-if="form.auto_preferred">
+      <Field v-if="form.auto_preferred" :data-invalid="!!errors.preferred_domain">
         <FieldLabel>优选域名</FieldLabel>
         <Select v-model="form.preferred_domain">
           <SelectTrigger class="w-full">
@@ -182,6 +187,7 @@ const filteredOriginSuggestions = () => {
             </SelectItem>
           </SelectContent>
         </Select>
+        <FieldError :errors="errors.preferred_domain ? [errors.preferred_domain] : []" />
       </Field>
 
       <Field orientation="horizontal">
