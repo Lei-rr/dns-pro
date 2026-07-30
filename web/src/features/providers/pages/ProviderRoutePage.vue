@@ -58,7 +58,7 @@ const page = computed((): { component: Component | null; pageProps: Record<strin
 
 onMounted(async () => {
   try {
-    if (!getCachedProvider(providerId.value)) await loadProviders({ refresh: true })
+    if (!getCachedProvider(providerId.value)) await loadProviders({ force: true })
     if (!getCachedProvider(providerId.value)) {
       toast.warning('服务商未配置')
       router.replace('/')

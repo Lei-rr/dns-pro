@@ -73,11 +73,11 @@ export async function hostnamesUpdate(
   return reply.send(success(result))
 }
 
-export async function hostnamesRefresh(
+export async function hostnamesReconcile(
   request: FastifyRequest<{ Params: { providerId: string; zoneName: string; hostnameFqdn: string } }>,
   reply: FastifyReply,
 ) {
-  const result = await request.server.ctx.saasWorkflowService.refreshHostname(
+  const result = await request.server.ctx.saasWorkflowService.reconcileHostname(
     request.params.providerId,
     zoneNameParam(request),
     hostnameFqdnParam(request),

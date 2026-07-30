@@ -45,8 +45,8 @@ export function useListPage(options: {
   }
 
   async function runLoad(opts: { refresh?: boolean; silent?: boolean } = {}) {
-    // Mutations often call runLoad({ refresh:true }) — keep table soft-load, but
-    // allow silent:true to skip the global loading flag when patching a single row elsewhere.
+    // Only explicit user refresh actions pass refresh=true. Mutation follow-up reads stay cache-first;
+    // backend invalidation makes them cold-load upstream exactly once.
     if (opts.silent) {
       await nextLoad(opts.refresh)
       return

@@ -123,7 +123,7 @@ watch(
 )
 
 async function ensureProvider() {
-  if (!getCachedProvider(props.providerId)) await loadProviders({ refresh: true })
+  if (!getCachedProvider(props.providerId)) await loadProviders({ force: true })
   if (!getCachedProvider(props.providerId)) {
     toast.warning('服务商不可用')
     router.replace('/')
@@ -219,7 +219,7 @@ async function save() {
       )
       toast.success('记录已更新')
       dialogOpen.value = false
-      await runLoad({ refresh: true })
+      await runLoad()
     } else if (names.length === 1) {
       await dnsApi.createRecord(
         props.providerId,
@@ -229,7 +229,7 @@ async function save() {
       )
       toast.success('记录已创建')
       dialogOpen.value = false
-      await runLoad({ refresh: true })
+      await runLoad()
     } else {
       // 先关弹窗，才能看到页顶 JobProgressAlert
       dialogOpen.value = false
@@ -242,7 +242,7 @@ async function save() {
         }),
         fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as Record<string, unknown>) || {},
         retry: (id) => dnsApi.batchRetry(props.providerId, id),
-        onDone: () => runLoad({ refresh: true }),
+        onDone: () => runLoad(),
         jobProgress,
       })
       return
@@ -302,7 +302,7 @@ async function runDnsBatch(
     fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as Record<string, unknown>) || {},
     retry: (id) => dnsApi.batchRetry(props.providerId, id),
     clearSelection: () => selection.clear(),
-    onDone: () => runLoad({ refresh: true }),
+    onDone: () => runLoad(),
     jobProgress,
   })
 }
@@ -401,7 +401,7 @@ async function resumeJobs() {
     if (failed.length) {
       showBatchFailures(finished.message || 'DNS 批量完成', failed.map((i) => formatFailedJobItem(i)), '条')
     }
-    await runLoad({ refresh: true })
+    await runLoad()
   }
 }
 

@@ -314,7 +314,13 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     let totalPages: number
 
     do {
-      const result = await this.records.list(cloudflareProviderId, zoneId, { type, search: fqdn, page, per_page: 100 })
+      const result = await this.records.list(cloudflareProviderId, zoneId, {
+        type,
+        search: fqdn,
+        page,
+        per_page: 100,
+        refresh: true,
+      })
       for (const record of result.items) {
         if (String(record.name ?? '') === fqdn && String(record.type ?? '') === type) {
           matches.push(record)

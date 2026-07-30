@@ -63,7 +63,7 @@ const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: set
     try {
       const [tunnelRes, routesRes, tokenRes] = await Promise.all([
         cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh: options.refresh }),
-        cloudflaredApi.routes(props.providerId, props.tunnelId),
+        cloudflaredApi.routes(props.providerId, props.tunnelId, { refresh: options.refresh }),
         cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).catch(() => null),
       ])
       if (options.isLatest && !options.isLatest()) return false
@@ -126,7 +126,7 @@ async function saveRoute() {
       notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已添加')
     }
     dialogOpen.value = false
-    await runLoad({ refresh: true })
+    await runLoad()
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {

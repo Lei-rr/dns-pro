@@ -26,7 +26,7 @@ export async function withMinLoading(
 
 /**
  * Explicit refresh: table soft-loading + single 「已刷新」 toast.
- * Mutations should call load({ refresh:true }) silently (no toast).
+ * Explicit user refresh calls load({ refresh:true }); mutation follow-up loads remain ordinary cache-first reads.
  */
 export async function handleRefresh(
   flag: { value: boolean },

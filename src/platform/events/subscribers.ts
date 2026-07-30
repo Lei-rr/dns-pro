@@ -1,5 +1,5 @@
 import { eventBus, type DomainEvent } from './event-bus.js'
-import { invalidateProviderCache } from '../../lib/cache/provider-cache.js'
+import { globalCache, invalidateProviderCache } from '../../lib/cache/provider-cache.js'
 
 const CACHE_EVENTS = new Set([
   'record.mutated',
@@ -25,5 +25,8 @@ export function registerEventSubscribers(): void {
     if (CACHE_EVENTS.has(event.type) && event.cache_tags?.length) {
       invalidateProviderCache(event.cache_tags)
     }
+    // Provider credentials/linkage can feed SaaS, EdgeOne and Tunnel modules under different ids.
+    // Config changes are rare; clearing reconstructable query data guarantees no stale credential snapshot survives.
+    if (event.type === 'provider.mutated') globalCache.clear()
   })
 }

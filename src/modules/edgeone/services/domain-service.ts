@@ -229,13 +229,18 @@ export class EdgeOneDomainService {
     return { name: domainName, https_mode: httpsMode, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
   }
 
-  async assignedCname(providerId: string, zoneId: string, domainName: string): Promise<string> {
-    const domain = await this.findAccelerationDomain(providerId, zoneId, domainName)
+  async assignedCname(providerId: string, zoneId: string, domainName: string, refresh = false): Promise<string> {
+    const domain = await this.findAccelerationDomain(providerId, zoneId, domainName, refresh)
     return String(domain.cname ?? '')
   }
 
-  private async findAccelerationDomain(providerId: string, zoneId: string, domainName: string): Promise<EdgeOneAccelerationDomain> {
-    const domains = await this.accelerationDomains(providerId, zoneId)
+  private async findAccelerationDomain(
+    providerId: string,
+    zoneId: string,
+    domainName: string,
+    refresh = false,
+  ): Promise<EdgeOneAccelerationDomain> {
+    const domains = await this.accelerationDomains(providerId, zoneId, refresh)
     const domain = domains.items.find((item) => item.name === domainName)
     if (domain) return domain
 

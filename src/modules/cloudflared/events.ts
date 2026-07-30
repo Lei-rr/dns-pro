@@ -30,9 +30,6 @@ export async function emitTunnelRouteMutated(input: {
     target: input.tunnelId,
     hostname: input.hostname,
     action: `cloudflared.route.${input.action}`,
-    cache_tags: [
-      cloudflaredTunnelConfigCacheTag(input.providerId, input.tunnelId),
-      cloudflaredTunnelsCacheTag(input.providerId),
-    ],
+    cache_tags: [cloudflaredTunnelConfigCacheTag(input.providerId, input.tunnelId)],
   })
 }

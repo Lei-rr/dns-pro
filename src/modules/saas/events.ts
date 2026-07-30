@@ -1,5 +1,5 @@
 import { eventBus } from '../../platform/events/event-bus.js'
-import { customHostnameCacheTag } from '../../lib/cache/provider-cache.js'
+import { customHostnameDetailsCacheTag, customHostnameListCacheTag } from '../../lib/cache/provider-cache.js'
 
 /**
  * SaaS hostname / zone-scoped custom-hostname cache invalidation.
@@ -22,26 +22,12 @@ export async function emitSaasHostnameMutated(input: {
     hostname: input.hostname,
     target: input.target,
     action: `saas.hostname.${input.action}`,
-    cache_tags: [customHostnameCacheTag(input.cloudflareProviderId, input.zoneId)],
+    cache_tags: [
+      customHostnameListCacheTag(input.cloudflareProviderId, input.zoneId),
+      ...(input.hostname
+        ? [customHostnameDetailsCacheTag(input.cloudflareProviderId, input.zoneId)]
+        : []),
+    ],
   })
 }
 
-/**
- * Zone-scoped custom-hostname cache bust (fallback origin / forced refresh).
- * Reuses saas.hostname.mutated + cache_tags so subscribers remain the only invalidate path.
- */
-export async function emitSaasZoneCacheInvalidated(input: {
-  cloudflareProviderId: string
-  zoneId: string
-  action: string
-  saasProviderId?: string
-  zoneName?: string
-}) {
-  await eventBus.emit({
-    type: 'saas.hostname.mutated',
-    provider_id: input.saasProviderId || input.cloudflareProviderId,
-    zone: input.zoneName || input.zoneId,
-    action: `saas.hostname.${input.action}`,
-    cache_tags: [customHostnameCacheTag(input.cloudflareProviderId, input.zoneId)],
-  })
-}

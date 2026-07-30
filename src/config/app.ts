@@ -21,7 +21,7 @@ const DEFAULT_CONFIG: AppConfig = {
   port: 2022,
   logLevel: false,
   dataDir: path.resolve('data'),
-  cacheMaxEntries: 1000,
+  cacheMaxEntries: 0,
   cacheSweepIntervalMs: 10 * 60 * 1000,
   sessionSecret: '',
   sessionCookieName: 'dns_pro_session',

@@ -44,30 +44,14 @@ export class SaasHostnameService {
   }
 
   async hostnames(providerId: string, zoneName: string, refresh = false): Promise<HostnameListResult> {
-    const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
-
-    const previousStatusMap = new Map<string, string>()
-    if (refresh) {
-      try {
-        const cached = await this.cloudflareHostnames.listAll(cfId, zoneId, false)
-        for (const item of cached.items) {
-          const id = item.id
-          if (id !== '') previousStatusMap.set(id, item.status ?? '')
-        }
-      } catch {
-        // ignore
-      }
-    }
-
+    const [cfId, zoneId] = await this.resolveZone(providerId, zoneName, refresh)
     const result = await this.cloudflareHostnames.listAll(cfId, zoneId, refresh)
     const preferenceMap = await this.preferences.listByProvider(cfId)
 
     const items = await Promise.all(
       result.items.map((hostname) => {
         const id = hostname.id
-        const enriched: CloudflareCustomHostname = refresh
-          ? { ...hostname, previous_status: previousStatusMap.get(id) ?? '' }
-          : hostname
+        const enriched: CloudflareCustomHostname = hostname
         return this.applyEffectiveSyncConfig(
           providerId,
           this.syncConfigs.mergePreference(enriched, preferenceMap[id] ?? null),
@@ -83,25 +67,22 @@ export class SaasHostnameService {
   }
 
   async showHostname(providerId: string, zoneName: string, hostnameFqdn: string, refresh = false): Promise<CloudflareCustomHostname> {
-    const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
-    const hostname = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId, refresh)
-    return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, hostnameId)
+    const [cfId, zoneId] = await this.resolveZone(providerId, zoneName, refresh)
+    const normalizedFqdn = decodeURIComponent(hostnameFqdn)
+    const hostnameId = await this.cloudflareHostnames.idByHostname(cfId, zoneId, normalizedFqdn, refresh)
+    try {
+      const hostname = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId, refresh)
+      return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, hostnameId)
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.statusCode !== 404) throw error
+      const refreshedId = await this.cloudflareHostnames.idByHostname(cfId, zoneId, normalizedFqdn, true)
+      const hostname = await this.cloudflareHostnames.show(cfId, zoneId, refreshedId, refresh)
+      return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, refreshedId)
+    }
   }
 
-  async refreshHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<CloudflareCustomHostname> {
-    const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
-
-    let previousStatus = ''
-    try {
-      const cached = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId, false)
-      previousStatus = String(cached.status ?? '')
-    } catch {
-      // ignore
-    }
-
-    const hostname = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId, true)
-    await this.cloudflareHostnames.invalidateCache(cfId, zoneId)
-    return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, hostnameId, previousStatus)
+  async reconcileHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<CloudflareCustomHostname> {
+    return this.showHostname(providerId, zoneName, hostnameFqdn, true)
   }
 
   async createHostname(providerId: string, zoneName: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
@@ -279,15 +260,25 @@ export class SaasHostnameService {
     return this.syncConfigs.cloudflareProviderId(providerId)
   }
 
-  private async resolveZone(providerId: string, zoneName: string): Promise<[string, string]> {
+  private async resolveZone(providerId: string, zoneName: string, refresh = false): Promise<[string, string]> {
     const cfId = await this.cloudflareProviderId(providerId)
-    const zoneId = await this.cloudflareZones.idByName(cfId, decodeURIComponent(zoneName))
+    const zoneId = await this.cloudflareZones.idByName(cfId, decodeURIComponent(zoneName), refresh)
     return [cfId, zoneId]
   }
 
-  private async resolveHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<[string, string, string]> {
-    const [cfId, zoneId] = await this.resolveZone(providerId, zoneName)
-    const hostnameId = await this.cloudflareHostnames.idByHostname(cfId, zoneId, decodeURIComponent(hostnameFqdn))
+  private async resolveHostname(
+    providerId: string,
+    zoneName: string,
+    hostnameFqdn: string,
+    refresh = false,
+  ): Promise<[string, string, string]> {
+    const [cfId, zoneId] = await this.resolveZone(providerId, zoneName, refresh)
+    const hostnameId = await this.cloudflareHostnames.idByHostname(
+      cfId,
+      zoneId,
+      decodeURIComponent(hostnameFqdn),
+      refresh,
+    )
     return [cfId, zoneId, hostnameId]
   }
 

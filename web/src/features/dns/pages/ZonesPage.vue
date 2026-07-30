@@ -63,7 +63,7 @@ watch(keyword, resetPage)
 
 async function ensureProvider() {
   if (!getCachedProvider(props.providerId)) {
-    await loadProviders({ refresh: true })
+    await loadProviders({ force: true })
   }
   if (!getCachedProvider(props.providerId)) {
     toast.warning('服务商不存在或未配置')
@@ -96,7 +96,7 @@ async function createZone() {
     toast.success('域名已添加')
     showAdd.value = false
     domainInput.value = ''
-    await runLoad({ refresh: true })
+    await runLoad()
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {

@@ -79,7 +79,7 @@ async function createTunnel() {
     toast.success('隧道已创建')
     dialogOpen.value = false
     name.value = ''
-    await runLoad({ refresh: true })
+    await runLoad()
   } catch (error) {
     fail(error)
   } finally {

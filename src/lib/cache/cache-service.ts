@@ -9,8 +9,14 @@ interface CacheOptions {
   sweepIntervalMs?: number
 }
 
-const DEFAULT_MAX_ENTRIES = 1000
+const DEFAULT_MAX_ENTRIES = 0
 const DEFAULT_SWEEP_INTERVAL_MS = 10 * 60 * 1000
+
+/** 0 means unlimited; positive values retain the optional LRU-style safety cap. */
+function normalizeMaxEntries(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0
+  return Math.floor(value)
+}
 
 export class CacheService {
   private readonly store = new Map<string, CacheEntry<unknown>>()
@@ -18,13 +24,13 @@ export class CacheService {
   private sweepTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(options: CacheOptions = {}) {
-    this.maxEntries = Math.max(1, options.maxEntries ?? DEFAULT_MAX_ENTRIES)
+    this.maxEntries = normalizeMaxEntries(options.maxEntries ?? DEFAULT_MAX_ENTRIES)
     this.startSweepTimer(options.sweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS)
   }
 
   updateOptions(options: CacheOptions): void {
     if (options.maxEntries !== undefined) {
-      this.maxEntries = Math.max(1, options.maxEntries)
+      this.maxEntries = normalizeMaxEntries(options.maxEntries)
     }
     if (options.sweepIntervalMs !== undefined) {
       this.stopSweepTimer()
@@ -53,7 +59,7 @@ export class CacheService {
       tags,
     })
 
-    while (this.store.size > this.maxEntries) {
+    while (this.maxEntries > 0 && this.store.size > this.maxEntries) {
       const oldestKey = this.store.keys().next().value
       if (!oldestKey) break
       this.store.delete(oldestKey)

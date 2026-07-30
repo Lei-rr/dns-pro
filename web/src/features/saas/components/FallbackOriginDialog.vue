@@ -49,7 +49,7 @@ async function load() {
   loading.value = true
   errors.value = []
   try {
-    const response = await saasApi.fallbackOrigin(props.providerId, props.zoneName, { refresh: true })
+    const response = await saasApi.fallbackOrigin(props.providerId, props.zoneName)
     const data = response.data || {}
     currentOrigin.value = String(data.origin || '')
     status.value = String(data.status || '')

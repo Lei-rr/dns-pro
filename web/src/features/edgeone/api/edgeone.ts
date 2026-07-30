@@ -12,8 +12,11 @@ export const edgeOneApi = {
     unwrapItems<EdgeOneZone[]>(
       await http.get(`${providerBase(provider)}/zones`, withRefresh({ refresh: options?.refresh })),
     ),
-  zone: (provider: string, zoneId: string): Promise<ApiResponse<EdgeOneZone>> =>
-    http.get(`${providerBase(provider)}/zones/${encodePath(zoneId)}`),
+  zone: (provider: string, zoneId: string, options: Record<string, unknown> = {}): Promise<ApiResponse<EdgeOneZone>> =>
+    http.get(
+      `${providerBase(provider)}/zones/${encodePath(zoneId)}`,
+      withRefresh({ refresh: options?.refresh }),
+    ),
   accelerationDomains: async (
     provider: string,
     zone: string,

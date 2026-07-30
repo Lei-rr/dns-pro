@@ -66,7 +66,7 @@ export class EdgeOneWorkflowService {
   }
 
   async syncCname(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
-    const cname = await this.edgeone.assignedCname(providerId, zoneId, domainName)
+    const cname = await this.edgeone.assignedCname(providerId, zoneId, domainName, true)
     if (cname === '') {
       throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME not available yet', 422)
     }

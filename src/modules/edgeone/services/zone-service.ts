@@ -83,8 +83,8 @@ export class EdgeOneZoneService {
     return cached.value
   }
 
-  async zoneById(providerId: string, zoneId: string): Promise<EdgeOneZone> {
-    const zones = await this.zones(providerId)
+  async zoneById(providerId: string, zoneId: string, refresh = false): Promise<EdgeOneZone> {
+    const zones = await this.zones(providerId, refresh)
     const zone = zones.items.find((item) => item.id === zoneId)
     if (!zone) {
       throw new ApiError('edgeone_zone_not_found', `EdgeOne zone ${zoneId} not found`, 404)

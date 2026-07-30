@@ -268,9 +268,7 @@ async function openDetails(record: SaaSHostname) {
   detailOpen.value = true
   detailLoading.value = true
   try {
-    const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname, {
-      refresh: true,
-    })
+    const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname)
     if (response.data) {
       detailRecord.value = response.data
       patchHostnameRow(response.data)
@@ -286,7 +284,7 @@ async function openDetails(record: SaaSHostname) {
 async function refreshDetailHostname(record: SaaSHostname) {
   detailRefreshing.value = true
   try {
-    const response = await saasApi.refreshHostname(props.providerId, decodedZone.value, record.hostname)
+    const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname, { refresh: true })
     if (response.data) {
       patchHostnameRow(response.data)
     }
@@ -340,7 +338,7 @@ async function save() {
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '主机名已更新')
       dialogOpen.value = false
       if (response.data) patchHostnameRow(response.data)
-      else await runLoad({ refresh: true })
+      else await runLoad()
     } else {
       if (form.sync_provider_id) {
         payload.sync_provider_id = form.sync_provider_id
@@ -357,7 +355,7 @@ async function save() {
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '主机名已创建')
       dialogOpen.value = false
       // 新建影响分页 total / 排序，整表刷新更稳
-      await runLoad({ refresh: true })
+      await runLoad()
     }
   } catch (error) {
     toast.error(errorMessage(error))
@@ -394,7 +392,7 @@ async function refreshHostname(record: SaaSHostname) {
   if (!key || rowRefreshing.value) return
   rowRefreshing.value = key
   try {
-    const response = await saasApi.refreshHostname(props.providerId, decodedZone.value, record.hostname)
+    const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname, { refresh: true })
     patchHostnameRow(response.data || null)
     toast.success('已刷新')
   } catch (error) {
@@ -430,7 +428,7 @@ async function applyPreferred(payload: {
       create: () => saasApi.preferredApply(props.providerId, decodedZone.value, body),
       fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as Record<string, unknown>) || {},
       retry: (id) => saasApi.preferredApplyRetry(id),
-      onDone: () => runLoad({ refresh: true }),
+      onDone: () => runLoad(),
       failureUnit: '个',
       jobProgress,
     })
@@ -451,7 +449,7 @@ async function runBatchJob(
     fetchJob: async (id) => ((await saasApi.batchJob(id)).data as Record<string, unknown>) || {},
     retry: (id) => saasApi.batchRetry(id),
     clearSelection: () => selection.clear(),
-    onDone: () => runLoad({ refresh: true }),
+    onDone: () => runLoad(),
     failureUnit: '个',
     jobProgress,
   })
@@ -542,7 +540,7 @@ async function resumeJobs() {
       if (failed.length) {
         showBatchFailures(finished.message || `${item.label}完成`, failed.map((i) => formatFailedJobItem(i)), '个')
       }
-      await runLoad({ refresh: true })
+      await runLoad()
       break
     }
   }

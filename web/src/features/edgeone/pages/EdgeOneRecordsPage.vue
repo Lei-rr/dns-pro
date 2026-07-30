@@ -70,7 +70,7 @@ const { loading, refreshing, pageSize, runLoad, onRefresh, onPageSizeChange: set
   load: async (options = {}) => {
     try {
       if (options.refresh || !zoneMeta.value) {
-        const meta = await loadZoneMeta()
+        const meta = await loadZoneMeta(options.refresh)
         if (options.isLatest && !options.isLatest()) return false
         zoneMeta.value = meta
       }
@@ -108,16 +108,16 @@ function domainName(record: EdgeOneAccelerationDomain) {
   return String(record.domain_name || record.name || '')
 }
 
-async function loadZoneMeta(): Promise<EdgeOneZone | null> {
+async function loadZoneMeta(refresh = false): Promise<EdgeOneZone | null> {
   try {
     // Prefer list match so we get name without extra endpoint failures
-    const response = await edgeOneApi.zones(props.providerId)
+    const response = await edgeOneApi.zones(props.providerId, { refresh })
     const list = response.data || []
     const matched =
       list.find((z) => String(z.id) === props.zoneId || String(z.name) === props.zoneId) || null
     if (matched) return matched
     try {
-      const one = await edgeOneApi.zone(props.providerId, props.zoneId)
+      const one = await edgeOneApi.zone(props.providerId, props.zoneId, { refresh })
       return one.data || null
     } catch {
       return null
@@ -170,7 +170,7 @@ async function save(payload: Record<string, unknown>) {
     }
     dialogOpen.value = false
     saving.value = false
-    await runLoad({ refresh: true })
+    await runLoad()
   } catch (error) {
     toast.error(errorMessage(error))
     saving.value = false
@@ -185,7 +185,7 @@ async function saveCertificate(payload: Record<string, unknown>) {
     toast.success('证书已更新')
     certDialogOpen.value = false
     saving.value = false
-    await runLoad({ refresh: true })
+    await runLoad()
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -217,7 +217,7 @@ async function syncCname(record: EdgeOneAccelerationDomain) {
       const response = await edgeOneApi.syncAccelerationDomainCname(props.providerId, props.zoneId, key)
       notifyDnsSideEffect((response as any).side_effects?.dns?.sync, 'CNAME 已同步')
       // CNAME 值可能变化，轻量整表刷新但不挡其它行操作过久：仍 silent 局部优先整表
-      await runLoad({ refresh: true })
+      await runLoad()
     } catch (error) {
       toast.error(errorMessage(error))
     }
@@ -249,7 +249,7 @@ async function runEdgeBatch(
     fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as Record<string, unknown>) || {},
     retry: (id) => edgeOneApi.batchRetry(props.providerId, id),
     clearSelection: () => selection.clear(),
-    onDone: () => runLoad({ refresh: true }),
+    onDone: () => runLoad(),
     failureUnit: '个',
     jobProgress,
   })
@@ -303,7 +303,7 @@ async function resumeJobs() {
     if (failed.length) {
       showBatchFailures(finished.message || 'EdgeOne 批量完成', failed.map((i) => formatFailedJobItem(i)), '个')
     }
-    await runLoad({ refresh: true })
+    await runLoad()
   }
 }
 

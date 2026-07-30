@@ -2,19 +2,12 @@ import { ApiError } from '../../lib/http/api-error.js'
 import type { ProviderRepository } from '../provider/repository.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../provider/types.js'
 
-/**
- * EdgeOne API credentials are stored on the linked DNSPod provider.
- * Shared resolver with per-process cache so zone/domain services stay thin.
- */
-const cache = new Map<string, DnsPodProvider>()
+/** EdgeOne API credentials are read from the linked durable DNSPod provider each time. */
 
 export async function resolveEdgeOneApiCredentials(
   providers: ProviderRepository,
   edgeoneProviderId: string,
 ): Promise<DnsPodProvider> {
-  const cached = cache.get(edgeoneProviderId)
-  if (cached) return cached
-
   const edgeoneProvider = await providers.requireType<EdgeOneProvider>(
     edgeoneProviderId,
     'edgeone',
@@ -36,6 +29,5 @@ export async function resolveEdgeOneApiCredentials(
     'DNSPod provider not found',
     'dnspod_provider_not_found',
   )
-  cache.set(edgeoneProviderId, dnspodProvider)
   return dnspodProvider
 }

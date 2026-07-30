@@ -21,8 +21,11 @@ export const cloudflaredApi = {
     http.get<{ token: string }>(`${tunnelBase(provider, tunnelId)}/token`),
   rotateToken: (provider: string, tunnelId: string) =>
     http.post<{ token: string }>(`${tunnelBase(provider, tunnelId)}/token/rotate`),
-  routes: (provider: string, tunnelId: string) =>
-    http.get<{ routes: CloudflaredRoute[] }>(`${tunnelBase(provider, tunnelId)}/routes`),
+  routes: (provider: string, tunnelId: string, options: Record<string, unknown> = {}) =>
+    http.get<{ routes: CloudflaredRoute[] }>(
+      `${tunnelBase(provider, tunnelId)}/routes`,
+      withRefresh({ refresh: options?.refresh }),
+    ),
   addRoute: (provider: string, tunnelId: string, data: Record<string, unknown>) =>
     http.post<RouteMutationResult>(`${tunnelBase(provider, tunnelId)}/routes`, data),
   updateRoute: (

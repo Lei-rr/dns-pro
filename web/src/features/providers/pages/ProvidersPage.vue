@@ -20,7 +20,7 @@ import {
   TableLoading,
 } from '@/shared/ui/table'
 import { providersApi } from '@/features/providers/api/providers'
-import { loadProviders, replaceProvidersCache } from '@/features/providers/stores/providers'
+import { replaceProvidersCache } from '@/features/providers/stores/providers'
 import { providerTypeLabel } from '@/features/providers/lib/paths'
 import type { Provider, ProviderDefinition } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
@@ -188,7 +188,6 @@ async function save() {
     }
     dialogOpen.value = false
     await runLoad()
-    await loadProviders({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {
@@ -215,7 +214,6 @@ async function removeProvider(record: Provider) {
     await providersApi.remove(record.id)
     toast.success('已删除')
     await runLoad()
-    await loadProviders({ refresh: true })
   } catch (error) {
     toast.error(errorMessage(error))
   } finally {

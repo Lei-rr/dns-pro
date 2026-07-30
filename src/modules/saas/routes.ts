@@ -5,7 +5,7 @@ import {
   hostnamesStore,
   hostnamesShow,
   hostnamesUpdate,
-  hostnamesRefresh,
+  hostnamesReconcile,
   hostnamesDelete,
   fallbackOriginShow,
   fallbackOriginUpdate,
@@ -48,7 +48,7 @@ async function saasProviderRoutes(app: FastifyInstance) {
   app.get('/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesShow)
   app.put('/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesUpdate)
   app.delete('/zones/:zoneName/hostnames/:hostnameFqdn', hostnamesDelete)
-  app.post('/zones/:zoneName/hostnames/:hostnameFqdn/refresh', hostnamesRefresh)
+  app.post('/zones/:zoneName/hostnames/:hostnameFqdn/reconcile', hostnamesReconcile)
   app.get('/zones/:zoneName/fallback-origin', fallbackOriginShow)
   app.put('/zones/:zoneName/fallback-origin', fallbackOriginUpdate)
   app.delete('/zones/:zoneName/fallback-origin', fallbackOriginDelete)

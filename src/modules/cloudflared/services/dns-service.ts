@@ -86,7 +86,13 @@ export class CloudflaredDnsService {
     let totalPages: number
 
     do {
-      const result = await this.dns.list(cfProviderId, zoneId, { type: 'CNAME', search: hostname, page, per_page: 100 })
+      const result = await this.dns.list(cfProviderId, zoneId, {
+        type: 'CNAME',
+        search: hostname,
+        page,
+        per_page: 100,
+        refresh: true,
+      })
       for (const record of result.items) {
         if (String(record.name ?? '') === hostname) {
           matches.push(record)

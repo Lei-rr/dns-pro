@@ -55,8 +55,8 @@ export const saasApi = {
       `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
       options.skipCleanup ? { params: { auto_cleanup: 0 } } : {},
     ),
-  refreshHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
-    http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/refresh`),
+  reconcileHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
+    http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/reconcile`),
   fallbackOrigin: (
     provider: string,
     zone: string,

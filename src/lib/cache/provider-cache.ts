@@ -3,9 +3,11 @@ import {
   buildCacheKey,
   cloudflaredTunnelConfigCacheTag,
   cloudflaredTunnelsCacheTag,
-  customHostnameCacheTag,
+  customHostnameDetailsCacheTag,
+  customHostnameListCacheTag,
   edgeoneDomainsCacheTag,
   edgeoneZonesCacheTag,
+  fallbackOriginCacheTag,
   offsetPaginationMeta,
   pagePaginationMeta,
   providerCacheTag,
@@ -29,13 +31,10 @@ export type CachedResult<T> = {
   hit: boolean
 }
 
-const HOUR = 60 * 60 * 1000
-const DAY = 24 * HOUR
-
 /** Shared TTL presets for dns-pro provider data. */
 export const CacheTtl = {
-  /** Zones / records / hostnames / tunnels: long-lived until mutation or manual refresh. */
-  providerData: 3 * DAY,
+  /** Provider query data lives for the process lifetime; mutations invalidate and refresh=1 overwrites it. */
+  providerData: Number.POSITIVE_INFINITY,
   /** Short-lived operational lookups if needed later. */
   short: 5 * 60 * 1000,
 } as const
@@ -102,9 +101,11 @@ export {
   cacheManager,
   cloudflaredTunnelConfigCacheTag,
   cloudflaredTunnelsCacheTag,
-  customHostnameCacheTag,
+  customHostnameDetailsCacheTag,
+  customHostnameListCacheTag,
   edgeoneDomainsCacheTag,
   edgeoneZonesCacheTag,
+  fallbackOriginCacheTag,
   globalCache,
   offsetPaginationMeta,
   pagePaginationMeta,

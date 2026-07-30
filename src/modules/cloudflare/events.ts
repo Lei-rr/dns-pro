@@ -1,5 +1,5 @@
 import { eventBus } from '../../platform/events/event-bus.js'
-import { providerCacheTag, recordCacheTag, zoneCacheTag } from '../../lib/cache/provider-cache.js'
+import { recordCacheTag, zoneCacheTag } from '../../lib/cache/provider-cache.js'
 
 const PROVIDER_TYPE = 'cloudflare'
 
@@ -9,7 +9,7 @@ export async function emitCloudflareRecordMutated(providerId: string, zoneId: st
     provider_id: providerId,
     zone: zoneId,
     action: `cloudflare.record.${action}`,
-    cache_tags: [recordCacheTag(PROVIDER_TYPE, providerId, zoneId), providerCacheTag(providerId)],
+    cache_tags: [recordCacheTag(PROVIDER_TYPE, providerId, zoneId)],
   })
 }
 
@@ -22,7 +22,6 @@ export async function emitCloudflareZoneMutated(providerId: string, zone: string
     cache_tags: [
       zoneCacheTag(PROVIDER_TYPE, providerId),
       recordCacheTag(PROVIDER_TYPE, providerId, zone),
-      providerCacheTag(providerId),
     ],
   })
 }

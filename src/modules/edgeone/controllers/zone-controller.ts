@@ -18,9 +18,11 @@ export async function zoneShow(
   request: FastifyRequest<{ Params: { providerId: string; zoneId: string } }>,
   reply: FastifyReply,
 ) {
+  const q = queryRecord(request)
   const result = await request.server.ctx.edgeoneZoneService.zoneById(
     request.params.providerId,
     request.params.zoneId,
+    queryBool(q, 'refresh'),
   )
   return reply.send(success(result))
 }

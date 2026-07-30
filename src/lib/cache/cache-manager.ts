@@ -41,11 +41,9 @@ export class CacheManager {
   async getOrLoad<T>(options: CacheGetOrLoadOptions<T>): Promise<CacheResult<T>> {
     const mode = {
       refresh: Boolean(options.mode?.refresh),
-      // Respect explicit cacheOnly; only default to cache-only when refresh is off and caller omitted it.
-      cacheOnly:
-        options.mode?.cacheOnly !== undefined
-          ? Boolean(options.mode.cacheOnly)
-          : !options.mode?.refresh,
+      // Normal reads are cache-first, not cache-only: a cold miss must call loader and populate cache.
+      // cacheOnly is reserved for callers that explicitly want an empty miss without upstream I/O.
+      cacheOnly: Boolean(options.mode?.cacheOnly),
     }
     const key = resolveKey(options.key)
     const tags = options.tags ?? []

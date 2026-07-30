@@ -83,9 +83,19 @@ export function recordCacheTag(providerType: string, providerId: string, zone: s
   return `${providerType}:records:${providerId}:${zone}`
 }
 
-/** Cloudflare for SaaS custom hostnames (+ fallback origin) share one zone-scoped tag. */
-export function customHostnameCacheTag(cloudflareProviderId: string, zoneId: string): string {
-  return `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}`
+/** Cloudflare for SaaS custom-hostname list cache, scoped to one zone. */
+export function customHostnameListCacheTag(cloudflareProviderId: string, zoneId: string): string {
+  return `cloudflare:custom_hostnames:list:${cloudflareProviderId}:${zoneId}`
+}
+
+/** Custom-hostname detail cache set for one zone. */
+export function customHostnameDetailsCacheTag(cloudflareProviderId: string, zoneId: string): string {
+  return `cloudflare:custom_hostnames:details:${cloudflareProviderId}:${zoneId}`
+}
+
+/** Fallback-origin cache is independent from hostname list/detail. */
+export function fallbackOriginCacheTag(cloudflareProviderId: string, zoneId: string): string {
+  return `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`
 }
 
 export function edgeoneZonesCacheTag(providerId: string): string {

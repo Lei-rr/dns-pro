@@ -1,4 +1,4 @@
-import { completed, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
+import { type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { SyncOrchestrator } from '../../sync/services/sync-orchestrator.js'
 import type { SyncRecord } from '../../sync/types.js'
@@ -26,32 +26,6 @@ export class SaasWorkflowService {
     refresh = false,
   ): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown>; side_effects?: SideEffects }> {
     const result = await this.hostnames.hostnames(providerId, zoneName, refresh)
-
-    if (!refresh) return result
-
-    const cleanup: Record<string, unknown> = {}
-    for (const item of result.items ?? []) {
-      const fqdn = String(item.hostname ?? '').trim()
-      const hostnameId = String(item.id ?? '').trim()
-      delete item.previous_status
-
-      if (await this.shouldCleanupOwnershipTxt(providerId, hostnameId, item)) {
-        cleanup[fqdn] = await this.rememberOwnershipCleanup(
-          providerId,
-          hostnameId,
-          fqdn,
-          await this.sync.cleanupSaasStaleRecords(providerId, zoneName, fqdn),
-        )
-      }
-    }
-
-    if (Object.keys(cleanup).length > 0) {
-      return {
-        ...result,
-        side_effects: this.dnsSideEffects({ cleanup: completed('列表刷新后已执行 DNS 清理检查', [cleanup]) }),
-      }
-    }
-
     return result
   }
 
@@ -126,12 +100,13 @@ export class SaasWorkflowService {
     return result
   }
 
-  async refreshHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<Record<string, unknown>> {
-    const result = await this.hostnames.refreshHostname(providerId, zoneName, hostnameFqdn)
+  async reconcileHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<Record<string, unknown>> {
+    const result = await this.hostnames.reconcileHostname(providerId, zoneName, hostnameFqdn)
     const hostnameId = String(result.id ?? '').trim()
 
     if (await this.shouldCleanupOwnershipTxt(providerId, hostnameId, result)) {
       const cleanup = await this.sync.cleanupSaasStaleRecords(providerId, zoneName, hostnameFqdn)
+      await this.rememberOwnershipCleanup(providerId, hostnameId, hostnameFqdn, cleanup)
       return {
         ...result,
         side_effects: this.dnsSideEffects({
@@ -140,7 +115,6 @@ export class SaasWorkflowService {
       }
     }
 
-    delete result.previous_status
     return result
   }
 

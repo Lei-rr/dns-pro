@@ -11,9 +11,9 @@ export const useProviderStore = defineStore('providers', () => {
   let pendingLoad: Promise<Provider[]> | null = null
   let requestToken = 0
 
-  async function load(options: { refresh?: boolean } = {}) {
-    if (options.refresh) pendingLoad = null
-    if (!options.refresh && providers.value) return providers.value
+  async function load(options: { force?: boolean } = {}) {
+    if (options.force) pendingLoad = null
+    if (!options.force && providers.value) return providers.value
 
     if (!pendingLoad) {
       const token = requestToken + 1
@@ -62,7 +62,7 @@ export const useProviderStore = defineStore('providers', () => {
   return { providers, loading, error, load, clear, replace }
 })
 
-export async function loadProviders(options: { refresh?: boolean } = {}) {
+export async function loadProviders(options: { force?: boolean } = {}) {
   return useProviderStore().load(options)
 }
 

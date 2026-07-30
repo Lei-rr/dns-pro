@@ -2,10 +2,10 @@ import { ProviderRepository } from '../../provider/repository.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
   CacheTtl,
-  customHostnameCacheTag,
+  customHostnameDetailsCacheTag,
+  customHostnameListCacheTag,
   withProviderCache,
 } from '../../../lib/cache/provider-cache.js'
-import { emitSaasZoneCacheInvalidated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import {
@@ -60,7 +60,7 @@ export class CloudflareCustomHostnameGateway {
   constructor(private readonly providers: ProviderRepository) {}
 
   async list(cloudflareProviderId: string, zoneId: string, page = 1, perPage = 100, refresh = false): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }> {
-    const tag = customHostnameCacheTag(cloudflareProviderId, zoneId)
+    const tag = customHostnameListCacheTag(cloudflareProviderId, zoneId)
     // refresh flag on withProviderCache already bypasses memory; no pre-invalidate needed.
 
     const cached = await withProviderCache<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }>({
@@ -126,7 +126,7 @@ export class CloudflareCustomHostnameGateway {
   async show(cloudflareProviderId: string, zoneId: string, hostnameId: string, refresh = false): Promise<CloudflareCustomHostname> {
     const cached = await withProviderCache<CloudflareCustomHostname>({
       key: `cloudflare:custom_hostname:${cloudflareProviderId}:${zoneId}:${hostnameId}`,
-      tags: [customHostnameCacheTag(cloudflareProviderId, zoneId)],
+      tags: [customHostnameDetailsCacheTag(cloudflareProviderId, zoneId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
@@ -255,14 +255,6 @@ export class CloudflareCustomHostnameGateway {
     }
 
     return { id: hostnameId }
-  }
-
-  async invalidateCache(cloudflareProviderId: string, zoneId: string): Promise<void> {
-    await emitSaasZoneCacheInvalidated({
-      cloudflareProviderId,
-      zoneId,
-      action: 'refresh',
-    })
   }
 
   private async findIdInList(cloudflareProviderId: string, zoneId: string, fqdn: string, refresh: boolean): Promise<string | null> {

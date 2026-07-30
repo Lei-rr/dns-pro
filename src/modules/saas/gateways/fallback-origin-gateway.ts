@@ -1,8 +1,8 @@
 import type { ProviderRepository } from '../../provider/repository.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
-import { CacheTtl, customHostnameCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
-import { emitSaasZoneCacheInvalidated } from '../events.js'
+import { CacheTtl, fallbackOriginCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
+import { invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import {
@@ -20,7 +20,7 @@ export class CloudflareFallbackOriginGateway {
   async show(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<FallbackOriginInfo> {
     const cached = await withProviderCache<FallbackOriginInfo>({
       key: `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`,
-      tags: [customHostnameCacheTag(cloudflareProviderId, zoneId)],
+      tags: [fallbackOriginCacheTag(cloudflareProviderId, zoneId)],
       ttlMs: CacheTtl.providerData,
       refresh,
       loader: async () => {
@@ -83,8 +83,8 @@ export class CloudflareFallbackOriginGateway {
     return CloudflareGateway.forToken(provider.api_token)
   }
 
-  private invalidate(providerId: string, zoneId: string, action: string): Promise<void> {
-    return emitSaasZoneCacheInvalidated({ cloudflareProviderId: providerId, zoneId, action })
+  private async invalidate(providerId: string, zoneId: string, _action: string): Promise<void> {
+    invalidateProviderCache([fallbackOriginCacheTag(providerId, zoneId)])
   }
 
   private present(result: CloudflareFallbackOrigin): FallbackOriginInfo {
