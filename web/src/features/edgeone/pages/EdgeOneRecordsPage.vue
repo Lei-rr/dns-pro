@@ -25,6 +25,7 @@ import { providerPath } from '@/features/providers/lib/paths'
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
+import { dnsSideEffectFromData } from '@/shared/lib/dns-side-effects'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
@@ -38,6 +39,7 @@ import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { runProviderBatch } from '@/shared/lib/run-provider-batch'
+import type { JobLike } from '@/shared/lib/job-progress'
 import { useRowSelection } from '@/shared/lib/row-selection'
 import { Checkbox, SelectAllCheckbox } from '@/shared/ui/checkbox'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
@@ -169,12 +171,12 @@ async function save(payload: Record<string, unknown>) {
         domainName(editingDomain.value),
         data,
       )
-      notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '加速域名已更新')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '加速域名已更新')
     } else {
       const response = await edgeOneApi.createAccelerationDomain(props.providerId, props.zoneId, data, {
         autoSync: !!payload.autoSync,
       })
-      notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '加速域名已创建')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '加速域名已创建')
     }
     dialogOpen.value = false
     saving.value = false
@@ -225,7 +227,7 @@ async function syncCname(record: EdgeOneAccelerationDomain) {
   await runBusy(key, async () => {
     try {
       const response = await edgeOneApi.syncAccelerationDomainCname(props.providerId, props.zoneId, key)
-      notifyDnsSideEffect((response as any).side_effects?.dns?.sync, 'CNAME 已同步')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), 'CNAME 已同步')
       // CNAME 值可能变化，轻量整表刷新但不挡其它行操作过久：仍 silent 局部优先整表
       await runLoad()
     } catch (error) {
@@ -240,7 +242,7 @@ async function removeDomain(record: EdgeOneAccelerationDomain) {
   await runBusy(name, async () => {
     try {
       const response = await edgeOneApi.deleteAccelerationDomain(props.providerId, props.zoneId, name)
-      notifyDnsSideEffect((response as any).side_effects?.dns?.cleanup, '已删除')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'cleanup'), '已删除')
       removeListItem(domains, (item) => domainName(item) === name)
       selection.clear()
     } catch (error) {
@@ -305,7 +307,7 @@ async function resumeJobs() {
     () => edgeOneApi.batchActive(props.providerId, props.zoneId),
     {
       label: 'EdgeOne 批量',
-      fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as any) || {},
+      fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as JobLike) || {},
     },
   )
   if (finished) {
@@ -471,6 +473,7 @@ onMounted(() => {
       v-model:open="dialogOpen"
       :zone-name="pageTitle"
       :editing="!!editingDomain"
+      :domain="editingDomain"
       :errors="formErrors"
       @save="save"
     />

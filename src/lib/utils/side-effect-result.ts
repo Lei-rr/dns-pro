@@ -12,6 +12,16 @@ export interface SideEffects {
   }
 }
 
+export function buildDnsSideEffects(effects: {
+  sync?: DnsSideEffect
+  cleanup?: DnsSideEffect
+}): SideEffects {
+  const dns: NonNullable<SideEffects['dns']> = {}
+  if (effects.sync) dns.sync = effects.sync
+  if (effects.cleanup) dns.cleanup = effects.cleanup
+  return { dns }
+}
+
 export function completed(message: string, details: unknown[] = []): DnsSideEffect {
   return { status: 'completed', message, details }
 }

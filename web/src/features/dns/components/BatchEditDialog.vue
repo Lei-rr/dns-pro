@@ -46,7 +46,7 @@ const emit = defineEmits<{
         <FieldLabel>记录值</FieldLabel>
         <Input v-model="patch.value" placeholder="留空不改" />
       </Field>
-      <div :class="isCloudflare ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-2 gap-3'">
+      <div :class="isCloudflare ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'">
         <Field v-if="!isCloudflare">
           <FieldLabel>TTL</FieldLabel>
           <Input v-model="patch.ttl" placeholder="留空不改" />

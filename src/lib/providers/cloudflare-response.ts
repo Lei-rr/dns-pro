@@ -26,7 +26,6 @@ function asArray(value: unknown): any[] {
 
 export function parseCloudflareListResponse<T = Record<string, any>>(
   response: unknown,
-  _itemSchema?: unknown,
 ): { result: T[]; result_info: CloudflareResultInfo | undefined } {
   const parsed = asRecord(response)
   const resultInfo = parsed.result_info ? asRecord(parsed.result_info) : undefined
@@ -36,10 +35,7 @@ export function parseCloudflareListResponse<T = Record<string, any>>(
   }
 }
 
-export function parseCloudflareItemResponse<T = any>(
-  response: unknown,
-  _itemSchema?: unknown,
-): { result: T } {
+export function parseCloudflareItemResponse<T = any>(response: unknown): { result: T } {
   const parsed = asRecord(response)
   const result = parsed.result
   if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') {
@@ -67,7 +63,6 @@ export const cloudflareDnsRecordSchema = {
     }
   },
 }
-export const cloudflareResultInfoSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
 export const cloudflareCustomHostnameSchema = {
   parse: (v: unknown): Record<string, any> => {
     const r = asRecord(v)
@@ -78,17 +73,5 @@ export const cloudflareCustomHostnameSchema = {
     }
   },
 }
-export const cloudflareIdResultSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
-export const cloudflareDcvDelegationSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
-export const cloudflareFallbackOriginSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
-export const cloudflareTunnelSchema = {
-  parse: (v: unknown): Record<string, any> => {
-    const r = asRecord(v)
-    return {
-      ...r,
-      connections: asArray(r.connections),
-    }
-  },
-}
-export const cloudflareRouteConfigSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
+export const cloudflareResultInfoSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
 export const cloudflareApiResponseSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }

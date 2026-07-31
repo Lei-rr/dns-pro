@@ -256,7 +256,7 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
   private async syncRecord(cloudflareProviderId: string, zoneId: string, record: SyncRecord): Promise<Record<string, unknown>> {
     const base = { type: record.type, name: record.name, value: record.value }
     try {
-      const matches = await this.exactMatches(cloudflareProviderId, zoneId, record.name, record.type)
+      const matches = await this.records.findExact(cloudflareProviderId, zoneId, record.name, record.type, true)
       const expectedValue = String(record.value ?? '').replace(/\.$/, '')
       const expectedComment = String(record.comment ?? '')
 
@@ -294,7 +294,7 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     const expectedValue = String(record.value ?? '').replace(/\.$/, '')
     const expectedComment = String(record.comment ?? '')
 
-    for (const match of await this.exactMatches(cloudflareProviderId, zoneId, record.name, record.type)) {
+    for (const match of await this.records.findExact(cloudflareProviderId, zoneId, record.name, record.type, true)) {
       const value = String(match.content ?? '').replace(/\.$/, '')
       if (value !== expectedValue) continue
       const comment = String(match.comment ?? '')
@@ -306,31 +306,6 @@ export class CloudflareDnsSaasDriver implements SyncDriver {
     }
 
     return { ...base, status: 'not_found', record_id: '' }
-  }
-
-  private async exactMatches(cloudflareProviderId: string, zoneId: string, fqdn: string, type: string): Promise<Array<Record<string, unknown>>> {
-    const matches: Array<Record<string, unknown>> = []
-    let page = 1
-    let totalPages: number
-
-    do {
-      const result = await this.records.list(cloudflareProviderId, zoneId, {
-        type,
-        search: fqdn,
-        page,
-        per_page: 100,
-        refresh: true,
-      })
-      for (const record of result.items) {
-        if (String(record.name ?? '') === fqdn && String(record.type ?? '') === type) {
-          matches.push(record)
-        }
-      }
-      totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
-      page++
-    } while (page <= totalPages)
-
-    return matches
   }
 
   private recordPayload(record: SyncRecord): RecordPayload {

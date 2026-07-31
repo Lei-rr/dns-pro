@@ -1,20 +1,13 @@
-import { computed, ref, unref, watch, type MaybeRefOrGetter, type Ref, toValue } from 'vue'
+import { computed, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 
 /** Row multi-select by stable string key. */
 export function useRowSelection<T>(
-  rows: MaybeRefOrGetter<T[]> | Ref<T[]>,
+  rows: MaybeRefOrGetter<T[]>,
   getKey: (row: T) => string,
 ) {
   const selected = ref<string[]>([])
 
-  const list = computed(() => {
-    try {
-      // Vue 3.5+ toValue; fallback unref
-      return (typeof toValue === 'function' ? toValue(rows as any) : unref(rows as any)) as T[]
-    } catch {
-      return (unref(rows as any) || []) as T[]
-    }
-  })
+  const list = computed<T[]>(() => toValue(rows) ?? [])
 
   const keySet = computed(() => new Set(selected.value))
   const selectedRows = computed(() => list.value.filter((row) => keySet.value.has(getKey(row))))

@@ -1,5 +1,5 @@
 import { ApiError } from '../../../lib/http/api-error.js'
-import { type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
+import { buildDnsSideEffects } from '../../../lib/utils/side-effect-result.js'
 import { SyncOrchestrator } from '../../sync/services/sync-orchestrator.js'
 import { EdgeOneDomainService } from './domain-service.js'
 
@@ -26,7 +26,7 @@ export class EdgeOneWorkflowService {
       const sync = await this.sync.syncEdgeOneCname(providerId, String(result.name), cname)
       return {
         ...result,
-        side_effects: this.dnsSideEffects({
+        side_effects: buildDnsSideEffects({
           sync: this.sync.normalizeSyncSideEffect(sync, '已执行 DNSPod CNAME 同步'),
         }),
       }
@@ -56,7 +56,7 @@ export class EdgeOneWorkflowService {
       const cleanup = await this.sync.cleanupEdgeOneCname(providerId, domainName, cname)
       return {
         ...result,
-        side_effects: this.dnsSideEffects({
+        side_effects: buildDnsSideEffects({
           cleanup: this.sync.normalizeCleanupSideEffect(cleanup, '已执行 DNS 清理'),
         }),
       }
@@ -73,13 +73,7 @@ export class EdgeOneWorkflowService {
 
     const sync = await this.sync.syncEdgeOneCname(providerId, domainName, cname)
     const side = this.sync.normalizeSyncSideEffect(sync, '已执行 DNSPod CNAME 同步')
-    return { ...((sync as Record<string, unknown>) ?? {}), side_effects: this.dnsSideEffects({ sync: side }) }
+    return { ...((sync as Record<string, unknown>) ?? {}), side_effects: buildDnsSideEffects({ sync: side }) }
   }
 
-  private dnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: DnsSideEffect }): SideEffects {
-    const sideEffects: SideEffects = { dns: {} }
-    if (effects.sync) sideEffects.dns!.sync = effects.sync
-    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup
-    return sideEffects
-  }
 }

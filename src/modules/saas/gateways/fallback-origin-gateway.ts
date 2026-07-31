@@ -6,7 +6,6 @@ import { invalidateProviderCache } from '../../../lib/cache/provider-cache.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import {
-  cloudflareFallbackOriginSchema,
   parseCloudflareItemResponse,
   type CloudflareFallbackOrigin,
 } from '../../../lib/providers/cloudflare-response.js'
@@ -27,7 +26,7 @@ export class CloudflareFallbackOriginGateway {
         const gateway = await this.gateway(cloudflareProviderId)
         try {
           const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
-          return this.present(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
+          return this.present(parseCloudflareItemResponse(response).result)
         } catch (error) {
           if (error instanceof ApiError && error.statusCode === 404) return this.present({})
           throw wrapProviderError(
@@ -58,7 +57,7 @@ export class CloudflareFallbackOriginGateway {
       )
     }
     await this.invalidate(cloudflareProviderId, zoneId, 'fallback_origin_set')
-    return this.present(parseCloudflareItemResponse(response, cloudflareFallbackOriginSchema).result)
+    return this.present(parseCloudflareItemResponse(response).result)
   }
 
   async delete(cloudflareProviderId: string, zoneId: string): Promise<FallbackOriginInfo> {

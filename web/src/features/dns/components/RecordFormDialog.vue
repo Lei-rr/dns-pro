@@ -56,7 +56,7 @@ const emit = defineEmits<{
         />
         <FieldError :errors="fieldError(errors, 'name')" />
       </Field>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field :data-invalid="!!errors.type">
           <FieldLabel>类型</FieldLabel>
           <Select v-model="form.type">

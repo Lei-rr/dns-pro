@@ -83,7 +83,7 @@ const filteredOriginSuggestions = () => {
             </SelectContent>
           </Select>
         </Field>
-        <div v-if="form.sync_provider_id" class="grid grid-cols-2 gap-3">
+        <div v-if="form.sync_provider_id" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field>
             <FieldLabel>主机名前缀</FieldLabel>
             <Input v-model="form.hostname_prefix" placeholder="如 app；留空表示根域名" />
@@ -110,7 +110,7 @@ const filteredOriginSuggestions = () => {
         </Field>
       </template>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
           <FieldLabel>DCV 认证</FieldLabel>
           <Select v-model="form.method">

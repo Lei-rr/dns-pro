@@ -9,7 +9,7 @@ import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldLabel } from '@/shared/ui/field'
 import { preferredDomainApi, saasApi } from '@/features/saas/api/saas'
 import { providerPath } from '@/features/providers/lib/paths'
-import type { SaaSHostname, Zone } from '@/shared/types'
+import type { ApiResponse, SaaSHostname, Zone } from '@/shared/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
@@ -35,8 +35,10 @@ import {
   SelectValue,
 } from '@/shared/ui/select'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
+import { dnsSideEffectFromData } from '@/shared/lib/dns-side-effects'
 import { loadProviders, useProviderStore } from '@/features/providers/stores/providers'
 import { dnsApi } from '@/features/dns/api/dns'
+import type { JobLike } from '@/shared/lib/job-progress'
 
 const props = defineProps<{ providerId: string; zoneName: string }>()
 const router = useRouter()
@@ -250,15 +252,15 @@ function openEdit(record: SaaSHostname) {
   formErrors.value = {}
   form.hostname = record.hostname
   form.hostname_prefix = ''
-  form.sync_provider_id = String(record.sync_provider_id || (record as any).effective_sync_provider_id || '')
-  form.sync_zone = String(record.sync_zone || (record as any).effective_sync_zone || '')
-  form.sync_target = String(record.sync_target || (record as any).effective_sync_target || '')
+  form.sync_provider_id = String(record.sync_provider_id || record.effective_sync_provider_id || '')
+  form.sync_zone = String(record.sync_zone || record.effective_sync_zone || '')
+  form.sync_target = String(record.sync_target || record.effective_sync_target || '')
   form.custom_origin_server = String(record.custom_origin_server || '')
   form.use_custom_origin_server = !!form.custom_origin_server
   form.preferred_domain = preferredDomainOf(record) || '__none'
   form.auto_preferred = record.auto_preferred !== false
   form.method = String(record.ssl?.method || 'txt')
-  form.min_tls = String((record.ssl as any)?.settings?.min_tls_version || (record.ssl as any)?.min_tls_version || '1.2')
+  form.min_tls = String(record.ssl?.settings?.min_tls_version || record.ssl?.min_tls_version || '1.2')
   form.auto_sync = true
   void loadPreferredOptions()
   void loadSyncZones()
@@ -334,7 +336,7 @@ async function save() {
         payload,
         { autoSync: form.auto_sync },
       )
-      notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '主机名已更新')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已更新')
       dialogOpen.value = false
       if (response.data) patchHostnameRow(response.data)
       else await runLoad()
@@ -351,7 +353,7 @@ async function save() {
         payload,
         { autoSync: form.auto_sync && !!payload.sync_target },
       )
-      notifyDnsSideEffect((response as any).side_effects?.dns?.sync, '主机名已创建')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已创建')
       dialogOpen.value = false
       // 新建影响分页 total / 排序，整表刷新更稳
       await runLoad()
@@ -370,7 +372,7 @@ async function removeHostname(record: SaaSHostname) {
   rowRefreshing.value = key
   try {
     const response = await saasApi.deleteHostname(props.providerId, decodedZone.value, record.hostname)
-    notifyDnsSideEffect((response as any).side_effects?.dns?.cleanup, '已删除')
+    notifyDnsSideEffect(dnsSideEffectFromData(response, 'cleanup'), '已删除')
     removeListItem(
       hostnames,
       (item) => String(item.hostname) === String(record.hostname) || String(item.id) === String(record.id),
@@ -517,16 +519,20 @@ async function batchUpdatePreferred() {
 
 async function resumeJobs() {
   if (jobProgress.running.value) return
-  const fetchers: Array<{ label: string; fetchActive: () => Promise<any>; fetchJob: (id: string) => Promise<any> }> = [
+  const fetchers: Array<{
+    label: string
+    fetchActive: () => Promise<ApiResponse<unknown>>
+    fetchJob: (id: string) => Promise<JobLike>
+  }> = [
     {
       label: '优选切换',
       fetchActive: () => saasApi.preferredApplyActive(props.providerId, decodedZone.value),
-      fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as any) || {},
+      fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as JobLike) || {},
     },
     {
       label: 'SaaS 批量',
       fetchActive: () => saasApi.batchActive(props.providerId, decodedZone.value),
-      fetchJob: async (id) => ((await saasApi.batchJob(id)).data as any) || {},
+      fetchJob: async (id) => ((await saasApi.batchJob(id)).data as JobLike) || {},
     },
   ]
   for (const item of fetchers) {

@@ -107,7 +107,7 @@ function openEdit(record: Provider) {
       form.fields[field] = ''
     } else {
       form.fields[field] = String(
-        (record as any)[field] || record.fields?.[field] || '',
+        record[field] || record.fields?.[field] || '',
       )
     }
   }
@@ -134,8 +134,7 @@ function configItems(provider: Provider): Array<{ key: string; value: string; ok
 
   const items: Array<{ key: string; value: string; ok?: boolean }> = []
   const fields = (provider.fields || {}) as Record<string, string>
-  const pick = (key: string) =>
-    String((provider as any)[key] || fields[key] || '').trim()
+  const pick = (key: string) => String(provider[key] || fields[key] || '').trim()
 
   if (provider.type === 'edgeone') {
     const dnspod = pick('dnspod_provider')

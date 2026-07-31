@@ -1,11 +1,11 @@
 import { ProviderRepository } from '../../provider/repository.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
-import { fromDnsOperationResult, type DnsOperationResult, type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
+import { buildDnsSideEffects, fromDnsOperationResult, type DnsOperationResult } from '../../../lib/utils/side-effect-result.js'
 import { CacheTtl, cloudflaredTunnelConfigCacheTag, withProviderCache } from '../../../lib/cache/provider-cache.js'
 import { emitTunnelRouteMutated } from '../events.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
-import { cloudflareRouteConfigSchema, parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
+import { parseCloudflareItemResponse } from '../../../lib/providers/cloudflare-response.js'
 import { CloudflareZoneService } from '../../cloudflare/services/zone-service.js'
 import { CloudflaredDnsService } from './dns-service.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../provider/types.js'
@@ -45,7 +45,7 @@ export class CloudflaredRouteService {
             { tunnel_id: tunnelId },
           )
         }
-        const result = this.presentConfig(parseCloudflareItemResponse(response, cloudflareRouteConfigSchema).result)
+        const result = this.presentConfig(parseCloudflareItemResponse(response).result)
         return result
       },
     })
@@ -74,7 +74,7 @@ export class CloudflaredRouteService {
       hostname: normalized.hostname,
       service: normalized.service,
       path: normalized.path,
-      side_effects: this.dnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
+      side_effects: buildDnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
     }
   }
 
@@ -121,7 +121,7 @@ export class CloudflaredRouteService {
       hostname: normalized.hostname,
       service: normalized.service,
       path: normalized.path,
-      side_effects: this.dnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
+      side_effects: buildDnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
     }
   }
 
@@ -159,7 +159,7 @@ export class CloudflaredRouteService {
     return {
       hostname: normalizedHostname,
       path,
-      side_effects: this.dnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 清理') }),
+      side_effects: buildDnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 清理') }),
     }
   }
 
@@ -228,27 +228,11 @@ export class CloudflaredRouteService {
   }
 
   private async requireZoneId(cfProviderId: string, hostname: string): Promise<string> {
-    const zoneId = await this.resolveZoneId(cfProviderId, hostname)
+    const zoneId = await this.cfZones.bestMatchId(cfProviderId, hostname)
     if (zoneId === '') {
       throw new ApiError('cloudflared_zone_not_found', `No Cloudflare zone matches ${hostname}`, 422)
     }
     return zoneId
-  }
-
-  private async resolveZoneId(cfProviderId: string, hostname: string): Promise<string> {
-    const normalized = hostname.toLowerCase().trim().replace(/\.$/, '')
-    let bestName = ''
-    let bestId = ''
-    for (const zone of (await this.cfZones.listAll(cfProviderId, false)).items) {
-      const name = String(zone.name ?? '').toLowerCase().trim().replace(/\.$/, '')
-      const id = String(zone.id ?? '')
-      if (name === '' || id === '') continue
-      if ((normalized === name || normalized.endsWith(`.${name}`)) && name.length > bestName.length) {
-        bestName = name
-        bestId = id
-      }
-    }
-    return bestId
   }
 
   private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {
@@ -275,12 +259,6 @@ export class CloudflaredRouteService {
     return cfProviderId
   }
 
-  private dnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: DnsSideEffect }): SideEffects {
-    const sideEffects: SideEffects = { dns: {} }
-    if (effects.sync) sideEffects.dns!.sync = effects.sync
-    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup
-    return sideEffects
-  }
 
   private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
     return CloudflareGateway.forToken(provider.api_token)

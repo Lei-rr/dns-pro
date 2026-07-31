@@ -6,8 +6,6 @@ import { ApiError } from '../../../lib/http/api-error.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
-  cloudflareDcvDelegationSchema,
-  cloudflareIdResultSchema,
   cloudflareZoneSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
@@ -56,6 +54,25 @@ interface CreateZonePayload {
   type: string
 }
 
+export function bestMatchingCloudflareZoneId(
+  zones: Array<{ id?: unknown; name?: unknown }>,
+  fqdn: string,
+): string {
+  const normalized = fqdn.toLowerCase().trim().replace(/\.$/, '')
+  let bestName = ''
+  let bestId = ''
+  for (const zone of zones) {
+    const name = String(zone.name ?? '').toLowerCase().trim().replace(/\.$/, '')
+    const id = String(zone.id ?? '')
+    if (name === '' || id === '') continue
+    if ((normalized === name || normalized.endsWith(`.${name}`)) && name.length > bestName.length) {
+      bestName = name
+      bestId = id
+    }
+  }
+  return bestId
+}
+
 export class CloudflareZoneService {
   constructor(private readonly providers: ProviderRepository) {}
 
@@ -94,7 +111,7 @@ export class CloudflareZoneService {
         } catch (error) {
           throw wrapProviderError('cloudflare_zone_list_failed', 'Cloudflare zone list failed', providerId, error)
         }
-        const parsed = parseCloudflareListResponse(response, cloudflareZoneSchema)
+        const parsed = parseCloudflareListResponse(response)
         const resultInfo = parsed.result_info
         const result: ZoneListResult = {
           items: parsed.result.map((zone) => this.presentZone(zone)),
@@ -173,7 +190,7 @@ export class CloudflareZoneService {
     }
     await emitCloudflareZoneMutated(providerId, name, 'create')
 
-    return this.presentZone(parseCloudflareItemResponse(response, cloudflareZoneSchema).result)
+    return this.presentZone(parseCloudflareItemResponse(response).result)
   }
 
   async delete(providerId: string, zoneId: string): Promise<{ id: string }> {
@@ -190,7 +207,7 @@ export class CloudflareZoneService {
     }
     await emitCloudflareZoneMutated(providerId, zoneId, 'delete')
 
-    const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
+    const parsed = parseCloudflareItemResponse(response)
     return { id: parsed.result.id ?? zoneId }
   }
 
@@ -218,6 +235,10 @@ export class CloudflareZoneService {
     })
   }
 
+  async bestMatchId(providerId: string, fqdn: string, refresh = false): Promise<string> {
+    return bestMatchingCloudflareZoneId((await this.listAll(providerId, refresh)).items, fqdn)
+  }
+
   async dcvDelegationUuid(providerId: string, zoneId: string, refresh = false): Promise<string> {
     const cached = await withProviderCache<{ uuid: string }>({
       key: {
@@ -238,7 +259,7 @@ export class CloudflareZoneService {
             zone: zoneId,
           })
         }
-        const uuid = parseCloudflareItemResponse(response, cloudflareDcvDelegationSchema).result.uuid ?? ''
+        const uuid = parseCloudflareItemResponse(response).result.uuid ?? ''
         return { uuid }
       },
     })

@@ -88,7 +88,7 @@ export class CloudflareCustomHostnameGateway {
           )
         }
 
-        const parsed = parseCloudflareListResponse(response, cloudflareCustomHostnameSchema)
+        const parsed = parseCloudflareListResponse(response)
         const resultInfo = parsed.result_info ?? cloudflareResultInfoSchema.parse({})
         const items = parsed.result.map((hostname) => this.present(hostname))
         return {
@@ -147,7 +147,7 @@ export class CloudflareCustomHostnameGateway {
             { zone: zoneId, hostname_id: hostnameId },
           )
         }
-        return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
+        return this.present(parseCloudflareItemResponse(response).result)
       },
     })
     return cached.value
@@ -196,7 +196,7 @@ export class CloudflareCustomHostnameGateway {
       )
     }
 
-    return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
+    return this.present(parseCloudflareItemResponse(response).result)
   }
 
   async update(cloudflareProviderId: string, zoneId: string, hostnameId: string, data: Record<string, unknown>): Promise<CloudflareCustomHostname> {
@@ -233,7 +233,7 @@ export class CloudflareCustomHostnameGateway {
       )
     }
 
-    return this.present(parseCloudflareItemResponse(response, cloudflareCustomHostnameSchema).result)
+    return this.present(parseCloudflareItemResponse(response).result)
   }
 
   async delete(cloudflareProviderId: string, zoneId: string, hostnameId: string): Promise<{ id: string }> {

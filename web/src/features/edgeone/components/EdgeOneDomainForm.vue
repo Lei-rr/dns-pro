@@ -5,6 +5,8 @@ import { Input } from '@/shared/ui/input'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
+import type { EdgeOneAccelerationDomain } from '@/shared/types'
+import { edgeOneDomainFormValues, edgeOneDomainSubmitValues } from '@/features/edgeone/lib/domain-form'
 import {
   Select,
   SelectContent,
@@ -18,6 +20,7 @@ const props = defineProps<{
   zoneName: string
   dnspodLinked?: boolean
   editing?: boolean
+  domain?: EdgeOneAccelerationDomain | null
   errors?: Record<string, string>
 }>()
 const emit = defineEmits<{
@@ -51,25 +54,18 @@ const showHostHeader = computed(() => form.origin_type === 'IP_DOMAIN')
 
 watch(open, (value) => {
   if (value) localErrors.value = {}
-  if (value && !props.editing) {
-    form.prefix = ''
-    form.origin_type = 'IP_DOMAIN'
-    form.origin = ''
-    form.origin_protocol = 'HTTP'
-    form.http_origin_port = 80
-    form.https_origin_port = 443
-    form.host_header = ''
-    form.host_header_mode = 'accelerate'
-    form.ipv6_status = 'follow'
-    form.autoSync = false
-  }
+  if (value) Object.assign(form, edgeOneDomainFormValues(props.domain, props.zoneName))
 })
 
 function submit() {
   localErrors.value = {}
   if (!form.origin.trim()) localErrors.value.origin = '请填写源站地址'
   if (Object.keys(localErrors.value).length) return
-  emit('save', { ...form, fullDomain: fullDomain.value })
+  emit('save', {
+    ...edgeOneDomainSubmitValues(form),
+    fullDomain: fullDomain.value,
+    autoSync: form.autoSync,
+  })
 }
 </script>
 
@@ -81,10 +77,10 @@ function submit() {
     content-class="sm:max-w-2xl"
   >
     <FieldGroup>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
           <FieldLabel>前缀</FieldLabel>
-          <Input v-model="form.prefix" placeholder="www / * / @" />
+          <Input v-model="form.prefix" :disabled="editing" placeholder="www / * / @" />
         </Field>
         <Field>
           <FieldLabel>完整域名</FieldLabel>
@@ -92,7 +88,7 @@ function submit() {
         </Field>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
           <FieldLabel>源站类型</FieldLabel>
 <Select v-model="form.origin_type">
@@ -115,7 +111,7 @@ function submit() {
         </Field>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
           <FieldLabel>回源协议</FieldLabel>
 <Select v-model="form.origin_protocol">
@@ -144,7 +140,7 @@ function submit() {
         </Field>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field v-if="showHttpPort">
           <FieldLabel>HTTP 端口</FieldLabel>
           <Input v-model="form.http_origin_port" type="number" />

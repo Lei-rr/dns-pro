@@ -6,7 +6,6 @@ import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
 import type { CloudflareProvider } from '../../provider/types.js'
 import {
   cloudflareDnsRecordSchema,
-  cloudflareIdResultSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
@@ -69,6 +68,19 @@ interface RecordFilters {
   refresh?: boolean
 }
 
+export function exactCloudflareRecords<T extends { name?: unknown; type?: unknown }>(
+  records: T[],
+  name: string,
+  type: string,
+): T[] {
+  const expectedName = name.toLowerCase().trim().replace(/\.$/, '')
+  const expectedType = type.toUpperCase().trim()
+  return records.filter((record) => {
+    const recordName = String(record.name ?? '').toLowerCase().trim().replace(/\.$/, '')
+    return recordName === expectedName && String(record.type ?? '').toUpperCase().trim() === expectedType
+  })
+}
+
 export class CloudflareDnsRecordService {
   constructor(private readonly providers: ProviderRepository) {}
 
@@ -112,7 +124,7 @@ export class CloudflareDnsRecordService {
             zone: zoneId,
           })
         }
-        const parsed = parseCloudflareListResponse(response, cloudflareDnsRecordSchema)
+        const parsed = parseCloudflareListResponse(response)
         const resultInfo = parsed.result_info
         return {
           items: parsed.result.map((record) => this.presentRecord(record)),
@@ -164,6 +176,31 @@ export class CloudflareDnsRecordService {
     }
   }
 
+  async findExact(
+    providerId: string,
+    zoneId: string,
+    name: string,
+    type: string,
+    refresh = false,
+  ): Promise<RecordPresentation[]> {
+    const matches: RecordPresentation[] = []
+    let page = 1
+    while (true) {
+      const result = await this.list(providerId, zoneId, {
+        type,
+        search: name,
+        page,
+        per_page: 100,
+        refresh,
+      })
+      matches.push(...exactCloudflareRecords(result.items, name, type))
+      const totalPages = Number(result.pagination.total_pages ?? 0)
+      if (totalPages > 0 ? page >= totalPages : result.items.length < 100) break
+      page++
+    }
+    return matches
+  }
+
   async create(providerId: string, zoneId: string, data: RecordPayload | Record<string, unknown>): Promise<RecordPresentation> {
     const normalized = this.normalizeRecordData(data)
     const provider = await this.requireProvider(providerId)
@@ -182,7 +219,7 @@ export class CloudflareDnsRecordService {
     }
 
     await emitCloudflareRecordMutated(providerId, zoneId, 'create')
-    return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
+    return this.presentRecord(parseCloudflareItemResponse(response).result)
   }
 
   async update(
@@ -209,7 +246,7 @@ export class CloudflareDnsRecordService {
     }
 
     await emitCloudflareRecordMutated(providerId, zoneId, 'update')
-    return this.presentRecord(parseCloudflareItemResponse(response, cloudflareDnsRecordSchema).result)
+    return this.presentRecord(parseCloudflareItemResponse(response).result)
   }
 
   async delete(providerId: string, zoneId: string, recordId: string): Promise<{ id: string }> {
@@ -229,7 +266,7 @@ export class CloudflareDnsRecordService {
     }
 
     await emitCloudflareRecordMutated(providerId, zoneId, 'delete')
-    const parsed = parseCloudflareItemResponse(response, cloudflareIdResultSchema)
+    const parsed = parseCloudflareItemResponse(response)
     return { id: parsed.result.id ?? recordId }
   }
 

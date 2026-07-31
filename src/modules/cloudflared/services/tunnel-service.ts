@@ -6,7 +6,6 @@ import { CacheTtl, cloudflaredTunnelsCacheTag, withProviderCache } from '../../.
 import { emitTunnelMutated } from '../events.js'
 import { CloudflareGateway } from '../../cloudflare/gateways/gateway.js'
 import {
-  cloudflareTunnelSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
@@ -51,7 +50,7 @@ export class CloudflaredTunnelService {
           } catch (error) {
             throw wrapProviderError('cloudflared_tunnel_list_failed', 'Cloudflare Tunnel list failed', providerId, error)
           }
-          const batch = parseCloudflareListResponse(response, cloudflareTunnelSchema).result
+          const batch = parseCloudflareListResponse(response).result
           for (const tunnel of batch) {
             items.push(this.presentTunnel(tunnel))
           }
@@ -84,7 +83,7 @@ export class CloudflaredTunnelService {
             tunnel_id: tunnelId,
           })
         }
-        const result = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
+        const result = this.presentTunnel(parseCloudflareItemResponse(response).result)
         return result
       },
     })
@@ -107,7 +106,7 @@ export class CloudflaredTunnelService {
     }
 
     await emitTunnelMutated({ providerId, action: 'create' })
-    const tunnel = this.presentTunnel(parseCloudflareItemResponse(response, cloudflareTunnelSchema).result)
+    const tunnel = this.presentTunnel(parseCloudflareItemResponse(response).result)
     const token = await this.fetchToken(provider, accountId, tunnel.id)
     return { tunnel, token }
   }
@@ -218,7 +217,9 @@ export class CloudflaredTunnelService {
       status: tunnel.status ?? 'inactive',
       config_src: tunnel.config_src ?? undefined,
       remote_config: tunnel.remote_config ?? false,
-      connections: (tunnel.connections ?? []).map((conn: Record<string, unknown>) => this.presentConnection(conn)),
+      connections: Array.isArray(tunnel.connections)
+        ? tunnel.connections.map((conn: Record<string, unknown>) => this.presentConnection(conn))
+        : [],
       conns_active_at: tunnel.conns_active_at ?? undefined,
       conns_inactive_at: tunnel.conns_inactive_at ?? undefined,
       created_at: tunnel.created_at ?? undefined,

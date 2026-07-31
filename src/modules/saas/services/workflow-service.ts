@@ -1,4 +1,4 @@
-import { type DnsSideEffect, type SideEffects } from '../../../lib/utils/side-effect-result.js'
+import { buildDnsSideEffects, type SideEffects } from '../../../lib/utils/side-effect-result.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { SyncOrchestrator } from '../../sync/services/sync-orchestrator.js'
 import type { SyncRecord } from '../../sync/types.js'
@@ -49,7 +49,7 @@ export class SaasWorkflowService {
       const sync = await this.sync.syncSaasHostname(providerId, zoneName, String(result.hostname))
       return {
         ...result,
-        side_effects: this.dnsSideEffects({
+        side_effects: buildDnsSideEffects({
           sync: this.sync.normalizeSyncSideEffect(sync, '已执行 DNS 同步'),
         }),
       }
@@ -91,7 +91,7 @@ export class SaasWorkflowService {
       const sync = await this.sync.resyncSaasHostname(providerId, zoneName, hostnameFqdn, beforeRecords)
       return {
         ...result,
-        side_effects: this.dnsSideEffects({
+        side_effects: buildDnsSideEffects({
           sync: this.sync.normalizeSyncSideEffect(sync, '已执行 DNS 重同步'),
         }),
       }
@@ -109,7 +109,7 @@ export class SaasWorkflowService {
       await this.rememberOwnershipCleanup(providerId, hostnameId, hostnameFqdn, cleanup)
       return {
         ...result,
-        side_effects: this.dnsSideEffects({
+        side_effects: buildDnsSideEffects({
           cleanup: this.sync.normalizeCleanupSideEffect(cleanup, '已执行 DNS 清理'),
         }),
       }
@@ -153,7 +153,7 @@ export class SaasWorkflowService {
       )
       return {
         ...result,
-        side_effects: this.dnsSideEffects({
+        side_effects: buildDnsSideEffects({
           cleanup: this.sync.normalizeCleanupSideEffect(cleanup, '已执行 DNS 删除后清理'),
         }),
       }
@@ -209,10 +209,4 @@ export class SaasWorkflowService {
     return result
   }
 
-  private dnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: DnsSideEffect }): SideEffects {
-    const sideEffects: SideEffects = { dns: {} }
-    if (effects.sync) sideEffects.dns!.sync = effects.sync
-    if (effects.cleanup) sideEffects.dns!.cleanup = effects.cleanup
-    return sideEffects
-  }
 }

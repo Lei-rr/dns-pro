@@ -40,21 +40,18 @@ export class CloudflaredDnsService {
   private async ensureCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<DnsOperationResult> {
     const cnameTarget = `${tunnelId}.cfargotunnel.com`
 
-    for (const record of await this.exactCnameMatches(cfProviderId, zoneId, hostname)) {
-      if (String(record.name ?? '') !== hostname) continue
-      if (String(record.type ?? '') === 'CNAME' && String(record.content ?? '') === cnameTarget) {
+    for (const record of await this.dns.findExact(cfProviderId, zoneId, hostname, 'CNAME', true)) {
+      if (String(record.content ?? '') === cnameTarget) {
         return { action: 'unchanged', record_id: String(record.id ?? '') }
       }
-      if (String(record.type ?? '') === 'CNAME') {
-        const updated = await this.dns.update(cfProviderId, zoneId, String(record.id), {
-          type: 'CNAME',
-          name: hostname,
-          content: cnameTarget,
-          proxied: true,
-          ttl: 1,
-        })
-        return { action: 'updated', record_id: String(updated.id ?? '') }
-      }
+      const updated = await this.dns.update(cfProviderId, zoneId, String(record.id), {
+        type: 'CNAME',
+        name: hostname,
+        content: cnameTarget,
+        proxied: true,
+        ttl: 1,
+      })
+      return { action: 'updated', record_id: String(updated.id ?? '') }
     }
 
     const created = await this.dns.create(cfProviderId, zoneId, {
@@ -70,8 +67,8 @@ export class CloudflaredDnsService {
   private async removeCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<DnsOperationResult> {
     const cnameTarget = `${tunnelId}.cfargotunnel.com`
 
-    for (const record of await this.exactCnameMatches(cfProviderId, zoneId, hostname)) {
-      if (String(record.name ?? '') === hostname && String(record.content ?? '') === cnameTarget) {
+    for (const record of await this.dns.findExact(cfProviderId, zoneId, hostname, 'CNAME', true)) {
+      if (String(record.content ?? '') === cnameTarget) {
         await this.dns.delete(cfProviderId, zoneId, String(record.id))
         return { action: 'deleted', record_id: String(record.id) }
       }
@@ -80,53 +77,7 @@ export class CloudflaredDnsService {
     return { action: 'not_found' }
   }
 
-  private async exactCnameMatches(cfProviderId: string, zoneId: string, hostname: string): Promise<Array<Record<string, unknown>>> {
-    const matches: Array<Record<string, unknown>> = []
-    let page = 1
-    let totalPages: number
-
-    do {
-      const result = await this.dns.list(cfProviderId, zoneId, {
-        type: 'CNAME',
-        search: hostname,
-        page,
-        per_page: 100,
-        refresh: true,
-      })
-      for (const record of result.items) {
-        if (String(record.name ?? '') === hostname) {
-          matches.push(record)
-        }
-      }
-      totalPages = Number(result.pagination.total_pages ?? result.pagination.total_count ?? 1)
-      page++
-    } while (page <= totalPages)
-
-    return matches
-  }
-
   private async resolveZoneId(cfProviderId: string, fqdn: string): Promise<string> {
-    const normalized = fqdn.replace(/\.$/, '').trim().toLowerCase()
-    if (normalized === '') return ''
-
-    const zones = await this.allZones(cfProviderId)
-    let bestName = ''
-    let bestId = ''
-
-    for (const zone of zones) {
-      const name = String(zone.name ?? '').toLowerCase()
-      const id = String(zone.id ?? '')
-      if (name === '' || id === '') continue
-      if ((normalized === name || normalized.endsWith('.' + name)) && name.length > bestName.length) {
-        bestName = name
-        bestId = id
-      }
-    }
-
-    return bestId
-  }
-
-  private async allZones(cfProviderId: string): Promise<Array<Record<string, unknown>>> {
-    return (await this.cfZones.listAll(cfProviderId, true)).items
+    return this.cfZones.bestMatchId(cfProviderId, fqdn, true)
   }
 }

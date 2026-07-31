@@ -21,6 +21,7 @@ import { JobProgressAlert } from '@/shared/ui/job-progress'
 import { useJobProgress } from '@/shared/lib/job-progress'
 import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { runProviderBatch } from '@/shared/lib/run-provider-batch'
+import type { JobLike } from '@/shared/lib/job-progress'
 import RecordFormDialog from '@/features/dns/components/RecordFormDialog.vue'
 import BatchEditDialog from '@/features/dns/components/BatchEditDialog.vue'
 import RecordsToolbar from '@/features/dns/components/RecordsToolbar.vue'
@@ -399,7 +400,7 @@ async function resumeJobs() {
     () => dnsApi.batchActive(props.providerId, props.zoneId),
     {
       label: 'DNS 批量',
-      fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as any) || {},
+      fetchJob: async (id) => ((await dnsApi.batchJob(props.providerId, id)).data as JobLike) || {},
     },
   )
   if (finished) {

@@ -105,6 +105,9 @@ export interface SaaSHostname {
   sync_provider_id?: string
   sync_zone?: string
   sync_target?: string
+  effective_sync_provider_id?: string
+  effective_sync_zone?: string
+  effective_sync_target?: string
   [key: string]: unknown
 }
 
