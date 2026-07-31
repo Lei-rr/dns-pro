@@ -77,6 +77,9 @@ const form = reactive({
 })
 const syncZones = ref<Zone[]>([])
 const loadingSyncZones = ref(false)
+const syncZonesError = ref('')
+const preferredOptionsError = ref('')
+let syncZonesRequestToken = 0
 
 const providerStore = useProviderStore()
 const syncProviders = computed(() => {
@@ -164,22 +167,28 @@ function patchHostnameRow(data: SaaSHostname | null | undefined) {
 }
 
 async function loadSyncZones() {
+  const token = ++syncZonesRequestToken
   const providerId = form.sync_provider_id
   if (!providerId) {
     syncZones.value = []
+    syncZonesError.value = ''
+    loadingSyncZones.value = false
     return
   }
   loadingSyncZones.value = true
+  syncZonesError.value = ''
+  syncZones.value = []
   try {
     const response = await dnsApi.zones(providerId)
+    if (token !== syncZonesRequestToken || providerId !== form.sync_provider_id) return
     syncZones.value = response.data || []
     if (!form.sync_zone && syncZones.value[0]?.name) {
       form.sync_zone = String(syncZones.value[0].name)
     }
   } catch {
-    syncZones.value = []
+    if (token === syncZonesRequestToken) syncZonesError.value = '同步域名加载失败。'
   } finally {
-    loadingSyncZones.value = false
+    if (token === syncZonesRequestToken) loadingSyncZones.value = false
   }
 }
 
@@ -193,11 +202,12 @@ watch(
 )
 
 async function loadPreferredOptions() {
+  preferredOptionsError.value = ''
   try {
     const res = await preferredDomainApi.list()
     preferredOptions.value = res.data || []
   } catch {
-    preferredOptions.value = []
+    preferredOptionsError.value = '优选域名加载失败。'
   }
 }
 
@@ -210,7 +220,7 @@ function resetForm() {
   form.sync_target = firstSync?.type === 'cloudflare' ? 'cloudflare_dns' : firstSync ? 'dnspod' : ''
   form.custom_origin_server = ''
   form.use_custom_origin_server = true
-  form.preferred_domain = preferredOptions.value[0]?.domain || '__none'
+  form.preferred_domain = preferredOptionsError.value ? '' : preferredOptions.value[0]?.domain || '__none'
   form.auto_preferred = true
   form.method = 'txt'
   form.min_tls = '1.2'
@@ -304,7 +314,7 @@ async function save() {
   const errors: FieldErrors = {}
   if (!hostname) errors.hostname = usesGuidedHostname.value ? '请选择同步域名' : '请填写主机名'
   if (form.use_custom_origin_server && !form.custom_origin_server.trim()) errors.custom_origin_server = '请填写自定义源服务器，或关闭该开关'
-  if (form.auto_preferred && form.preferred_domain === '__none') errors.preferred_domain = '开启自动优选时请选择优选域名'
+  if (form.auto_preferred && (!form.preferred_domain || form.preferred_domain === '__none')) errors.preferred_domain = '开启自动优选时请选择优选域名'
   formErrors.value = errors
   if (Object.keys(errors).length) return
   saving.value = true
@@ -651,7 +661,11 @@ onMounted(async () => {
       :preferred-options="preferredOptions"
       :origin-suggestions="originSuggestions"
       :errors="formErrors"
+      :sync-zones-error="syncZonesError"
+      :preferred-options-error="preferredOptionsError"
       @save="save"
+      @retry-sync-zones="loadSyncZones"
+      @retry-preferred-options="loadPreferredOptions"
     />
 
     <AppDialog

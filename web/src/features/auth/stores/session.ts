@@ -17,44 +17,62 @@ export const useSessionStore = defineStore('session', () => {
   const username = computed(() => session.value?.username ?? null)
 
   let pendingSession: Promise<SessionState> | null = null
+  let requestToken = 0
 
   async function load(options: { refresh?: boolean } = {}) {
-    if (options.refresh) pendingSession = null
+    if (options.refresh && pendingSession) {
+      requestToken += 1
+      pendingSession = null
+    }
     if (!options.refresh && checked.value && session.value) return session.value
 
     if (!pendingSession) {
+      const token = ++requestToken
       loading.value = true
-      pendingSession = authApi
-        .me()
-        .then((response) => response.data)
-        .catch((error) => {
-          invalidate()
-          throw error
-        })
-        .finally(() => {
+      const request = authApi.me().then((response) => response.data)
+      pendingSession = request
+      try {
+        const nextSession = await request
+        if (token !== requestToken) return session.value || anonymousSession
+        session.value = nextSession
+        checked.value = true
+        if (!nextSession.authenticated) clearProvidersCache()
+        return nextSession
+      } catch (error) {
+        if (token === requestToken) {
+          session.value = anonymousSession
+          checked.value = true
+          clearProvidersCache()
+        }
+        throw error
+      } finally {
+        if (token === requestToken && pendingSession === request) {
           pendingSession = null
           loading.value = false
-        })
+        }
+      }
     }
 
-    const nextSession = await pendingSession
-    session.value = nextSession
-    checked.value = true
-    if (!nextSession.authenticated) clearProvidersCache()
-    return nextSession
+    return pendingSession
   }
 
   async function login(username: string, password: string) {
-    pendingSession = null
+    const token = ++requestToken
     loading.value = true
+    const request = authApi.login(username, password).then((response) => response.data)
+    pendingSession = request
     try {
-      const response = await authApi.login(username, password)
-      session.value = response.data
+      const nextSession = await request
+      if (token !== requestToken) return session.value || anonymousSession
+      session.value = nextSession
       checked.value = true
       clearProvidersCache()
-      return session.value
+      return nextSession
     } finally {
-      loading.value = false
+      if (token === requestToken && pendingSession === request) {
+        pendingSession = null
+        loading.value = false
+      }
     }
   }
 
@@ -64,6 +82,7 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   function invalidate() {
+    requestToken += 1
     pendingSession = null
     session.value = anonymousSession
     checked.value = true

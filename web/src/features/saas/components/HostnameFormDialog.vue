@@ -40,10 +40,14 @@ defineProps<{
   preferredOptions: Array<{ domain: string }>
   originSuggestions: string[]
   errors: FieldErrors
+  syncZonesError?: string
+  preferredOptionsError?: string
 }>()
 
 const emit = defineEmits<{
   save: []
+  retrySyncZones: []
+  retryPreferredOptions: []
 }>()
 </script>
 
@@ -83,7 +87,7 @@ const emit = defineEmits<{
           <Field :data-invalid="!!errors.hostname">
             <FieldLabel>同步域名</FieldLabel>
             <Select v-model="form.sync_zone">
-              <SelectTrigger class="w-full">
+              <SelectTrigger class="w-full" :disabled="!!syncZonesError">
                 <SelectValue placeholder="选择域名" />
               </SelectTrigger>
               <SelectContent>
@@ -92,6 +96,10 @@ const emit = defineEmits<{
                 </SelectItem>
               </SelectContent>
             </Select>
+            <FieldError v-if="syncZonesError" class="flex items-center gap-1.5">
+              <span>{{ syncZonesError }}</span>
+              <Button type="button" variant="link" size="sm" class="text-destructive h-auto p-0" @click="emit('retrySyncZones')">重试</Button>
+            </FieldError>
             <FieldError :errors="errors.hostname ? [errors.hostname] : []" />
           </Field>
         </div>
@@ -178,7 +186,7 @@ const emit = defineEmits<{
       <Field v-if="form.auto_preferred" :data-invalid="!!errors.preferred_domain">
         <FieldLabel>优选域名</FieldLabel>
         <Select v-model="form.preferred_domain">
-          <SelectTrigger class="w-full">
+          <SelectTrigger class="w-full" :disabled="!!preferredOptionsError">
             <SelectValue placeholder="选择优选域名" />
           </SelectTrigger>
           <SelectContent>
@@ -188,6 +196,10 @@ const emit = defineEmits<{
             </SelectItem>
           </SelectContent>
         </Select>
+        <FieldError v-if="preferredOptionsError" class="flex items-center gap-1.5">
+          <span>{{ preferredOptionsError }}</span>
+          <Button type="button" variant="link" size="sm" class="text-destructive h-auto p-0" @click="emit('retryPreferredOptions')">重试</Button>
+        </FieldError>
         <FieldError :errors="errors.preferred_domain ? [errors.preferred_domain] : []" />
       </Field>
 

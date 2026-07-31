@@ -45,19 +45,30 @@ const form = reactive({
 const formErrors = ref<FieldErrors>({})
 const operatingId = ref('')
 const typeFilter = ref('all')
+const definitionsError = ref('')
 
 const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
   pageSizeScope: 'providers',
   load: async (options = {}) => {
-    try {
-      const [listRes, defRes] = await Promise.all([providersApi.list(), providersApi.definitions()])
-      if (options.isLatest && !options.isLatest()) return false
-      providers.value = listRes.data
+    const [listResult, definitionsResult] = await Promise.allSettled([
+      providersApi.list(),
+      providersApi.definitions(),
+    ])
+    if (options.isLatest && !options.isLatest()) return false
+    if (listResult.status === 'rejected') {
+      fail(listResult.reason)
+      return false
+    }
+    const listRes = listResult.value
+    providers.value = listRes.data
+    replaceProvidersCache(listRes.data.filter((item) => item.configured))
+    if (definitionsResult.status === 'fulfilled') {
+      const defRes = definitionsResult.value
       definitions.value = defRes.data.types
       labels.value = defRes.data.labels
-      replaceProvidersCache(listRes.data.filter((item) => item.configured))
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
+      definitionsError.value = ''
+    } else {
+      definitionsError.value = '服务商定义加载失败。'
       return false
     }
   },
@@ -81,6 +92,7 @@ function resetFormFields(type: string) {
 }
 
 function openCreate() {
+  if (definitionsError.value || !definitions.value.length) return
   editing.value = null
   form.id = ''
   form.name = ''
@@ -95,6 +107,7 @@ function onCreateTypeChange(type: string) {
 }
 
 function openEdit(record: Provider) {
+  if (definitionsError.value || !definitions.value.length) return
   editing.value = record
   form.id = record.id
   form.type = record.type
@@ -242,11 +255,16 @@ onMounted(() => runLoad())
         <RefreshCw class="size-4" />
         刷新
       </LoadingButton>
-      <Button size="sm" @click="openCreate">
+      <Button size="sm" :disabled="!!definitionsError || !definitions.length" @click="openCreate">
         <Plus class="size-4" />
         新增服务商
       </Button>
     </PageHeader>
+
+    <div v-if="definitionsError" role="alert" class="text-destructive flex items-center gap-2 text-sm">
+      <span>{{ definitionsError }}</span>
+      <Button type="button" variant="link" size="sm" class="text-destructive h-auto p-0" @click="onRefresh()">重试</Button>
+    </div>
 
     <!-- products-01 style toolbar + table -->
     <div class="flex w-full flex-col gap-4">
@@ -320,7 +338,7 @@ onMounted(() => runLoad())
                     >
                       测通
                     </DropdownMenuItem>
-                    <DropdownMenuItem @click="openEdit(record)">更新</DropdownMenuItem>
+                    <DropdownMenuItem :disabled="!!definitionsError || !definitions.length" @click="openEdit(record)">更新</DropdownMenuItem>
                     <DropdownMenuItem
                       variant="destructive"
                       :disabled="operatingId === `${record.id}:delete`"
