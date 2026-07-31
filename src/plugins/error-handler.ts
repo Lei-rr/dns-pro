@@ -25,6 +25,13 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
       return reply.status(404).send(error('not_found', 404, 'not_found'))
     }
 
+    if (request.url.startsWith('/assets/')) {
+      return reply
+        .status(404)
+        .header('Cache-Control', 'no-store')
+        .send(error('not_found', 404, 'not_found'))
+    }
+
     // SPA fallback — only if sendFile is available (static plugin registered)
     const sendFile = (reply as { sendFile?: (file: string) => unknown }).sendFile
     if (typeof sendFile === 'function') {
