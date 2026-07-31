@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from '@/shared/ui/select'
 import type { Provider, Zone } from '@/shared/types'
-import { Combobox, ComboboxAnchor, ComboboxInput, ComboboxItem, ComboboxList, ComboboxViewport } from '@/shared/ui/combobox'
+import { Combobox, ComboboxAnchor, ComboboxItem, ComboboxList, ComboboxTextInput, ComboboxViewport } from '@/shared/ui/combobox'
 
 export type HostnameFormModel = {
   hostname: string
@@ -143,8 +143,7 @@ const emit = defineEmits<{
           :reset-search-term-on-select="true"
         >
           <ComboboxAnchor class="w-full">
-            <ComboboxInput
-              class="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 aria-invalid:ring-destructive/20 aria-invalid:border-destructive md:text-sm"
+            <ComboboxTextInput
               :model-value="form.custom_origin_server"
               placeholder="输入或从已用源服务器选择，如 origin.example.com"
               :display-value="(value) => String(value || '')"

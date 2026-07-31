@@ -26,7 +26,7 @@ const props = withDefaults(
 <template>
   <DialogRoot v-model:open="open">
     <DialogContent
-      :class="cn('max-h-[calc(100svh-1rem)] overflow-hidden p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-lg sm:p-6', props.contentClass || props.class)"
+      :class="cn('max-h-[calc(100svh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-lg sm:p-6', props.contentClass || props.class)"
     >
       <DialogHeader v-if="title || description || $slots.header">
         <slot name="header">
@@ -35,7 +35,7 @@ const props = withDefaults(
         </slot>
       </DialogHeader>
 
-      <div class="min-h-0 overflow-y-auto overscroll-contain px-0.5">
+      <div class="min-h-0 touch-pan-y overflow-y-auto overscroll-contain px-0.5">
         <div class="grid gap-4">
         <slot />
         </div>
