@@ -110,14 +110,13 @@
   }
 }
 
-/* sonner：宽度随文案；关闭钮更小、右上角（App.vue close-button-position） */
+/* Sonner keeps its positioning container measurable: mobile inset, desktop centered. */
 [data-sonner-toaster] {
-  width: max-content !important;
-  max-width: min(420px, calc(100vw - 32px));
+  width: var(--width) !important;
+  max-width: calc(100vw - 32px);
 }
 [data-sonner-toast][data-styled='true'] {
-  width: max-content !important;
-  max-width: min(420px, calc(100vw - 32px));
+  width: 100% !important;
   min-width: 0;
   padding: 12px 14px;
 }
@@ -133,6 +132,12 @@
 [data-sonner-toast][data-styled='true'] [data-close-button] svg {
   width: 10px;
   height: 10px;
+}
+
+@media (max-width: 600px) {
+  [data-sonner-toaster] {
+    width: calc(100vw - 32px) !important;
+  }
 }
 
 /* route transition */
