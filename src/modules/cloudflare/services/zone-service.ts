@@ -10,8 +10,11 @@ import {
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
+import { parseBool } from '../../../lib/utils/parse-bool.js'
+import { providerNullableString } from '../../../lib/providers/provider-values.js'
 
 const PROVIDER_TYPE = 'cloudflare'
+const MAX_PROVIDER_PAGES = 1000
 
 interface ZonePresentation {
   [key: string]: unknown
@@ -118,7 +121,7 @@ export class CloudflareZoneService {
           pagination: {
             page: Number(resultInfo?.page ?? page),
             per_page: Number(resultInfo?.per_page ?? perPage),
-            count: resultInfo?.count ?? null,
+            count: resultInfo?.count ?? parsed.source_count,
             total_count: resultInfo?.total_count ?? null,
             total_pages: resultInfo?.total_pages ?? null,
           },
@@ -140,7 +143,11 @@ export class CloudflareZoneService {
       const result = await this.list(providerId, page, pageSize, '', refresh)
       items.push(...result.items)
       const totalPages = Number(result.pagination.total_pages ?? 0)
-      if (totalPages > 0 ? page >= totalPages : result.items.length < pageSize) break
+      const sourceCount = Number(result.pagination.count ?? result.items.length)
+      if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
+      if (page >= MAX_PROVIDER_PAGES) {
+        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
+      }
       page++
     }
 
@@ -188,9 +195,9 @@ export class CloudflareZoneService {
         zone: name,
       })
     }
+    const zone = this.presentZone(parseCloudflareItemResponse(response).result)
     await emitCloudflareZoneMutated(providerId, name, 'create')
-
-    return this.presentZone(parseCloudflareItemResponse(response).result)
+    return zone
   }
 
   async delete(providerId: string, zoneId: string): Promise<{ id: string }> {
@@ -205,10 +212,12 @@ export class CloudflareZoneService {
         zone: zoneId,
       })
     }
-    await emitCloudflareZoneMutated(providerId, zoneId, 'delete')
-
     const parsed = parseCloudflareItemResponse(response)
-    return { id: parsed.result.id ?? zoneId }
+    const id = typeof parsed.result.id === 'string' || typeof parsed.result.id === 'number'
+      ? String(parsed.result.id)
+      : zoneId
+    await emitCloudflareZoneMutated(providerId, zoneId, 'delete')
+    return { id }
   }
 
   async idByName(providerId: string, name: string, refresh = false): Promise<string> {
@@ -227,6 +236,9 @@ export class CloudflareZoneService {
       }
 
       page++
+      if (page > MAX_PROVIDER_PAGES) {
+        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
+      }
     } while (page <= totalPages)
 
     throw new ApiError('cloudflare_zone_not_found', 'Cloudflare zone not found', 404, {
@@ -282,17 +294,17 @@ export class CloudflareZoneService {
   private presentZone(zone: unknown): ZonePresentation {
     const z = cloudflareZoneSchema.parse(zone)
     return {
-      id: z.id ?? null,
-      name: z.name ?? null,
-      status: z.status ?? null,
-      type: z.type ?? null,
-      paused: z.paused ?? null,
-      account: z.account ?? null,
-      name_servers: z.name_servers ?? [],
-      original_name_servers: z.original_name_servers ?? [],
-      created_on: z.created_on ?? null,
-      modified_on: z.modified_on ?? null,
-      activated_on: z.activated_on ?? null,
+      id: providerNullableString(z.id),
+      name: providerNullableString(z.name),
+      status: providerNullableString(z.status),
+      type: providerNullableString(z.type),
+      paused: z.paused == null ? null : parseBool(z.paused),
+      account: z.account && typeof z.account === 'object' && !Array.isArray(z.account) ? z.account : null,
+      name_servers: Array.isArray(z.name_servers) ? z.name_servers.map(String) : [],
+      original_name_servers: Array.isArray(z.original_name_servers) ? z.original_name_servers.map(String) : [],
+      created_on: providerNullableString(z.created_on),
+      modified_on: providerNullableString(z.modified_on),
+      activated_on: providerNullableString(z.activated_on),
     }
   }
 }

@@ -11,6 +11,7 @@ import {
   edgeoneMutationResponseSchema,
 } from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
+import { providerOptionalString, providerString } from '../../../lib/providers/provider-values.js'
 import { resolveEdgeOneApiCredentials } from '../credentials.js'
 
 export interface EdgeOneAccelerationDomain {
@@ -55,6 +56,7 @@ export class EdgeOneDomainService {
         const pageSize = 100
         const items: EdgeOneAccelerationDomain[] = []
         let offset = 0
+        let pages = 0
         let requestId: string | undefined
 
         while (true) {
@@ -69,13 +71,18 @@ export class EdgeOneDomainService {
             throw wrapProviderError('edgeone_domain_list_failed', 'EdgeOne acceleration domain list failed', providerId, error, { zone: zoneId })
           }
           const parsed = edgeoneAccelerationDomainListResponseSchema.parse(response)
+          pages++
+          const sourceCount = Number(parsed.SourceCount ?? 0)
           const pageItems = (Array.isArray(parsed.AccelerationDomains) ? parsed.AccelerationDomains : [])
             .map((domain) => this.presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId))
           items.push(...pageItems)
-          const total = Number(parsed.TotalCount ?? items.length)
+          const totalRaw = parsed.TotalCount
+          const totalValue = Number(totalRaw)
+          const total = totalRaw != null && totalRaw !== '' && Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
           requestId = parsed.RequestId ?? requestId
-          offset += pageItems.length
-          if (pageItems.length < pageSize || (total > 0 && offset >= total)) break
+          offset += sourceCount
+          if (sourceCount < pageSize || (total !== null && offset >= total)) break
+          if (pages >= 1000) throw new ApiError('edgeone_pagination_limit', 'EdgeOne pagination limit reached', 502)
         }
 
         return {
@@ -116,9 +123,10 @@ export class EdgeOneDomainService {
       })
     }
 
-    await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'create' })
     const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
-    return { name: normalized.domain_name, request_id: parsed.RequestId ?? undefined, ownership_verification: parsed.OwnershipVerification ?? null }
+    const result = { name: normalized.domain_name, request_id: providerOptionalString(parsed.RequestId), ownership_verification: parsed.OwnershipVerification ?? null }
+    await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'create' })
+    return result
   }
 
   async updateAccelerationDomain(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -148,8 +156,10 @@ export class EdgeOneDomainService {
       })
     }
 
+    const parsed = edgeoneMutationResponseSchema.parse(response)
+    const result = { name: normalized.domain_name, request_id: providerOptionalString(parsed.RequestId) }
     await emitEdgeDomainMutated({ providerId, zoneId, domainName: normalized.domain_name, action: 'update' })
-    return { name: normalized.domain_name, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
+    return result
   }
 
   async deleteAccelerationDomain(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
@@ -170,8 +180,10 @@ export class EdgeOneDomainService {
       })
     }
 
+    const parsed = edgeoneMutationResponseSchema.parse(response)
+    const result = { name: domainName, request_id: providerOptionalString(parsed.RequestId) }
     await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'delete' })
-    return { name: domainName, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
+    return result
   }
 
   async updateAccelerationDomainStatus(providerId: string, zoneId: string, domainName: string, status: string): Promise<Record<string, unknown>> {
@@ -193,8 +205,10 @@ export class EdgeOneDomainService {
       })
     }
 
+    const parsed = edgeoneMutationResponseSchema.parse(response)
+    const result = { name: domainName, status, request_id: providerOptionalString(parsed.RequestId) }
     await emitEdgeDomainMutated({ providerId, zoneId, domainName, action: 'status' })
-    return { name: domainName, status, request_id: edgeoneMutationResponseSchema.parse(response).RequestId }
+    return result
   }
 
   async updateCertificate(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -280,35 +294,46 @@ export class EdgeOneDomainService {
     const certificate = domain.Certificate ?? {}
 
     return {
-      zone_id: domain.ZoneId ?? zoneId,
-      name: domain.DomainName ?? '',
-      status: domain.DomainStatus ?? undefined,
-      cname: domain.Cname ?? undefined,
-      ipv6_status: domain.IPv6Status ?? undefined,
-      identification_status: domain.IdentificationStatus ?? undefined,
-      origin_protocol: domain.OriginProtocol ?? undefined,
-      http_origin_port: domain.HttpOriginPort ?? undefined,
-      https_origin_port: domain.HttpsOriginPort ?? undefined,
+      zone_id: this.scalarString(domain.ZoneId, zoneId),
+      name: this.scalarString(domain.DomainName),
+      status: providerOptionalString(domain.DomainStatus),
+      cname: providerOptionalString(domain.Cname),
+      ipv6_status: providerOptionalString(domain.IPv6Status),
+      identification_status: providerOptionalString(domain.IdentificationStatus),
+      origin_protocol: providerOptionalString(domain.OriginProtocol),
+      http_origin_port: domain.HttpOriginPort == null ? undefined : this.finiteNumber(domain.HttpOriginPort),
+      https_origin_port: domain.HttpsOriginPort == null ? undefined : this.finiteNumber(domain.HttpsOriginPort),
       origin: {
-        type: origin.OriginType,
-        value: origin.Origin,
-        host_header: origin.HostHeader,
+        type: providerOptionalString(origin.OriginType),
+        value: providerOptionalString(origin.Origin),
+        host_header: providerOptionalString(origin.HostHeader),
       },
       certificate: {
-        mode: (certificate.Mode as string | undefined) ?? 'disable',
+        mode: providerString(certificate.Mode, 'disable'),
         items: Array.isArray(certificate.List)
-          ? certificate.List.map((item: Record<string, unknown>) => ({
-              cert_id: item.CertId,
-              alias: item.Alias,
-              type: item.Type,
-              status: item.Status,
-              expire_time: item.ExpireTime,
-            }))
+          ? certificate.List
+              .filter((value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value))
+              .map((item: Record<string, unknown>) => ({
+                cert_id: providerOptionalString(item.CertId),
+                alias: providerOptionalString(item.Alias),
+                type: providerOptionalString(item.Type),
+                status: providerOptionalString(item.Status),
+                expire_time: providerOptionalString(item.ExpireTime),
+              }))
           : [],
       },
-      created_on: domain.CreatedOn ?? undefined,
-      modified_on: domain.ModifiedOn ?? undefined,
+      created_on: providerOptionalString(domain.CreatedOn),
+      modified_on: providerOptionalString(domain.ModifiedOn),
     }
+  }
+
+  private scalarString(value: unknown, fallback = ''): string {
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : fallback
+  }
+
+  private finiteNumber(value: unknown): number {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
   }
 
   private gatewayFor(provider: DnsPodProvider): EdgeOneGateway {

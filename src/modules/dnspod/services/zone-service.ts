@@ -2,6 +2,7 @@ import { ProviderRepository } from '../../provider/repository.js'
 import { CacheTtl, offsetPaginationMeta, providerCacheTag, withProviderCache, zoneCacheTag } from '../../../lib/cache/provider-cache.js'
 import { emitDnsPodZoneMutated } from '../events.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
+import { ApiError } from '../../../lib/http/api-error.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
   dnspodDomainCreateResponseSchema,
@@ -10,6 +11,7 @@ import {
   dnspodDomainSchema,
 } from '../../../lib/providers/dnspod-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
+import { providerFiniteNumber, providerNullableString, providerOptionalString, providerString } from '../../../lib/providers/provider-values.js'
 
 const PROVIDER_TYPE = 'dnspod'
 
@@ -77,6 +79,7 @@ export class DnsPodZoneService {
         const pageSize = 100
         const items: ZoneListItem[] = []
         let offset = 0
+        let pages = 0
         let requestId: string | undefined
 
         while (true) {
@@ -87,13 +90,18 @@ export class DnsPodZoneService {
             throw wrapProviderError('dnspod_zone_list_failed', 'DNSPod zone list failed', providerId, error)
           }
           const parsed = dnspodDomainListResponseSchema.parse(response)
+          pages++
+          const sourceCount = Number(parsed.SourceCount ?? 0)
           const pageItems = (Array.isArray(parsed.DomainList) ? parsed.DomainList : [])
             .map((zone) => presentZone(dnspodDomainSchema.parse(zone)))
           items.push(...pageItems)
-          const total = Number(parsed.DomainCountInfo?.DomainTotal ?? items.length)
+          const totalRaw = parsed.DomainCountInfo?.DomainTotal
+          const totalValue = Number(totalRaw)
+          const total = totalRaw != null && totalRaw !== '' && Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
           requestId = parsed.RequestId ?? requestId
-          offset += pageItems.length
-          if (pageItems.length < pageSize || (total > 0 && offset >= total)) break
+          offset += sourceCount
+          if (sourceCount < pageSize || (total !== null && offset >= total)) break
+          if (pages >= 1000) throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
         }
 
         return {
@@ -128,16 +136,16 @@ export class DnsPodZoneService {
       throw wrapProviderError('dnspod_zone_create_failed', 'DNSPod zone create failed', providerId, error, { zone: domain })
     }
 
-    await emitDnsPodZoneMutated(providerId, domain, 'create')
-
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     const domainInfo = dnspodDomainInfoSchema.parse(parsed.DomainInfo ?? {})
-    return {
-      id: domainInfo.Id ?? 0,
-      name: domainInfo.Domain ?? domain,
-      name_servers: domainInfo.GradeNsList ?? [],
-      request_id: parsed.RequestId ?? undefined,
+    const result = {
+      id: providerFiniteNumber(domainInfo.Id),
+      name: providerString(domainInfo.Domain, domain),
+      name_servers: Array.isArray(domainInfo.GradeNsList) ? domainInfo.GradeNsList.filter((value: unknown): value is string => typeof value === 'string') : [],
+      request_id: providerOptionalString(parsed.RequestId),
     }
+    await emitDnsPodZoneMutated(providerId, domain, 'create')
+    return result
   }
 
   async delete(providerId: string, zone: string): Promise<ZoneDeleteResult> {
@@ -153,13 +161,13 @@ export class DnsPodZoneService {
       throw wrapProviderError('dnspod_zone_delete_failed', 'DNSPod zone delete failed', providerId, error, { zone: domain })
     }
 
-    await emitDnsPodZoneMutated(providerId, domain, 'delete')
-
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
-    return {
+    const result = {
       name: domain,
-      request_id: parsed.RequestId ?? undefined,
+      request_id: providerOptionalString(parsed.RequestId),
     }
+    await emitDnsPodZoneMutated(providerId, domain, 'delete')
+    return result
   }
 
   private async requireProvider(providerId: string): Promise<DnsPodProvider> {
@@ -182,19 +190,19 @@ export class DnsPodZoneService {
 
 function presentZone(zone: import('../../../lib/providers/dnspod-response.js').DnspodDomain): ZoneListItem {
   return {
-    id: zone.DomainId ?? 0,
-    name: zone.Name ?? '',
-    punycode: zone.Punycode ?? '',
-    status: zone.Status ?? '',
-    dns_status: zone.DnsStatus ?? zone.DNSStatus ?? null,
-    grade: zone.Grade ?? '',
-    grade_title: zone.GradeTitle ?? '',
-    group_id: zone.GroupId ?? 0,
-    record_count: zone.RecordCount ?? 0,
-    ttl: zone.TTL ?? 0,
-    remark: zone.Remark ?? '',
-    effective_dns: zone.EffectiveDNS ?? [],
-    created_on: zone.CreatedOn ?? '',
-    updated_on: zone.UpdatedOn ?? '',
+    id: providerFiniteNumber(zone.DomainId),
+    name: providerString(zone.Name),
+    punycode: providerString(zone.Punycode),
+    status: providerString(zone.Status),
+    dns_status: providerNullableString(zone.DnsStatus ?? zone.DNSStatus),
+    grade: providerString(zone.Grade),
+    grade_title: providerString(zone.GradeTitle),
+    group_id: providerFiniteNumber(zone.GroupId),
+    record_count: providerFiniteNumber(zone.RecordCount),
+    ttl: providerFiniteNumber(zone.TTL),
+    remark: providerString(zone.Remark),
+    effective_dns: Array.isArray(zone.EffectiveDNS) ? zone.EffectiveDNS.filter((value: unknown): value is string => typeof value === 'string') : [],
+    created_on: providerString(zone.CreatedOn),
+    updated_on: providerString(zone.UpdatedOn),
   }
 }

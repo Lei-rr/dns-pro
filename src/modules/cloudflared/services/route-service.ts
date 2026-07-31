@@ -212,19 +212,29 @@ export class CloudflaredRouteService {
   }
 
   private presentConfig(config: import('../../../lib/providers/cloudflare-response.js').CloudflareRouteConfig): { routes: CloudflaredRoute[]; catch_all: string; version: number } {
-    const ingress = config.config?.ingress
+    const configData = config.config && typeof config.config === 'object' && !Array.isArray(config.config)
+      ? config.config as Record<string, unknown>
+      : {}
+    const ingress = Array.isArray(configData.ingress) ? configData.ingress : []
     const routes: CloudflaredRoute[] = []
     let catchAll = 'http_status:404'
 
-    for (const rule of ingress ?? []) {
+    for (const value of ingress) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      const rule = value as Record<string, unknown>
       if (!rule.hostname) {
-        catchAll = String(rule.service ?? 'http_status:404')
+        if (typeof rule.service === 'string') catchAll = rule.service
       } else {
-        routes.push({ hostname: rule.hostname, service: rule.service ?? '', path: String(rule.path ?? '') })
+        if (typeof rule.hostname !== 'string' || typeof rule.service !== 'string') continue
+        routes.push({
+          hostname: rule.hostname,
+          service: rule.service,
+          path: typeof rule.path === 'string' ? rule.path : '',
+        })
       }
     }
 
-    return { routes, catch_all: catchAll, version: config.version ?? 0 }
+    return { routes, catch_all: catchAll, version: Number(config.version ?? 0) || 0 }
   }
 
   private async requireZoneId(cfProviderId: string, hostname: string): Promise<string> {

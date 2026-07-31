@@ -10,6 +10,8 @@ import {
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../../provider/types.js'
+import { parseBool } from '../../../lib/utils/parse-bool.js'
+import { providerOptionalString, providerString } from '../../../lib/providers/provider-values.js'
 
 export interface CloudflaredTunnel {
   id: string
@@ -50,11 +52,13 @@ export class CloudflaredTunnelService {
           } catch (error) {
             throw wrapProviderError('cloudflared_tunnel_list_failed', 'Cloudflare Tunnel list failed', providerId, error)
           }
-          const batch = parseCloudflareListResponse(response).result
+          const parsed = parseCloudflareListResponse(response)
+          const batch = parsed.result
           for (const tunnel of batch) {
             items.push(this.presentTunnel(tunnel))
           }
-          hasMore = batch.length >= 100
+          hasMore = parsed.source_count >= 100
+          if (hasMore && page >= 1000) throw new ApiError('cloudflared_pagination_limit', 'Cloudflare Tunnel pagination limit reached', 502)
           page++
         }
 
@@ -105,8 +109,8 @@ export class CloudflaredTunnelService {
       throw wrapProviderError('cloudflared_tunnel_create_failed', 'Cloudflare Tunnel create failed', providerId, error)
     }
 
-    await emitTunnelMutated({ providerId, action: 'create' })
     const tunnel = this.presentTunnel(parseCloudflareItemResponse(response).result)
+    await emitTunnelMutated({ providerId, action: 'create' })
     const token = await this.fetchToken(provider, accountId, tunnel.id)
     return { tunnel, token }
   }
@@ -201,40 +205,48 @@ export class CloudflaredTunnelService {
         { tunnel_id: tunnelId },
       )
     }
-    const result = parseCloudflareItemResponse(response).result
-    if (typeof result === 'string') return result
+    const envelope = response && typeof response === 'object' && !Array.isArray(response)
+      ? response as Record<string, unknown>
+      : {}
+    const result = envelope.result
+    if (typeof result === 'string' && result !== '') return result
     if (result && typeof result === 'object') {
       const token = (result as Record<string, unknown>).token
       if (typeof token === 'string') return token
     }
-    return String(result ?? '')
+    throw new ApiError('cloudflared_tunnel_token_invalid', 'Cloudflare Tunnel returned an invalid token', 502)
   }
 
   private presentTunnel(tunnel: import('../../../lib/providers/cloudflare-response.js').CloudflareTunnel): CloudflaredTunnel {
     return {
-      id: tunnel.id ?? '',
-      name: tunnel.name ?? '',
-      status: tunnel.status ?? 'inactive',
-      config_src: tunnel.config_src ?? undefined,
-      remote_config: tunnel.remote_config ?? false,
+      id: providerString(tunnel.id),
+      name: providerString(tunnel.name),
+      status: providerString(tunnel.status, 'inactive'),
+      config_src: providerOptionalString(tunnel.config_src),
+      remote_config: parseBool(tunnel.remote_config ?? false),
       connections: Array.isArray(tunnel.connections)
-        ? tunnel.connections.map((conn: Record<string, unknown>) => this.presentConnection(conn))
+        ? tunnel.connections
+            .filter((conn): conn is Record<string, unknown> => Boolean(conn) && typeof conn === 'object' && !Array.isArray(conn))
+            .map((conn) => this.presentConnection(conn))
         : [],
-      conns_active_at: tunnel.conns_active_at ?? undefined,
-      conns_inactive_at: tunnel.conns_inactive_at ?? undefined,
-      created_at: tunnel.created_at ?? undefined,
+      conns_active_at: providerOptionalString(tunnel.conns_active_at),
+      conns_inactive_at: providerOptionalString(tunnel.conns_inactive_at),
+      created_at: providerOptionalString(tunnel.created_at),
     }
   }
 
-  private presentConnection(conn: Record<string, unknown>): Record<string, unknown> {
+  private presentConnection(value: unknown): Record<string, unknown> {
+    const conn = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {}
     return {
-      id: conn.id,
-      client_id: conn.client_id,
-      client_version: conn.client_version,
-      colo_name: conn.colo_name,
-      is_pending_reconnect: Boolean(conn.is_pending_reconnect ?? false),
-      opened_at: conn.opened_at,
-      origin_ip: conn.origin_ip,
+      id: providerOptionalString(conn.id),
+      client_id: providerOptionalString(conn.client_id),
+      client_version: providerOptionalString(conn.client_version),
+      colo_name: providerOptionalString(conn.colo_name),
+      is_pending_reconnect: parseBool(conn.is_pending_reconnect ?? false),
+      opened_at: providerOptionalString(conn.opened_at),
+      origin_ip: providerOptionalString(conn.origin_ip),
     }
   }
 

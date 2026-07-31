@@ -9,8 +9,11 @@ import {
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
+import { parseBool } from '../../../lib/utils/parse-bool.js'
+import { providerNullableNumber, providerNullableString } from '../../../lib/providers/provider-values.js'
 
 const PROVIDER_TYPE = 'cloudflare'
+const MAX_PROVIDER_PAGES = 1000
 
 interface RecordPresentation {
   [key: string]: unknown
@@ -131,7 +134,7 @@ export class CloudflareDnsRecordService {
           pagination: {
             page: Number(resultInfo?.page ?? normalized.page),
             per_page: Number(resultInfo?.per_page ?? normalized.per_page),
-            count: resultInfo?.count ?? null,
+            count: resultInfo?.count ?? parsed.source_count,
             total_count: resultInfo?.total_count ?? null,
             total_pages: resultInfo?.total_pages ?? null,
           },
@@ -151,7 +154,9 @@ export class CloudflareDnsRecordService {
       const result = await this.list(providerId, zoneId, { page, per_page: pageSize, refresh })
       items.push(...result.items)
       const totalPages = Number(result.pagination.total_pages ?? 0)
-      if (totalPages > 0 ? page >= totalPages : result.items.length < pageSize) break
+      const sourceCount = Number(result.pagination.count ?? result.items.length)
+      if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
+      if (page >= MAX_PROVIDER_PAGES) throw new Error('Cloudflare pagination limit reached')
       page++
     }
 
@@ -195,7 +200,9 @@ export class CloudflareDnsRecordService {
       })
       matches.push(...exactCloudflareRecords(result.items, name, type))
       const totalPages = Number(result.pagination.total_pages ?? 0)
-      if (totalPages > 0 ? page >= totalPages : result.items.length < 100) break
+      const sourceCount = Number(result.pagination.count ?? result.items.length)
+      if (totalPages > 0 ? page >= totalPages : sourceCount < 100) break
+      if (page >= MAX_PROVIDER_PAGES) throw new Error('Cloudflare pagination limit reached')
       page++
     }
     return matches
@@ -218,8 +225,9 @@ export class CloudflareDnsRecordService {
       })
     }
 
+    const record = this.presentRecord(parseCloudflareItemResponse(response).result)
     await emitCloudflareRecordMutated(providerId, zoneId, 'create')
-    return this.presentRecord(parseCloudflareItemResponse(response).result)
+    return record
   }
 
   async update(
@@ -245,8 +253,9 @@ export class CloudflareDnsRecordService {
       })
     }
 
+    const record = this.presentRecord(parseCloudflareItemResponse(response).result)
     await emitCloudflareRecordMutated(providerId, zoneId, 'update')
-    return this.presentRecord(parseCloudflareItemResponse(response).result)
+    return record
   }
 
   async delete(providerId: string, zoneId: string, recordId: string): Promise<{ id: string }> {
@@ -265,9 +274,12 @@ export class CloudflareDnsRecordService {
       })
     }
 
-    await emitCloudflareRecordMutated(providerId, zoneId, 'delete')
     const parsed = parseCloudflareItemResponse(response)
-    return { id: parsed.result.id ?? recordId }
+    const id = typeof parsed.result.id === 'string' || typeof parsed.result.id === 'number'
+      ? String(parsed.result.id)
+      : recordId
+    await emitCloudflareRecordMutated(providerId, zoneId, 'delete')
+    return { id }
   }
 
   private normalizeFilters(filters: RecordFilters): Required<RecordFilters> {
@@ -312,20 +324,20 @@ export class CloudflareDnsRecordService {
   private presentRecord(record: unknown): RecordPresentation {
     const r = cloudflareDnsRecordSchema.parse(record)
     return {
-      id: r.id ?? null,
-      zone_id: r.zone_id ?? null,
-      zone_name: r.zone_name ?? null,
-      name: r.name ?? null,
-      type: r.type ?? null,
-      content: r.content ?? null,
-      ttl: r.ttl ?? null,
-      proxied: r.proxied ?? null,
-      proxiable: r.proxiable ?? null,
-      priority: r.priority ?? null,
-      comment: r.comment ?? null,
-      tags: r.tags ?? [],
-      created_on: r.created_on ?? null,
-      modified_on: r.modified_on ?? null,
+      id: providerNullableString(r.id),
+      zone_id: providerNullableString(r.zone_id),
+      zone_name: providerNullableString(r.zone_name),
+      name: providerNullableString(r.name),
+      type: providerNullableString(r.type),
+      content: providerNullableString(r.content),
+      ttl: providerNullableNumber(r.ttl),
+      proxied: r.proxied == null ? null : parseBool(r.proxied),
+      proxiable: r.proxiable == null ? null : parseBool(r.proxiable),
+      priority: providerNullableNumber(r.priority),
+      comment: providerNullableString(r.comment),
+      tags: Array.isArray(r.tags) ? r.tags.filter((value: unknown): value is string => typeof value === 'string') : [],
+      created_on: providerNullableString(r.created_on),
+      modified_on: providerNullableString(r.modified_on),
     }
   }
 

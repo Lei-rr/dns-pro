@@ -1,5 +1,6 @@
 /* Vendor payloads are intentionally loose — presenters coerce fields. */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { ApiError } from '../http/api-error.js'
 
 export type CloudflareZone = Record<string, any>
 export type CloudflareDnsRecord = Record<string, any>
@@ -24,24 +25,30 @@ function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : []
 }
 
+function asRecordArray(value: unknown): Array<Record<string, any>> {
+  return asArray(value).filter((item) => item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length > 0)
+}
+
 export function parseCloudflareListResponse<T = Record<string, any>>(
   response: unknown,
-): { result: T[]; result_info: CloudflareResultInfo | undefined } {
+): { result: T[]; result_info: CloudflareResultInfo | undefined; source_count: number } {
   const parsed = asRecord(response)
   const resultInfo = parsed.result_info ? asRecord(parsed.result_info) : undefined
+  const source = asArray(parsed.result ?? [])
   return {
-    result: asArray(parsed.result ?? []).map((item) => asRecord(item) as T),
+    result: asRecordArray(source) as T[],
     result_info: resultInfo,
+    source_count: source.length,
   }
 }
 
 export function parseCloudflareItemResponse<T = any>(response: unknown): { result: T } {
   const parsed = asRecord(response)
   const result = parsed.result
-  if (typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean') {
-    return { result: result as T }
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    throw new ApiError('cloudflare_invalid_response', 'Cloudflare returned an invalid item response', 502)
   }
-  return { result: asRecord(result ?? {}) as T }
+  return { result: result as T }
 }
 
 export const cloudflareZoneSchema = {
@@ -49,8 +56,8 @@ export const cloudflareZoneSchema = {
     const r = asRecord(v)
     return {
       ...r,
-      name_servers: asArray(r.name_servers),
-      original_name_servers: asArray(r.original_name_servers),
+      name_servers: asArray(r.name_servers).filter((item) => typeof item === 'string'),
+      original_name_servers: asArray(r.original_name_servers).filter((item) => typeof item === 'string'),
     }
   },
 }
@@ -59,7 +66,7 @@ export const cloudflareDnsRecordSchema = {
     const r = asRecord(v)
     return {
       ...r,
-      tags: asArray(r.tags),
+      tags: asArray(r.tags).filter((item) => typeof item === 'string'),
     }
   },
 }

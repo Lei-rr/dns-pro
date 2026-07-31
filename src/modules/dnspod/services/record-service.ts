@@ -3,6 +3,8 @@ import { CacheTtl, buildCacheKey, offsetPaginationMeta, providerCacheTag, record
 import { emitDnsPodRecordMutated } from '../events.js'
 import { ApiError } from '../../../lib/http/api-error.js'
 import { wrapProviderError } from '../../../lib/http/wrap-provider-error.js'
+import { parseBool } from '../../../lib/utils/parse-bool.js'
+import { providerFiniteNumber, providerOptionalString, providerString } from '../../../lib/providers/provider-values.js'
 import { DnsPodGateway } from '../gateways/gateway.js'
 import {
   dnspodRecordListResponseSchema,
@@ -86,6 +88,7 @@ export class DnsPodRecordService {
         const pageSize = 100
         const items: RecordListItem[] = []
         let offset = 0
+        let pages = 0
         let requestId: string | undefined
 
         while (true) {
@@ -101,13 +104,18 @@ export class DnsPodRecordService {
             throw wrapProviderError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, { domain })
           }
           const parsed = dnspodRecordListResponseSchema.parse(response)
+          pages++
+          const sourceCount = Number(parsed.SourceCount ?? 0)
           const pageItems = (Array.isArray(parsed.RecordList) ? parsed.RecordList : [])
             .map((record) => presentRecord(dnspodRecordSchema.parse(record)))
           items.push(...pageItems)
-          const total = Number(parsed.RecordCountInfo?.TotalCount ?? items.length)
+          const totalRaw = parsed.RecordCountInfo?.TotalCount
+          const totalValue = Number(totalRaw)
+          const total = totalRaw != null && totalRaw !== '' && Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
           requestId = parsed.RequestId ?? requestId
-          offset += pageItems.length
-          if (pageItems.length < pageSize || (total > 0 && offset >= total)) break
+          offset += sourceCount
+          if (sourceCount < pageSize || (total !== null && offset >= total)) break
+          if (pages >= 1000) throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
         }
 
         return {
@@ -149,13 +157,13 @@ export class DnsPodRecordService {
       })
     }
 
-    await emitDnsPodRecordMutated(providerId, domain, 'create')
-
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
-    return {
-      id: parsed.RecordId ?? 0,
-      request_id: parsed.RequestId ?? undefined,
+    const result = {
+      id: providerFiniteNumber(parsed.RecordId),
+      request_id: providerOptionalString(parsed.RequestId),
     }
+    await emitDnsPodRecordMutated(providerId, domain, 'create')
+    return result
   }
 
   async update(
@@ -179,13 +187,13 @@ export class DnsPodRecordService {
       })
     }
 
-    await emitDnsPodRecordMutated(providerId, domain, 'update')
-
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
-    return {
-      id: parsed.RecordId ?? 0,
-      request_id: parsed.RequestId ?? undefined,
+    const result = {
+      id: providerFiniteNumber(parsed.RecordId),
+      request_id: providerOptionalString(parsed.RequestId),
     }
+    await emitDnsPodRecordMutated(providerId, domain, 'update')
+    return result
   }
 
   async delete(providerId: string, domain: string, recordId: string): Promise<RecordMutationResult> {
@@ -204,13 +212,13 @@ export class DnsPodRecordService {
       })
     }
 
-    await emitDnsPodRecordMutated(providerId, domain, 'delete')
-
     const parsed = dnspodRecordMutationResponseSchema.parse(response)
-    return {
-      id: Number(recordId),
-      request_id: parsed.RequestId ?? undefined,
+    const result = {
+      id: providerFiniteNumber(recordId),
+      request_id: providerOptionalString(parsed.RequestId),
     }
+    await emitDnsPodRecordMutated(providerId, domain, 'delete')
+    return result
   }
 
   private normalizeListFilters(filters: RecordListFilters) {
@@ -330,19 +338,19 @@ export class DnsPodRecordService {
 
 function presentRecord(record: import('../../../lib/providers/dnspod-response.js').DnspodRecord): RecordListItem {
   return {
-    id: record.RecordId ?? 0,
-    name: record.Name ?? '',
-    type: record.Type ?? '',
-    value: record.Value ?? '',
-    line: record.Line ?? '',
-    line_id: record.LineId ?? '',
-    status: record.Status ?? '',
-    ttl: record.TTL ?? 0,
-    mx: record.MX ?? 0,
-    weight: record.Weight ?? 0,
-    monitor_status: record.MonitorStatus ?? '',
-    remark: record.Remark ?? '',
-    default_ns: Boolean(record.DefaultNS ?? false),
-    updated_on: record.UpdatedOn ?? '',
+    id: providerFiniteNumber(record.RecordId),
+    name: providerString(record.Name),
+    type: providerString(record.Type),
+    value: providerString(record.Value),
+    line: providerString(record.Line),
+    line_id: providerString(record.LineId),
+    status: providerString(record.Status),
+    ttl: providerFiniteNumber(record.TTL),
+    mx: providerFiniteNumber(record.MX),
+    weight: providerFiniteNumber(record.Weight),
+    monitor_status: providerString(record.MonitorStatus),
+    remark: providerString(record.Remark),
+    default_ns: parseBool(record.DefaultNS ?? false),
+    updated_on: providerString(record.UpdatedOn),
   }
 }

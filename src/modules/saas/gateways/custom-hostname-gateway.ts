@@ -15,6 +15,7 @@ import {
   parseCloudflareListResponse,
 } from '../../../lib/providers/cloudflare-response.js'
 import type { CloudflareProvider } from '../../provider/types.js'
+import { providerOptionalString, providerString } from '../../../lib/providers/provider-values.js'
 
 export interface CloudflareCustomHostnameSslDcvDelegationRecord {
   cname: string
@@ -96,6 +97,7 @@ export class CloudflareCustomHostnameGateway {
           pagination: {
             page: resultInfo.page ?? page,
             per_page: resultInfo.per_page ?? perPage,
+            source_count: parsed.source_count,
             total_count: resultInfo.total_count,
             total_pages: resultInfo.total_pages,
           },
@@ -114,7 +116,9 @@ export class CloudflareCustomHostnameGateway {
       const result = await this.list(cloudflareProviderId, zoneId, page, pageSize, refresh)
       items.push(...result.items)
       const totalPages = Number(result.pagination.total_pages ?? 0)
-      if (totalPages > 0 ? page >= totalPages : result.items.length < pageSize) break
+      const sourceCount = Number(result.pagination.source_count ?? result.items.length)
+      if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
+      if (page >= 1000) throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
       page++
     }
     return {
@@ -270,6 +274,7 @@ export class CloudflareCustomHostnameGateway {
       const totalPages = Number(result.pagination.total_pages ?? 1)
       hasMore = page < totalPages
       page++
+      if (page > 1000) throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
     }
     return null
   }
@@ -277,29 +282,64 @@ export class CloudflareCustomHostnameGateway {
   private present(hostname: unknown): CloudflareCustomHostname {
     const parsed = cloudflareCustomHostnameSchema.parse(hostname)
     const sslInput =
-      parsed.ssl && typeof parsed.ssl === 'object' ? (parsed.ssl as Record<string, unknown>) : {}
-    const certificates = Array.isArray(sslInput.certificates) ? sslInput.certificates : []
-    const firstCert =
-      certificates[0] && typeof certificates[0] === 'object'
-        ? (certificates[0] as Record<string, unknown>)
+      parsed.ssl && typeof parsed.ssl === 'object' && !Array.isArray(parsed.ssl)
+        ? (parsed.ssl as Record<string, unknown>)
         : {}
+    const certificates = Array.isArray(sslInput.certificates) ? sslInput.certificates : []
+    const firstCertificate = certificates[0]
+    const firstCert =
+      firstCertificate && typeof firstCertificate === 'object' && !Array.isArray(firstCertificate)
+        ? (firstCertificate as Record<string, unknown>)
+        : {}
+    const ownershipInput = parsed.ownership_verification
+    const ownership = ownershipInput && typeof ownershipInput === 'object' && !Array.isArray(ownershipInput)
+      ? ownershipInput as Record<string, unknown>
+      : {}
 
     const ssl: CloudflareCustomHostnameSsl = {
       ...sslInput,
-      expires_on: (firstCert.expires_on ?? sslInput.expires_on) as string | undefined,
-      issuer: (firstCert.issuer ?? sslInput.issuer) as string | undefined,
+      settings: sslInput.settings && typeof sslInput.settings === 'object' && !Array.isArray(sslInput.settings)
+        ? sslInput.settings as Record<string, unknown>
+        : {},
+      dcv_delegation_records: this.recordArray(sslInput.dcv_delegation_records).map((record) => ({
+        ...record,
+        cname: providerString(record.cname),
+        cname_target: providerString(record.cname_target),
+      })),
+      validation_records: this.recordArray(sslInput.validation_records),
+      certificates: this.recordArray(certificates),
+      expires_on: firstCert.expires_on == null && sslInput.expires_on == null
+        ? undefined
+        : providerOptionalString(firstCert.expires_on ?? sslInput.expires_on),
+      issuer: firstCert.issuer == null && sslInput.issuer == null
+        ? undefined
+        : providerOptionalString(firstCert.issuer ?? sslInput.issuer),
     }
 
     return {
       ...parsed,
-      id: parsed.id ?? '',
-      hostname: parsed.hostname ?? '',
-      status: parsed.status ?? undefined,
-      custom_origin_server: parsed.custom_origin_server,
+      id: providerString(parsed.id),
+      hostname: providerString(parsed.hostname),
+      status: providerOptionalString(parsed.status),
+      custom_origin_server: providerOptionalString(parsed.custom_origin_server),
       ssl,
-      ownership_verification: parsed.ownership_verification ?? {},
-      custom_metadata: parsed.custom_metadata ?? null,
+      ownership_verification: {
+        ...ownership,
+        type: providerOptionalString(ownership.type),
+        name: providerOptionalString(ownership.name),
+        value: providerOptionalString(ownership.value),
+      },
+      custom_metadata: parsed.custom_metadata && typeof parsed.custom_metadata === 'object' && !Array.isArray(parsed.custom_metadata)
+        ? parsed.custom_metadata
+        : null,
     }
+  }
+
+  private recordArray(value: unknown): Array<Record<string, unknown>> {
+    if (!Array.isArray(value)) return []
+    return value.filter((item): item is Record<string, unknown> =>
+      Boolean(item) && typeof item === 'object' && !Array.isArray(item),
+    )
   }
 
   private gatewayFor(provider: CloudflareProvider): CloudflareGateway {

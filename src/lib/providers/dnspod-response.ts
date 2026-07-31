@@ -10,8 +10,19 @@ function asRecord(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 }
 
+function requireRecord(value: unknown): Record<string, any> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('DNSPod invalid mutation response')
+  }
+  return value as Record<string, any>
+}
+
 function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : []
+}
+
+function asRecordArray(value: unknown): Array<Record<string, any>> {
+  return asArray(value).filter((item) => item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length > 0)
 }
 
 export function parseDnspodResponse(response: unknown): { Response: Record<string, unknown>; RequestId?: string } {
@@ -25,7 +36,7 @@ export const dnspodDomainSchema = {
     const r = asRecord(v)
     return {
       ...r,
-      EffectiveDNS: asArray(r.EffectiveDNS),
+      EffectiveDNS: asArray(r.EffectiveDNS).filter((item) => typeof item === 'string'),
     }
   },
 }
@@ -35,7 +46,7 @@ export const dnspodDomainInfoSchema = {
     const r = asRecord(v)
     return {
       ...r,
-      GradeNsList: asArray(r.GradeNsList),
+      GradeNsList: asArray(r.GradeNsList).filter((item) => typeof item === 'string'),
     }
   },
 }
@@ -44,7 +55,8 @@ export const dnspodDomainListResponseSchema = {
     const r = asRecord(v)
     return {
       ...r,
-      DomainList: asArray(r.DomainList),
+      DomainList: asRecordArray(r.DomainList),
+      SourceCount: asArray(r.DomainList).length,
       DomainCountInfo: asRecord(r.DomainCountInfo),
       RequestId: r.RequestId,
     }
@@ -52,7 +64,7 @@ export const dnspodDomainListResponseSchema = {
 }
 export const dnspodDomainCreateResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
-    const r = asRecord(v)
+    const r = requireRecord(v)
     return { ...r, DomainInfo: r.DomainInfo ?? {}, RequestId: r.RequestId }
   },
 }
@@ -61,7 +73,8 @@ export const dnspodRecordListResponseSchema = {
     const r = asRecord(v)
     return {
       ...r,
-      RecordList: asArray(r.RecordList),
+      RecordList: asRecordArray(r.RecordList),
+      SourceCount: asArray(r.RecordList).length,
       RecordCountInfo: asRecord(r.RecordCountInfo),
       RequestId: r.RequestId,
     }
@@ -69,7 +82,7 @@ export const dnspodRecordListResponseSchema = {
 }
 export const dnspodRecordMutationResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
-    const r = asRecord(v)
+    const r = requireRecord(v)
     return { ...r, RecordId: r.RecordId, RequestId: r.RequestId }
   },
 }

@@ -6,6 +6,8 @@ import { EdgeOneGateway } from '../gateways/gateway.js'
 import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from '../../../lib/providers/edgeone-response.js'
 import type { DnsPodProvider } from '../../provider/types.js'
 import { resolveEdgeOneApiCredentials } from '../credentials.js'
+import { parseBool } from '../../../lib/utils/parse-bool.js'
+import { providerOptionalString, providerString } from '../../../lib/providers/provider-values.js'
 
 export interface EdgeOneZone {
   id: string
@@ -51,17 +53,20 @@ export class EdgeOneZoneService {
             throw wrapProviderError('edgeone_zone_list_failed', 'EdgeOne zone list failed', providerId, error)
           }
           const parsed = edgeoneZoneListResponseSchema.parse(response)
-
-          requestId = parsed.RequestId ?? undefined
+          requestId = parsed.RequestId ?? requestId
           const vendorPageItems = Array.isArray(parsed.Zones) ? parsed.Zones : []
+          const sourceCount = Number(parsed.SourceCount ?? 0)
           const pageItems = vendorPageItems
             .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
             .filter((zone) => !['pages', 'ai'].includes(String(zone.type ?? '').toLowerCase()))
           items.push(...pageItems)
 
-          pageOffset += vendorPageItems.length
-          const total = Number(parsed.TotalCount ?? pageOffset)
-          hasMore = vendorPageItems.length >= pageLimit && pageOffset < total
+          pageOffset += sourceCount
+          const totalRaw = parsed.TotalCount
+          const totalValue = Number(totalRaw)
+          const total = totalRaw != null && totalRaw !== '' && Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
+          hasMore = sourceCount >= pageLimit && (total === null || pageOffset < total)
+          if (hasMore && pageOffset / pageLimit >= 1000) throw new ApiError('edgeone_pagination_limit', 'EdgeOne pagination limit reached', 502)
         }
 
         const total = items.length
@@ -94,16 +99,16 @@ export class EdgeOneZoneService {
 
   private presentZone(zone: import('../../../lib/providers/edgeone-response.js').EdgeOneZone): EdgeOneZone {
     return {
-      id: zone.ZoneId ?? '',
-      name: zone.ZoneName ?? '',
-      area: zone.Area ?? undefined,
-      type: zone.Type ?? undefined,
-      status: zone.Status ?? undefined,
-      active_status: zone.ActiveStatus ?? undefined,
-      lock_status: zone.LockStatus ?? undefined,
-      paused: zone.Paused ?? undefined,
-      created_on: zone.CreatedOn ?? undefined,
-      modified_on: zone.ModifiedOn ?? undefined,
+      id: providerString(zone.ZoneId),
+      name: providerString(zone.ZoneName),
+      area: providerOptionalString(zone.Area),
+      type: providerOptionalString(zone.Type),
+      status: providerOptionalString(zone.Status),
+      active_status: providerOptionalString(zone.ActiveStatus),
+      lock_status: providerOptionalString(zone.LockStatus),
+      paused: zone.Paused == null ? undefined : parseBool(zone.Paused),
+      created_on: providerOptionalString(zone.CreatedOn),
+      modified_on: providerOptionalString(zone.ModifiedOn),
     }
   }
 

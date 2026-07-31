@@ -39,7 +39,7 @@ export class TencentCloudGateway extends BaseGateway {
     const timestamp = Math.floor(Date.now() / 1000)
     const body = JSON.stringify(payload)
 
-    const response = (await this.request({
+    const raw = await this.request({
       method: 'POST',
       url: '/',
       headers: {
@@ -55,9 +55,17 @@ export class TencentCloudGateway extends BaseGateway {
         'X-TC-Version': this.options.version,
       },
       data: body,
-    })) as Record<string, unknown>
-
-    const Response = (response.Response ?? response ?? {}) as Record<string, unknown>
+    })
+    const response = raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? raw as Record<string, unknown>
+      : {}
+    const hasResponse = Object.prototype.hasOwnProperty.call(response, 'Response')
+    const responseValue = response.Response
+    const Response = responseValue && typeof responseValue === 'object' && !Array.isArray(responseValue)
+      ? responseValue as Record<string, unknown>
+      : hasResponse
+        ? {}
+        : response
     const err =
       Response.Error && typeof Response.Error === 'object'
         ? (Response.Error as Record<string, unknown>)

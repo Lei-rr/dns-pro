@@ -87,7 +87,12 @@ export class CloudflareFallbackOriginGateway {
   }
 
   private present(result: CloudflareFallbackOrigin): FallbackOriginInfo {
-    const origin = String(result.origin ?? '')
-    return { origin: origin || null, status: result.status ?? null }
+    const origin = typeof result.origin === 'string' || typeof result.origin === 'number'
+      ? String(result.origin).trim()
+      : ''
+    const status = typeof result.status === 'string' || typeof result.status === 'number'
+      ? String(result.status)
+      : null
+    return { origin: origin || null, status }
   }
 }
