@@ -168,7 +168,7 @@ function toggleDark() {
 
     <main class="flex flex-1 flex-col">
       <div
-        class="mx-auto w-full max-w-none min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6 md:w-[80vw] md:px-0"
+        class="mx-auto w-full max-w-none min-w-0 flex-1 px-3 pt-4 pb-8 sm:px-6 sm:pt-6 sm:pb-10 md:w-[80vw] md:px-0 md:pb-12"
       >
         <RouterView v-slot="{ Component, route: currentRoute }">
           <Transition name="page-fade" mode="out-in">
