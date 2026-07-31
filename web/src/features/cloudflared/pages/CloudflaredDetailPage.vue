@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Copy, EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import {
@@ -190,10 +190,10 @@ onMounted(() => runLoad())
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="title" :description="`状态：${tunnelStatusLabel(tunnel?.status)} · Cloudflare Tunnel`">
     <Button variant="outline" size="sm" @click="router.push(providerPath(providerId))">返回隧道列表</Button>
-    <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+    <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
       <RefreshCw class="size-4" />
       刷新
-    </Button>
+    </LoadingButton>
     <Button size="sm" @click="openCreate">
       <Plus class="size-4" />
       添加路由
@@ -252,7 +252,7 @@ onMounted(() => runLoad())
             <TableHead class="rounded-l-lg px-4">Hostname</TableHead>
             <TableHead>Service</TableHead>
             <TableHead>Path</TableHead>
-            <TableHead class="rounded-r-lg w-12" />
+            <TableHead data-sticky="end" class="rounded-r-lg w-12" />
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -267,7 +267,7 @@ onMounted(() => runLoad())
             <TableCell class="px-4 font-medium">{{ record.hostname || '-' }}</TableCell>
             <TableCell class="max-w-[280px] truncate">{{ record.service || '-' }}</TableCell>
             <TableCell>{{ record.path || '/' }}</TableCell>
-            <TableCell>
+            <TableCell data-sticky="end">
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>
                   <Button
@@ -318,7 +318,7 @@ onMounted(() => runLoad())
       </FieldGroup>
       <template #footer>
         <Button variant="outline" @click="dialogOpen = false">取消</Button>
-        <Button :loading="saving" @click="saveRoute">添加</Button>
+        <LoadingButton :loading="saving" @click="saveRoute">添加</LoadingButton>
       </template>
     </AppDialog>
   </div>

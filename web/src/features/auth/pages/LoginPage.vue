@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Button } from '@/shared/ui/button'
+import { LoadingButton } from '@/shared/ui/button'
 import {
   Card,
   CardContent,
@@ -86,14 +86,14 @@ async function submit() {
                   <FieldError :errors="errors.password ? [errors.password] : []" />
                 </Field>
                 <Field>
-                  <Button
+                  <LoadingButton
                     type="submit"
                     class="w-full"
                     :loading="loading"
                     :disabled="!username.trim() || !password"
                   >
                     登录
-                  </Button>
+                  </LoadingButton>
                 </Field>
               </FieldGroup>
             </form>

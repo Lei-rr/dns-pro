@@ -24,9 +24,10 @@ const props = withDefaults(
 </script>
 
 <template>
-  <!-- Official dialog shell with open binding -->
   <DialogRoot v-model:open="open">
-    <DialogContent :class="cn('overflow-hidden sm:max-w-lg', props.contentClass || props.class)">
+    <DialogContent
+      :class="cn('max-h-[calc(100svh-1rem)] overflow-hidden p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-lg sm:p-6', props.contentClass || props.class)"
+    >
       <DialogHeader v-if="title || description || $slots.header">
         <slot name="header">
           <DialogTitle v-if="title">{{ title }}</DialogTitle>

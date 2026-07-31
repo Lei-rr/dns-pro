@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import {
@@ -152,10 +152,10 @@ onMounted(async () => {
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="title" :description="`${providerTypeLabel(provider?.type || '')} · 域名列表`">
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
       <Button size="sm" @click="openAdd">
         <Plus class="size-4" />
         添加域名
@@ -180,7 +180,7 @@ onMounted(async () => {
               <TableHead class="rounded-l-lg px-4">域名</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>类型</TableHead>
-              <TableHead class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
+              <TableHead data-sticky="end" class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -189,15 +189,15 @@ onMounted(async () => {
             </TableRow>
             <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">
-                <button class="text-left font-medium hover:underline" @click="openRecords(zone)">
+                <Button variant="link" class="h-auto px-0 py-0 font-medium" @click="openRecords(zone)">
                   {{ zone.name }}
-                </button>
+                </Button>
               </TableCell>
               <TableCell>
                 <Badge variant="outline">{{ zone.access_status || zone.status || zone.dns_status || '-' }}</Badge>
               </TableCell>
               <TableCell class="text-muted-foreground">{{ provider?.type || '-' }}</TableCell>
-              <TableCell class="text-right">
+              <TableCell data-sticky="end" class="text-right">
                 <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
                   <Button variant="ghost" size="sm" @click="openRecords(zone)">管理</Button>
                   <DropdownMenu>
@@ -237,7 +237,7 @@ onMounted(async () => {
       </FieldGroup>
       <template #footer>
         <Button variant="outline" @click="showAdd = false">取消</Button>
-        <Button :loading="adding" @click="createZone">添加</Button>
+        <LoadingButton :loading="adding" @click="createZone">添加</LoadingButton>
       </template>
     </AppDialog>
   </div>

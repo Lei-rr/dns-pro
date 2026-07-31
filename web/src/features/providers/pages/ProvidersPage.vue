@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import {
   DropdownMenu,
@@ -238,10 +238,10 @@ onMounted(() => runLoad())
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader title="服务商" description="管理 DNS / EdgeOne / Tunnel 服务商配置。密钥不会明文回显。">
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
       <Button size="sm" @click="openCreate">
         <Plus class="size-4" />
         新增服务商
@@ -278,7 +278,7 @@ onMounted(() => runLoad())
               <TableHead class="rounded-l-lg px-4">服务商</TableHead>
               <TableHead>类型</TableHead>
               <TableHead>API 配置</TableHead>
-              <TableHead class="rounded-r-lg w-12" />
+              <TableHead data-sticky="end" class="rounded-r-lg w-12" />
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -306,7 +306,7 @@ onMounted(() => runLoad())
                   </Badge>
                 </div>
               </TableCell>
-              <TableCell>
+              <TableCell data-sticky="end">
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
                     <Button variant="ghost" size="icon" class="size-8">

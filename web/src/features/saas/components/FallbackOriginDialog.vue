@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import { AppDialog } from '@/shared/ui/dialog'
@@ -136,14 +136,14 @@ watch(open, (value) => {
         <FieldError :errors="originError ? [originError] : []" />
       </Field>
       <div v-if="currentOrigin">
-        <Button variant="outline" class="text-destructive" :loading="deleting" @click="removeOrigin">
+        <LoadingButton variant="outline" class="text-destructive" :loading="deleting" @click="removeOrigin">
           删除默认回源
-        </Button>
+        </LoadingButton>
       </div>
     </FieldGroup>
     <template #footer>
       <Button variant="outline" @click="open = false">取消</Button>
-      <Button :loading="saving" :disabled="!canSave" @click="save">保存</Button>
+      <LoadingButton :loading="saving" :disabled="!canSave" @click="save">保存</LoadingButton>
     </template>
   </AppDialog>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AppDialog } from '@/shared/ui/dialog'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { fieldError, type FieldErrors } from '@/shared/lib/field-errors'
@@ -140,7 +140,7 @@ function dialogFields(): string[] {
     </FieldGroup>
     <template #footer>
       <Button variant="outline" @click="open = false">取消</Button>
-      <Button :loading="saving" @click="emit('save')">保存</Button>
+      <LoadingButton :loading="saving" @click="emit('save')">保存</LoadingButton>
     </template>
   </AppDialog>
 </template>

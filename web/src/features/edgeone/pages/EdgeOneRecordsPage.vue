@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { EllipsisVertical, Plus, RefreshCw, Search } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import {
@@ -41,7 +41,7 @@ import { formatFailedJobItem, showBatchFailures } from '@/shared/lib/batch'
 import { runProviderBatch } from '@/shared/lib/run-provider-batch'
 import type { JobLike } from '@/shared/lib/job-progress'
 import { useRowSelection } from '@/shared/lib/row-selection'
-import { Checkbox, SelectAllCheckbox } from '@/shared/ui/checkbox'
+import { Checkbox } from '@/shared/ui/checkbox'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 
 const props = defineProps<{ providerId: string; zoneId: string }>()
@@ -337,10 +337,10 @@ onMounted(() => {
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="pageTitle" description="EdgeOne 加速域名">
       <Button variant="outline" size="sm" @click="router.push(providerPath(providerId))">返回站点</Button>
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
       <Button size="sm" @click="openCreate">
         <Plus class="size-4" />
         添加域名
@@ -389,17 +389,17 @@ onMounted(() => {
           <TableHeader class="bg-muted/50">
             <TableRow class="!border-0">
               <TableHead class="w-10 rounded-l-lg px-3">
-              <SelectAllCheckbox
-                :checked="selection.headerChecked.value"
+              <Checkbox
+                :model-value="selection.headerChecked.value"
                 aria-label="全选当前列表"
-                @click="selection.toggleAll()"
+                @update:model-value="selection.toggleAll"
               />
               </TableHead>
               <TableHead>加速域名</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>CNAME</TableHead>
               <TableHead>源站</TableHead>
-              <TableHead class="rounded-r-lg w-12" />
+              <TableHead data-sticky="end" class="rounded-r-lg w-12" />
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -426,7 +426,7 @@ onMounted(() => {
               <TableCell class="max-w-[180px] truncate">
                 {{ record.origin?.value || record.origin_type || '-' }}
               </TableCell>
-              <TableCell>
+              <TableCell data-sticky="end">
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
                     <Button

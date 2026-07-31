@@ -52,14 +52,14 @@ function onCancel(e: Event) {
 
 <template>
   <AlertDialog :open="confirmState.open.value" @update:open="onOpenChange">
-    <AlertDialogContent>
+    <AlertDialogContent class="max-h-[calc(100svh-1rem)] overflow-y-auto p-4 sm:max-h-[calc(100svh-2rem)] sm:p-6">
       <AlertDialogHeader>
         <AlertDialogTitle>{{ confirmState.options.value.title }}</AlertDialogTitle>
         <AlertDialogDescription class="whitespace-pre-wrap">
           {{ confirmState.options.value.description }}
         </AlertDialogDescription>
       </AlertDialogHeader>
-      <AlertDialogFooter>
+      <AlertDialogFooter class="[&>*]:w-full sm:[&>*]:w-auto">
         <AlertDialogCancel @click="onCancel">
           {{ confirmState.options.value.cancelText }}
         </AlertDialogCancel>

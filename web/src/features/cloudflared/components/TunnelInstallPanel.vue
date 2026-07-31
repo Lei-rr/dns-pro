@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Copy } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
-import SimpleTabs from '@/shared/ui/tabs-simple/SimpleTabs.vue'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/lib/toast'
 
 const props = defineProps<{
@@ -107,8 +107,16 @@ async function copyCommand(command: string) {
 
 <template>
   <div class="space-y-4">
-    <SimpleTabs v-model="os" :items="osTabs" />
-    <SimpleTabs v-if="archTabs.length" v-model="arch" :items="archTabs" />
+    <Tabs v-model="os">
+      <TabsList>
+        <TabsTrigger v-for="item in osTabs" :key="item.key" :value="item.key">{{ item.label }}</TabsTrigger>
+      </TabsList>
+    </Tabs>
+    <Tabs v-if="archTabs.length" v-model="arch">
+      <TabsList>
+        <TabsTrigger v-for="item in archTabs" :key="item.key" :value="item.key">{{ item.label }}</TabsTrigger>
+      </TabsList>
+    </Tabs>
 
     <ol class="space-y-3 pl-5 text-sm">
       <li v-for="(step, index) in steps" :key="index" class="list-decimal">

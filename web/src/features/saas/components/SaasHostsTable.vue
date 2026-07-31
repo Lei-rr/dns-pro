@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { EllipsisVertical } from '@lucide/vue'
 import { Badge } from '@/shared/ui/badge'
 import { Button } from '@/shared/ui/button'
-import { Checkbox, SelectAllCheckbox } from '@/shared/ui/checkbox'
+import { Checkbox } from '@/shared/ui/checkbox'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,14 +65,14 @@ function isRefreshing(record: SaaSHostname) {
       <TableHeader class="bg-muted/50">
         <TableRow class="!border-0">
           <TableHead class="w-10 rounded-l-lg px-3">
-            <SelectAllCheckbox :checked="headerChecked" aria-label="全选当前列表" @click="toggleAll" />
+            <Checkbox :model-value="headerChecked" aria-label="全选当前列表" @update:model-value="toggleAll" />
           </TableHead>
           <TableHead>主机名</TableHead>
           <TableHead>状态</TableHead>
           <TableHead>证书</TableHead>
           <TableHead>回源</TableHead>
           <TableHead>优选域名</TableHead>
-          <TableHead class="rounded-r-lg w-12" />
+          <TableHead data-sticky="end" class="rounded-r-lg w-12" />
         </TableRow>
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -88,15 +88,15 @@ function isRefreshing(record: SaaSHostname) {
             />
           </TableCell>
           <TableCell class="font-medium">
-            <button type="button" class="table-link-ellipsis max-w-[220px] text-left hover:underline" :title="record.hostname" @click="emit('detail', record)">
+            <Button type="button" variant="link" class="table-link-ellipsis h-auto max-w-[220px] justify-start px-0 py-0 text-left" :title="record.hostname" @click="emit('detail', record)">
               {{ record.hostname }}
-            </button>
+            </Button>
           </TableCell>
           <TableCell><Badge :variant="statusVariant(record.status)">{{ statusLabel(record.status) }}</Badge></TableCell>
           <TableCell><Badge :variant="statusVariant(record.ssl?.status)">{{ statusLabel(record.ssl?.status) }}</Badge></TableCell>
           <TableCell class="max-w-[180px] truncate">{{ record.custom_origin_server || '默认回源' }}</TableCell>
           <TableCell class="max-w-[160px] truncate" :title="preferredDomain(record) || undefined">{{ preferredDomain(record) || '—' }}</TableCell>
-          <TableCell>
+          <TableCell data-sticky="end">
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
                 <Button variant="ghost" size="icon" class="size-8" :disabled="isRefreshing(record)">

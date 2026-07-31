@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { ArrowDown, ArrowUp } from '@lucide/vue'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Field, FieldError } from '@/shared/ui/field'
 import {
@@ -167,7 +167,7 @@ onMounted(() => {
     <Field :data-invalid="!!newDomainError" class="flex flex-col gap-1">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
         <Input v-model="newDomain" class="h-9 flex-1" placeholder="如 saas.sin.fan" @keyup.enter="addDomain" />
-        <Button size="sm" :loading="saving" @click="addDomain">添加</Button>
+        <LoadingButton size="sm" :loading="saving" @click="addDomain">添加</LoadingButton>
       </div>
       <FieldError :errors="newDomainError ? [newDomainError] : []" />
     </Field>
@@ -178,7 +178,7 @@ onMounted(() => {
           <TableRow class="!border-0">
             <TableHead class="w-20 rounded-l-lg px-3">排序</TableHead>
             <TableHead>域名</TableHead>
-            <TableHead class="rounded-r-lg text-right">操作</TableHead>
+            <TableHead data-sticky="end" class="rounded-r-lg text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -220,14 +220,14 @@ onMounted(() => {
               </Field>
               <span v-else class="font-medium">{{ record.domain }}</span>
             </TableCell>
-            <TableCell class="text-right">
+            <TableCell data-sticky="end" class="text-right">
               <div class="flex flex-wrap justify-end gap-1">
                 <template v-if="editingDomain === record.domain">
-                  <Button variant="ghost" size="sm" :loading="saving" @click="saveEdit">保存</Button>
+                  <LoadingButton variant="ghost" size="sm" :loading="saving" @click="saveEdit">保存</LoadingButton>
                   <Button variant="ghost" size="sm" @click="cancelEdit">取消</Button>
                 </template>
                 <template v-else>
-                  <Button
+                  <LoadingButton
                     variant="ghost"
                     size="sm"
                     :disabled="saving || applying || !hostCount"
@@ -235,7 +235,7 @@ onMounted(() => {
                     @click="applyDomain(record)"
                   >
                     应用到列表
-                  </Button>
+                  </LoadingButton>
                   <Button
                     variant="ghost"
                     size="sm"

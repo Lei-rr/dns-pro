@@ -3,7 +3,7 @@ import { onMounted, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import {
@@ -118,10 +118,10 @@ onMounted(() => runLoad())
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader title="Cloudflare Tunnel" description="隧道列表，详情页可管理路由与安装令牌。">
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
       <Button size="sm" @click="openCreate">
         <Plus class="size-4" />
         创建隧道
@@ -136,7 +136,7 @@ onMounted(() => runLoad())
             <TableHead>状态</TableHead>
             <TableHead>副本</TableHead>
             <TableHead>隧道 ID</TableHead>
-            <TableHead class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
+            <TableHead data-sticky="end" class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -147,14 +147,14 @@ onMounted(() => runLoad())
           </TableRow>
           <TableRow v-for="record in pagedTunnels" :key="String(record.id || record.name)">
             <TableCell class="px-4">
-              <button class="font-medium hover:underline" @click="openDetail(record)">{{ record.name }}</button>
+              <Button variant="link" class="h-auto px-0 py-0 font-medium" @click="openDetail(record)">{{ record.name }}</Button>
             </TableCell>
             <TableCell>
               <Badge variant="secondary">{{ tunnelStatusLabel(record.status) }}</Badge>
             </TableCell>
             <TableCell>{{ replicaCount(record) }}</TableCell>
             <TableCell class="max-w-[220px] truncate text-sm">{{ record.id || '-' }}</TableCell>
-            <TableCell class="text-right">
+            <TableCell data-sticky="end" class="text-right">
               <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
                 <Button variant="ghost" size="sm" @click="openDetail(record)">管理</Button>
                 <DropdownMenu>
@@ -192,7 +192,7 @@ onMounted(() => runLoad())
       </FieldGroup>
       <template #footer>
         <Button variant="outline" @click="dialogOpen = false">取消</Button>
-        <Button :loading="creating" @click="createTunnel">创建</Button>
+        <LoadingButton :loading="creating" @click="createTunnel">创建</LoadingButton>
       </template>
     </AppDialog>
   </div>

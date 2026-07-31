@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RefreshCw, Search } from '@lucide/vue'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 
 withDefaults(defineProps<{
@@ -36,10 +36,10 @@ const emit = defineEmits<{
         <Search class="size-4" />
         搜索
       </Button>
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="emit('refresh')">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="emit('refresh')">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
     </div>
 
     <div class="flex flex-wrap items-center gap-2">

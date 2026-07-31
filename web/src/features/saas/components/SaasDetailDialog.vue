@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { AppDialog } from '@/shared/ui/dialog'
-import { Button } from '@/shared/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/ui/collapsible'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import type { SaaSHostname, SaaSHostnameSSL } from '@/shared/types'
 import { formatDate, minTlsLabel, statusLabel, statusVariant } from '@/features/saas/lib/status'
@@ -176,11 +177,11 @@ function onRefresh() {
         </div>
       </div>
 
-      <details v-if="acmeTempRecords.length" class="rounded-md border">
-        <summary class="text-muted-foreground cursor-pointer px-3 py-2 text-sm">
+      <Collapsible v-if="acmeTempRecords.length" class="rounded-md border">
+        <CollapsibleTrigger class="text-muted-foreground flex w-full cursor-pointer items-center px-3 py-2 text-left text-sm">
           临时 ACME 验证（{{ acmeTempRecords.length }} 条；添加 DCV 后通常可忽略）
-        </summary>
-        <div class="space-y-3 border-t p-3">
+        </CollapsibleTrigger>
+        <CollapsibleContent class="space-y-3 border-t p-3">
           <div
             v-for="(rec, index) in acmeTempRecords"
             :key="`acme-${index}`"
@@ -193,14 +194,14 @@ function onRefresh() {
             <div class="text-muted-foreground">记录值</div>
             <div class="min-w-0 break-all">{{ rec.value }}</div>
           </div>
-        </div>
-      </details>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
 
     <template #footer>
       <Button variant="outline" @click="open = false">关闭</Button>
       <Button variant="outline" :disabled="!hostname" @click="onEdit">编辑</Button>
-      <Button :loading="refreshing" :disabled="!hostname" @click="onRefresh">刷新状态</Button>
+      <LoadingButton :loading="refreshing" :disabled="!hostname" @click="onRefresh">刷新状态</LoadingButton>
     </template>
   </AppDialog>
 </template>

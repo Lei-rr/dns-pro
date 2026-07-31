@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { RefreshCw, Search } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Badge } from '@/shared/ui/badge'
 import {
@@ -75,10 +75,10 @@ onMounted(() => runLoad())
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader title="EdgeOne" description="选择站点进入安全加速域名管理。">
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
     </PageHeader>
 
     <div class="flex w-full flex-col gap-4">
@@ -99,7 +99,7 @@ onMounted(() => runLoad())
               <TableHead>区域</TableHead>
               <TableHead>接入方式</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead class="rounded-r-lg w-[6rem] text-right">操作</TableHead>
+              <TableHead data-sticky="end" class="rounded-r-lg w-[6rem] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -108,7 +108,7 @@ onMounted(() => runLoad())
             </TableRow>
             <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">
-                <button class="font-medium hover:underline" @click="openZone(zone)">{{ zone.name }}</button>
+                <Button variant="link" class="h-auto px-0 py-0 font-medium" @click="openZone(zone)">{{ zone.name }}</Button>
               </TableCell>
               <TableCell class="max-w-[180px] truncate font-mono text-xs" :title="String(zone.id || '')">
                 {{ zone.id || '-' }}
@@ -120,7 +120,7 @@ onMounted(() => runLoad())
               <TableCell>
                 <Badge variant="secondary">{{ edgeOneStatusLabel(String(zone.active_status || zone.status || '')) }}</Badge>
               </TableCell>
-              <TableCell class="text-right">
+              <TableCell data-sticky="end" class="text-right">
                 <Button variant="ghost" size="sm" @click="openZone(zone)">管理</Button>
               </TableCell>
             </TableRow>

@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Plus, RefreshCw, Search } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldLabel } from '@/shared/ui/field'
@@ -116,11 +116,7 @@ const originSuggestions = computed(() => {
   }
   return list
 })
-const originSuggestOpen = ref(false)
-function pickOriginSuggestion(value: string) {
-  form.custom_origin_server = value
-  originSuggestOpen.value = false
-}
+
 const showPreferred = ref(false)
 const showFallback = ref(false)
 
@@ -572,10 +568,10 @@ onMounted(async () => {
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="decodedZone" description="Cloudflare SaaS 自定义主机名">
       <Button variant="outline" size="sm" @click="router.push(providerPath(providerId))">返回站点</Button>
-      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <LoadingButton variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
         <RefreshCw class="size-4" />
         刷新
-      </Button>
+      </LoadingButton>
       <Button variant="outline" size="sm" @click="showFallback = true">默认回源</Button>
       <Button variant="outline" size="sm" @click="showPreferred = true">优选域名</Button>
       <Button size="sm" @click="openCreate">
@@ -654,10 +650,7 @@ onMounted(async () => {
       :sync-zones="syncZones"
       :preferred-options="preferredOptions"
       :origin-suggestions="originSuggestions"
-      :origin-suggest-open="originSuggestOpen"
       :errors="formErrors"
-      @update:origin-suggest-open="originSuggestOpen = $event"
-      @pick-origin="pickOriginSuggestion"
       @save="save"
     />
 

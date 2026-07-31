@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AppDialog } from '@/shared/ui/dialog'
-import { Button } from '@/shared/ui/button'
+import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Switch } from '@/shared/ui/switch'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from '@/shared/ui/select'
 import type { Provider, Zone } from '@/shared/types'
+import { Combobox, ComboboxAnchor, ComboboxInput, ComboboxItem, ComboboxList, ComboboxViewport } from '@/shared/ui/combobox'
 
 export type HostnameFormModel = {
   hostname: string
@@ -31,28 +32,19 @@ export type HostnameFormModel = {
 const open = defineModel<boolean>('open', { required: true })
 const form = defineModel<HostnameFormModel>('form', { required: true })
 
-const props = defineProps<{
+defineProps<{
   editing: boolean
   saving: boolean
   syncProviders: Provider[]
   syncZones: Zone[]
   preferredOptions: Array<{ domain: string }>
   originSuggestions: string[]
-  originSuggestOpen: boolean
   errors: FieldErrors
 }>()
 
 const emit = defineEmits<{
   save: []
-  'update:originSuggestOpen': [value: boolean]
-  pickOrigin: [value: string]
 }>()
-
-const filteredOriginSuggestions = () => {
-  const q = form.value.custom_origin_server.trim().toLowerCase()
-  if (!q) return props.originSuggestions
-  return props.originSuggestions.filter((item) => item.toLowerCase().includes(q))
-}
 </script>
 
 <template>
@@ -143,31 +135,41 @@ const filteredOriginSuggestions = () => {
         <Switch v-model="form.use_custom_origin_server" />
         <FieldLabel>自定义源服务器</FieldLabel>
       </Field>
-      <Field v-if="form.use_custom_origin_server" class="relative" :data-invalid="!!errors.custom_origin_server">
-        <Input
+      <Field v-if="form.use_custom_origin_server" :data-invalid="!!errors.custom_origin_server">
+        <Combobox
           v-model="form.custom_origin_server"
-          placeholder="输入或从已用源服务器选择，如 origin.example.com"
-          autocomplete="off"
-          @focus="emit('update:originSuggestOpen', true)"
-          @input="emit('update:originSuggestOpen', true)"
-          @keydown.escape="emit('update:originSuggestOpen', false)"
-        />
-        <FieldError :errors="errors.custom_origin_server ? [errors.custom_origin_server] : []" />
-        <div
-          v-if="originSuggestOpen && filteredOriginSuggestions().length"
-          class="bg-popover text-popover-foreground absolute top-full z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border shadow-md"
-          @mousedown.prevent
+          open-on-focus
+          open-on-click
+          :reset-search-term-on-select="true"
         >
-          <button
-            v-for="item in filteredOriginSuggestions()"
-            :key="item"
-            type="button"
-            class="hover:bg-accent hover:text-accent-foreground flex w-full items-center px-3 py-2 text-left text-sm"
-            @click="emit('pickOrigin', item)"
+          <ComboboxAnchor class="w-full">
+            <ComboboxInput
+              class="file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3 aria-invalid:ring-destructive/20 aria-invalid:border-destructive md:text-sm"
+              :model-value="form.custom_origin_server"
+              placeholder="输入或从已用源服务器选择，如 origin.example.com"
+              :display-value="(value) => String(value || '')"
+              @update:model-value="form.custom_origin_server = String($event)"
+            />
+          </ComboboxAnchor>
+          <ComboboxList
+            v-if="originSuggestions.length"
+            hide-when-empty
+            class="max-h-48 w-[var(--reka-combobox-trigger-width)] max-w-[calc(100vw-1rem)]"
           >
-            {{ item }}
-          </button>
-        </div>
+              <ComboboxViewport class="max-h-48 overflow-y-auto p-1">
+                <ComboboxItem
+                  v-for="item in originSuggestions"
+                  :key="item"
+                  :value="item"
+                  :text-value="item"
+                  class="data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground relative flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+                >
+                  {{ item }}
+                </ComboboxItem>
+              </ComboboxViewport>
+          </ComboboxList>
+        </Combobox>
+        <FieldError :errors="errors.custom_origin_server ? [errors.custom_origin_server] : []" />
       </Field>
 
       <Field orientation="horizontal">
@@ -197,7 +199,7 @@ const filteredOriginSuggestions = () => {
     </FieldGroup>
     <template #footer>
       <Button variant="outline" @click="open = false">取消</Button>
-      <Button :loading="saving" @click="emit('save')">保存</Button>
+      <LoadingButton :loading="saving" @click="emit('save')">保存</LoadingButton>
     </template>
   </AppDialog>
 </template>
