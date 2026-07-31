@@ -72,7 +72,7 @@ function isRefreshing(record: SaaSHostname) {
           <TableHead>证书</TableHead>
           <TableHead>回源</TableHead>
           <TableHead>优选域名</TableHead>
-          <TableHead data-sticky="end" class="rounded-r-lg w-12" />
+          <TableHead class="rounded-r-lg w-12" />
         </TableRow>
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -96,7 +96,7 @@ function isRefreshing(record: SaaSHostname) {
           <TableCell><Badge :variant="statusVariant(record.ssl?.status)">{{ statusLabel(record.ssl?.status) }}</Badge></TableCell>
           <TableCell class="max-w-[180px] truncate">{{ record.custom_origin_server || '默认回源' }}</TableCell>
           <TableCell class="max-w-[160px] truncate" :title="preferredDomain(record) || undefined">{{ preferredDomain(record) || '—' }}</TableCell>
-          <TableCell data-sticky="end">
+          <TableCell>
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
                 <Button variant="ghost" size="icon" class="size-8" :disabled="isRefreshing(record)">

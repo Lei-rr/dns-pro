@@ -99,7 +99,7 @@ onMounted(() => runLoad())
               <TableHead>区域</TableHead>
               <TableHead>接入方式</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead data-sticky="end" class="rounded-r-lg w-[6rem] text-right">操作</TableHead>
+              <TableHead class="rounded-r-lg w-[6rem] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -120,7 +120,7 @@ onMounted(() => runLoad())
               <TableCell>
                 <Badge variant="secondary">{{ edgeOneStatusLabel(String(zone.active_status || zone.status || '')) }}</Badge>
               </TableCell>
-              <TableCell data-sticky="end" class="text-right">
+              <TableCell class="text-right">
                 <Button variant="ghost" size="sm" @click="openZone(zone)">管理</Button>
               </TableCell>
             </TableRow>

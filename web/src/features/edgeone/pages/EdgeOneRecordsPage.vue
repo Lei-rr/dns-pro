@@ -399,7 +399,7 @@ onMounted(() => {
               <TableHead>状态</TableHead>
               <TableHead>CNAME</TableHead>
               <TableHead>源站</TableHead>
-              <TableHead data-sticky="end" class="rounded-r-lg w-12" />
+              <TableHead class="rounded-r-lg w-12" />
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -426,7 +426,7 @@ onMounted(() => {
               <TableCell class="max-w-[180px] truncate">
                 {{ record.origin?.value || record.origin_type || '-' }}
               </TableCell>
-              <TableCell data-sticky="end">
+              <TableCell>
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
                     <Button

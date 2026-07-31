@@ -109,7 +109,7 @@ function recordValue(record: DnsRecord) {
           <TableHead class="w-[5rem]">TTL</TableHead>
           <TableHead class="w-[6rem]">线路</TableHead>
           <TableHead class="min-w-[6rem] max-w-[10rem]">备注</TableHead>
-          <TableHead data-sticky="end" class="w-12 rounded-r-lg" />
+          <TableHead class="w-12 rounded-r-lg" />
         </TableRow>
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -139,7 +139,7 @@ function recordValue(record: DnsRecord) {
                 </span>
               </Button>
             </TableCell>
-            <TableCell data-sticky="end" class="w-12" />
+            <TableCell class="w-12" />
           </TableRow>
 
           <TableRow
@@ -166,7 +166,7 @@ function recordValue(record: DnsRecord) {
               <template v-else>{{ record.line || '默认' }}</template>
             </TableCell>
             <TableCell><div class="text-muted-foreground max-w-[10rem] truncate text-sm" :title="String(record.remark || record.comment || '')">{{ record.remark || record.comment || '—' }}</div></TableCell>
-            <TableCell data-sticky="end">
+            <TableCell>
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>
                   <Button variant="ghost" size="icon" class="size-8" :disabled="busy(dnsRecordRowKey(record))">
@@ -194,7 +194,7 @@ function recordValue(record: DnsRecord) {
             <TableCell>{{ dnsRecordTtlDisplay(row.record.ttl) }}</TableCell>
             <TableCell><Badge v-if="isCloudflare" :variant="row.record.proxied ? 'default' : 'outline'">{{ row.record.proxied ? '代理' : '仅 DNS' }}</Badge><template v-else>{{ row.record.line || '默认' }}</template></TableCell>
             <TableCell><div class="text-muted-foreground max-w-[10rem] truncate text-sm" :title="String(row.record.remark || row.record.comment || '')">{{ row.record.remark || row.record.comment || '—' }}</div></TableCell>
-            <TableCell data-sticky="end">
+            <TableCell>
               <DropdownMenu>
                 <DropdownMenuTrigger as-child><Button variant="ghost" size="icon" class="size-8" :disabled="busy(dnsRecordRowKey(row.record))"><Spinner v-if="busy(dnsRecordRowKey(row.record))" class="size-4" /><EllipsisVertical v-else class="size-4" /></Button></DropdownMenuTrigger>
                 <DropdownMenuContent align="end"><DropdownMenuItem :disabled="busy(dnsRecordRowKey(row.record))" @click="emit('edit', row.record)">编辑</DropdownMenuItem><DropdownMenuItem variant="destructive" :disabled="busy(dnsRecordRowKey(row.record))" @click="emit('remove', row.record)">删除</DropdownMenuItem></DropdownMenuContent>

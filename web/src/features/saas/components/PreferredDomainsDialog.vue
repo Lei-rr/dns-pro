@@ -178,7 +178,7 @@ onMounted(() => {
           <TableRow class="!border-0">
             <TableHead class="w-20 rounded-l-lg px-3">排序</TableHead>
             <TableHead>域名</TableHead>
-            <TableHead data-sticky="end" class="rounded-r-lg text-right">操作</TableHead>
+            <TableHead class="rounded-r-lg text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -220,7 +220,7 @@ onMounted(() => {
               </Field>
               <span v-else class="font-medium">{{ record.domain }}</span>
             </TableCell>
-            <TableCell data-sticky="end" class="text-right">
+            <TableCell class="text-right">
               <div class="flex flex-wrap justify-end gap-1">
                 <template v-if="editingDomain === record.domain">
                   <LoadingButton variant="ghost" size="sm" :loading="saving" @click="saveEdit">保存</LoadingButton>

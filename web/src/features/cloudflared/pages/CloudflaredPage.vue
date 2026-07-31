@@ -136,7 +136,7 @@ onMounted(() => runLoad())
             <TableHead>状态</TableHead>
             <TableHead>副本</TableHead>
             <TableHead>隧道 ID</TableHead>
-            <TableHead data-sticky="end" class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
+            <TableHead class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -154,7 +154,7 @@ onMounted(() => runLoad())
             </TableCell>
             <TableCell>{{ replicaCount(record) }}</TableCell>
             <TableCell class="max-w-[220px] truncate text-sm">{{ record.id || '-' }}</TableCell>
-            <TableCell data-sticky="end" class="text-right">
+            <TableCell class="text-right">
               <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
                 <Button variant="ghost" size="sm" @click="openDetail(record)">管理</Button>
                 <DropdownMenu>

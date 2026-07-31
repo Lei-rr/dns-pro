@@ -252,7 +252,7 @@ onMounted(() => runLoad())
             <TableHead class="rounded-l-lg px-4">Hostname</TableHead>
             <TableHead>Service</TableHead>
             <TableHead>Path</TableHead>
-            <TableHead data-sticky="end" class="rounded-r-lg w-12" />
+            <TableHead class="rounded-r-lg w-12" />
           </TableRow>
         </TableHeader>
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -267,7 +267,7 @@ onMounted(() => runLoad())
             <TableCell class="px-4 font-medium">{{ record.hostname || '-' }}</TableCell>
             <TableCell class="max-w-[280px] truncate">{{ record.service || '-' }}</TableCell>
             <TableCell>{{ record.path || '/' }}</TableCell>
-            <TableCell data-sticky="end">
+            <TableCell>
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>
                   <Button

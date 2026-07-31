@@ -144,29 +144,3 @@
 .animate-spin {
   animation: dns-pro-spin 0.75s linear infinite;
 }
-
-/* Mobile data tables keep the action column reachable while the data scrolls. */
-@media (max-width: 639px) {
-  [data-slot='table-container'] {
-    width: calc(100% + 1.5rem);
-    margin-inline: -0.75rem;
-    padding-inline: 0.75rem;
-    scrollbar-width: thin;
-  }
-
-  [data-slot='table-container'] [data-sticky='end'] {
-    position: sticky;
-    right: 0.75rem;
-    box-shadow: -8px 0 10px -12px var(--foreground);
-  }
-
-  [data-slot='table-container'] thead [data-sticky='end'] {
-    z-index: 2;
-    background: color-mix(in oklch, var(--muted) 50%, var(--background));
-  }
-
-  [data-slot='table-container'] tbody [data-sticky='end'] {
-    z-index: 1;
-    background: var(--background);
-  }
-}

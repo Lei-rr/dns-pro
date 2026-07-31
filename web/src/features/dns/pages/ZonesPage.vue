@@ -180,7 +180,7 @@ onMounted(async () => {
               <TableHead class="rounded-l-lg px-4">域名</TableHead>
               <TableHead>状态</TableHead>
               <TableHead>类型</TableHead>
-              <TableHead data-sticky="end" class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
+              <TableHead class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
@@ -197,7 +197,7 @@ onMounted(async () => {
                 <Badge variant="outline">{{ zone.access_status || zone.status || zone.dns_status || '-' }}</Badge>
               </TableCell>
               <TableCell class="text-muted-foreground">{{ provider?.type || '-' }}</TableCell>
-              <TableCell data-sticky="end" class="text-right">
+              <TableCell class="text-right">
                 <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
                   <Button variant="ghost" size="sm" @click="openRecords(zone)">管理</Button>
                   <DropdownMenu>
