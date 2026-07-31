@@ -67,7 +67,7 @@ function toggleDark() {
     <header class="bg-background sticky top-0 z-50 w-full">
       <!-- 手机全宽+内边距；桌面 ~80vw（用户：手机版不用 80%） -->
       <div
-        class="mx-auto flex h-14 w-full max-w-none min-w-0 items-center gap-2 px-4 sm:h-16 sm:px-6 md:w-[80vw] md:px-0"
+        class="mx-auto flex h-14 w-full max-w-none min-w-0 items-center gap-1.5 px-3 sm:h-16 sm:gap-2 sm:px-6 md:w-[80vw] md:px-0"
       >
         <RouterLink to="/" class="mr-1 flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-tight">
           <span
@@ -168,7 +168,7 @@ function toggleDark() {
 
     <main class="flex flex-1 flex-col">
       <div
-        class="mx-auto w-full max-w-none min-w-0 flex-1 px-4 py-4 sm:px-6 sm:py-6 md:w-[80vw] md:px-0"
+        class="mx-auto w-full max-w-none min-w-0 flex-1 px-3 py-4 sm:px-6 sm:py-6 md:w-[80vw] md:px-0"
       >
         <RouterView v-slot="{ Component, route: currentRoute }">
           <Transition name="page-fade" mode="out-in">

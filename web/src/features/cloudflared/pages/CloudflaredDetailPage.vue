@@ -190,8 +190,8 @@ onMounted(() => runLoad())
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="title" :description="`状态：${tunnelStatusLabel(tunnel?.status)} · Cloudflare Tunnel`">
     <Button variant="outline" size="sm" @click="router.push(providerPath(providerId))">返回隧道列表</Button>
-    <Button variant="outline" size="sm" :disabled="loading" @click="onRefresh()">
-      <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
+    <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+      <RefreshCw class="size-4" />
       刷新
     </Button>
     <Button size="sm" @click="openCreate">
@@ -245,7 +245,7 @@ onMounted(() => runLoad())
       <TunnelInstallPanel :token="token" />
     </div>
 
-    <TableLoading :loading="loading" :empty="!routes.length">
+    <TableLoading :loading="loading" :refreshing="refreshing" :empty="!routes.length">
       <Table>
         <TableHeader class="bg-muted/50">
           <TableRow class="!border-0">

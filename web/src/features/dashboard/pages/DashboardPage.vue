@@ -54,9 +54,9 @@ onMounted(async () => {
 
 <template>
   <div class="flex flex-1 flex-col gap-5">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-semibold tracking-tight">控制台</h1>
+    <div class="flex flex-col gap-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
+      <div class="min-w-0">
+        <h1 class="text-xl font-semibold tracking-tight sm:text-2xl">控制台</h1>
         <p class="text-muted-foreground text-sm">已接入 {{ count }} 个服务商</p>
       </div>
       <RouterLink to="/providers">
@@ -116,7 +116,7 @@ onMounted(async () => {
         v-for="provider in providers"
         :key="provider.id"
         :to="providerPath(provider.id)"
-        class="group hover:bg-muted/50 flex items-center gap-3.5 rounded-2xl px-4 py-3.5 transition-colors"
+        class="group hover:bg-muted/50 flex min-w-0 items-center gap-3 rounded-2xl px-3 py-3.5 transition-colors sm:gap-3.5 sm:px-4"
       >
         <div
           class="flex size-11 shrink-0 items-center justify-center rounded-xl text-white"

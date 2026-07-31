@@ -28,6 +28,7 @@ const props = defineProps<{
   zoneName: string
   isCloudflare: boolean
   loading: boolean
+  refreshing: boolean
   busy: (key: string) => boolean
 }>()
 
@@ -95,7 +96,7 @@ function recordValue(record: DnsRecord) {
 </script>
 
 <template>
-  <TableLoading :loading="loading" :empty="!records.length">
+  <TableLoading :loading="loading" :refreshing="refreshing" :empty="!records.length">
     <Table>
       <TableHeader class="bg-muted/50">
         <TableRow class="!border-0">

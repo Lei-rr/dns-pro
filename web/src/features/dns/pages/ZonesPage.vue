@@ -152,8 +152,8 @@ onMounted(async () => {
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="title" :description="`${providerTypeLabel(provider?.type || '')} · 域名列表`">
-      <Button variant="outline" size="sm" :disabled="loading" @click="onRefresh()">
-        <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
+      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+        <RefreshCw class="size-4" />
         刷新
       </Button>
       <Button size="sm" @click="openAdd">
@@ -166,14 +166,14 @@ onMounted(async () => {
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-2">
           <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索域名" @keyup.enter="onSearch()" />
-          <Button variant="outline" size="sm" :loading="loading" @click="onSearch()">
+          <Button variant="outline" size="sm" @click="onSearch()">
             <Search class="size-4" />
             搜索
           </Button>
         </div>
       </div>
 
-      <TableLoading :loading="loading" :empty="!filtered.length">
+      <TableLoading :loading="loading" :refreshing="refreshing" :empty="!filtered.length">
         <Table>
           <TableHeader class="bg-muted/50">
             <TableRow class="!border-0">

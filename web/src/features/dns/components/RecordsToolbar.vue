@@ -32,12 +32,12 @@ const emit = defineEmits<{
         @update:model-value="emit('update:keyword', String($event))"
         @keyup.enter="emit('search')"
       />
-      <Button variant="outline" size="sm" :loading="loading" @click="emit('search')">
+      <Button variant="outline" size="sm" @click="emit('search')">
         <Search class="size-4" />
         搜索
       </Button>
-      <Button variant="outline" size="sm" :disabled="loading" @click="emit('refresh')">
-        <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
+      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="emit('refresh')">
+        <RefreshCw class="size-4" />
         刷新
       </Button>
     </div>

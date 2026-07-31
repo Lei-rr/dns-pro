@@ -9,6 +9,7 @@ const props = withDefaults(
     /** 兼容旧调用；空列表时 loading 立即反馈，有数据时延迟 soft 防闪 */
     empty?: boolean
     text?: string
+    refreshing?: boolean
     class?: string
     /** 有数据时延迟显示 soft-loading（ms） */
     delayMs?: number
@@ -17,6 +18,7 @@ const props = withDefaults(
     loading: false,
     empty: false,
     text: '',
+    refreshing: false,
     delayMs: 120,
   },
 )
@@ -63,22 +65,22 @@ onBeforeUnmount(clearTimer)
 <template>
   <!--
     列表 loading：
-    - 有数据：轻暗 + 居中小 Spinner（无线性条、无「加载中…」文案）
-    - 空列表：同样 soft，避免空白无反馈
+    - 首次加载/查询：保留表头和尺寸，轻暗 + 居中 Spinner
+    - 显式刷新：旧数据保持可读，只在右上角显示紧凑状态
     - 不整表替换成 loading 行（防布局跳）
   -->
-  <div :class="cn('relative rounded-lg', props.class)">
+  <div :class="cn('relative rounded-lg', loading && empty && 'min-h-40', props.class)">
     <div
       :class="cn(
         'transition-[opacity,filter] duration-200 ease-out',
-        soft && 'pointer-events-none opacity-55',
+        soft && !refreshing && 'pointer-events-none opacity-55',
       )"
       :aria-busy="loading || undefined"
     >
       <slot />
     </div>
     <div
-      v-if="soft"
+      v-if="soft && !refreshing"
       class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
       aria-hidden="true"
     >
@@ -88,6 +90,15 @@ onBeforeUnmount(clearTimer)
         <Spinner class="size-4" />
         <span v-if="text" class="text-muted-foreground text-xs">{{ text }}</span>
       </div>
+    </div>
+    <div
+      v-if="refreshing"
+      class="bg-background/90 text-muted-foreground pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs shadow-sm backdrop-blur"
+      role="status"
+      aria-live="polite"
+    >
+      <Spinner class="size-3.5" />
+      <span>刷新中</span>
     </div>
   </div>
 </template>

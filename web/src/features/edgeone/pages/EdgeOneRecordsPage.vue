@@ -337,8 +337,8 @@ onMounted(() => {
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="pageTitle" description="EdgeOne 加速域名">
       <Button variant="outline" size="sm" @click="router.push(providerPath(providerId))">返回站点</Button>
-      <Button variant="outline" size="sm" :disabled="loading" @click="onRefresh()">
-        <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
+      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+        <RefreshCw class="size-4" />
         刷新
       </Button>
       <Button size="sm" @click="openCreate">
@@ -384,7 +384,7 @@ onMounted(() => {
         </template>
       </div>
 
-      <TableLoading :loading="loading" :empty="!filtered.length">
+      <TableLoading :loading="loading" :refreshing="refreshing" :empty="!filtered.length">
         <Table>
           <TableHeader class="bg-muted/50">
             <TableRow class="!border-0">

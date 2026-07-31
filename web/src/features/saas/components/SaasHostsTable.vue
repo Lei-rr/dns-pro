@@ -19,6 +19,7 @@ const props = defineProps<{
   hostnames: SaaSHostname[]
   selectedHostnames: string[]
   loading: boolean
+  refreshing: boolean
   refreshingHostname: string
   preferredDomain: (record: SaaSHostname) => string
 }>()
@@ -59,7 +60,7 @@ function isRefreshing(record: SaaSHostname) {
 </script>
 
 <template>
-  <TableLoading :loading="loading" :empty="!hostnames.length">
+  <TableLoading :loading="loading" :refreshing="refreshing" :empty="!hostnames.length">
     <Table>
       <TableHeader class="bg-muted/50">
         <TableRow class="!border-0">

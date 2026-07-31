@@ -118,8 +118,8 @@ onMounted(() => runLoad())
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader title="Cloudflare Tunnel" description="隧道列表，详情页可管理路由与安装令牌。">
-      <Button variant="outline" size="sm" :disabled="loading" @click="onRefresh()">
-        <RefreshCw class="size-4" :class="refreshing && 'animate-spin'" />
+      <Button variant="outline" size="sm" :loading="refreshing" :disabled="loading && !refreshing" @click="onRefresh()">
+        <RefreshCw class="size-4" />
         刷新
       </Button>
       <Button size="sm" @click="openCreate">
@@ -128,7 +128,7 @@ onMounted(() => runLoad())
       </Button>
     </PageHeader>
 
-    <TableLoading :loading="loading" :empty="!tunnels.length">
+    <TableLoading :loading="loading" :refreshing="refreshing" :empty="!tunnels.length">
       <Table>
         <TableHeader class="bg-muted/50">
           <TableRow class="!border-0">

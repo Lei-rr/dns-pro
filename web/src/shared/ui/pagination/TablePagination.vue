@@ -68,7 +68,7 @@ function onPageSizeChange(value: unknown) {
 <template>
   <div
     v-if="showPager"
-    :class="cn('flex flex-wrap items-center justify-end gap-2 border-t pt-2.5', props.class)"
+    :class="cn('flex flex-wrap items-center justify-between gap-2 border-t pt-2.5 sm:justify-end', props.class)"
   >
     <div class="text-muted-foreground flex items-center gap-1.5 text-xs">
       <span class="hidden sm:inline">每页</span>

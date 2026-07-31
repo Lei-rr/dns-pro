@@ -466,6 +466,7 @@ onMounted(async () => {
       :zone-name="zoneName"
       :is-cloudflare="isCloudflare"
       :loading="loading"
+      :refreshing="refreshing"
       :busy="isRowBusy"
       @update:selected-keys="setSelectedKeys"
       @update:expanded-hosts="expandedHosts = $event"
@@ -489,7 +490,7 @@ onMounted(async () => {
       class="pointer-events-none sticky bottom-4 z-20 flex justify-center px-2"
     >
       <div
-        class="bg-card pointer-events-auto flex flex-wrap items-center gap-2 rounded-full border px-3 py-2 shadow-md"
+        class="bg-card pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-center gap-2 rounded-xl border px-3 py-2 shadow-md sm:w-auto sm:max-w-none sm:rounded-full"
       >
         <span class="text-muted-foreground px-1 text-sm whitespace-nowrap">
           已选 {{ selectedCount }}

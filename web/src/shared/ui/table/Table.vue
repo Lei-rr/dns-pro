@@ -4,7 +4,7 @@ import type { HTMLAttributes } from 'vue'
 const props = defineProps<{ class?: HTMLAttributes['class'] }>()
 </script>
 <template>
-  <div :class="cn('relative w-full overflow-auto', props.class)">
+  <div data-slot="table-container" :class="cn('relative w-full overflow-x-auto overscroll-x-contain', props.class)">
     <table class="w-full caption-bottom text-sm">
       <slot />
     </table>
