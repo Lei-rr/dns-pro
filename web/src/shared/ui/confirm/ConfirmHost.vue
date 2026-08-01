@@ -18,8 +18,8 @@ const confirmClass = computed(() =>
   cn(
     buttonVariants({
       variant: confirmState.options.value.destructive ? 'destructive' : 'default',
-    }),
-  ),
+    })
+  )
 )
 
 /**

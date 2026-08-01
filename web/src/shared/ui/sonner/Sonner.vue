@@ -1,8 +1,8 @@
 <script lang="ts" setup>
-import type { ToasterProps } from "vue-sonner"
-import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon, XIcon } from "@lucide/vue"
-import { Toaster as Sonner } from "vue-sonner"
-import { cn } from "@/shared/lib/utils"
+import type { ToasterProps } from 'vue-sonner'
+import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon, XIcon } from '@lucide/vue'
+import { Toaster as Sonner } from 'vue-sonner'
+import { cn } from '@/shared/lib/utils'
 
 const props = defineProps<ToasterProps>()
 </script>
@@ -40,3 +40,15 @@ const props = defineProps<ToasterProps>()
     </template>
   </Sonner>
 </template>
+
+<style>
+[data-sonner-toast] {
+  pointer-events: none;
+}
+
+[data-sonner-toast] [data-close-button],
+[data-sonner-toast] [data-button],
+[data-sonner-toast] [data-cancel] {
+  pointer-events: auto;
+}
+</style>

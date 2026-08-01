@@ -1,0 +1,15 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "exclude": ["exports", "types"],
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/*.{mjs,ts}"],
+      "project": ["src/**/*.ts", "scripts/**/*.{mjs,ts}"],
+      "ignoreDependencies": ["esbuild"]
+    },
+    "web": {
+      "entry": ["src/app/styles/index.css"],
+      "project": ["src/**/*.{ts,vue}"]
+    }
+  }
+}

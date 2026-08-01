@@ -1,20 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/shared/ui/pagination'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/shared/ui/select'
+import Pagination from './Pagination.vue'
+import PaginationContent from './PaginationContent.vue'
+import PaginationEllipsis from './PaginationEllipsis.vue'
+import PaginationItem from './PaginationItem.vue'
+import PaginationNext from './PaginationNext.vue'
+import PaginationPrevious from './PaginationPrevious.vue'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 import { cn } from '@/shared/lib/utils'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const
@@ -33,7 +25,7 @@ const props = withDefaults(
     pageSize: 20,
     total: 0,
     disabled: false,
-  },
+  }
 )
 
 const emit = defineEmits<{
@@ -42,12 +34,10 @@ const emit = defineEmits<{
 }>()
 
 const sizeOptions = computed(() =>
-  (props.pageSizeOptions?.length ? props.pageSizeOptions : [...PAGE_SIZE_OPTIONS]).slice(),
+  (props.pageSizeOptions?.length ? props.pageSizeOptions : [...PAGE_SIZE_OPTIONS]).slice()
 )
 
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(Math.max(0, props.total) / Math.max(1, props.pageSize))),
-)
+const totalPages = computed(() => Math.max(1, Math.ceil(Math.max(0, props.total) / Math.max(1, props.pageSize))))
 const showPager = computed(() => props.total > 0)
 
 function onPageChange(next: number) {
@@ -72,11 +62,7 @@ function onPageSizeChange(value: unknown) {
   >
     <div class="text-muted-foreground flex items-center gap-1.5 text-xs">
       <span class="hidden sm:inline">每页</span>
-      <Select
-        :model-value="String(pageSize)"
-        :disabled="disabled"
-        @update:model-value="onPageSizeChange"
-      >
+      <Select :model-value="String(pageSize)" :disabled="disabled" @update:model-value="onPageSizeChange">
         <SelectTrigger size="sm" class="h-8 w-[4.5rem] text-xs">
           <SelectValue />
         </SelectTrigger>

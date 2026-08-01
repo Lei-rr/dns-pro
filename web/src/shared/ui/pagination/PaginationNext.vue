@@ -1,21 +1,26 @@
 <script setup lang="ts">
-import type { PaginationNextProps } from "reka-ui"
-import type { HTMLAttributes } from "vue"
-import type { ButtonVariants } from "@/shared/ui/button"
-import { ChevronRightIcon } from "@lucide/vue"
-import { reactiveOmit } from "@vueuse/core"
-import { PaginationNext, useForwardProps } from "reka-ui"
-import { cn } from "@/shared/lib/utils"
-import { buttonVariants } from "@/shared/ui/button"
+import type { PaginationNextProps } from 'reka-ui'
+import type { HTMLAttributes } from 'vue'
+import type { ButtonVariants } from '@/shared/ui/button'
+import { ChevronRightIcon } from '@lucide/vue'
+import { reactiveOmit } from '@vueuse/core'
+import { PaginationNext, useForwardProps } from 'reka-ui'
+import { cn } from '@/shared/lib/utils'
+import { buttonVariants } from '@/shared/ui/button'
 
-const props = withDefaults(defineProps<PaginationNextProps & {
-  size?: ButtonVariants["size"]
-  class?: HTMLAttributes["class"]
-}>(), {
-  size: "icon",
-})
+const props = withDefaults(
+  defineProps<
+    PaginationNextProps & {
+      size?: ButtonVariants['size']
+      class?: HTMLAttributes['class']
+    }
+  >(),
+  {
+    size: 'icon',
+  }
+)
 
-const delegatedProps = reactiveOmit(props, "class", "size")
+const delegatedProps = reactiveOmit(props, 'class', 'size')
 const forwarded = useForwardProps(delegatedProps)
 </script>
 

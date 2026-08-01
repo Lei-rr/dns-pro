@@ -20,7 +20,7 @@ const props = withDefaults(
     text: '',
     refreshing: false,
     delayMs: 120,
-  },
+  }
 )
 
 /** 实际用于 UI 的 soft-loading，避免快请求闪一下 */
@@ -56,7 +56,7 @@ watch(
   ([loading, empty, delayMs]) => {
     syncSoft(Boolean(loading), Boolean(empty), Number(delayMs ?? 120))
   },
-  { immediate: true },
+  { immediate: true }
 )
 
 onBeforeUnmount(clearTimer)
@@ -71,10 +71,9 @@ onBeforeUnmount(clearTimer)
   -->
   <div :class="cn('relative rounded-lg', loading && empty && 'min-h-40', props.class)">
     <div
-      :class="cn(
-        'transition-[opacity,filter] duration-200 ease-out',
-        soft && !refreshing && 'pointer-events-none opacity-55',
-      )"
+      :class="
+        cn('transition-[opacity,filter] duration-200 ease-out', soft && !refreshing && 'pointer-events-none opacity-55')
+      "
       :aria-busy="loading || undefined"
     >
       <slot />

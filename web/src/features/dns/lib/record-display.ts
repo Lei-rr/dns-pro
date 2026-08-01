@@ -1,4 +1,4 @@
-import type { DnsRecord } from '@/shared/types'
+import type { DnsRecord } from '@/features/dns/model/types'
 import {
   compareRecordsForGroup,
   hostGroupLabel,
@@ -37,7 +37,7 @@ export function buildDnsRecordDisplayRows(records: DnsRecord[], zoneName: string
           kind: 'single' as const,
           record: item,
           key: `r:${dnsRecordRowKey(item)}`,
-        })),
+        }))
       )
     }
     i = end

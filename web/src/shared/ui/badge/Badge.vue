@@ -17,13 +17,16 @@ const badgeVariants = cva(
       },
     },
     defaultVariants: { variant: 'default' },
-  },
+  }
 )
 
-const props = withDefaults(defineProps<{
-  class?: HTMLAttributes['class']
-  variant?: VariantProps<typeof badgeVariants>['variant']
-}>(), { variant: 'default' })
+const props = withDefaults(
+  defineProps<{
+    class?: HTMLAttributes['class']
+    variant?: VariantProps<typeof badgeVariants>['variant']
+  }>(),
+  { variant: 'default' }
+)
 
 const classes = computed(() => cn(badgeVariants({ variant: props.variant }), props.class))
 </script>

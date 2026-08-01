@@ -10,7 +10,7 @@ const props = defineProps<{ class?: HTMLAttributes['class'] }>()
         'border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted',
         '[&>td:first-child]:transition-[border-radius] [&>td:last-child]:transition-[border-radius]',
         'hover:[&>td:first-child]:rounded-l-lg hover:[&>td:last-child]:rounded-r-lg',
-        props.class,
+        props.class
       )
     "
   >

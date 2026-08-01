@@ -1,0 +1,350 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/cloudflare/providers/:providerId/records/batch/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflare/providers/:providerId/records/batch/:jobId/retry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflare/providers/:providerId/zones"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflare/providers/:providerId/zones"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records/:recordId"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records/:recordId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records/batch-create"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records/batch-delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records/batch-update"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflare/providers/:providerId/zones/:zone/records/batch/active"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflared/providers/:providerId/tunnels"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflared/providers/:providerId/tunnels"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/routes"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/routes"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/routes"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/routes"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/token"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/token/rotate"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dnspod/providers/:providerId/records/batch/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/dnspod/providers/:providerId/records/batch/:jobId/retry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dnspod/providers/:providerId/zones"
+  },
+  {
+    "method": "POST",
+    "path": "/api/dnspod/providers/:providerId/zones"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records"
+  },
+  {
+    "method": "POST",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records/:recordId"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records/:recordId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records/batch-create"
+  },
+  {
+    "method": "POST",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records/batch-delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records/batch-update"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/records/batch/active"
+  },
+  {
+    "method": "GET",
+    "path": "/api/edgeone/providers/:providerId/batch/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/edgeone/providers/:providerId/batch/:jobId/retry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/edgeone/providers/:providerId/zones"
+  },
+  {
+    "method": "GET",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId"
+  },
+  {
+    "method": "GET",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/batch/active"
+  },
+  {
+    "method": "POST",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/batch/delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/batch/disable"
+  },
+  {
+    "method": "GET",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records"
+  },
+  {
+    "method": "POST",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName/certificate"
+  },
+  {
+    "method": "POST",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName/cname-sync"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName/status"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health"
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers"
+  },
+  {
+    "method": "POST",
+    "path": "/api/providers"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/providers/:id"
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/:id"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/providers/:id"
+  },
+  {
+    "method": "POST",
+    "path": "/api/providers/:id/test"
+  },
+  {
+    "method": "GET",
+    "path": "/api/providers/definitions"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/providers/sort-order"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/batch/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/batch/:jobId/retry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/preferred-apply/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/preferred-apply/:jobId/retry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/preferred-domains"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/preferred-domains"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/saas/preferred-domains/:domain"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/saas/preferred-domains/:domain"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/saas/preferred-domains/sort-order"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/zones"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/batch/active"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/batch/delete"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/batch/update"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/fallback-origin"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/fallback-origin"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/fallback-origin"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn/reconcile"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/preferred-apply"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/preferred-apply/active"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/preferred-apply/preview"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/session"
+  },
+  {
+    "method": "GET",
+    "path": "/api/session"
+  },
+  {
+    "method": "POST",
+    "path": "/api/session"
+  }
+]

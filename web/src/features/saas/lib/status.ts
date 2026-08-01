@@ -1,11 +1,5 @@
 const GREEN = new Set(['active', 'active_renewing', 'moved'])
-const GOLD = new Set([
-  'pending',
-  'pending_validation',
-  'pending_issuance',
-  'pending_deployment',
-  'initializing',
-])
+const GOLD = new Set(['pending', 'pending_validation', 'pending_issuance', 'pending_deployment', 'initializing'])
 const RED = new Set(['deleted', 'blocked', 'pending_deletion', 'deactivated'])
 
 const STATUS_LABELS: Record<string, string> = {

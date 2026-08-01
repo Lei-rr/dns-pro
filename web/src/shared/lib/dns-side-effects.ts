@@ -7,10 +7,7 @@ export interface DnsSideEffectData {
 }
 
 /** Read DNS side effects from the business result inside the API data envelope. */
-export function dnsSideEffectFromData(
-  response: unknown,
-  kind: DnsSideEffectKind,
-): DnsSideEffectData | undefined {
+export function dnsSideEffectFromData(response: unknown, kind: DnsSideEffectKind): DnsSideEffectData | undefined {
   if (!response || typeof response !== 'object') return undefined
   const data = (response as { data?: unknown }).data
   if (!data || typeof data !== 'object') return undefined
@@ -19,7 +16,5 @@ export function dnsSideEffectFromData(
   const dns = (sideEffects as { dns?: unknown }).dns
   if (!dns || typeof dns !== 'object') return undefined
   const operation = (dns as Record<DnsSideEffectKind, unknown>)[kind]
-  return operation && typeof operation === 'object'
-    ? (operation as DnsSideEffectData)
-    : undefined
+  return operation && typeof operation === 'object' ? (operation as DnsSideEffectData) : undefined
 }

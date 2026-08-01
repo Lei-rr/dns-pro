@@ -1,10 +1,13 @@
 import { toast } from '@/shared/lib/toast'
 
-type DnsOp = {
-  status?: string
-  message?: string
-  [key: string]: unknown
-} | null | undefined
+type DnsOp =
+  | {
+      status?: string
+      message?: string
+      [key: string]: unknown
+    }
+  | null
+  | undefined
 
 /**
  * One combined toast for mutation + DNS writeback side effects.

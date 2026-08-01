@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import {
-  Dialog as DialogRoot,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/shared/ui/dialog'
+import DialogRoot from './Dialog.vue'
+import DialogContent from './DialogContent.vue'
+import DialogDescription from './DialogDescription.vue'
+import DialogFooter from './DialogFooter.vue'
+import DialogHeader from './DialogHeader.vue'
+import DialogTitle from './DialogTitle.vue'
 import { cn } from '@/shared/lib/utils'
 
 const open = defineModel<boolean>('open', { default: false })
@@ -19,14 +17,19 @@ const props = withDefaults(
     class?: HTMLAttributes['class']
     contentClass?: HTMLAttributes['class']
   }>(),
-  {},
+  {}
 )
 </script>
 
 <template>
   <DialogRoot v-model:open="open">
     <DialogContent
-      :class="cn('max-h-[calc(100svh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-lg sm:p-6', props.contentClass || props.class)"
+      :class="
+        cn(
+          'max-h-[calc(100svh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-lg sm:p-6',
+          props.contentClass || props.class
+        )
+      "
     >
       <DialogHeader v-if="title || description || $slots.header">
         <slot name="header">
@@ -37,7 +40,7 @@ const props = withDefaults(
 
       <div class="min-h-0 touch-pan-y overflow-y-auto overscroll-contain px-0.5">
         <div class="grid gap-4">
-        <slot />
+          <slot />
         </div>
       </div>
 

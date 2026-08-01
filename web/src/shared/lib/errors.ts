@@ -37,7 +37,7 @@ export function errorMessage(error: unknown, fallback = '请求失败'): string 
   if (code && CODE_HINTS[code]) return CODE_HINTS[code]
   if (serverMessage) {
     if (/sync zone/i.test(serverMessage) || /does not match hostname/i.test(serverMessage)) {
-      return 'DNS 同步域名与主机名不匹配，请检查同步目标（通常应为 guolei.cc 这类主域名，而不是 SaaS 区）'
+      return 'DNS 同步域名与主机名不匹配，请检查同步目标（通常应为 example.com 这类主域名，而不是 SaaS 区）'
     }
     if (/permission|unauthorized|forbidden|invalid.*(token|key|secret)|auth/i.test(serverMessage)) {
       return `${serverMessage}（请检查 API Token / 密钥权限）`

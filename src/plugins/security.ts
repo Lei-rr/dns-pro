@@ -2,8 +2,8 @@ import type { FastifyReply, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import fastifyCookie from '@fastify/cookie'
 import fastifyHelmet from '@fastify/helmet'
-import type { AppConfig } from '../config/app.js'
-import { attachAppSession, writeAppSessionCookie, type AppSession } from '../lib/auth/app-session.js'
+import type { AppConfig } from '../bootstrap/app-config.js'
+import { attachAppSession, writeAppSessionCookie, type AppSession } from '../shared/auth/app-session.js'
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, must-revalidate',
@@ -65,7 +65,6 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
   app.addHook('onSend', async (request: FastifyRequest, reply: FastifyReply) => {
     writeAppSessionCookie(request, reply, sessionOptions)
   })
-
 }
 
 export const securityPlugin = fp(securityPluginImpl, {

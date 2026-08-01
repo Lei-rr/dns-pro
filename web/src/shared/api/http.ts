@@ -6,7 +6,7 @@
  * - supports { params }
  * - 401 → unauthorizedHandler
  */
-import type { ApiResponse, ListResponse } from '@/shared/types'
+import type { ApiResponse, ListResponse } from '@/shared/api/types'
 
 export type RequestError = Error & { code: string; details: unknown; status: number }
 
@@ -55,7 +55,7 @@ async function parseBody(response: Response): Promise<unknown> {
 
 function toRequestError(
   message: string,
-  init: { code?: string; details?: unknown; status?: number } = {},
+  init: { code?: string; details?: unknown; status?: number } = {}
 ): RequestError {
   const error = new Error(message) as RequestError
   error.code = init.code || 'REQUEST_FAILED'
@@ -64,11 +64,7 @@ function toRequestError(
   return error
 }
 
-async function request<T = unknown>(
-  method: string,
-  url: string,
-  config: RequestConfig = {},
-): Promise<ApiResponse<T>> {
+async function request<T = unknown>(method: string, url: string, config: RequestConfig = {}): Promise<ApiResponse<T>> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeout ?? DEFAULT_TIMEOUT_MS)
   if (config.signal) {
@@ -176,11 +172,13 @@ export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
       ...pagination,
       // CF SaaS uses total_count; DNSPod/EdgeOne use total
       total: Number(
-        pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? data.items.length ?? 0,
+        pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? data.items.length ?? 0
       ),
       count: Number(pagination.count ?? metaObj.count ?? data.items.length ?? 0),
       offset: Number(pagination.offset ?? metaObj.offset ?? 0),
-      limit: Number(pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? data.items.length ?? 0),
+      limit: Number(
+        pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? data.items.length ?? 0
+      ),
       page: Number(pagination.page ?? metaObj.page ?? 0) || undefined,
       per_page: Number(pagination.per_page ?? metaObj.per_page ?? pagination.limit ?? 0) || undefined,
       total_count: Number(pagination.total_count ?? metaObj.total_count ?? 0) || undefined,

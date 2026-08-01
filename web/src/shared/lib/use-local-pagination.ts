@@ -1,10 +1,7 @@
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 /** Local pagination over a complete in-memory list. Never triggers network requests. */
-export function useLocalPagination<T>(
-  items: ComputedRef<T[]> | Ref<T[]>,
-  pageSize: Ref<number>,
-) {
+export function useLocalPagination<T>(items: ComputedRef<T[]> | Ref<T[]>, pageSize: Ref<number>) {
   const page = ref(1)
   const total = computed(() => items.value.length)
   const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))

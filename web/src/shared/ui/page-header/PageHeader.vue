@@ -8,7 +8,7 @@ const props = withDefaults(
     title?: string
     description?: string
   }>(),
-  {},
+  {}
 )
 </script>
 

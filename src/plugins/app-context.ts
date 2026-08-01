@@ -1,9 +1,15 @@
 import type { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
-import type { AppContext } from '../app-context.js'
+import type { AppContext } from '../bootstrap/create-context.js'
 
 export type AppContextPluginOptions = {
   ctx: AppContext
+}
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    ctx: AppContext
+  }
 }
 
 /**

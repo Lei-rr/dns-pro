@@ -1,14 +1,18 @@
 import type { FastifyError, FastifyPluginAsync, FastifySchemaValidationError } from 'fastify'
 import fp from 'fastify-plugin'
-import { ApiError } from '../lib/http/api-error.js'
-import { error } from '../lib/http/api-response.js'
+import { ApiError } from '../shared/http/api-error.js'
+import { error } from '../shared/http/api-response.js'
 
 function validationFieldErrors(validation: FastifySchemaValidationError[]): Record<string, string> {
   const fields: Record<string, string> = {}
   for (const item of validation) {
     const missing = String(item.params?.missingProperty ?? '').trim()
     const additional = String(item.params?.additionalProperty ?? '').trim()
-    const path = String(item.instancePath ?? '').split('/').filter(Boolean).at(-1) ?? ''
+    const path =
+      String(item.instancePath ?? '')
+        .split('/')
+        .filter(Boolean)
+        .at(-1) ?? ''
     const field = missing || additional || path || 'request'
     if (!(field in fields)) fields[field] = item.message || '字段格式不正确'
   }
@@ -21,18 +25,25 @@ function validationFieldErrors(validation: FastifySchemaValidationError[]): Reco
  */
 const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
   app.setNotFoundHandler(async (request, reply) => {
-    if (request.url.startsWith('/api/')) {
-      return reply.status(404).send(error('not_found', 404, 'not_found'))
-    }
-
-    if (request.url.startsWith('/assets/')) {
-      return reply
+    const pathname = new URL(request.url, 'http://local').pathname
+    const apiPath = pathname === '/api' || pathname.startsWith('/api/')
+    const assetPath = pathname === '/assets' || pathname.startsWith('/assets/')
+    const jsonNotFound = () =>
+      reply
         .status(404)
         .header('Cache-Control', 'no-store')
         .send(error('not_found', 404, 'not_found'))
-    }
 
-    // SPA fallback — only if sendFile is available (static plugin registered)
+    if (apiPath || assetPath) return jsonNotFound()
+
+    const acceptsHtml = String(request.headers.accept || '')
+      .toLowerCase()
+      .split(',')
+      .some((value) => value.trim().startsWith('text/html'))
+    const spaRequest = (request.method === 'GET' || request.method === 'HEAD') && acceptsHtml
+    if (!spaRequest) return jsonNotFound()
+
+    // SPA fallback — only for browser navigation when sendFile is available.
     const sendFile = (reply as { sendFile?: (file: string) => unknown }).sendFile
     if (typeof sendFile === 'function') {
       try {
@@ -41,7 +52,7 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
         // fall through
       }
     }
-    return reply.status(404).type('text/plain').send('Not Found')
+    return jsonNotFound()
   })
 
   app.setErrorHandler(async (err: FastifyError, request, reply) => {

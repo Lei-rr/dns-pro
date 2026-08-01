@@ -50,16 +50,7 @@ const PURPOSE_ORDER: Record<SaasRemarkPurpose, number> = {
 }
 
 /** 组头徽章固定顺序 */
-export const PURPOSE_LABEL_ORDER = [
-  '默认回源',
-  '优选域名',
-  'DCV委派',
-  '所有权验证',
-  'MX',
-  'SPF',
-  'DKIM',
-  'DMARC',
-] as const
+const PURPOSE_LABEL_ORDER = ['默认回源', '优选域名', 'DCV委派', '所有权验证', 'MX', 'SPF', 'DKIM', 'DMARC'] as const
 
 const ACME_PREFIX = '_acme-challenge.'
 const CF_OWNERSHIP_PREFIX = '_cf-custom-hostname.'
@@ -77,7 +68,7 @@ type RecordLike = {
 }
 
 /** 相对 zone 的主机标签：api.example.com → api；@ → @ */
-export function relativeHostLabel(name?: string | null, zoneName = ''): string {
+function relativeHostLabel(name?: string | null, zoneName = ''): string {
   let n = String(name || '')
     .trim()
     .toLowerCase()
@@ -121,7 +112,7 @@ function emailBaseHostForRecord(record: RecordLike, zoneName = ''): string {
  * _dmarc → @
  * _dmarc.mail → mail
  */
-export function emailBaseHost(rel: string): string {
+function emailBaseHost(rel: string): string {
   const r = String(rel || '')
     .trim()
     .toLowerCase()
@@ -142,7 +133,7 @@ export function emailBaseHost(rel: string): string {
 }
 
 /** 是否邮箱相关解析（CF 邮箱路由 / DNSPod 企业邮等前缀类似） */
-export function isEmailRecord(record: RecordLike, zoneName = ''): boolean {
+function isEmailRecord(record: RecordLike, zoneName = ''): boolean {
   const type = String(record.type || '').toUpperCase()
   const rel = relativeHostLabel(record.name, zoneName)
   const val = recordValue(record)
@@ -160,7 +151,7 @@ export function isEmailRecord(record: RecordLike, zoneName = ''): boolean {
   if (type === 'MX' || type === 'CNAME' || type === 'TXT') {
     if (
       /qq\.com|mxbiz\d*\.qq\.com|aliyun|mxhichina|outlook\.com|protection\.outlook|google\.com|googlemail|zoho|mail\.me\.com|icloud/i.test(
-        val,
+        val
       )
     ) {
       return true
@@ -191,7 +182,7 @@ export function recordHostKey(record: RecordLike, zoneName = ''): string {
   return rel
 }
 
-export function isMailGroupKey(hostKey: string): boolean {
+function isMailGroupKey(hostKey: string): boolean {
   return String(hostKey || '').startsWith(MAIL_KEY_PREFIX)
 }
 
@@ -211,7 +202,7 @@ export function hostGroupLabel(hostKey: string, zoneName = ''): string {
 /**
  * 推断用途：主机结构 + 线路 + 邮箱类型；备注仅兜底。
  */
-export function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaasRemark {
+function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaasRemark {
   const rel = relativeHostLabel(record.name, zoneName)
   const type = String(record.type || '').toUpperCase()
   const line = String(record.line || '').trim()
@@ -222,12 +213,7 @@ export function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaa
     : recordHostKey(record, zoneName).startsWith(MAIL_KEY_PREFIX)
       ? emailBaseHost(rel)
       : recordHostKey(record, zoneName).replace(MAIL_KEY_PREFIX, '')
-  const fqdn =
-    !baseKey || baseKey === '@'
-      ? zoneName || ''
-      : zoneName
-        ? `${baseKey}.${zoneName}`
-        : baseKey
+  const fqdn = !baseKey || baseKey === '@' ? zoneName || '' : zoneName ? `${baseKey}.${zoneName}` : baseKey
 
   // —— 邮箱 ——
   if (isEmailRecord(record, zoneName)) {
@@ -292,7 +278,7 @@ export function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaa
   return { purpose: 'none', purposeLabel: '', fqdn: '', raw: remark, isLinked: false }
 }
 
-export function purposeSortKey(purpose: SaasRemarkPurpose): number {
+function purposeSortKey(purpose: SaasRemarkPurpose): number {
   return PURPOSE_ORDER[purpose] ?? 9
 }
 

@@ -1,11 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from './app.js'
-import { loadAppConfig, type AppConfig } from './config/app.js'
-import { resolveSessionSecret } from './config/session-secret.js'
-import { setDataRoot } from './lib/storage/json-store.js'
-import { setDefaultHttpTimeout } from './lib/http/base-gateway.js'
-import { globalCache } from './lib/cache/cache-service.js'
-import { ensureDataDirs } from './platform/ensure-data-dirs.js'
+import { loadAppConfig, type AppConfig } from './bootstrap/app-config.js'
+import { resolveSessionSecret } from './shared/auth/session-secret.js'
+import { setDataRoot } from './platform/storage/json-store.js'
+import { setDefaultHttpTimeout } from './shared/providers/base.client.js'
+import { ensureDataDirs } from './platform/storage/ensure-data-dirs.js'
 
 function parseCliOverrides(): Partial<AppConfig> {
   const overrides: Partial<AppConfig> = {}
@@ -63,7 +62,6 @@ const config: AppConfig = {
   sessionSecret: await resolveSessionSecret(baseConfig.dataDir, baseConfig.sessionSecret),
 }
 setDefaultHttpTimeout(config.httpTimeoutMs)
-globalCache.updateOptions({ maxEntries: config.cacheMaxEntries, sweepIntervalMs: config.cacheSweepIntervalMs })
 
 const app = await buildApp(config)
 

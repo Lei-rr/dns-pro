@@ -17,7 +17,7 @@ const props = withDefaults(
   >(),
   {
     size: 'icon',
-  },
+  }
 )
 
 const delegatedProps = reactiveOmit(props, 'class', 'size', 'isActive')
@@ -34,7 +34,7 @@ const delegatedProps = reactiveOmit(props, 'class', 'size', 'isActive')
           size,
         }),
         isActive && 'bg-accent',
-        props.class,
+        props.class
       )
     "
   >

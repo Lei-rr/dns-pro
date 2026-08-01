@@ -1,5 +1,6 @@
 # dns-pro
 
+[![Verify](https://github.com/lei-rr/dns-pro/actions/workflows/verify.yml/badge.svg?branch=fast)](https://github.com/lei-rr/dns-pro/actions/workflows/verify.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![GHCR](https://img.shields.io/badge/GHCR-lei--rr%2Fdns--pro-blue?logo=github)](https://ghcr.io/lei-rr/dns-pro)
@@ -15,11 +16,11 @@
 - Cloudflare Tunnel
 - 腾讯云 EdgeOne
 
-| 层 | 技术 |
-|---|---|
-| 后端 | Fastify 5 + TypeScript |
+| 层   | 技术                                          |
+| ---- | --------------------------------------------- |
+| 后端 | Fastify 5 + TypeScript                        |
 | 前端 | Vue 3 + Vite + Tailwind CSS + shadcn 风格组件 |
-| 存储 | 本地 JSON，无数据库 |
+| 存储 | 本地 JSON，无数据库                           |
 
 ---
 
@@ -50,7 +51,7 @@
 ```bash
 git clone -b fast https://github.com/lei-rr/dns-pro.git
 cd dns-pro
-npm install
+npm ci
 npm run build
 npm start
 ```
@@ -61,14 +62,14 @@ npm start
 http://127.0.0.1:2022
 ```
 
-默认登录：
+首次运行且 `data/config.json` 不存在时，系统会自动生成默认登录：
 
 ```text
 用户名：admin
 密码：admin
 ```
 
-> 首次部署后请立即修改默认账号密码。Session 密钥优先读取 `SESSION_SECRET`；未设置时会在 `data/session-secret` 自动生成并持久化，升级时请保留该文件。
+> 首次登录后请立即修改 `data/config.json` 中的默认账号密码。已有配置不会被覆盖。Session 密钥优先读取 `SESSION_SECRET`；未设置时会在 `data/session-secret` 自动生成并持久化，升级时请保留该文件。
 
 ## Docker 部署
 
@@ -79,21 +80,7 @@ ghcr.io/lei-rr/dns-pro:latest
 ghcr.io/lei-rr/dns-pro:fast
 ```
 
-### Compose（推荐）
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-默认端口与数据目录：
-
-```text
-2022:2022
-./data:/app/data
-```
-
-### 直接运行镜像
+### 直接运行镜像（推荐）
 
 ```bash
 docker pull ghcr.io/lei-rr/dns-pro:latest
@@ -108,10 +95,10 @@ docker run -d \
 
 ## 开发
 
-| 服务 | 地址 |
-|---|---|
+| 服务          | 地址                    |
+| ------------- | ----------------------- |
 | Docker / 生产 | `http://127.0.0.1:2022` |
-| 本地后端开发 | `http://127.0.0.1:3022` |
+| 本地后端开发  | `http://127.0.0.1:3022` |
 | 本地前端 Vite | `http://127.0.0.1:5173` |
 
 ### 启动后端
@@ -128,37 +115,37 @@ npm run dev:web
 
 ## 架构
 
-```
+```text
 src/
-  app.ts              # Fastify 组装
-  server.ts           # 进程入口
-  app-context.ts      # 接线：new 服务 → ctx（唯一组装点）
-  compose/
-    http-modules.ts   # 路由表
-  plugins/            # Fastify 插件（安全、静态、session、错误处理）
-  platform/           # job / events / ensure-data-dirs / batch-helpers
-  config/app.ts
-  lib/
-    cache/            # 内存缓存 + tag 失效
-    http/             # BaseGateway + ApiError + 第三方签名
-    storage/          # JsonStore
-    auth/             # AES-GCM session
-    providers/        # 供应商响应 schema
-  modules/
-    auth provider system
-    dnspod cloudflare saas edgeone cloudflared
-    sync              # 内部 DNS 同步（无 HTTP、不进 ctx）
-    dns-batch         # DNS 批量（挂 dnspod/cloudflare 路由）
+  app.ts / server.ts       # Fastify 应用与进程入口
+  bootstrap/               # 唯一组装根：配置、Platform、Modules、Workflows、Routes
+  plugins/                 # Fastify 插件：上下文、安全、静态资源、错误处理
+  modules/                 # 单一业务能力与 Provider client；不反向依赖 Workflows
+  workflows/               # 跨模块用例、DNS 同步与批量任务编排
+  platform/
+    cache/                  # 仅 memory-cache.ts + provider-cache.ts；永久进程内缓存
+    jobs/                   # 持久 Job、单进程 inflight、恢复/重试与终态收敛
+    storage/                # JsonStore、进程内串行队列与原子文件替换
+  shared/                  # auth、HTTP 契约、Provider 基础设施与通用工具
   types/fastify.d.ts
+
+web/src/
+  app/                      # 路由与应用壳
+  pages/                    # 页面编排
+  features/                 # DNS / SaaS / EdgeOne / Tunnel 业务能力
+  shared/                   # shadcn-vue UI、HTTP、列表/分页/异步所有权工具
 ```
 
-### 接线原则
+### 终态原则
 
-- 无 DI 容器，无服务注册表
-- 所有 service 构造器无默认参数，`app-context.ts` 是唯一组装点
-- Gateway 实例通过 `CloudflareGateway.forToken()` / `DnsPodGateway.forCredentials()` 等工厂获取
-- 缓存失效通过 `eventBus.emit` + `cache_tags` 统一路径
-- 批量任务循环、互斥、计数、finish 通过 `platform/job/batch-helpers.ts`
+- 无 DI 容器、无服务注册表；所有实例只在 `bootstrap/` 构造并显式注入
+- 依赖方向固定为 `bootstrap → workflows → modules → platform/shared`
+- HTTP schema、handler、service 分离；API 统一挂在 `/api`，不保留旧字段 alias
+- 供应商查询为进程内永久缓存（无 TTL、容量淘汰或 sweeper）；冷缺失回填，仅显式 `refresh=1` 绕过并覆盖，mutation 通过领域事件按 key/tag 精确失效
+- JsonStore 是本地状态源；跨文件引用完整性使用锁内 fresh read
+- Durable Job 在供应商调用前落盘 `running + operation_id`，重启后按持久状态恢复；终态不可回写
+- 前端 list / row mutation / Job progress 都使用 generation owner，旧 scope 的迟到响应不得改写新页面
+- SaaS Editor/Jobs、EdgeOne/Providers/Tunnel 表格与表单均由独立 owner 负责，Panel/Page 只做编排
 
 ## 运行参数
 
@@ -170,28 +157,28 @@ SESSION_SECRET='至少 32 位随机字符串' node dist/server.js --port 2022 --
 
 ## 常用命令
 
-| 命令 | 说明 |
-|---|---|
-| `npm run dev:server` | 后端开发（3022） |
-| `npm run dev:web` | 前端开发（5173） |
-| `npm run build` | 构建前后端 |
-| `npm start` | 生产启动 |
-| `npm run typecheck` | TypeScript 检查 |
-| `npm run lint` | ESLint |
-| `npm run verify` | lint + typecheck + build |
+| 命令                 | 说明                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `npm run dev:server` | 后端开发（3022）                                                                       |
+| `npm run dev:web`    | 前端开发（5173）                                                                       |
+| `npm run build`      | 构建前后端                                                                             |
+| `npm start`          | 生产启动                                                                               |
+| `npm run typecheck`  | TypeScript 检查                                                                        |
+| `npm run lint`       | ESLint                                                                                 |
+| `npm run verify`     | 格式、Lint、双端 Typecheck、架构、死代码、依赖、路由、专项 Probe、构建、静态资源全门禁 |
 
 ## 安全建议
 
 - 生产环境建议设置强 `SESSION_SECRET`，或妥善保留自动生成的 `data/session-secret`
 - 启用 HTTPS 反向代理
-- 修改默认 `admin` 密码
+- 首次登录后修改自动生成的 `admin/admin` 默认账号密码
 
 ## 贡献
 
 Issue / PR 欢迎。建议：
 
 1. `npm run verify` 通过
-2. 保持模块边界：业务进 `modules/`，HTTP 壳进 `plugins/`，接线只在 `app-context.ts`
+2. 保持依赖方向：`bootstrap → workflows → modules → platform/shared`，组装只在 `bootstrap/`
 3. 不引入 Nest / DI 容器 / 额外文档目录
 
 ## 许可证

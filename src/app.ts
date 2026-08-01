@@ -1,22 +1,25 @@
 import type { FastifyInstance } from 'fastify'
 import Fastify from 'fastify'
-import type { AppConfig } from './config/app.js'
-import { createAppContext } from './app-context.js'
+import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
+import type { AppConfig } from './bootstrap/app-config.js'
+import { createAppContext } from './bootstrap/create-context.js'
+import { startAppContext } from './bootstrap/start-context.js'
 import { appContextPlugin } from './plugins/app-context.js'
 import { securityPlugin } from './plugins/security.js'
 import { staticPlugin } from './plugins/static.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
-import { registerApiRoutes } from './compose/http-modules.js'
+import { registerApiRoutes } from './bootstrap/register-routes.js'
 import './types/fastify.d.ts'
 
 /**
  * HTTP shell — official Fastify only.
  *
  * plugins/*  = Fastify plugins (cookie/helmet/static/session/ctx)
- * modules/*  = business features (routes + services)
- * platform/* = job store + event bus + data dirs
+ * modules/*  = domain business capabilities
+ * workflows/* = cross-module business use cases
+ * platform/* = small generic runtime facilities (jobs/storage/cache)
  *
- * Composition: plugins = HTTP shell; modules = business; platform = jobs/events.
+ * Composition: HTTP shell -> workflows -> modules -> platform/shared.
  */
 export async function buildApp(config: AppConfig) {
   if (config.sessionSecret.trim().length < 32) {
@@ -34,18 +37,27 @@ export async function buildApp(config: AppConfig) {
     },
     ajv: { customOptions: { coerceTypes: false, removeAdditional: false } },
   })
+    .withTypeProvider<TypeBoxTypeProvider>()
+    .setValidatorCompiler(TypeBoxValidatorCompiler)
 
   const ctx = await createAppContext(config)
+  await startAppContext(ctx)
 
   await app.register(appContextPlugin, { ctx })
+  app.addHook('onClose', async () => {
+    await ctx.platform.jobs.close()
+  })
   await app.register(securityPlugin, { config })
   await app.register(staticPlugin)
   await app.register(errorHandlerPlugin)
 
   // Keep /api — no version prefix (personal panel, no public API versioning)
-  await app.register(async function api(scope) {
-    await registerApiRoutes(scope)
-  }, { prefix: '/api' })
+  await app.register(
+    async function api(scope) {
+      await registerApiRoutes(scope)
+    },
+    { prefix: '/api' }
+  )
 
   return app
 }

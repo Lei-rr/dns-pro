@@ -14,11 +14,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
 
 <template>
-  <ComboboxInput
-    as-child
-    data-slot="combobox-text-input"
-    v-bind="{ ...$attrs, ...forwarded }"
-  >
+  <ComboboxInput as-child data-slot="combobox-text-input" v-bind="{ ...$attrs, ...forwarded }">
     <Input :class="props.class">
       <slot />
     </Input>
