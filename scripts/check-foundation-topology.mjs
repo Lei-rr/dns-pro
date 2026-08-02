@@ -4,6 +4,7 @@ import path from 'node:path'
 
 const root = process.cwd()
 const failures = []
+if (exists('src')) failures.push('root src/ is forbidden; backend source belongs in server/src/')
 const exists = (relative) => fs.existsSync(path.join(root, relative))
 const walk = (relative) => {
   const absolute = path.join(root, relative)
@@ -14,10 +15,10 @@ const walk = (relative) => {
   })
 }
 
-const cacheFiles = walk('src/platform/cache')
+const cacheFiles = walk('server/src/platform/cache')
   .filter((file) => file.endsWith('.ts'))
   .sort()
-const expectedCache = ['src/platform/cache/memory-cache.ts', 'src/platform/cache/provider-cache.ts']
+const expectedCache = ['server/src/platform/cache/memory-cache.ts', 'server/src/platform/cache/provider-cache.ts']
 if (JSON.stringify(cacheFiles) !== JSON.stringify(expectedCache)) {
   failures.push(`cache topology: ${cacheFiles.join(', ')}`)
 }
@@ -26,7 +27,7 @@ for (const forbidden of ['web/src/entities', 'web/src/widgets', 'web/src/process
   if (exists(forbidden)) failures.push(`forbidden frontend layer: ${forbidden}`)
 }
 
-const productionFiles = [...walk('src'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
+const productionFiles = [...walk('server/src'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
 const distributedPatterns = /\b(?:execution_owner|execution_token|lease_until|AsyncLocalStorage|FileMutex)\b/
 for (const file of productionFiles) {
   const source = fs.readFileSync(path.join(root, file), 'utf8')

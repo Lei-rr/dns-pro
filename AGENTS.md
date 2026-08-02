@@ -13,14 +13,15 @@ Do not redesign the project unless the user explicitly changes this contract.
 ## Backend topology
 
 ```text
-src/
-  app.ts / server.ts
-  bootstrap/       composition only
-  plugins/         Fastify plugins only
-  modules/         domain modules
-  workflows/       business use cases spanning multiple modules
-  platform/        small generic runtime facilities
-  shared/          pure domain-neutral code
+server/
+  src/
+    app.ts / server.ts
+    bootstrap/       composition only
+    plugins/         Fastify plugins only
+    modules/         domain modules
+    workflows/       business use cases spanning multiple modules
+    platform/        small generic runtime facilities
+    shared/          pure domain-neutral code
 ```
 
 Dependency direction:
@@ -51,6 +52,7 @@ Do not move domain behavior into bootstrap, platform, shared, a global context, 
   - `.workflow.ts`: cross-module business use case
   - `.types.ts`: module-owned public domain types
 - Do not add vague `utils/`, `manager`, or `gateway.ts` abstractions.
+- Root `src/` is forbidden; backend source lives only in `server/src/`.
 
 ## Cache boundary
 

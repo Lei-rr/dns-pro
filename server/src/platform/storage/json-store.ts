@@ -89,7 +89,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     await fs.mkdir(path.dirname(filePath), { recursive: true })
     const temporary = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
     try {
-      const handle = await fs.open(temporary, 'wx')
+      const handle = await fs.open(temporary, 'wx', 0o600)
       try {
         await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
         await handle.sync()
@@ -97,6 +97,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
         await handle.close()
       }
       await fs.rename(temporary, filePath)
+      await fs.chmod(filePath, 0o600)
     } catch (error) {
       await fs.rm(temporary, { force: true }).catch(() => undefined)
       throw error
@@ -107,6 +108,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   private async readFromDisk(): Promise<T> {
     const filePath = this.absolutePath()
     try {
+      await fs.chmod(filePath, 0o600)
       const content = await fs.readFile(filePath, 'utf8')
       if (content.trim() === '') return this.clone(this.defaultValue)
       return this.clone((JSON.parse(content) as T) ?? this.defaultValue)

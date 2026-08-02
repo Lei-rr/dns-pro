@@ -3,30 +3,33 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../src/app.js'
-import { setDataRoot } from '../src/platform/storage/json-store.js'
-import { requestSchemaTypeContractSchema, type RequestSchemaTypeContract } from '../src/shared/http/request-schema.js'
+import { buildApp } from '../server/src/app.js'
+import { setDataRoot } from '../server/src/platform/storage/json-store.js'
+import {
+  requestSchemaTypeContractSchema,
+  type RequestSchemaTypeContract,
+} from '../server/src/shared/http/request-schema.js'
 import routeManifest from './api-route-manifest.json' with { type: 'json' }
 import {
   DNS_BATCH_CREATE_JOB,
   DNS_BATCH_DELETE_JOB,
   DNS_BATCH_UPDATE_JOB,
-} from '../src/workflows/dns-batch/dns-batch-job.types.js'
+} from '../server/src/workflows/dns-batch/dns-batch-job.types.js'
 import {
   PREFERRED_APPLY_JOB_TYPE,
   SAAS_BATCH_DELETE_JOB,
   SAAS_BATCH_UPDATE_JOB,
-} from '../src/workflows/saas-dns-sync/saas-dns-sync-job.types.js'
+} from '../server/src/workflows/saas-dns-sync/saas-dns-sync-job.types.js'
 import {
   EDGEONE_BATCH_DELETE_JOB,
   EDGEONE_BATCH_DISABLE_JOB,
-} from '../src/workflows/edge-one-dns-sync/edge-one-dns-sync-job.types.js'
-import { DnsPodGateway } from '../src/modules/dns-pod/dns-pod.client.js'
-import { DnsPodRecordService } from '../src/modules/dns-pod/dns-pod-record.service.js'
-import { DnsPodDnsBatchAdapter } from '../src/workflows/dns-batch/dns-pod-dns-batch.adapter.js'
-import { EdgeOneGateway } from '../src/modules/edge-one/edge-one.client.js'
-import { CloudflareGateway } from '../src/modules/cloudflare/cloudflare.client.js'
-import { ApiError } from '../src/shared/http/api-error.js'
+} from '../server/src/workflows/edge-one-dns-sync/edge-one-dns-sync-job.types.js'
+import { DnsPodGateway } from '../server/src/modules/dns-pod/dns-pod.client.js'
+import { DnsPodRecordService } from '../server/src/modules/dns-pod/dns-pod-record.service.js'
+import { DnsPodDnsBatchAdapter } from '../server/src/workflows/dns-batch/dns-pod-dns-batch.adapter.js'
+import { EdgeOneGateway } from '../server/src/modules/edge-one/edge-one.client.js'
+import { CloudflareGateway } from '../server/src/modules/cloudflare/cloudflare.client.js'
+import { ApiError } from '../server/src/shared/http/api-error.js'
 
 const requestSchemaTypeContract: RequestSchemaTypeContract = true
 void requestSchemaTypeContract

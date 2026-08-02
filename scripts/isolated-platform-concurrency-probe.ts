@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { JsonStore } from '../src/platform/storage/json-store.js'
-import { JobService, type JobRecord } from '../src/platform/jobs/job.service.js'
-import { runBatchItems } from '../src/platform/jobs/batch-helpers.js'
-import { summarizeJobItems } from '../src/platform/jobs/job-summary.js'
-import { invalidateProviderCache, withProviderCache } from '../src/platform/cache/provider-cache.js'
+import { JsonStore } from '../server/src/platform/storage/json-store.js'
+import { JobService, type JobRecord } from '../server/src/platform/jobs/job.service.js'
+import { runBatchItems } from '../server/src/platform/jobs/batch-helpers.js'
+import { summarizeJobItems } from '../server/src/platform/jobs/job-summary.js'
+import { invalidateProviderCache, withProviderCache } from '../server/src/platform/cache/provider-cache.js'
 
 function deferred<T>() {
   let resolve!: (value: T) => void

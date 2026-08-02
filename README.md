@@ -116,18 +116,19 @@ npm run dev:web
 ## 架构
 
 ```text
-src/
-  app.ts / server.ts       # Fastify 应用与进程入口
-  bootstrap/               # 唯一组装根：配置、Platform、Modules、Workflows、Routes
-  plugins/                 # Fastify 插件：上下文、安全、静态资源、错误处理
-  modules/                 # 单一业务能力与 Provider client；不反向依赖 Workflows
-  workflows/               # 跨模块用例、DNS 同步与批量任务编排
-  platform/
-    cache/                  # 仅 memory-cache.ts + provider-cache.ts；永久进程内缓存
-    jobs/                   # 持久 Job、单进程 inflight、恢复/重试与终态收敛
-    storage/                # JsonStore、进程内串行队列与原子文件替换
-  shared/                  # auth、HTTP 契约、Provider 基础设施与通用工具
-  types/fastify.d.ts
+server/
+  src/
+    app.ts / server.ts       # Fastify 应用与进程入口
+    bootstrap/               # 唯一组装根：配置、Platform、Modules、Workflows、Routes
+    plugins/                 # Fastify 插件：上下文、安全、静态资源、错误处理
+    modules/                 # 单一业务能力与 Provider client；不反向依赖 Workflows
+    workflows/               # 跨模块用例、DNS 同步与批量任务编排
+    platform/
+      cache/                # 仅 memory-cache.ts + provider-cache.ts；永久进程内缓存
+      jobs/                 # 持久 Job、单进程 inflight、恢复/重试与终态收敛
+      storage/              # JsonStore、进程内串行队列与原子文件替换
+    shared/                  # auth、HTTP 契约、Provider 基础设施与通用工具
+    types/fastify.d.ts
 
 web/src/
   app/                      # 路由与应用壳

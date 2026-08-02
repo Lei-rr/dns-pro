@@ -21,22 +21,22 @@ const walk = (dir) => {
 const lineAt = (code, position) => code.slice(0, position).split('\n').length
 const report = (rule, file, line, message) => errors.push(`${rule} ${file}:${line} ${message}`)
 
-const sourceFiles = [...walk('src'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
-const backendFiles = sourceFiles.filter((file) => file.startsWith('src/'))
+const sourceFiles = [...walk('server/src'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
+const backendFiles = sourceFiles.filter((file) => file.startsWith('server/src/'))
 const webFiles = sourceFiles.filter((file) => file.startsWith('web/src/'))
 
-const cacheProductionFiles = walk('src/platform/cache')
-if (exists('src/platform/events')) {
-  report('ARCH010', 'src/platform/events', 1, 'EventBus platform layer must not be recreated')
+const cacheProductionFiles = walk('server/src/platform/cache')
+if (exists('server/src/platform/events')) {
+  report('ARCH010', 'server/src/platform/events', 1, 'EventBus platform layer must not be recreated')
 }
 if (
   cacheProductionFiles.length !== 2 ||
-  !cacheProductionFiles.includes('src/platform/cache/memory-cache.ts') ||
-  !cacheProductionFiles.includes('src/platform/cache/provider-cache.ts')
+  !cacheProductionFiles.includes('server/src/platform/cache/memory-cache.ts') ||
+  !cacheProductionFiles.includes('server/src/platform/cache/provider-cache.ts')
 ) {
   report(
     'ARCH012',
-    'src/platform/cache',
+    'server/src/platform/cache',
     1,
     'cache production implementation must contain only memory-cache.ts and provider-cache.ts'
   )
@@ -93,7 +93,7 @@ for (const file of sourceFiles) {
           imports.push({ from: file, to: target, typeOnly, line: block.offset + lineAt(block.code, node.getStart(sf)) })
       }
       if (
-        file.startsWith('src/') &&
+        file.startsWith('server/src/') &&
         ts.isNewExpression(node) &&
         ts.isIdentifier(node.expression) &&
         node.expression.text === 'ApiError' &&
@@ -103,7 +103,7 @@ for (const file of sourceFiles) {
         apiErrorCodes.add(node.arguments[0].text)
       }
       if (
-        file.startsWith('src/') &&
+        file.startsWith('server/src/') &&
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
@@ -130,7 +130,7 @@ for (const file of sourceFiles) {
 
 if (finalMode) {
   const forbiddenBatchJobFields = new Set(['items', 'execution_owner', 'execution_token', 'lease_until'])
-  for (const file of backendFiles.filter((candidate) => candidate.startsWith('src/workflows/'))) {
+  for (const file of backendFiles.filter((candidate) => candidate.startsWith('server/src/workflows/'))) {
     const code = read(file)
     const sf = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true)
     const visit = (node) => {
@@ -193,10 +193,10 @@ if (finalMode) {
 }
 
 function backendLayer(file) {
-  if (/^src\/(?:app|server)\.ts$/.test(file)) return 'shell'
-  if (file.startsWith('src/types/')) return 'shared'
+  if (/^server\/src\/(?:app|server)\.ts$/.test(file)) return 'shell'
+  if (file.startsWith('server/src/types/')) return 'shared'
   for (const layer of ['bootstrap', 'plugins', 'workflows', 'modules', 'platform', 'shared'])
-    if (file.startsWith(`src/${layer}/`)) return layer
+    if (file.startsWith(`server/src/${layer}/`)) return layer
   return 'other'
 }
 function webLayer(file) {
@@ -222,20 +222,20 @@ const webAllowed = {
 }
 
 for (const edge of imports) {
-  if (edge.from.startsWith('src/') && edge.to.startsWith('src/')) {
+  if (edge.from.startsWith('server/src/') && edge.to.startsWith('server/src/')) {
     const from = backendLayer(edge.from),
       to = backendLayer(edge.to)
     if (finalMode && !backendAllowed[from]?.has(to))
       report('ARCH001', edge.from, edge.line, `${from} must not import ${to}: ${edge.to}`)
-    const fromModule = edge.from.match(/^src\/modules\/([^/]+)/)?.[1]
-    const toModule = edge.to.match(/^src\/modules\/([^/]+)/)?.[1]
+    const fromModule = edge.from.match(/^server\/src\/modules\/([^/]+)/)?.[1]
+    const toModule = edge.to.match(/^server\/src\/modules\/([^/]+)/)?.[1]
     if (fromModule && toModule && fromModule !== toModule && toModule !== 'providers') {
       const allowed = new Set(['saas>cloudflare', 'tunnels>cloudflare'])
       if (finalMode && !allowed.has(`${fromModule}>${toModule}`))
         report('ARCH002', edge.from, edge.line, `module ${fromModule} must not deep-import module ${toModule}`)
     }
-    const fromWorkflow = edge.from.match(/^src\/workflows\/([^/]+)/)?.[1]
-    const toWorkflow = edge.to.match(/^src\/workflows\/([^/]+)/)?.[1]
+    const fromWorkflow = edge.from.match(/^server\/src\/workflows\/([^/]+)/)?.[1]
+    const toWorkflow = edge.to.match(/^server\/src\/workflows\/([^/]+)/)?.[1]
     if (finalMode && fromWorkflow && toWorkflow && fromWorkflow !== toWorkflow)
       report('ARCH003', edge.from, edge.line, `workflow ${fromWorkflow} must not import workflow ${toWorkflow}`)
   }
@@ -304,7 +304,7 @@ for (const node of graph.keys()) if (!indices.has(node)) strong(node)
 for (const file of sourceFiles) {
   const code = read(file)
   if (
-    file.startsWith('src/') &&
+    file.startsWith('server/src/') &&
     !file.endsWith('.d.ts') &&
     !/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.ts$/.test(path.basename(file))
   )
@@ -315,12 +315,12 @@ for (const file of sourceFiles) {
     report('ARCH010', file, 1, 'EventBus platform layer and event envelopes are forbidden')
   if (
     /new JsonStore\s*(?:<|\()/.test(code) &&
-    !['src/bootstrap/create-platform.ts', 'src/bootstrap/create-modules.ts'].includes(file)
+    !['server/src/bootstrap/create-platform.ts', 'server/src/bootstrap/create-modules.ts'].includes(file)
   )
     report('ARCH011', file, 1, 'new JsonStore is only allowed in composition root')
   if (
     /invalidateProviderCache/.test(code) &&
-    file !== 'src/platform/cache/provider-cache.ts' &&
+    file !== 'server/src/platform/cache/provider-cache.ts' &&
     !file.endsWith('.cache.ts')
   )
     report('ARCH012', file, 1, 'cache invalidation is only allowed in provider-cache and domain cache helpers')
@@ -328,18 +328,23 @@ for (const file of sourceFiles) {
     report('ARCH012', file, 1, 'cache TTL, capacity, sweeper, and forwarding manager layers are forbidden')
   if (finalMode && /rowOperationTokens|\bclaimRow\s*\(|\breleaseRow\s*\(/.test(code))
     report('ARCH029', file, 1, 'row mutation ownership must use shared useRowBusy')
-  if (finalMode && file === 'src/modules/cloudflare/cloudflare-zone.handlers.ts' && /request\.body\.domain/.test(code))
+  if (
+    finalMode &&
+    file === 'server/src/modules/cloudflare/cloudflare-zone.handlers.ts' &&
+    /request\.body\.domain/.test(code)
+  )
     report('ARCH030', file, 1, 'Cloudflare zone create accepts name only')
 }
 
-if (schemaRoutes !== routeCalls) report('ARCH013', 'src', 1, `${routeCalls - schemaRoutes} route(s) missing schema`)
-const errorMessageMap = read('src/shared/http/error-messages.ts')
+if (schemaRoutes !== routeCalls)
+  report('ARCH013', 'server/src', 1, `${routeCalls - schemaRoutes} route(s) missing schema`)
+const errorMessageMap = read('server/src/shared/http/error-messages.ts')
 const mappedErrorCodes = new Set(
   [...errorMessageMap.matchAll(/^\s*([a-zA-Z0-9_]+):\s*['"]/gm)].map((match) => match[1])
 )
 for (const code of apiErrorCodes) {
   if (!mappedErrorCodes.has(code))
-    report('ARCH028', 'src/shared/http/error-messages.ts', 1, `missing ApiError message: ${code}`)
+    report('ARCH028', 'server/src/shared/http/error-messages.ts', 1, `missing ApiError message: ${code}`)
 }
 for (const file of backendFiles)
   if (/\bapp\.(?:get|post|put|patch|delete|head|options)\s*\(/.test(read(file)) && !file.endsWith('.routes.ts'))
@@ -359,7 +364,7 @@ if (finalMode) {
     for (const match of code.matchAll(/\brequest\s*:\s*FastifyRequest(?!\s*<\s*RequestOf\s*<\s*typeof\s+)/g)) {
       report('ARCH026', file, lineAt(code, match.index), 'every handler request must use RequestOf<typeof schema>')
     }
-    if (file.startsWith('src/modules/') && /\brequest\.server\.ctx\.workflows\b/.test(code)) {
+    if (file.startsWith('server/src/modules/') && /\brequest\.server\.ctx\.workflows\b/.test(code)) {
       report('ARCH027', file, 1, 'module handlers must not call workflows')
     }
   }
@@ -383,7 +388,7 @@ if (finalMode) {
   }
 }
 
-for (const dir of ['src', 'web/src']) {
+for (const dir of ['server/src', 'web/src']) {
   for (const candidate of walk(dir).map((file) => path.posix.dirname(file))) {
     if (
       exists(candidate) &&
@@ -395,17 +400,18 @@ for (const dir of ['src', 'web/src']) {
 }
 
 const forbiddenLegacy = [
-  'src/compose',
-  'src/app-context.ts',
-  'src/lib',
-  'src/config',
-  'src/platform/job',
-  'src/modules/provider',
-  'src/modules/dnspod',
-  'src/modules/edgeone',
-  'src/modules/cloudflared',
-  'src/modules/dns-batch',
-  'src/modules/sync',
+  'src',
+  'server/src/compose',
+  'server/src/app-context.ts',
+  'server/src/lib',
+  'server/src/config',
+  'server/src/platform/job',
+  'server/src/modules/provider',
+  'server/src/modules/dnspod',
+  'server/src/modules/edgeone',
+  'server/src/modules/cloudflared',
+  'server/src/modules/dns-batch',
+  'server/src/modules/sync',
   'web/src/main.ts',
   'web/src/layouts',
   'web/src/router',

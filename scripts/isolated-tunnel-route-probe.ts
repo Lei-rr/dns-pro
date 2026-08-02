@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { CloudflaredDnsService } from '../src/modules/tunnels/tunnel-dns.service.js'
-import { CloudflaredRouteService } from '../src/modules/tunnels/tunnel-route.service.js'
+import { CloudflaredDnsService } from '../server/src/modules/tunnels/tunnel-dns.service.js'
+import { CloudflaredRouteService } from '../server/src/modules/tunnels/tunnel-route.service.js'
 
 const order: string[] = []
 let zoneLookups = 0

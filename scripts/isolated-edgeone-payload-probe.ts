@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {
   buildEdgeOneOriginInfo,
   normalizeAccelerationDomainPayload,
-} from '../src/modules/edge-one/edge-one-domain-payload.js'
+} from '../server/src/modules/edge-one/edge-one-domain-payload.js'
 
 const normalized = normalizeAccelerationDomainPayload({
   domain_name: ' WWW.Example.COM ',

@@ -1,25 +1,25 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { ApiError } from '../src/shared/http/api-error.js'
-import { BaseGateway } from '../src/shared/providers/base.client.js'
-import { fromDnsOperationResult } from '../src/shared/providers/side-effect-result.js'
-import { DEFAULT_APP_CONFIG } from '../src/modules/auth/auth-config.repository.js'
+import { ApiError } from '../server/src/shared/http/api-error.js'
+import { BaseGateway } from '../server/src/shared/providers/base.client.js'
+import { fromDnsOperationResult } from '../server/src/shared/providers/side-effect-result.js'
+import { DEFAULT_APP_CONFIG } from '../server/src/modules/auth/auth-config.repository.js'
 import {
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
-} from '../src/modules/cloudflare/cloudflare-response.schema.js'
+} from '../server/src/modules/cloudflare/cloudflare-response.schema.js'
 import {
   dnspodDomainCreateResponseSchema,
   dnspodDomainListResponseSchema,
   dnspodRecordListResponseSchema,
   dnspodRecordMutationResponseSchema,
-} from '../src/modules/dns-pod/dns-pod-response.schema.js'
+} from '../server/src/modules/dns-pod/dns-pod-response.schema.js'
 import {
   edgeoneAccelerationDomainCreateResponseSchema,
   edgeoneAccelerationDomainListResponseSchema,
   edgeoneMutationResponseSchema,
   edgeoneZoneListResponseSchema,
-} from '../src/modules/edge-one/edge-one-response.schema.js'
+} from '../server/src/modules/edge-one/edge-one-response.schema.js'
 
 assert.deepEqual(DEFAULT_APP_CONFIG.auth, { username: 'admin', password: 'admin' })
 assert.equal(fromDnsOperationResult({ action: 'completed', records: [{ status: 'failed' }] }, 'done').status, 'failed')

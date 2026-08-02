@@ -5,7 +5,7 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
-    "rootDir": "./src",
+    "rootDir": "./server/src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -18,6 +18,6 @@
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*"],
+  "include": ["server/src/**/*"],
   "exclude": ["node_modules", "dist", "web/dist"]
 }

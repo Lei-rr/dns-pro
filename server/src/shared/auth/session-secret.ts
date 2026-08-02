@@ -10,6 +10,7 @@ function isCode(error: unknown, code: string): boolean {
 
 async function readSecret(secretPath: string): Promise<string | null> {
   try {
+    await fs.chmod(secretPath, 0o600)
     const secret = (await fs.readFile(secretPath, 'utf8')).trim()
     return secret.length >= 32 ? secret : null
   } catch (error) {
@@ -29,14 +30,19 @@ export async function resolveSessionSecret(dataDir: string, configuredSecret: st
 
   await fs.mkdir(dataDir, { recursive: true })
   const generated = crypto.randomBytes(48).toString('base64url')
+  const temporary = path.join(dataDir, `${SECRET_FILE}.${process.pid}.${crypto.randomUUID()}.tmp`)
 
+  await fs.writeFile(temporary, `${generated}\n`, { mode: 0o600 })
   try {
-    await fs.writeFile(secretPath, `${generated}\n`, { flag: 'wx' })
+    await fs.link(temporary, secretPath)
+    await fs.chmod(secretPath, 0o600)
     return generated
   } catch (error) {
     if (!isCode(error, 'EEXIST')) throw error
     const winner = await readSecret(secretPath)
     if (winner !== null) return winner
     throw Object.assign(new Error('Persisted session secret is invalid'), { cause: error })
+  } finally {
+    await fs.rm(temporary, { force: true })
   }
 }
