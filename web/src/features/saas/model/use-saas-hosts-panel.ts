@@ -292,6 +292,26 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     })
   }
 
+  async function repairHostnameDns(record: SaaSHostname) {
+    const scopeOwner = captureScope()
+    const key = hostnameKey(record)
+    if (!key || isRowBusy(key)) return
+    await runBusy(key, async (owner) => {
+      if (!scopeOwner.active()) return
+      try {
+        const response = await saasApi.repairHostnameDns(
+          scopeOwner.value.providerId,
+          scopeOwner.value.zoneName,
+          record.hostname
+        )
+        if (!scopeOwner.active() || !owner.active()) return
+        notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '域名解析已修复')
+      } catch (error) {
+        if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
+      }
+    })
+  }
+
   async function batchDeleteSelected() {
     const scopeOwner = captureScope()
     let hostnamesList = selectedAvailableRows(pagedHostnames.value, selection.selected.value, hostnameKey, (row) =>
@@ -471,6 +491,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     save,
     removeHostname,
     refreshHostname,
+    repairHostnameDns,
     applyPreferred: applyPreferredFromDialog,
     batchDeleteSelected,
     openBatchPreferred,

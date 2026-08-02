@@ -236,13 +236,13 @@ async function setStatus(record: EdgeOneAccelerationDomain, status: string) {
   })
 }
 
-async function syncCname(record: EdgeOneAccelerationDomain) {
+async function repairDomainDns(record: EdgeOneAccelerationDomain) {
   const key = domainName(record)
   await runBusy(key, async (owner) => {
     try {
-      const response = await edgeOneApi.syncAccelerationDomainCname(props.providerId, props.zoneId, key)
+      const response = await edgeOneApi.repairAccelerationDomainDns(props.providerId, props.zoneId, key)
       if (!owner.active()) return
-      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), 'CNAME 已同步')
+      notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '域名解析已修复')
       // CNAME 值可能变化，轻量整表刷新但不挡其它行操作过久：仍 silent 局部优先整表
       await runLoad()
     } catch (error) {
@@ -479,7 +479,7 @@ onMounted(() => {
         :domain-name="domainName"
         :busy="(record) => isRowBusy(domainName(record))"
         @update:selected="selection.selected.value = $event"
-        @sync="syncCname"
+        @repair-dns="repairDomainDns"
         @edit="openEdit"
         @certificate="openCert"
         @status="setStatus"

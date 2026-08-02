@@ -6,7 +6,7 @@ import { Checkbox } from '@/shared/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
-import { edgeOneStatusLabel } from '@/features/edge-one/lib/status'
+import { edgeOneHttpsStatusLabel, edgeOneStatusLabel } from '@/features/edge-one/lib/status'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
 
@@ -21,7 +21,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:selected': [keys: string[]]
-  sync: [record: EdgeOneAccelerationDomain]
+  'repair-dns': [record: EdgeOneAccelerationDomain]
   edit: [record: EdgeOneAccelerationDomain]
   certificate: [record: EdgeOneAccelerationDomain]
   status: [record: EdgeOneAccelerationDomain, status: string]
@@ -66,6 +66,7 @@ function toggleAll(value: boolean | 'indeterminate') {
           </TableHead>
           <TableHead>加速域名</TableHead>
           <TableHead>状态</TableHead>
+          <TableHead>HTTPS</TableHead>
           <TableHead>CNAME</TableHead>
           <TableHead>源站</TableHead>
           <TableHead class="rounded-r-lg w-12" />
@@ -73,7 +74,7 @@ function toggleAll(value: boolean | 'indeterminate') {
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
         <TableRow v-if="!domains.length && !loading">
-          <TableCell colspan="6" class="text-muted-foreground py-10 text-center">暂无加速域名</TableCell>
+          <TableCell colspan="7" class="text-muted-foreground py-10 text-center">暂无加速域名</TableCell>
         </TableRow>
         <TableRow v-for="record in domains" :key="domainName(record)" :class="busy(record) && 'bg-muted/40 opacity-80'">
           <TableCell class="px-3">
@@ -88,6 +89,9 @@ function toggleAll(value: boolean | 'indeterminate') {
           <TableCell
             ><Badge variant="secondary">{{ edgeOneStatusLabel(record.status) }}</Badge></TableCell
           >
+          <TableCell
+            ><Badge variant="secondary">{{ edgeOneHttpsStatusLabel(record.certificate) }}</Badge></TableCell
+          >
           <TableCell class="max-w-[220px] truncate">{{ record.cname || '-' }}</TableCell>
           <TableCell class="max-w-[180px] truncate">{{ record.origin?.value || record.origin_type || '-' }}</TableCell>
           <TableCell>
@@ -99,7 +103,9 @@ function toggleAll(value: boolean | 'indeterminate') {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem :disabled="busy(record)" @click="emit('sync', record)">同步 CNAME</DropdownMenuItem>
+                <DropdownMenuItem :disabled="busy(record)" @click="emit('repair-dns', record)"
+                  >修复域名解析</DropdownMenuItem
+                >
                 <DropdownMenuItem :disabled="busy(record)" @click="emit('edit', record)">编辑</DropdownMenuItem>
                 <DropdownMenuItem :disabled="busy(record)" @click="emit('certificate', record)"
                   >HTTPS 配置</DropdownMenuItem

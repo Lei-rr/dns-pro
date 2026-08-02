@@ -33,7 +33,7 @@
     "probe:job": "tsx scripts/isolated-job-progress-probe.ts",
     "probe:platform": "tsx scripts/isolated-platform-concurrency-probe.ts && tsx scripts/isolated-sensitive-files-probe.ts",
     "probe:workflow": "tsx scripts/isolated-workflow-recovery-probe.ts && tsx scripts/isolated-tunnel-route-probe.ts && tsx scripts/isolated-request-param-probe.ts && tsx scripts/isolated-edgeone-payload-probe.ts && tsx scripts/isolated-backend-safe-probe.ts && tsx scripts/isolated-backend-careful-probe.ts && tsx scripts/isolated-default-config-probe.ts",
-    "probe:functional": "tsx scripts/isolated-functional-surface-probe.ts && tsx scripts/isolated-frontend-audit-probe.ts",
+    "probe:functional": "tsx scripts/isolated-functional-surface-probe.ts && tsx scripts/isolated-frontend-audit-probe.ts && tsx scripts/isolated-edgeone-https-status-probe.ts && tsx scripts/isolated-saas-dns-repair-probe.ts",
     "probe:static": "tsx scripts/isolated-static-probe.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "npm --workspace dns-pro-web run typecheck",

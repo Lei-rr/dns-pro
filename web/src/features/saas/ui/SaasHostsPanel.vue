@@ -67,6 +67,7 @@ const {
   save,
   removeHostname,
   refreshHostname,
+  repairHostnameDns,
   applyPreferred,
   batchDeleteSelected,
   openBatchPreferred,
@@ -145,6 +146,7 @@ const {
         @update:selected-hostnames="selection.selected.value = $event"
         @detail="openDetails"
         @refresh="refreshHostname"
+        @repair-dns="repairHostnameDns"
         @edit="openEdit"
         @remove="removeHostname"
       />

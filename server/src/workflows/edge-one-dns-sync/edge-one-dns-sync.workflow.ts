@@ -95,14 +95,14 @@ export class EdgeOneDnsSyncWorkflow {
     }
   }
 
-  async syncCname(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
+  async repairDomainDns(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
     const cname = await this.assignedCname(providerId, zoneId, domainName, true)
     if (cname === '') {
       throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME not available yet', 422)
     }
 
     const sync = await this.syncCnameRecord(providerId, domainName, cname)
-    const side = this.normalizeSyncSideEffect(sync, '已执行 DNSPod CNAME 同步')
+    const side = this.normalizeSyncSideEffect(sync, '已修复域名解析')
     return { ...sync, side_effects: buildDnsSideEffects({ sync: side }) }
   }
 

@@ -37,8 +37,8 @@ export const edgeOneApi = {
     http.put(`${domainBase(provider, zone, domain)}/certificate`, data),
   deleteAccelerationDomain: (provider: string, zone: string, domain: string, options: Record<string, unknown> = {}) =>
     http.delete(domainBase(provider, zone, domain), options.skipCleanup ? { params: { auto_cleanup: false } } : {}),
-  syncAccelerationDomainCname: (provider: string, zone: string, domain: string) =>
-    http.post(`${domainBase(provider, zone, domain)}/cname-sync`),
+  repairAccelerationDomainDns: (provider: string, zone: string, domain: string) =>
+    http.post(`${domainBase(provider, zone, domain)}/dns-repair`),
   batchDisable: (provider: string, zone: string, data: { domains: string[] }) =>
     http.post(`${zoneBase(provider, zone)}/batch/disable`, data),
   batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>

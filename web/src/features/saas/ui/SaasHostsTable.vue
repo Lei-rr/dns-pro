@@ -24,6 +24,7 @@ const emit = defineEmits<{
   'update:selectedHostnames': [hostnames: string[]]
   detail: [record: SaaSHostname]
   refresh: [record: SaaSHostname]
+  'repair-dns': [record: SaaSHostname]
   edit: [record: SaaSHostname]
   remove: [record: SaaSHostname]
 }>()
@@ -134,6 +135,9 @@ function isBusy(record: SaaSHostname) {
                 <DropdownMenuItem :disabled="isBusy(record)" @click="emit('refresh', record)">
                   <Spinner v-if="isBusy(record)" class="mr-2 size-3.5" />刷新
                 </DropdownMenuItem>
+                <DropdownMenuItem :disabled="isBusy(record)" @click="emit('repair-dns', record)"
+                  >修复域名解析</DropdownMenuItem
+                >
                 <DropdownMenuItem :disabled="isBusy(record)" @click="emit('edit', record)">编辑</DropdownMenuItem>
                 <DropdownMenuItem :disabled="isBusy(record)" variant="destructive" @click="emit('remove', record)"
                   >删除</DropdownMenuItem

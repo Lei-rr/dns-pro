@@ -16,7 +16,7 @@ import {
   getActiveEdgeOneBatchJobHandler,
   getEdgeOneBatchJobHandler,
   retryEdgeOneBatchJobHandler,
-  syncEdgeOneCnameHandler,
+  repairEdgeOneDomainDnsHandler,
 } from './edge-one-dns-sync.handlers.js'
 
 /** EdgeOne lifecycle routes that coordinate provider mutations, jobs, and DNS side effects. */
@@ -24,9 +24,9 @@ export async function routes(app: FastifyInstance): Promise<void> {
   app.post('/zones/:zoneId/records', { schema: edgeoneDomainStoreSchema }, createEdgeOneDomainHandler)
   app.delete('/zones/:zoneId/records/:domainName', { schema: edgeoneDomainDeleteSchema }, deleteEdgeOneDomainHandler)
   app.post(
-    '/zones/:zoneId/records/:domainName/cname-sync',
+    '/zones/:zoneId/records/:domainName/dns-repair',
     { schema: edgeoneDomainParamsSchema },
-    syncEdgeOneCnameHandler
+    repairEdgeOneDomainDnsHandler
   )
 
   app.get('/zones/:zoneId/batch/active', { schema: edgeoneZoneParamsSchema }, getActiveEdgeOneBatchJobHandler)

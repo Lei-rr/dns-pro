@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import {
   deleteSaaSHostnameHandler,
   reconcileSaaSHostnameHandler,
+  repairSaaSHostnameDnsHandler,
   createSaaSHostnameHandler,
   updateSaaSHostnameHandler,
 } from './saas-dns-sync.handlers.js'
@@ -43,6 +44,11 @@ async function providerWorkflowRoutes(app: FastifyInstance) {
     '/zones/:zoneName/hostnames/:hostnameFqdn/reconcile',
     { schema: saasHostnameParamsSchema },
     reconcileSaaSHostnameHandler
+  )
+  app.post(
+    '/zones/:zoneName/hostnames/:hostnameFqdn/dns-repair',
+    { schema: saasHostnameParamsSchema },
+    repairSaaSHostnameDnsHandler
   )
   app.get(
     '/zones/:zoneName/preferred-apply/active',

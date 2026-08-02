@@ -41,11 +41,11 @@ export async function deleteEdgeOneDomainHandler(
   return reply.send(success(result))
 }
 
-export async function syncEdgeOneCnameHandler(
+export async function repairEdgeOneDomainDnsHandler(
   request: FastifyRequest<RequestOf<typeof edgeoneDomainParamsSchema>>,
   reply: FastifyReply
 ) {
-  const result = await request.server.ctx.workflows.edgeOneDnsSync.syncCname(
+  const result = await request.server.ctx.workflows.edgeOneDnsSync.repairDomainDns(
     request.params.providerId,
     request.params.zoneId,
     domainNameParam(request)

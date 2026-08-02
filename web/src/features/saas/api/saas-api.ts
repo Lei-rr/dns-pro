@@ -58,6 +58,8 @@ export const saasApi = {
     ),
   reconcileHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/reconcile`),
+  repairHostnameDns: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
+    http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/dns-repair`),
   fallbackOrigin: (
     provider: string,
     zone: string,

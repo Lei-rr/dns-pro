@@ -57,6 +57,7 @@ const capabilities: Record<string, string[]> = {
     'updateHostname',
     'deleteHostname',
     'reconcileHostname',
+    'repairHostnameDns',
     'fallbackOrigin',
     'setFallbackOrigin',
     'deleteFallbackOrigin',
@@ -80,7 +81,7 @@ const capabilities: Record<string, string[]> = {
     'updateAccelerationDomainStatus',
     'updateCertificate',
     'deleteAccelerationDomain',
-    'syncAccelerationDomainCname',
+    'repairAccelerationDomainDns',
     'batchDisable',
     'batchDelete',
     'batchActive',
@@ -112,10 +113,10 @@ const routeSurface = `${routes
   .map((route) => `${route.method} ${route.path}`)
   .sort()
   .join('\n')}\n`
-assert.equal(routes.length, 87, 'backend API route count changed')
+assert.equal(routes.length, 88, 'backend API route count changed')
 assert.equal(
   crypto.createHash('sha256').update(routeSurface).digest('hex'),
-  '6ea4590966d6bb075789a6c61a493181c871a393eb31ae696d6b4881eba4e110',
+  '8ffde8b155bd78087b0dfbcd3d00fd47f477f79c1e3bf8f5902f0ba36780d2f1',
   'backend API method/path surface changed'
 )
-console.log('functional-surface-probe=ok providers=5 api_methods=65 routes=87')
+console.log('functional-surface-probe=ok providers=5 api_methods=66 routes=88')

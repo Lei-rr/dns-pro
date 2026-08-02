@@ -48,6 +48,18 @@ export async function reconcileSaaSHostnameHandler(
   return reply.send(success(result))
 }
 
+export async function repairSaaSHostnameDnsHandler(
+  request: FastifyRequest<RequestOf<typeof saasHostnameParamsSchema>>,
+  reply: FastifyReply
+) {
+  const result = await request.server.ctx.workflows.saasDnsSync.repairHostnameDns(
+    request.params.providerId,
+    zoneNameParam(request),
+    hostnameFqdnParam(request)
+  )
+  return reply.send(success(result))
+}
+
 export async function deleteSaaSHostnameHandler(
   request: FastifyRequest<RequestOf<typeof saasHostnameDeleteSchema>>,
   reply: FastifyReply

@@ -193,7 +193,7 @@
   },
   {
     "method": "POST",
-    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName/cname-sync"
+    "path": "/api/edgeone/providers/:providerId/zones/:zoneId/records/:domainName/dns-repair"
   },
   {
     "method": "PUT",
@@ -318,6 +318,10 @@
   {
     "method": "PUT",
     "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/zones/:zoneName/hostnames/:hostnameFqdn/dns-repair"
   },
   {
     "method": "POST",

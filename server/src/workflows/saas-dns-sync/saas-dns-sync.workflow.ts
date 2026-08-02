@@ -118,6 +118,20 @@ export class SaaSDnsSyncWorkflow {
     return result
   }
 
+  async repairHostnameDns(
+    providerId: string,
+    zoneName: string,
+    hostnameFqdn: string
+  ): Promise<Record<string, unknown>> {
+    const sync = await this.sync.syncSaaSHostname(providerId, zoneName, hostnameFqdn)
+    return {
+      hostname: hostnameFqdn,
+      side_effects: buildDnsSideEffects({
+        sync: this.sync.normalizeSyncSideEffect(sync, '已修复域名解析'),
+      }),
+    }
+  }
+
   async deleteHostname(
     providerId: string,
     zoneName: string,

@@ -42,3 +42,14 @@ export function certificateStatusLabel(status?: string) {
     '-'
   )
 }
+
+export function edgeOneHttpsStatusLabel(certificate?: {
+  mode?: string
+  items?: Array<{ status?: string }>
+  list?: Array<{ status?: string }>
+}) {
+  const mode = String(certificate?.mode || 'disable').toLowerCase()
+  if (mode === 'disable') return '未开启'
+  const status = (certificate?.items || certificate?.list || [])[0]?.status
+  return status ? certificateStatusLabel(status) : '已开启'
+}
