@@ -266,11 +266,11 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div class="space-y-3 rounded-lg bg-muted/30 p-4">
+    <div class="min-w-0 space-y-3 rounded-lg bg-muted/30 p-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <div>
+        <div class="min-w-0 flex-1">
           <div class="text-sm font-medium">安装 Token</div>
-          <div class="text-muted-foreground mt-1 max-w-3xl truncate font-mono text-xs">
+          <div class="text-muted-foreground mt-1 min-w-0 max-w-3xl truncate font-mono text-xs">
             {{ token || '暂无 Token' }}
           </div>
         </div>
@@ -284,7 +284,7 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="token" class="rounded-lg border p-4">
+    <div v-if="token" class="min-w-0 rounded-lg border p-4">
       <div class="mb-3 text-sm font-medium">安装 cloudflared 连接器</div>
       <TunnelInstallPanel :token="token" />
     </div>

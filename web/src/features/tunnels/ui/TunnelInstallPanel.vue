@@ -106,24 +106,28 @@ async function copyCommand(command: string) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <Tabs v-model="os">
-      <TabsList>
-        <TabsTrigger v-for="item in osTabs" :key="item.key" :value="item.key">{{ item.label }}</TabsTrigger>
-      </TabsList>
-    </Tabs>
-    <Tabs v-if="archTabs.length" v-model="arch">
-      <TabsList>
-        <TabsTrigger v-for="item in archTabs" :key="item.key" :value="item.key">{{ item.label }}</TabsTrigger>
-      </TabsList>
-    </Tabs>
+  <div class="min-w-0 max-w-full space-y-4">
+    <div class="min-w-0 max-w-full overflow-x-auto">
+      <Tabs v-model="os">
+        <TabsList class="w-max">
+          <TabsTrigger v-for="item in osTabs" :key="item.key" :value="item.key">{{ item.label }}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </div>
+    <div v-if="archTabs.length" class="min-w-0 max-w-full overflow-x-auto">
+      <Tabs v-model="arch">
+        <TabsList class="w-max">
+          <TabsTrigger v-for="item in archTabs" :key="item.key" :value="item.key">{{ item.label }}</TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </div>
 
-    <ol class="space-y-3 pl-5 text-sm">
-      <li v-for="(step, index) in steps" :key="index" class="list-decimal">
+    <ol class="min-w-0 max-w-full space-y-3 pl-5 text-sm">
+      <li v-for="(step, index) in steps" :key="index" class="min-w-0 list-decimal">
         <div class="mb-2">{{ step.text }}</div>
         <div
           v-if="step.command"
-          class="relative rounded-md bg-zinc-900 p-3 pr-12 font-mono text-xs leading-6 break-all whitespace-pre-wrap text-zinc-100"
+          class="relative min-w-0 max-w-full rounded-md bg-zinc-900 p-3 pr-12 font-mono text-xs leading-6 break-all whitespace-pre-wrap text-zinc-100"
         >
           <Button
             variant="ghost"
