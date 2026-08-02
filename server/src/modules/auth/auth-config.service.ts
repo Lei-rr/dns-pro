@@ -4,6 +4,10 @@ import { ApiError } from '../../shared/http/api-error.js'
 export class AuthConfig {
   constructor(private readonly repository: AppConfigRepository) {}
 
+  async initialize(): Promise<void> {
+    await this.repository.read()
+  }
+
   async verifyCredentials(username: string, password: string): Promise<boolean> {
     const config = await this.repository.read()
     const expectedUser = config.auth?.username ?? ''
