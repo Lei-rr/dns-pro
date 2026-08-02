@@ -13,6 +13,7 @@ import { parseBool } from '../../shared/lib/parse-bool.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
 import { DnsPodGateway } from './dns-pod.client.js'
 import {
+  dnspodMutationResponseSchema,
   dnspodRecordListResponseSchema,
   dnspodRecordMutationResponseSchema,
   dnspodRecordSchema,
@@ -248,7 +249,7 @@ export class DnsPodRecordService {
       })
     }
 
-    const parsed = dnspodRecordMutationResponseSchema.parse(response)
+    const parsed = dnspodMutationResponseSchema.parse(response)
     const result = {
       id: providerFiniteNumber(recordId),
       request_id: providerOptionalString(parsed.RequestId),

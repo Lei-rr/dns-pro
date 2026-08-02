@@ -350,7 +350,7 @@ try {
         RequestId: 'dns-records',
       }
     }
-    if (action === 'DeleteRecord') return { RecordId: 1, RequestId: 'dns-deleted' }
+    if (action === 'DeleteRecord') return { RequestId: 'dns-deleted' }
     assert.fail(`unexpected DNSPod action: ${action}`)
   }
   try {
