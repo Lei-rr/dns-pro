@@ -367,6 +367,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   }
 
   async function batchUpdatePreferred() {
+    if (batchSubmitting.value) return
     const scopeOwner = captureScope()
     let selectedHostnames = selectedAvailableRows(pagedHostnames.value, selection.selected.value, hostnameKey, (row) =>
       isRowBusy(hostnameKey(row))

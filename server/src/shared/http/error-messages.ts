@@ -59,6 +59,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   dnspod_zone_delete_failed: 'DNSPod 域名删除失败',
   dnspod_zone_list_failed: 'DNSPod 域名列表获取失败',
   dnspod_pagination_limit: 'DNSPod 返回页数超过安全上限',
+  dnspod_invalid_response: 'DNSPod 返回数据无效',
 
   // EdgeOne
   edgeone_provider_not_found: 'EdgeOne 服务商不存在',
@@ -76,6 +77,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   edgeone_certificate_update_failed: 'EdgeOne 证书更新失败',
   edgeone_request_failed: 'EdgeOne 请求失败',
   edgeone_pagination_limit: 'EdgeOne 返回页数超过安全上限',
+  edgeone_invalid_response: 'EdgeOne 返回数据无效',
 
   // SaaS
   saas_provider_not_found: 'SaaS 服务商不存在',

@@ -13,6 +13,9 @@ export interface SideEffects {
   tunnel?: {
     token?: DnsSideEffect
   }
+  local?: {
+    preference?: DnsSideEffect
+  }
 }
 
 export function buildDnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: DnsSideEffect }): SideEffects {

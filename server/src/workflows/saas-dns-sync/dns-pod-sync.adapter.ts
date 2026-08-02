@@ -72,7 +72,8 @@ export class DnsPodSaaSDriver implements SyncDriver {
     let dnspodZone = ''
     try {
       dnspodZone = await this.resolveTargetZone(providerId, dnspodProviderId, fqdn)
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === 'saas_dnspod_zone_not_found')) throw error
       return { cleaned: 0, records: [], deleted: [], reason: 'dnspod_zone_not_found' }
     }
 
@@ -106,7 +107,8 @@ export class DnsPodSaaSDriver implements SyncDriver {
     if (dnspodZone === '') {
       try {
         dnspodZone = await this.resolveTargetZone(providerId, dnspodProviderId, hostnameFqdn)
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === 'saas_dnspod_zone_not_found')) throw error
         return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
       }
     }
@@ -134,7 +136,8 @@ export class DnsPodSaaSDriver implements SyncDriver {
     let dnspodZone: string
     try {
       dnspodZone = await this.resolveTargetZone(providerId, dnspodProviderId, fqdn)
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === 'saas_dnspod_zone_not_found')) throw error
       return { cleaned: 0, reason: 'dnspod_zone_not_found' }
     }
 
@@ -162,7 +165,8 @@ export class DnsPodSaaSDriver implements SyncDriver {
     if (fqdn !== '' && dnspodProviderId !== '') {
       try {
         dnspodZone = await this.resolveTargetZone(providerId, dnspodProviderId, fqdn)
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === 'saas_dnspod_zone_not_found')) throw error
         dnspodZone = ''
       }
     }

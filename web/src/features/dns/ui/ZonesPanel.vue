@@ -19,7 +19,7 @@ import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
-import { removeListItem } from '@/shared/lib/row-busy'
+import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
 import { createScopeGeneration, type ScopeOwner } from '@/shared/lib/scope-generation'
@@ -28,8 +28,14 @@ const props = defineProps<{ provider: DnsProviderRef }>()
 const providerId = computed(() => props.provider.id)
 const router = useRouter()
 const scopeGeneration = createScopeGeneration()
+const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 type ZonesScope = { provider: DnsProviderRef; zoneKey: string; listKey: string }
+type ProviderScope = { provider: DnsProviderRef }
+
+function captureProviderScope(): ScopeOwner<ProviderScope> {
+  return scopeGeneration.capture({ provider: { ...props.provider } })
+}
 
 function captureScope(zone: Zone): ScopeOwner<ZonesScope> {
   return scopeGeneration.capture({
@@ -103,22 +109,25 @@ function openAdd() {
 
 async function createZone() {
   if (adding.value) return
+  const scopeOwner = captureProviderScope()
   const domain = domainInput.value.trim()
   domainError.value = domain ? '' : '请输入域名'
   if (domainError.value) return
   adding.value = true
   try {
-    await dnsApi.createZone(props.provider, { domain })
+    await dnsApi.createZone(scopeOwner.value.provider, { domain })
+    if (!scopeOwner.active()) return
     toast.success('域名已添加')
     showAdd.value = false
     domainInput.value = ''
     await runLoad()
   } catch (error) {
+    if (!scopeOwner.active()) return
     const fields = serverFieldErrors(error, { name: 'domain' })
     domainError.value = fields.domain || domainError.value
     toast.error(errorMessage(error))
   } finally {
-    adding.value = false
+    if (scopeOwner.active()) adding.value = false
   }
 }
 
@@ -133,14 +142,16 @@ function zoneRouteKey(zone: Zone) {
 async function removeZone(zone: Zone) {
   const scopeOwner = captureScope(zone)
   if (!(await confirmDelete(zone.name)) || !scopeOwner.active()) return
-  try {
-    await dnsApi.deleteZone(scopeOwner.value.provider, scopeOwner.value.zoneKey)
-    if (!scopeOwner.active()) return
-    toast.success('已删除')
-    removeListItem(zones, (item) => String(item.id || item.name) === scopeOwner.value.listKey)
-  } catch (error) {
-    if (scopeOwner.active()) toast.error(errorMessage(error))
-  }
+  await runBusy(scopeOwner.value.listKey, async (owner) => {
+    try {
+      await dnsApi.deleteZone(scopeOwner.value.provider, scopeOwner.value.zoneKey)
+      if (!scopeOwner.active() || !owner.active()) return
+      toast.success('已删除')
+      removeListItem(zones, (item) => String(item.id || item.name) === scopeOwner.value.listKey)
+    } catch (error) {
+      if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
+    }
+  })
 }
 
 async function openRecords(zone: Zone) {
@@ -151,6 +162,9 @@ watch(
   () => [providerId.value, props.provider.type],
   async () => {
     scopeGeneration.invalidate()
+    resetRowOperations()
+    showAdd.value = false
+    adding.value = false
     zones.value = []
     resetPage()
     await runLoad()
@@ -158,7 +172,10 @@ watch(
 )
 
 onMounted(() => runLoad())
-onUnmounted(() => scopeGeneration.invalidate())
+onUnmounted(() => {
+  scopeGeneration.invalidate()
+  resetRowOperations()
+})
 </script>
 
 <template>
@@ -207,7 +224,12 @@ onUnmounted(() => scopeGeneration.invalidate())
             </TableRow>
             <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">
-                <Button variant="link" class="h-auto px-0 py-0 font-medium" @click="openRecords(zone)">
+                <Button
+                  variant="link"
+                  class="h-auto px-0 py-0 font-medium"
+                  :disabled="isRowBusy(String(zone.id || zone.name))"
+                  @click="openRecords(zone)"
+                >
                   {{ zone.name }}
                 </Button>
               </TableCell>
@@ -217,15 +239,31 @@ onUnmounted(() => scopeGeneration.invalidate())
               <TableCell class="text-muted-foreground">{{ provider?.type || '-' }}</TableCell>
               <TableCell class="text-right">
                 <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
-                  <Button variant="ghost" size="sm" @click="openRecords(zone)">管理</Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    :disabled="isRowBusy(String(zone.id || zone.name))"
+                    @click="openRecords(zone)"
+                    >管理</Button
+                  >
                   <DropdownMenu>
                     <DropdownMenuTrigger as-child>
-                      <Button variant="ghost" size="icon" class="size-8">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="size-8"
+                        :disabled="isRowBusy(String(zone.id || zone.name))"
+                      >
                         <EllipsisVertical class="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
-                      <DropdownMenuItem variant="destructive" @click="removeZone(zone)">删除</DropdownMenuItem>
+                      <DropdownMenuItem
+                        variant="destructive"
+                        :disabled="isRowBusy(String(zone.id || zone.name))"
+                        @click="removeZone(zone)"
+                        >删除</DropdownMenuItem
+                      >
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

@@ -72,7 +72,11 @@ function openZone(zone: EdgeOneZone) {
 
 watch(
   () => props.providerId,
-  () => runLoad()
+  () => {
+    zones.value = []
+    resetPage()
+    void runLoad()
+  }
 )
 
 onMounted(() => runLoad())

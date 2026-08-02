@@ -1,3 +1,5 @@
+import type { SideEffects } from '@/shared/api/types'
+
 export interface SaaSValidationRecord {
   txt_name?: string
   txt_value?: string
@@ -38,6 +40,11 @@ export interface SaaSHostname {
   effective_sync_zone?: string
   effective_sync_target?: string
   [key: string]: unknown
+}
+
+export interface SaaSDnsRepairResult {
+  hostname: string
+  side_effects: SideEffects
 }
 
 export interface SaaSFallbackOrigin {

@@ -32,7 +32,7 @@ export class ProviderService {
     const definition = this.definitionFor(String(data.type ?? ''))
     const normalized = this.normalizer.normalize(data, definition)
 
-    await this.providers.mutateAll((providers) => {
+    const savedProviders = await this.providers.mutateAll((providers) => {
       if (this.existsId(providers, normalized.id)) {
         throw new ApiError('provider_exists', 'Provider already exists', 409)
       }
@@ -40,7 +40,7 @@ export class ProviderService {
       return [...providers, normalized as Provider]
     })
 
-    const presented = this.presenter.present(normalized as Provider)
+    const presented = this.presenter.present(normalized as Provider, savedProviders)
     await invalidateProviderConfigurationCache(presented.id)
     return presented
   }
@@ -48,7 +48,7 @@ export class ProviderService {
   async update(id: string, data: Record<string, unknown>): Promise<PresentedProvider> {
     let updated: ProviderInput | null = null
 
-    await this.providers.mutateAll((providers) => {
+    const savedProviders = await this.providers.mutateAll((providers) => {
       const index = this.locate(providers, id)
       const current = providers[index]
       if (data.type && data.type !== '' && data.type !== current.type) {
@@ -62,7 +62,7 @@ export class ProviderService {
     })
 
     if (!updated) throw new ApiError('server_error', 'Provider update failed', 500)
-    const presented = this.presenter.present(updated as Provider)
+    const presented = this.presenter.present(updated as Provider, savedProviders)
     await invalidateProviderConfigurationCache(presented.id)
     return presented
   }

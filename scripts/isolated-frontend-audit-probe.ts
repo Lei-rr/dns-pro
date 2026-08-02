@@ -31,6 +31,8 @@ const saasJobs = await source('web/src/features/saas/model/use-saas-host-jobs.ts
 const listPage = await source('web/src/shared/lib/use-list-page.ts')
 const apiTypes = await source('web/src/shared/api/types.ts')
 const rowSelection = await source('web/src/shared/lib/row-selection.ts')
+const preferredDomains = await source('web/src/features/saas/ui/PreferredDomainsDialog.vue')
+const saasEditor = await source('web/src/features/saas/model/use-saas-host-editor.ts')
 
 for (const [name, code, reset] of [
   ['records', records, 'records.value = []'],
@@ -68,13 +70,23 @@ for (const [name, code] of [
   ['SaaS', saasJobs],
 ] as const) {
   assert.match(code, /showBatchFailures\([\s\S]*onRetry:/, `${name} recovered failed jobs lost retry`)
+  assert.match(code, /onRetry:[\s\S]*pollJob\(/, `${name} recovered retry must poll to a terminal result`)
 }
 
-assert.match(apiTypes, /export type JobStatus =/)
-assert.match(apiTypes, /export interface JobCommand/)
+assert.doesNotMatch(apiTypes, /export type JobStatus =/)
+assert.doesNotMatch(apiTypes, /export interface JobCommand/)
+assert.doesNotMatch(apiTypes, /export type ApiSideEffect =/)
 assert.match(apiTypes, /export interface MutationSideEffect/)
 assert.doesNotMatch(listPage, /silent/)
 assert.doesNotMatch(listPage, /ListPageControls/)
 assert.match(rowSelection, /export function useRowSelection/, 'row-selection still has consumers and must be preserved')
+assert.doesNotMatch(rowSelection, /selectedRows|headerChecked|toggleAll/, 'unused row-selection surface returned')
+assert.match(preferredDomains, /const owner = loadGeneration\.claim\(\)/)
+assert.match(preferredDomains, /if \(!owner\.active\(\) \|\| !open\.value\) return/)
+assert.match(preferredDomains, /else \{\s*loadGeneration\.invalidate\(\)/)
+assert.match(saasEditor, /localPreferenceSideEffectFromData\(response\)/)
+assert.match(saasEditor, /localPreference\?\.status === 'failed'/)
+assert.match(saasEditor, /本地偏好保存失败/)
+assert.match(saasJobs, /await showBatchFailures\([\s\S]*await options\.reload\(\)/)
 
 console.log('frontend-audit-probe=ok')

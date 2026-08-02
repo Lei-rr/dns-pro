@@ -68,35 +68,36 @@ try {
   const retried = await withProviderCache({ key: failedKey, loader: async () => ++failedLoaderCalls })
   assert.equal(retried.value, 2, 'failed cache load could not be retried')
 
-  // Invalidation during a load fences off its stale result, including for joined callers.
+  // Invalidation during a load fences off its stale result. Calls started after
+  // invalidation must not join the stale in-flight promise.
   const fencedKey = 'probe:invalidation-fence'
   const fencedTag = 'probe:fence'
   const staleRelease = deferred<string>()
   let fencedLoaderCalls = 0
-  const staleReads = [
-    withProviderCache({
-      key: fencedKey,
-      tags: [fencedTag],
-      loader: async () => {
-        fencedLoaderCalls++
-        return staleRelease.promise
-      },
-    }),
-    withProviderCache({ key: fencedKey, tags: [fencedTag], loader: async () => 'must-not-run' }),
-  ]
+  const staleRead = withProviderCache({
+    key: fencedKey,
+    tags: [fencedTag],
+    loader: async () => {
+      fencedLoaderCalls++
+      return staleRelease.promise
+    },
+  })
   invalidateProviderCache({ tags: [fencedTag] })
-  staleRelease.resolve('stale')
-  assert.deepEqual(
-    (await Promise.all(staleReads)).map((result) => result.value),
-    ['stale', 'stale']
-  )
-  const freshAfterInvalidation = await withProviderCache({
+  const freshRead = withProviderCache({
     key: fencedKey,
     tags: [fencedTag],
     loader: async () => {
       fencedLoaderCalls++
       return 'fresh'
     },
+  })
+  staleRelease.resolve('stale')
+  assert.equal((await staleRead).value, 'stale')
+  assert.equal((await freshRead).value, 'fresh', 'post-invalidation caller joined stale in-flight work')
+  const freshAfterInvalidation = await withProviderCache({
+    key: fencedKey,
+    tags: [fencedTag],
+    loader: async () => 'must-not-run',
   })
   assert.equal(freshAfterInvalidation.value, 'fresh', 'invalidation allowed an old inflight result to refill cache')
   assert.equal(fencedLoaderCalls, 2)

@@ -198,6 +198,7 @@ function openEdit(record: DnsRecord) {
 
 async function save() {
   if (saving.value) return
+  const scopeOwner = captureScope()
   const errors: FieldErrors = {}
   const names = parseRecordNames(form.name)
   const value = form.value.trim()
@@ -221,17 +222,24 @@ async function save() {
 
     if (editing.value?.id) {
       await dnsApi.updateRecord(
-        props.provider,
-        props.zoneId,
+        scopeOwner.value.provider,
+        scopeOwner.value.zoneId,
         String(editing.value.id),
         { ...base, name: names[0] },
-        { zoneName: zoneName.value }
+        { zoneName: decodeURIComponent(scopeOwner.value.zoneId) }
       )
+      if (!scopeOwner.active()) return
       toast.success('记录已更新')
       dialogOpen.value = false
       await runLoad()
     } else if (names.length === 1) {
-      await dnsApi.createRecord(props.provider, props.zoneId, { ...base, name: names[0] }, { zoneName: zoneName.value })
+      await dnsApi.createRecord(
+        scopeOwner.value.provider,
+        scopeOwner.value.zoneId,
+        { ...base, name: names[0] },
+        { zoneName: decodeURIComponent(scopeOwner.value.zoneId) }
+      )
+      if (!scopeOwner.active()) return
       toast.success('记录已创建')
       dialogOpen.value = false
       await runLoad()
@@ -253,6 +261,7 @@ async function save() {
       return
     }
   } catch (error) {
+    if (!scopeOwner.active()) return
     formErrors.value = {
       ...formErrors.value,
       ...serverFieldErrors(error, {
@@ -263,7 +272,7 @@ async function save() {
     }
     toast.error(errorMessage(error))
   } finally {
-    saving.value = false
+    if (scopeOwner.active()) saving.value = false
   }
 }
 
@@ -385,6 +394,7 @@ function openBatchEdit() {
 }
 
 async function batchUpdateSelected() {
+  if (batchSubmitting.value) return
   const scopeOwner = captureScope()
   const { selectedRows } = captureSelectedRecords()
   const patch: Record<string, unknown> = {}
@@ -433,18 +443,34 @@ async function batchUpdateSelected() {
 
 async function resumeJobs() {
   if (jobProgress.running.value) return
-  const finished = await jobProgress.resumeActive(() => dnsApi.batchActive(props.provider, props.zoneId), {
-    label: 'DNS 批量',
-    fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as JobLike) || {},
-  })
+  const scopeOwner = captureScope()
+  const finished = await jobProgress.resumeActive(
+    () => dnsApi.batchActive(scopeOwner.value.provider, scopeOwner.value.zoneId),
+    {
+      label: 'DNS 批量',
+      fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as JobLike) || {},
+    }
+  )
   if (finished) {
+    const jobId = String(finished.id || '')
     const failed = jobProgress.failedItems(finished)
     if (failed.length) {
-      showBatchFailures(
+      await showBatchFailures(
         finished.message || 'DNS 批量完成',
         failed.map((i) => formatFailedJobItem(i)),
         '条',
-        { onRetry: () => dnsApi.batchRetry(props.provider, String(finished.id || '')) }
+        {
+          onRetry: async () => {
+            if (!scopeOwner.active()) return null
+            await dnsApi.batchRetry(scopeOwner.value.provider, jobId)
+            if (!scopeOwner.active()) return null
+            return jobProgress.pollJob(jobId, {
+              label: 'DNS 批量',
+              fetchJob: async (id) => ((await dnsApi.batchJob(scopeOwner.value.provider, id)).data as JobLike) || {},
+            })
+          },
+          isActive: () => scopeOwner.active(),
+        }
       )
     }
     await runLoad()
@@ -455,6 +481,11 @@ watch(
   () => [providerId.value, props.provider.type, props.zoneId],
   async () => {
     scopeGeneration.invalidate()
+    dialogOpen.value = false
+    batchEditOpen.value = false
+    editing.value = null
+    saving.value = false
+    batchSubmitting.value = false
     jobProgress.reset()
     resetRowOperations()
     selection.clear()

@@ -9,6 +9,7 @@ type LoadContext = {
 }
 
 type LoadFn = (options?: LoadContext) => Promise<boolean | void>
+type LoadResult = { succeeded: boolean; isLatest: () => boolean }
 
 /**
  * Shared list-page chrome: loading/refresh flags, pageSize memory, refresh action.
@@ -19,7 +20,7 @@ export function useListPage(options: { pageSizeScope: string; defaultPageSize?: 
   const refreshing = ref(false)
   const pageSize = ref(loadPageSize(options.pageSizeScope, options.defaultPageSize ?? 20))
   let requestVersion = 0
-  let activeLoads = 0
+
   let disposed = false
   onScopeDispose(() => {
     disposed = true
@@ -30,21 +31,24 @@ export function useListPage(options: { pageSizeScope: string; defaultPageSize?: 
 
   function nextLoad(refresh?: boolean) {
     const version = ++requestVersion
-    return options.load({
-      refresh,
-      isLatest: () => !disposed && version === requestVersion,
-    })
+    const isLatest = () => !disposed && version === requestVersion
+    return {
+      isLatest,
+      response: options.load({
+        refresh,
+        isLatest,
+      }),
+    }
   }
 
-  async function trackedLoad(refresh?: boolean) {
-    if (disposed) return false
-    activeLoads += 1
+  async function trackedLoad(refresh?: boolean): Promise<LoadResult> {
+    if (disposed) return { succeeded: false, isLatest: () => false }
+    const load = nextLoad(refresh)
     loading.value = true
     try {
-      return (await nextLoad(refresh)) !== false
+      return { succeeded: (await load.response) !== false, isLatest: load.isLatest }
     } finally {
-      activeLoads -= 1
-      if (!disposed) loading.value = activeLoads > 0
+      if (load.isLatest()) loading.value = false
     }
   }
 
@@ -58,11 +62,11 @@ export function useListPage(options: { pageSizeScope: string; defaultPageSize?: 
     refreshing.value = true
     const started = Date.now()
     try {
-      const succeeded = await trackedLoad(true)
-      if (disposed || !succeeded) return
+      const load = await trackedLoad(true)
+      if (!load.succeeded || !load.isLatest()) return
       const wait = Math.max(0, 120 - (Date.now() - started))
       if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
-      if (!disposed) toast.success('已刷新')
+      if (load.isLatest()) toast.success('已刷新')
     } finally {
       if (!disposed) refreshing.value = false
     }

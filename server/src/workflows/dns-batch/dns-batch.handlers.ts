@@ -57,29 +57,45 @@ export function updateDnsBatchHandler(providerType: DnsProviderType) {
   }
 }
 
-export async function getDnsBatchHandler(
-  request: FastifyRequest<RequestOf<typeof dnsJobParamsSchema>>,
-  reply: FastifyReply
-) {
-  return reply.send(
-    success(await request.server.ctx.workflows.dnsBatch.find(request.params.jobId, request.params.providerId))
-  )
+export function getDnsBatchHandler(providerType: DnsProviderType) {
+  return async function getDnsBatch(
+    request: FastifyRequest<RequestOf<typeof dnsJobParamsSchema>>,
+    reply: FastifyReply
+  ) {
+    return reply.send(
+      success(
+        await request.server.ctx.workflows.dnsBatch.find(request.params.jobId, providerType, request.params.providerId)
+      )
+    )
+  }
 }
 
-export async function getActiveDnsBatchHandler(
-  request: FastifyRequest<RequestOf<typeof dnsZoneParamsSchema>>,
-  reply: FastifyReply
-) {
-  return reply.send(
-    success(await request.server.ctx.workflows.dnsBatch.active(request.params.providerId, request.params.zone))
-  )
+export function getActiveDnsBatchHandler(providerType: DnsProviderType) {
+  return async function getActiveDnsBatch(
+    request: FastifyRequest<RequestOf<typeof dnsZoneParamsSchema>>,
+    reply: FastifyReply
+  ) {
+    return reply.send(
+      success(
+        await request.server.ctx.workflows.dnsBatch.active(providerType, request.params.providerId, request.params.zone)
+      )
+    )
+  }
 }
 
-export async function retryDnsBatchHandler(
-  request: FastifyRequest<RequestOf<typeof dnsJobParamsSchema>>,
-  reply: FastifyReply
-) {
-  return reply.send(
-    success(await request.server.ctx.workflows.dnsBatch.retryFailed(request.params.jobId, request.params.providerId))
-  )
+export function retryDnsBatchHandler(providerType: DnsProviderType) {
+  return async function retryDnsBatch(
+    request: FastifyRequest<RequestOf<typeof dnsJobParamsSchema>>,
+    reply: FastifyReply
+  ) {
+    return reply.send(
+      success(
+        await request.server.ctx.workflows.dnsBatch.retryFailed(
+          request.params.jobId,
+          providerType,
+          request.params.providerId
+        )
+      )
+    )
+  }
 }

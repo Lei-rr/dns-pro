@@ -7,9 +7,6 @@ export interface MutationSideEffect {
   [key: string]: unknown
 }
 
-/** Compatibility name retained for existing consumers. */
-export type ApiSideEffect = MutationSideEffect
-
 export interface SideEffects {
   dns?: {
     sync?: MutationSideEffect
@@ -21,15 +18,6 @@ export interface SideEffects {
     [key: string]: unknown
   }
   [key: string]: unknown
-}
-
-export type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
-
-/** Stable response DTO returned by mutation endpoints that enqueue a job. */
-export interface JobCommand {
-  id?: string
-  job_id?: string
-  job?: { id?: string }
 }
 
 export interface ApiSuccessResponse<T = unknown> {

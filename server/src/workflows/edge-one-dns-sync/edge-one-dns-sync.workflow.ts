@@ -1,6 +1,10 @@
 import { ApiError } from '../../shared/http/api-error.js'
 import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import { buildDnsSideEffects, type DnsSideEffect } from '../../shared/providers/side-effect-result.js'
+import {
+  buildDnsSideEffects,
+  hasFailedSideEffectItem,
+  type DnsSideEffect,
+} from '../../shared/providers/side-effect-result.js'
 import { providerOptionalString } from '../../shared/providers/provider-values.js'
 import { DnsPodRecordOps } from '../../modules/dns-pod/dns-pod-record-sync.service.js'
 import { EdgeOneGateway } from '../../modules/edge-one/edge-one.client.js'
@@ -45,8 +49,10 @@ export class EdgeOneDnsSyncWorkflow {
     const result = await this.createDomain(providerId, zoneId, normalized)
     if (!autoSync || !result.name) return result
 
-    const cname = await this.assignedCname(providerId, zoneId, String(result.name))
-    const sync = await this.syncCnameRecord(providerId, String(result.name), cname)
+    const sync = await this.safe(async () => {
+      const cname = await this.assignedCname(providerId, zoneId, String(result.name))
+      return this.syncCnameRecord(providerId, String(result.name), cname)
+    })
     return {
       ...result,
       side_effects: buildDnsSideEffects({
@@ -66,7 +72,8 @@ export class EdgeOneDnsSyncWorkflow {
     if (autoCleanup && !options.primaryDeleted) {
       try {
         cname = await this.assignedCname(providerId, zoneId, domainName)
-      } catch {
+      } catch (error) {
+        if (!this.isExplicitProviderNotFound(error)) throw error
         cname = ''
       }
     }
@@ -227,7 +234,8 @@ export class EdgeOneDnsSyncWorkflow {
       let dnspodZone: string
       try {
         dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
-      } catch {
+      } catch (error) {
+        if (!(error instanceof ApiError && error.code === 'edgeone_dnspod_zone_not_found')) throw error
         return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
       }
 
@@ -274,6 +282,7 @@ export class EdgeOneDnsSyncWorkflow {
       if (action === 'failed') status = 'failed'
       else if (action !== '') status = 'completed'
     }
+    if (hasFailedSideEffectItem(result)) status = 'failed'
     if (status === '') status = String(result.code ?? '') !== '' ? 'skipped' : 'completed'
     return {
       status: status as DnsSideEffect['status'],
@@ -283,7 +292,7 @@ export class EdgeOneDnsSyncWorkflow {
   }
 
   private normalizeCleanupSideEffect(result: Record<string, unknown>, defaultMessage: string): DnsSideEffect {
-    if (result.status === 'failed' || String(result.code ?? '') === 'dns_sync_failed') {
+    if (hasFailedSideEffectItem(result) || String(result.code ?? '') === 'dns_sync_failed') {
       return {
         status: 'failed',
         message: String(result.message ?? (defaultMessage || 'DNS 清理失败')),
@@ -305,11 +314,10 @@ export class EdgeOneDnsSyncWorkflow {
   }
 
   private isExplicitProviderNotFound(error: unknown): boolean {
-    return (
-      error instanceof ApiError &&
-      error.code === 'edgeone_request_failed' &&
-      isExplicitNotFound(error, /^ResourceNotFound(?:\.|$)/i)
-    )
+    return isExplicitNotFound(error, {
+      localCodes: ['edgeone_acceleration_domain_not_found'],
+      providerCode: /^ResourceNotFound(?:\.|$)/i,
+    })
   }
 
   private async safe<T extends Record<string, unknown>>(fn: () => Promise<T>): Promise<Record<string, unknown>> {

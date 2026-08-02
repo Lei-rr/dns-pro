@@ -1,4 +1,4 @@
-import { buildDnsSideEffects } from '../../shared/providers/side-effect-result.js'
+import { buildDnsSideEffects, type SideEffects } from '../../shared/providers/side-effect-result.js'
 import { ApiError } from '../../shared/http/api-error.js'
 import { SaaSDnsSyncCoordinator } from './saas-dns-sync.coordinator.js'
 import type { SyncRecord } from './saas-dns-sync.types.js'
@@ -20,6 +20,12 @@ export type SaaSDeleteOptions = {
   onPrimaryDeleted?: () => Promise<void>
 }
 
+export type SaaSUpdateOptions = {
+  remoteApplied?: boolean
+  beforeRecords?: SyncRecord[]
+  onBeforeRecordsPrepared?: (records: SyncRecord[]) => Promise<void>
+}
+
 /**
  * SaaS host lifecycle workflow.
  * DNS create/update/cleanup is delegated to the shared SaaSDnsSyncCoordinator.
@@ -38,24 +44,26 @@ export class SaaSDnsSyncWorkflow {
     data: Record<string, unknown>,
     autoSync = false
   ): Promise<Record<string, unknown>> {
+    const owner = await this.hostnames.resolveZoneRef(providerId, zoneName)
     if (autoSync) {
       await this.sync.preflightSaaS(providerId, String(data.hostname ?? ''), data)
     }
 
     const result = await this.hostnames.createHostname(providerId, zoneName, data)
-    await this.invalidateCache(providerId, zoneName, String(result.hostname ?? data.hostname ?? ''))
+    invalidateSaaSHostnameCache(owner.cloudflareProviderId, owner.zoneId, true)
+    if (this.localPreferenceFailed(result)) return this.presentMutation(result)
 
     if (autoSync && result.hostname) {
       const sync = await this.sync.syncSaaSHostname(providerId, zoneName, String(result.hostname))
       return {
         ...result,
-        side_effects: buildDnsSideEffects({
+        side_effects: this.withDnsSideEffects(result, {
           sync: this.sync.normalizeSyncSideEffect(sync, '已执行 DNS 同步'),
         }),
       }
     }
 
-    return result
+    return this.presentMutation(result)
   }
 
   async updateHostname(
@@ -63,9 +71,11 @@ export class SaaSDnsSyncWorkflow {
     zoneName: string,
     hostnameFqdn: string,
     data: Record<string, unknown>,
-    autoSync = false
+    autoSync = false,
+    options: SaaSUpdateOptions = {}
   ): Promise<Record<string, unknown>> {
-    let beforeRecords: SyncRecord[] = []
+    const owner = await this.hostnames.resolveZoneRef(providerId, zoneName)
+    let beforeRecords: SyncRecord[] = options.beforeRecords ?? []
     // Preference/DNS-linked edits should resync even if frontend forgot auto_sync.
     const shouldAutoSync =
       autoSync ||
@@ -75,25 +85,27 @@ export class SaaSDnsSyncWorkflow {
       'sync_zone' in data ||
       'sync_provider_id' in data
 
-    if (shouldAutoSync) {
+    if (shouldAutoSync && options.beforeRecords === undefined) {
       const collected = await this.sync.collectSaaSRecords(providerId, zoneName, hostnameFqdn)
       beforeRecords = collected.records ?? []
+      await options.onBeforeRecordsPrepared?.(beforeRecords)
     }
 
-    const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data)
-    await this.invalidateCache(providerId, zoneName, hostnameFqdn)
+    const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data, options)
+    invalidateSaaSHostnameCache(owner.cloudflareProviderId, owner.zoneId, true)
+    if (this.localPreferenceFailed(result)) return this.presentMutation(result)
 
     if (shouldAutoSync) {
       const sync = await this.sync.resyncSaaSHostname(providerId, zoneName, hostnameFqdn, beforeRecords)
       return {
         ...result,
-        side_effects: buildDnsSideEffects({
+        side_effects: this.withDnsSideEffects(result, {
           sync: this.sync.normalizeSyncSideEffect(sync, '已执行 DNS 重同步'),
         }),
       }
     }
 
-    return result
+    return this.presentMutation(result)
   }
 
   async reconcileHostname(
@@ -185,6 +197,28 @@ export class SaaSDnsSyncWorkflow {
     } catch {
       // Best-effort: mutation already applied; miss cache invalidate rather than fail the request.
     }
+  }
+
+  private localPreferenceFailed(result: Record<string, unknown>): boolean {
+    return String(result.local_preference_error ?? '') !== ''
+  }
+
+  private presentMutation(result: Record<string, unknown>): Record<string, unknown> {
+    const { local_preference_error: localError, ...data } = result
+    if (String(localError ?? '') === '') return data
+    return {
+      ...data,
+      side_effects: {
+        local: {
+          preference: { status: 'failed', message: String(localError), details: [] },
+        },
+      } satisfies SideEffects,
+    }
+  }
+
+  private withDnsSideEffects(result: Record<string, unknown>, dns: NonNullable<SideEffects['dns']>): SideEffects {
+    const existing = (this.presentMutation(result).side_effects ?? {}) as SideEffects
+    return { ...existing, dns: { ...existing.dns, ...dns } }
   }
 
   private async shouldCleanupOwnershipTxt(

@@ -1,4 +1,5 @@
 import { ApiError } from '../../shared/http/api-error.js'
+import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
 import { CloudflareZoneService, type ZoneListResult } from '../cloudflare/cloudflare-zone.service.js'
 import { CloudflareCustomHostnameGateway, type CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import { CloudflareFallbackOriginGateway, type FallbackOriginInfo } from './saas-fallback-origin.client.js'
@@ -84,7 +85,7 @@ export class SaaSHostnameService {
       const hostname = await this.cloudflareHostnames.show(cfId, zoneId, hostnameId, refresh)
       return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, hostnameId)
     } catch (error) {
-      if (!(error instanceof ApiError) || error.statusCode !== 404) throw error
+      if (!isExplicitNotFound(error, { localCodes: ['saas_hostname_not_found'] })) throw error
       const refreshedId = await this.cloudflareHostnames.idByHostname(cfId, zoneId, normalizedFqdn, true)
       const hostname = await this.cloudflareHostnames.show(cfId, zoneId, refreshedId, refresh)
       return this.enrichDetailedHostname(providerId, hostname, cfId, zoneId, refreshedId)
@@ -112,26 +113,28 @@ export class SaaSHostnameService {
     const hostnameId = String(hostname.id ?? '')
     const hostnameName = String(hostname.hostname ?? '')
 
-    if (hostnameId !== '' && preferred !== null) {
-      await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
+    try {
+      if (hostnameId !== '' && preferred !== null) {
+        await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
+      }
+      if (hostnameId !== '' && normalizedSync !== null) {
+        await this.preferences.setNormalizedSyncConfig(cfId, hostnameId, normalizedSync, hostnameName)
+      }
+      if (hostnameId !== '') {
+        await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, hostnameName)
+      }
+      return this.withPreference(hostname, cfId, hostnameId)
+    } catch (error) {
+      return { ...hostname, local_preference_error: error instanceof Error ? error.message : String(error) }
     }
-
-    if (hostnameId !== '' && normalizedSync !== null) {
-      await this.preferences.setNormalizedSyncConfig(cfId, hostnameId, normalizedSync, hostnameName)
-    }
-
-    if (hostnameId !== '') {
-      await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, hostnameName)
-    }
-
-    return this.withPreference(hostname, cfId, hostnameId)
   }
 
   async updateHostname(
     providerId: string,
     zoneName: string,
     hostnameFqdn: string,
-    data: Record<string, unknown>
+    data: Record<string, unknown>,
+    options: { remoteApplied?: boolean } = {}
   ): Promise<CloudflareCustomHostname> {
     const [cfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const preferred = 'preferred_domain' in data ? await this.extractPreferredDomain(data) : null
@@ -141,42 +144,51 @@ export class SaaSHostnameService {
     const cfPayload = this.syncConfigs.buildCloudflareUpdatePayload(current, data)
 
     let hostname = current
-    if (Object.keys(cfPayload).length > 0) {
+    if (Object.keys(cfPayload).length > 0 && !options.remoteApplied) {
       hostname = await this.cloudflareHostnames.update(cfId, zoneId, hostnameId, cfPayload)
     }
 
-    if (preferred !== null) {
-      await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
-    }
+    try {
+      if (preferred !== null) {
+        await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
+      }
 
-    if (
-      'sync_target' in data ||
-      'sync_zone' in data ||
-      'sync_provider_id' in data ||
-      'auto_preferred' in data ||
-      preferred !== null
-    ) {
-      const normalized = await this.syncConfigs.normalizeSyncPreference(
-        providerId,
-        String(hostname.hostname ?? hostnameFqdn),
-        existing,
-        data
-      )
-      await this.preferences.setSyncConfig({
-        cloudflareProviderId: cfId,
-        hostnameId,
-        syncTarget: normalized.sync_target,
-        syncProviderId: normalized.sync_provider_id,
-        syncZone: normalized.sync_zone,
-        autoPreferred: normalized.auto_preferred,
-        hostname: String(hostname.hostname ?? hostnameFqdn),
-      })
-    }
+      if (
+        'sync_target' in data ||
+        'sync_zone' in data ||
+        'sync_provider_id' in data ||
+        'auto_preferred' in data ||
+        preferred !== null
+      ) {
+        const normalized = await this.syncConfigs.normalizeSyncPreference(
+          providerId,
+          String(hostname.hostname ?? hostnameFqdn),
+          existing,
+          data
+        )
+        await this.preferences.setSyncConfig({
+          cloudflareProviderId: cfId,
+          hostnameId,
+          syncTarget: normalized.sync_target,
+          syncProviderId: normalized.sync_provider_id,
+          syncZone: normalized.sync_zone,
+          autoPreferred: normalized.auto_preferred,
+          hostname: String(hostname.hostname ?? hostnameFqdn),
+        })
+      }
 
-    if (Object.keys(cfPayload).length > 0) {
-      await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, String(hostname.hostname ?? hostnameFqdn))
+      if (Object.keys(cfPayload).length > 0) {
+        await this.preferences.markOwnershipTxtCleaned(
+          cfId,
+          hostnameId,
+          false,
+          String(hostname.hostname ?? hostnameFqdn)
+        )
+      }
+      return this.withPreference(hostname, cfId, hostnameId)
+    } catch (error) {
+      return { ...hostname, local_preference_error: error instanceof Error ? error.message : String(error) }
     }
-    return this.withPreference(hostname, cfId, hostnameId)
   }
 
   async deleteHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<{ id: string }> {
@@ -184,15 +196,17 @@ export class SaaSHostnameService {
     try {
       resolved = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     } catch (error) {
-      if (!(error instanceof ApiError) || (error.code !== 'saas_hostname_not_found' && error.statusCode !== 404)) {
-        throw error
-      }
+      if (!isExplicitNotFound(error, { localCodes: ['saas_hostname_not_found'] })) throw error
       await this.clearPreferencesForFqdn(providerId, hostnameFqdn)
       return { id: '' }
     }
 
     const [cfId, zoneId, hostnameId] = resolved
-    await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
+    try {
+      await this.cloudflareHostnames.delete(cfId, zoneId, hostnameId)
+    } catch (error) {
+      if (!isExplicitNotFound(error)) throw error
+    }
     await this.preferences.clear(cfId, hostnameId)
     return { id: hostnameId }
   }
@@ -302,7 +316,8 @@ export class SaaSHostnameService {
       try {
         const [resolvedCfId, zoneId, hostnameId] = await this.resolveHostname(providerId, zoneName, fqdn)
         if (resolvedCfId === cfId) return [resolvedCfId, zoneId, hostnameId]
-      } catch {
+      } catch (error) {
+        if (!isExplicitNotFound(error, { localCodes: ['saas_hostname_not_found'] })) throw error
         continue
       }
     }

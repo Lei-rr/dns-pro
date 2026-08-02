@@ -86,7 +86,7 @@ export class SaaSBatchJobWorkflow {
         patch,
         auto_sync: input.autoSync !== false,
       },
-      hostnames.map((hostname) => ({ hostname, status: 'pending' })),
+      hostnames.map((hostname) => ({ hostname, status: 'pending', primary_applied: false })),
       { types: [...SAAS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_name: input.zoneName } },
       { message: '批量修改任务已创建' }
     )
@@ -191,8 +191,29 @@ export class SaaSBatchJobWorkflow {
       itemKey: (item) => String(item.hostname || ''),
       runningMessage: '更新中',
       progressMessage: '批量修改执行中',
-      execute: async (_item, hostname) => {
-        const updated = await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync)
+      execute: async (item, hostname) => {
+        let beforeRecords = this.syncRecords(item.dns_before_records)
+        const updated = await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync, {
+          remoteApplied: item.primary_applied === true,
+          beforeRecords,
+          onBeforeRecordsPrepared:
+            beforeRecords === undefined
+              ? async (records) => {
+                  beforeRecords = records
+                  await this.persistUpdateStage(job.id, hostname, { dns_before_records: records })
+                }
+              : undefined,
+        })
+        const localPreference = (
+          updated as { side_effects?: { local?: { preference?: { status?: string; message?: string } } } }
+        ).side_effects?.local?.preference
+        if (localPreference?.status === 'failed') {
+          return {
+            status: 'failed',
+            message: `远端配置已更新，但本地偏好保存失败：${localPreference.message || '未知错误'}`,
+            extra: { primary_applied: true, local_preference_status: 'failed' },
+          }
+        }
 
         if (autoSync) {
           const dnsSync = (updated as { side_effects?: { dns?: { sync?: { status?: string; message?: string } } } })
@@ -201,7 +222,7 @@ export class SaaSBatchJobWorkflow {
             return {
               status: 'failed',
               message: `配置已更新，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
-              extra: { dns_sync_status: 'failed' },
+              extra: { primary_applied: true, dns_sync_status: 'failed' },
             }
           }
           const dnsNote =
@@ -213,11 +234,11 @@ export class SaaSBatchJobWorkflow {
           return {
             status: 'success',
             message: `已更新${dnsNote}`,
-            extra: { dns_sync_status: dnsSync?.status || 'unknown' },
+            extra: { primary_applied: true, dns_sync_status: dnsSync?.status || 'unknown' },
           }
         }
 
-        return { status: 'success', message: '已更新' }
+        return { status: 'success', message: '已更新', extra: { primary_applied: true } }
       },
     })
 
@@ -237,6 +258,16 @@ export class SaaSBatchJobWorkflow {
     await this.jobs.patchItem(jobId, (row) => String(row.hostname || '') === hostname, patch)
     // Flush the durable stage marker before starting the next external side effect.
     await this.jobs.get(jobId)
+  }
+
+  private async persistUpdateStage(jobId: string, hostname: string, patch: Record<string, unknown>): Promise<void> {
+    await this.jobs.patchItem(jobId, (row) => String(row.hostname || '') === hostname, patch)
+    // Flush the pre-mutation DNS snapshot before the irreversible provider update.
+    await this.jobs.get(jobId)
+  }
+
+  private syncRecords(value: unknown): SaaSDeleteCleanupRecipe['records'] | undefined {
+    return Array.isArray(value) ? (value as SaaSDeleteCleanupRecipe['records']) : undefined
   }
 
   private async invalidateZoneCache(providerId: string, zoneName: string): Promise<void> {
@@ -280,6 +311,7 @@ export class SaaSBatchJobWorkflow {
       ...base,
       provider_id: String(payload.provider_id || ''),
       zone_name: String(payload.zone_name || ''),
+      items: base.items.map(({ dns_before_records: _dnsBeforeRecords, ...item }) => item),
     }
   }
 }

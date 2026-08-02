@@ -19,7 +19,7 @@ import { confirmDelete } from '@/shared/ui/confirm'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
-import { removeListItem } from '@/shared/lib/row-busy'
+import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { createScopeGeneration } from '@/shared/lib/scope-generation'
 import { encodePath } from '@/shared/lib/path'
@@ -33,6 +33,7 @@ const dialogOpen = ref(false)
 const name = ref('')
 const nameError = ref('')
 const providerGeneration = createScopeGeneration()
+const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 const {
   loading,
@@ -75,12 +76,14 @@ function openCreate() {
 
 async function createTunnel() {
   if (creating.value) return
+  const scopeOwner = providerGeneration.capture({ providerId: props.providerId })
   const value = name.value.trim()
   nameError.value = value ? '' : '请填写隧道名称'
   if (nameError.value) return
   creating.value = true
   try {
-    const response = await cloudflaredApi.createTunnel(props.providerId, value)
+    const response = await cloudflaredApi.createTunnel(scopeOwner.value.providerId, value)
+    if (!scopeOwner.active()) return
     const tokenEffect = response.side_effects?.tunnel?.token
     if (tokenEffect?.status === 'failed') toast.warning('隧道已创建，令牌获取失败，可进入详情重试')
     else toast.success('隧道已创建')
@@ -88,10 +91,11 @@ async function createTunnel() {
     name.value = ''
     await runLoad()
   } catch (error) {
+    if (!scopeOwner.active()) return
     nameError.value = serverFieldErrors(error).name || nameError.value
     fail(error)
   } finally {
-    creating.value = false
+    if (scopeOwner.active()) creating.value = false
   }
 }
 
@@ -100,14 +104,16 @@ async function removeTunnel(record: CloudflaredTunnel) {
   const tunnelId = String(record.id || '')
   const tunnelKey = String(record.id || record.name)
   if (!(await confirmDelete(String(record.name || record.id || ''))) || !scopeOwner.active()) return
-  try {
-    await cloudflaredApi.deleteTunnel(scopeOwner.value.providerId, tunnelId)
-    if (!scopeOwner.active()) return
-    toast.success('已删除')
-    removeListItem(tunnels, (item) => String(item.id || item.name) === tunnelKey)
-  } catch (error) {
-    if (scopeOwner.active()) fail(error)
-  }
+  await runBusy(tunnelKey, async (owner) => {
+    try {
+      await cloudflaredApi.deleteTunnel(scopeOwner.value.providerId, tunnelId)
+      if (!scopeOwner.active() || !owner.active()) return
+      toast.success('已删除')
+      removeListItem(tunnels, (item) => String(item.id || item.name) === tunnelKey)
+    } catch (error) {
+      if (scopeOwner.active() && owner.active()) fail(error)
+    }
+  })
 }
 
 function replicaCount(record: CloudflaredTunnel) {
@@ -118,14 +124,19 @@ watch(
   () => props.providerId,
   () => {
     providerGeneration.invalidate()
+    resetRowOperations()
     tunnels.value = []
     dialogOpen.value = false
+    creating.value = false
     void runLoad()
   }
 )
 
 onMounted(() => runLoad())
-onUnmounted(() => providerGeneration.invalidate())
+onUnmounted(() => {
+  providerGeneration.invalidate()
+  resetRowOperations()
+})
 </script>
 <template>
   <div class="flex flex-1 flex-col gap-4">
@@ -165,9 +176,13 @@ onUnmounted(() => providerGeneration.invalidate())
           </TableRow>
           <TableRow v-for="record in pagedTunnels" :key="String(record.id || record.name)">
             <TableCell class="px-4">
-              <Button variant="link" class="h-auto px-0 py-0 font-medium" @click="openDetail(record)">{{
-                record.name
-              }}</Button>
+              <Button
+                variant="link"
+                class="h-auto px-0 py-0 font-medium"
+                :disabled="isRowBusy(String(record.id || record.name))"
+                @click="openDetail(record)"
+                >{{ record.name }}</Button
+              >
             </TableCell>
             <TableCell>
               <Badge variant="secondary">{{ tunnelStatusLabel(record.status) }}</Badge>
@@ -176,15 +191,31 @@ onUnmounted(() => providerGeneration.invalidate())
             <TableCell class="max-w-[220px] truncate text-sm">{{ record.id || '-' }}</TableCell>
             <TableCell class="text-right">
               <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
-                <Button variant="ghost" size="sm" @click="openDetail(record)">管理</Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :disabled="isRowBusy(String(record.id || record.name))"
+                  @click="openDetail(record)"
+                  >管理</Button
+                >
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button variant="ghost" size="icon" class="size-8">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="size-8"
+                      :disabled="isRowBusy(String(record.id || record.name))"
+                    >
                       <EllipsisVertical class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem variant="destructive" @click="removeTunnel(record)">删除</DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      :disabled="isRowBusy(String(record.id || record.name))"
+                      @click="removeTunnel(record)"
+                      >删除</DropdownMenuItem
+                    >
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

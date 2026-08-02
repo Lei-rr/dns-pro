@@ -24,7 +24,12 @@ type ProviderCacheOptions<T> = {
 const keyGenerations = new Map<string, number>()
 const tagGenerations = new Map<string, number>()
 const loadGenerations = new Map<string, number>()
-const inflight = new Map<string, Promise<CachedResult<unknown>>>()
+type InflightEntry = {
+  promise: Promise<CachedResult<unknown>>
+  keyGeneration: number
+  tagGenerations: ReadonlyArray<readonly [string, number]>
+}
+const inflight = new Map<string, InflightEntry>()
 
 export function parseRefreshFlag(value: unknown): boolean {
   if (typeof value === 'boolean') return value
@@ -43,7 +48,13 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
       return { value: hit, hit: true, meta: { cache: true, cached: true, source: 'cache' } }
     }
     const pending = inflight.get(key)
-    if (pending) return pending as Promise<CachedResult<T>>
+    if (
+      pending &&
+      pending.keyGeneration === (keyGenerations.get(key) ?? 0) &&
+      pending.tagGenerations.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))
+    ) {
+      return pending.promise as Promise<CachedResult<T>>
+    }
   }
 
   const fence = {
@@ -62,11 +73,16 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
 
     return { value, hit: false, meta: { cache: false, cached: false, source: 'provider' } }
   })()
-  if (!options.refresh) inflight.set(key, loading)
+  const inflightEntry: InflightEntry = {
+    promise: loading,
+    keyGeneration: fence.key,
+    tagGenerations: fence.tags,
+  }
+  if (!options.refresh) inflight.set(key, inflightEntry)
   try {
     return await loading
   } finally {
-    if (inflight.get(key) === loading) inflight.delete(key)
+    if (inflight.get(key) === inflightEntry) inflight.delete(key)
   }
 }
 

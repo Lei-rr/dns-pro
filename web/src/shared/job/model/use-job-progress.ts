@@ -137,6 +137,10 @@ export function useJobProgress() {
       return await pollOwned(jobId, options, owner)
     } catch (error) {
       resumeError.value = error instanceof Error ? error.message : String(error)
+      if (owner.active()) {
+        text.value = `${options.label || '任务'}恢复失败：${resumeError.value}`
+        job.value = { status: 'failed', message: text.value }
+      }
       release(owner)
       return null
     }

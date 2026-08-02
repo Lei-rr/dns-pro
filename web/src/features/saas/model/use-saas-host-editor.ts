@@ -6,7 +6,7 @@ import type { DnsZoneOption } from './types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
-import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
+import { localPreferenceSideEffectFromData, notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { dnsSideEffectFromData } from '@/shared/lib/dns-side-effects'
 import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
 
@@ -173,6 +173,7 @@ export function useSaasHostEditor(options: {
   }
 
   async function save() {
+    if (saving.value) return
     const owner = captureOwner()
     const hostname = (usesGuidedHostname.value ? hostnamePreview.value : form.hostname).trim()
     const errors: FieldErrors = {}
@@ -207,9 +208,14 @@ export function useSaasHostEditor(options: {
           { autoSync: form.auto_sync }
         )
         if (!active(owner)) return
-        notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已更新')
+        const localPreference = localPreferenceSideEffectFromData(response)
+        if (localPreference?.status === 'failed') {
+          toast.warning(`主机名已更新，但本地偏好保存失败：${localPreference.message || '未知错误'}`)
+        } else {
+          notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已更新')
+        }
         dialogOpen.value = false
-        if (response.data) options.patchHostname(response.data)
+        if (response.data && localPreference?.status !== 'failed') options.patchHostname(response.data)
         else await options.reload()
       } else {
         if (form.sync_provider_id) {
@@ -222,7 +228,12 @@ export function useSaasHostEditor(options: {
           autoSync: form.auto_sync && !!payload.sync_target,
         })
         if (!active(owner)) return
-        notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已创建')
+        const localPreference = localPreferenceSideEffectFromData(response)
+        if (localPreference?.status === 'failed') {
+          toast.warning(`主机名已创建，但本地偏好保存失败：${localPreference.message || '未知错误'}`)
+        } else {
+          notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已创建')
+        }
         dialogOpen.value = false
         await options.reload()
       }

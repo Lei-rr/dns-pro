@@ -70,6 +70,19 @@ try {
     headers: { cookie },
   })
   assert.equal(dnsRetry.statusCode, 404)
+  const wrongTypeRead = await app.inject({
+    method: 'GET',
+    url: `/api/dnspod/providers/owner-a/records/batch/${dns.id}`,
+    headers: { cookie },
+  })
+  assert.equal(wrongTypeRead.statusCode, 200)
+  assert.equal(wrongTypeRead.json().data, null)
+  const wrongTypeRetry = await app.inject({
+    method: 'POST',
+    url: `/api/dnspod/providers/owner-a/records/batch/${dns.id}/retry`,
+    headers: { cookie },
+  })
+  assert.equal(wrongTypeRetry.statusCode, 404)
   const edge = await app.ctx.platform.jobs.createTerminalExclusive(
     EDGEONE_BATCH_DISABLE_JOB,
     { provider_id: 'owner-a', zone_id: 'zone-1' },

@@ -1,6 +1,6 @@
 import http, { unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse } from '@/shared/api/types'
-import type { SaaSFallbackOrigin, SaaSHostname } from '@/features/saas/model/types'
+import type { SaaSDnsRepairResult, SaaSFallbackOrigin, SaaSHostname } from '@/features/saas/model/types'
 import { encodePath } from '@/shared/lib/path'
 
 const providerBase = (provider: string) => `/saas/providers/${encodePath(provider)}`
@@ -58,7 +58,7 @@ export const saasApi = {
     ),
   reconcileHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/reconcile`),
-  repairHostnameDns: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
+  repairHostnameDns: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSDnsRepairResult>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/dns-repair`),
   fallbackOrigin: (
     provider: string,

@@ -112,7 +112,8 @@ export class CloudflareDnsSaaSDriver implements SyncDriver {
     let zoneId = ''
     try {
       zoneId = await this.zones.idByName(cloudflareProviderId, zoneName)
-    } catch {
+    } catch (error) {
+      if (!(error instanceof ApiError && error.code === 'cloudflare_zone_not_found')) throw error
       return { cleaned: 0, records: [], reason: 'cloudflare_zone_not_found' }
     }
 
@@ -409,7 +410,7 @@ export class CloudflareDnsSaaSDriver implements SyncDriver {
 
     for (const match of await this.records.findExact(cloudflareProviderId, zoneId, record.name, record.type, true)) {
       const value = String(match.content ?? '').replace(/\.$/, '')
-      if (value !== expectedValue) continue
+      if (expectedValue !== '' && value !== expectedValue) continue
       const comment = String(match.comment ?? '')
       if (comment !== '' && comment !== expectedComment) continue
       const recordId = String(match.id ?? '')

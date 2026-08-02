@@ -109,19 +109,23 @@ export function useSaasHostJobs(options: {
       if (!finished) continue
       const failed = jobProgress.failedItems(finished)
       if (failed.length) {
-        showBatchFailures(
+        await showBatchFailures(
           finished.message || `${item.label}完成`,
           failed.map((entry) => formatFailedJobItem(entry)),
           '个',
           {
             onRetry: async () => {
+              if (!owner.active()) return null
               const id = String(finished.id || '')
               await item.retry(id)
-              return item.fetchJob(id)
+              if (!owner.active()) return null
+              return jobProgress.pollJob(id, { label: item.label, fetchJob: item.fetchJob })
             },
+            isActive: () => owner.active(),
           }
         )
       }
+      if (!owner.active()) return
       await options.reload()
       break
     }

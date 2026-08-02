@@ -1,5 +1,5 @@
 import { ApiError } from '../../shared/http/api-error.js'
-import type { DnsSideEffect } from '../../shared/providers/side-effect-result.js'
+import { hasFailedSideEffectItem, type DnsSideEffect } from '../../shared/providers/side-effect-result.js'
 import { ProviderRepository } from '../../modules/providers/provider.repository.js'
 import { CloudflareDnsRecordService } from '../../modules/cloudflare/cloudflare-dns-record.service.js'
 import { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-zone.service.js'
@@ -213,7 +213,7 @@ export class SaaSDnsSyncCoordinator {
   normalizeCleanupSideEffect(result: unknown, defaultMessage: string): DnsSideEffect {
     const r = (result ?? {}) as Record<string, unknown>
     // safe() failures must surface as failed (never collapse to skipped)
-    if (r.status === 'failed' || String(r.code ?? '') === 'dns_sync_failed') {
+    if (hasFailedSideEffectItem(r) || String(r.code ?? '') === 'dns_sync_failed') {
       return {
         status: 'failed',
         message: String(r.message ?? (defaultMessage || 'DNS 清理失败')),
@@ -254,6 +254,7 @@ export class SaaSDnsSyncCoordinator {
   }
 
   private deriveSyncStatus(result: Record<string, unknown>): DnsSideEffect['status'] {
+    if (hasFailedSideEffectItem(result)) return 'failed'
     const records = Array.isArray(result.records) ? result.records : []
     if (records.length === 0) {
       return String(result.reason ?? '') !== '' || String(result.code ?? '') !== '' ? 'skipped' : 'completed'

@@ -1,4 +1,5 @@
 import { ApiError } from '../../shared/http/api-error.js'
+import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
 import type { JobRecord } from '../../platform/jobs/job.types.js'
 import type { JobService } from '../../platform/jobs/job.service.js'
 import {
@@ -160,19 +161,20 @@ export class DnsBatchJobWorkflow {
     return this.present(job)
   }
 
-  async find(id: string, providerId?: string): Promise<DnsBatchJobView | null> {
+  async find(id: string, providerType?: string, providerId?: string): Promise<DnsBatchJobView | null> {
     const job = await this.jobs.get(id)
     if (!job || !DNS_BATCH_JOB_TYPES.has(job.type)) return null
+    if (providerType !== undefined && String(job.payload?.provider_type ?? '') !== providerType) return null
     if (providerId !== undefined && String(job.payload?.provider_id ?? '') !== providerId) return null
     return this.present(job)
   }
 
-  async active(providerId: string, zone: string): Promise<DnsBatchJobView | null> {
-    return this.findActive(providerId, zone)
+  async active(providerType: string, providerId: string, zone: string): Promise<DnsBatchJobView | null> {
+    return this.findActive(providerType, providerId, zone)
   }
 
-  async retryFailed(jobId: string, providerId?: string): Promise<DnsBatchJobView> {
-    const existing = await this.find(jobId, providerId)
+  async retryFailed(jobId: string, providerType?: string, providerId?: string): Promise<DnsBatchJobView> {
+    const existing = await this.find(jobId, providerType, providerId)
     if (!existing) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
     const raw = await this.jobs.get(jobId)
     if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
@@ -246,7 +248,7 @@ export class DnsBatchJobWorkflow {
           return { status: 'success', message: '已删除' }
         } catch (error) {
           // CF/DNSPod 记录已不存在时删会 404：目标态已达成，记为 skipped 而非 failed
-          if (this.isProviderNotFound(error)) {
+          if (isExplicitNotFound(error, { providerCode: /^ResourceNotFound\.NoDataOfRecord$/i })) {
             return { status: 'skipped', message: '记录已不存在（404）' }
           }
           throw error
@@ -311,8 +313,12 @@ export class DnsBatchJobWorkflow {
     throw new ApiError('batch_provider_unsupported', `Unsupported provider type for batch finish: ${providerType}`, 422)
   }
 
-  private async findActive(providerId: string, zone: string): Promise<DnsBatchJobView | null> {
-    const hit = await findActiveBatchJob(this.jobs, [...DNS_ZONE_JOB_TYPES], { provider_id: providerId, zone })
+  private async findActive(providerType: string, providerId: string, zone: string): Promise<DnsBatchJobView | null> {
+    const hit = await findActiveBatchJob(this.jobs, [...DNS_ZONE_JOB_TYPES], {
+      provider_type: providerType,
+      provider_id: providerId,
+      zone,
+    })
     return hit ? this.present(hit) : null
   }
 
@@ -325,12 +331,5 @@ export class DnsBatchJobWorkflow {
       provider_id: String(payload.provider_id || ''),
       zone: String(payload.zone || ''),
     }
-  }
-
-  /** Cloudflare/DNSPod 删除时记录已不存在 → 404，批量删按目标态记 skipped */
-  private isProviderNotFound(error: unknown): boolean {
-    if (error instanceof ApiError && error.statusCode === 404) return true
-    const msg = error instanceof Error ? error.message : String(error || '')
-    return /\b404\b/i.test(msg) || /not\s*found/i.test(msg)
   }
 }

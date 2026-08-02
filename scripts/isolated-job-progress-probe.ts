@@ -1,15 +1,21 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
+
 import { runBatchJob } from '../web/src/shared/job/model/run-batch-job.js'
 import { useJobProgress } from '../web/src/shared/job/model/use-job-progress.js'
 import type { JobLike } from '../web/src/shared/job/model/types.js'
 import { useRowBusy } from '../web/src/shared/lib/row-busy.js'
 import { selectableRowKeys, selectedAvailableRows } from '../web/src/shared/lib/row-selection.js'
 import { createScopeGeneration } from '../web/src/shared/lib/scope-generation.js'
+import { useListPage } from '../web/src/shared/lib/use-list-page.js'
 import { confirmState, settleConfirm } from '../web/src/shared/ui/confirm/confirm.js'
 
 Object.assign(globalThis, {
   requestAnimationFrame: (callback: FrameRequestCallback) => setTimeout(() => callback(Date.now()), 0),
+  localStorage: {
+    getItem: () => null,
+    setItem: () => undefined,
+  },
 })
 
 function deferred<T>() {
@@ -85,6 +91,32 @@ postResponse.resolve()
 await inFlightAction
 assert.equal(inFlightToasts, 0, 'stale in-flight response emitted toast')
 assert.equal(inFlightMutations, 0, 'stale in-flight response mutated replacement list')
+
+// List loading belongs to the latest request. An old scope request finishing
+// first must not hide the replacement scope loading state.
+const oldListLoad = deferred<boolean>()
+const newListLoad = deferred<boolean>()
+let listLoadCalls = 0
+const originalWarn = console.warn
+console.warn = (...args: unknown[]) => {
+  if (!String(args[0] ?? '').includes('onScopeDispose() is called when there is no active effect scope')) {
+    originalWarn(...args)
+  }
+}
+const listPage = useListPage({
+  pageSizeScope: 'probe-list-owner',
+  load: () => (++listLoadCalls === 1 ? oldListLoad.promise : newListLoad.promise),
+})
+console.warn = originalWarn
+const oldListRequest = listPage.runLoad()
+const newListRequest = listPage.runLoad()
+assert.equal(listPage.loading.value, true)
+oldListLoad.resolve(true)
+await oldListRequest
+assert.equal(listPage.loading.value, true, 'stale list request cleared replacement loading')
+newListLoad.resolve(true)
+await newListRequest
+assert.equal(listPage.loading.value, false, 'latest list request did not release loading')
 
 const progress = useJobProgress()
 const oldActive = deferred<{ data: JobLike }>()

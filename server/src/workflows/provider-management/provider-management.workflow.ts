@@ -31,11 +31,11 @@ export class ProviderManagementWorkflow {
   }
 
   create(data: Record<string, unknown>): Promise<PresentedProvider> {
-    return this.integrity.run(() => this.providers.create(data))
+    return this.integrity.run(async () => this.enrichMutation(await this.providers.create(data)))
   }
 
   update(id: string, data: Record<string, unknown>): Promise<PresentedProvider> {
-    return this.integrity.run(() => this.providers.update(id, data))
+    return this.integrity.run(async () => this.enrichMutation(await this.providers.update(id, data)))
   }
 
   async delete(id: string): Promise<void> {
@@ -63,5 +63,9 @@ export class ProviderManagementWorkflow {
       ...provider,
       dependencies: dependencyMap[provider.id] ?? [],
     }))
+  }
+
+  private async enrichMutation(provider: PresentedProvider): Promise<PresentedProvider> {
+    return { ...provider, dependencies: await this.dependencies.forProvider(provider.id) }
   }
 }

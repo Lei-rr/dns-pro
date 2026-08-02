@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { ArrowDown, ArrowUp } from '@lucide/vue'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -11,6 +11,7 @@ import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { confirmDelete } from '@/shared/ui/confirm'
+import { createScopeGeneration } from '@/shared/lib/scope-generation'
 
 const open = defineModel<boolean>('open', { default: false })
 withDefaults(
@@ -34,22 +35,27 @@ const editingValue = ref('')
 const applyingDomain = ref('')
 const newDomainError = ref('')
 const editingError = ref('')
+const loadGeneration = createScopeGeneration()
 
 async function load() {
+  const owner = loadGeneration.claim()
   loading.value = true
   try {
     const response = await preferredDomainApi.list()
+    if (!owner.active() || !open.value) return
     items.value = response.data || []
     emit('update', items.value)
   } catch (error) {
+    if (!owner.active() || !open.value) return
     toast.error(errorMessage(error))
     items.value = []
   } finally {
-    loading.value = false
+    if (owner.active()) loading.value = false
   }
 }
 
 async function addDomain() {
+  if (saving.value) return
   const domain = newDomain.value.trim()
   newDomainError.value = domain ? '' : '请输入优选域名'
   if (newDomainError.value) return
@@ -79,6 +85,7 @@ function cancelEdit() {
 }
 
 async function saveEdit() {
+  if (saving.value) return
   if (!editingDomain.value) return
   const next = editingValue.value.trim()
   editingError.value = next ? '' : '域名不能为空'
@@ -98,7 +105,7 @@ async function saveEdit() {
 }
 
 async function removeDomain(record: { domain: string }) {
-  if (!(await confirmDelete(record.domain))) return
+  if (saving.value || !(await confirmDelete(record.domain)) || saving.value) return
   saving.value = true
   try {
     await preferredDomainApi.delete(record.domain)
@@ -112,6 +119,7 @@ async function removeDomain(record: { domain: string }) {
 }
 
 function applyDomain(record: { domain: string }, options: { onlyAutoPreferred?: boolean; dryRun?: boolean } = {}) {
+  if (applyingDomain.value) return
   applyingDomain.value = record.domain
   // 正式切换会跑 Job：先关弹窗，露出页顶进度条；预览保留弹窗
   if (!options.dryRun) open.value = false
@@ -122,6 +130,7 @@ function applyDomain(record: { domain: string }, options: { onlyAutoPreferred?: 
 }
 
 async function move(index: number, delta: number) {
+  if (saving.value) return
   const next = index + delta
   if (next < 0 || next >= items.value.length) return
   const copy = items.value.slice()
@@ -143,11 +152,16 @@ async function move(index: number, delta: number) {
 
 watch(open, (value) => {
   if (value) load()
+  else {
+    loadGeneration.invalidate()
+    loading.value = false
+  }
 })
 
 onMounted(() => {
   if (open.value) load()
 })
+onUnmounted(() => loadGeneration.invalidate())
 </script>
 
 <template>

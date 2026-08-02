@@ -4,8 +4,7 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,ts}"],
-      "project": ["server/src/**/*.ts", "scripts/**/*.{mjs,ts}"],
-      "ignoreDependencies": ["esbuild"]
+      "project": ["server/src/**/*.ts", "scripts/**/*.{mjs,ts}"]
     },
     "web": {
       "entry": ["src/app/styles/index.css"],

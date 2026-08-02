@@ -6,6 +6,7 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { fieldError, type FieldErrors } from '@/shared/lib/field-errors'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 import type { Provider, ProviderDefinition } from '../model/types'
+import { isProviderSecretField } from '../model/provider-fields'
 
 export type ProviderFormModel = {
   id: string
@@ -33,10 +34,6 @@ const emit = defineEmits<{
 
 function fieldLabel(key: string) {
   return props.labels[key] || key
-}
-
-function isSecretField(field: string) {
-  return /key|token|secret|password/i.test(field)
 }
 
 function isProviderSelectField(field: string) {
@@ -111,7 +108,7 @@ function dialogFields(): string[] {
           </SelectContent>
         </Select>
         <Input
-          v-else-if="isSecretField(field)"
+          v-else-if="isProviderSecretField(field)"
           v-model="form.fields[field]"
           type="password"
           autocomplete="new-password"

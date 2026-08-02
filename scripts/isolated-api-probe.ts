@@ -274,26 +274,38 @@ try {
     secret_id: 'edge-secret-v1',
     secret_key: 'edge-key-v1',
   })
-  await app.ctx.workflows.providerManagement.create({
+  const createdEdgeOwner = await app.ctx.workflows.providerManagement.create({
     id: 'edge-owner',
     name: 'EdgeOne owner',
     type: 'edgeone',
     dnspod_provider: 'edge-dns',
   })
+  assert.equal(createdEdgeOwner.configured, true, 'linked provider create response used an incomplete provider set')
+  const updatedEdgeOwner = await app.ctx.workflows.providerManagement.update('edge-owner', { name: 'EdgeOne owner v2' })
+  const listedEdgeOwner = (await app.ctx.workflows.providerManagement.list()).find((item) => item.id === 'edge-owner')
+  assert.equal(updatedEdgeOwner.configured, true, 'linked provider update response used an incomplete provider set')
+  assert.deepEqual(updatedEdgeOwner, listedEdgeOwner, 'provider update response disagrees with immediate list response')
 
   const originalEdgeOneCall = EdgeOneGateway.prototype.call
   const originalEdgeDnsPodCall = DnsPodGateway.prototype.call
   let edgeZoneLoads = 0
   let edgeDomainLoads = 0
+  let edgeCreateCalls = 0
   let primaryDeleteCalls = 0
+  let failDeleteCnameLookup = false
   let dnsRecordLists = 0
   EdgeOneGateway.prototype.call = async function (action: string, payload: Record<string, unknown>): Promise<unknown> {
+    if (action === 'CreateAccelerationDomain') {
+      edgeCreateCalls++
+      return { RequestId: 'created-but-cname-pending' }
+    }
     if (action === 'DescribeZones') {
       edgeZoneLoads++
       return { Zones: [{ ZoneId: 'zone-1', ZoneName: 'example.com' }], TotalCount: 1, RequestId: 'zones' }
     }
     if (action === 'DescribeAccelerationDomains') {
       edgeDomainLoads++
+      if (failDeleteCnameLookup) throw new ApiError('edgeone_request_failed', 'temporary CNAME lookup failure', 502)
       return {
         AccelerationDomains: [
           { ZoneId: payload.ZoneId, DomainName: 'www.example.com', Cname: 'www.example.com.eo.dnse5.com' },
@@ -342,6 +354,20 @@ try {
     assert.fail(`unexpected DNSPod action: ${action}`)
   }
   try {
+    const createdWithPendingCname = await app.ctx.workflows.edgeOneDnsSync.createAccelerationDomain(
+      'edge-owner',
+      'zone-1',
+      { domain_name: 'pending.example.com', origin: '192.0.2.10' },
+      true
+    )
+    assert.equal(edgeCreateCalls, 1)
+    assert.equal(createdWithPendingCname.name, 'pending.example.com')
+    assert.equal(
+      (createdWithPendingCname.side_effects as any)?.dns?.sync?.status,
+      'failed',
+      'post-create CNAME lookup failure hid a successful primary create'
+    )
+
     await app.ctx.modules.edgeOne.zones.zones('edge-owner')
     await app.ctx.modules.edgeOne.zones.zones('edge-owner')
     await app.ctx.modules.edgeOne.domains.accelerationDomains('edge-owner', 'zone-1')
@@ -353,6 +379,20 @@ try {
     await app.ctx.modules.edgeOne.domains.accelerationDomains('edge-owner', 'zone-1')
     assert.equal(edgeZoneLoads, 2, 'linked DNSPod provider update did not evict EdgeOne zone cache')
     assert.equal(edgeDomainLoads, 2, 'linked DNSPod provider update did not evict EdgeOne domain cache')
+
+    const deletesBeforeLookupFailure = primaryDeleteCalls
+    failDeleteCnameLookup = true
+    await app.ctx.workflows.providerManagement.update('edge-dns', { secret_key: 'edge-key-v3' })
+    await assert.rejects(
+      app.ctx.workflows.edgeOneDnsSync.deleteAccelerationDomain('edge-owner', 'zone-1', 'www.example.com', true),
+      (error: unknown) => error instanceof ApiError && error.code === 'edgeone_request_failed'
+    )
+    failDeleteCnameLookup = false
+    assert.equal(
+      primaryDeleteCalls,
+      deletesBeforeLookupFailure,
+      'EdgeOne primary delete ran after CNAME cleanup lookup failed'
+    )
 
     const failedDelete = await app.ctx.workflows.edgeOneBatch.createDelete({
       providerId: 'edge-owner',
@@ -413,6 +453,7 @@ try {
   const originalCloudflareGet = CloudflareGateway.prototype.get
   const originalCloudflarePost = CloudflareGateway.prototype.post
   let customHostnameCreates = 0
+  const saasMutationOrder: string[] = []
   let tunnelCreates = 0
   let tokenFetchFails = true
   const tunnelReads = { list: 0, show: 0, config: 0 }
@@ -443,6 +484,7 @@ try {
   }
   CloudflareGateway.prototype.post = async function (requestPath: string): Promise<Record<string, unknown>> {
     if (requestPath === 'zones/zone-1/custom_hostnames') {
+      saasMutationOrder.push('remote-create')
       customHostnameCreates++
       return {
         result: {
@@ -509,12 +551,155 @@ try {
     assert.equal(createdPreference?.sync_zone, 'example.com')
     assert.equal(createdPreference?.auto_preferred, true)
 
+    const originalResolveZoneRef = app.ctx.modules.saas.hostnames.resolveZoneRef.bind(app.ctx.modules.saas.hostnames)
+    app.ctx.modules.saas.hostnames.resolveZoneRef = async (...args) => {
+      saasMutationOrder.push('owner')
+      return originalResolveZoneRef(...args)
+    }
+    const originalSetNormalized = app.ctx.modules.saas.preferences.setNormalizedSyncConfig.bind(
+      app.ctx.modules.saas.preferences
+    )
+    app.ctx.modules.saas.preferences.setNormalizedSyncConfig = async () => {
+      throw new Error('probe preference disk full')
+    }
+    const stagedCreate = await app.ctx.workflows.saasDnsSync.createHostname(
+      'saas-owner',
+      'example.com',
+      {
+        hostname: 'staged.example.com',
+        sync_target: 'dnspod',
+        sync_provider_id: 'dns-target',
+        sync_zone: 'example.com',
+      },
+      false
+    )
+    app.ctx.modules.saas.preferences.setNormalizedSyncConfig = originalSetNormalized
+    app.ctx.modules.saas.hostnames.resolveZoneRef = originalResolveZoneRef
+    assert.ok(String(stagedCreate.id || ''), 'local preference failure lost the successful remote hostname id')
+    assert.equal(
+      (stagedCreate.side_effects as any)?.local?.preference?.status,
+      'failed',
+      'local preference failure was not surfaced as a staged side effect'
+    )
+    assert.ok(
+      saasMutationOrder.lastIndexOf('owner') < saasMutationOrder.lastIndexOf('remote-create'),
+      'SaaS cache owner was resolved after the irreversible remote mutation'
+    )
+
+    const stagedGateway = (
+      app.ctx.modules.saas.hostnames as unknown as {
+        cloudflareHostnames: {
+          idByHostname: (...args: unknown[]) => Promise<string>
+          show: (...args: unknown[]) => Promise<Record<string, unknown>>
+          update: (...args: unknown[]) => Promise<Record<string, unknown>>
+        }
+      }
+    ).cloudflareHostnames
+    const stagedOriginalId = stagedGateway.idByHostname.bind(stagedGateway)
+    const stagedOriginalShow = stagedGateway.show.bind(stagedGateway)
+    const stagedOriginalUpdate = stagedGateway.update.bind(stagedGateway)
+    const originalMarkOwnership = app.ctx.modules.saas.preferences.markOwnershipTxtCleaned.bind(
+      app.ctx.modules.saas.preferences
+    )
+    let stagedRemoteUpdates = 0
+    let failLocalStage = true
+    stagedGateway.idByHostname = async () => 'batch-host'
+    stagedGateway.show = async () => ({
+      id: 'batch-host',
+      hostname: 'batch.example.com',
+      custom_origin_server: 'old.example.com',
+      status: 'active',
+      ssl: {},
+    })
+    stagedGateway.update = async () => {
+      stagedRemoteUpdates++
+      return {
+        id: 'batch-host',
+        hostname: 'batch.example.com',
+        custom_origin_server: 'new.example.com',
+        status: 'active',
+        ssl: {},
+      }
+    }
+    app.ctx.modules.saas.preferences.markOwnershipTxtCleaned = async (...args) => {
+      if (failLocalStage) {
+        failLocalStage = false
+        throw new Error('probe ownership preference disk full')
+      }
+      return originalMarkOwnership(...args)
+    }
+    const stagedSync = (
+      app.ctx.workflows.saasDnsSync as unknown as {
+        sync: {
+          collectSaaSRecords: (...args: unknown[]) => Promise<{
+            hostname_fqdn: string
+            records: Record<string, unknown>[]
+          }>
+          resyncSaaSHostname: (...args: unknown[]) => Promise<Record<string, unknown>>
+        }
+      }
+    ).sync
+    const originalCollectSaaSRecords = stagedSync.collectSaaSRecords.bind(stagedSync)
+    const originalResyncSaaSHostname = stagedSync.resyncSaaSHostname.bind(stagedSync)
+    const stagedBeforeRecords = [
+      {
+        type: 'CNAME',
+        name: 'batch.example.com',
+        value: 'old-preferred.example.net',
+        purpose: 'preferred_cname',
+        provider_id: 'dns-target',
+        dnspod_zone: 'example.com',
+        line: '境内',
+      },
+    ]
+    let stagedCollectCalls = 0
+    let stagedResyncBefore: unknown = null
+    stagedSync.collectSaaSRecords = async () => {
+      stagedCollectCalls++
+      return { hostname_fqdn: 'batch.example.com', records: stagedBeforeRecords }
+    }
+    stagedSync.resyncSaaSHostname = async (_provider, _zone, _hostname, beforeRecords) => {
+      stagedResyncBefore = beforeRecords
+      return { status: 'completed', records: [] }
+    }
+    const stagedJob = await app.ctx.workflows.saasBatch.createUpdate({
+      providerId: 'saas-owner',
+      zoneName: 'example.com',
+      hostnames: ['batch.example.com'],
+      patch: { custom_origin_server: 'new.example.com', auto_preferred: false },
+      autoSync: true,
+    })
+    await app.ctx.platform.jobs.drain()
+    const stagedFailed = await app.ctx.workflows.saasBatch.find(stagedJob.id)
+    assert.equal(stagedFailed?.status, 'failed')
+    assert.equal(stagedFailed?.items[0]?.primary_applied, true)
+    assert.equal('dns_before_records' in (stagedFailed?.items[0] ?? {}), false)
+    const stagedRaw = await app.ctx.platform.jobs.get(stagedJob.id)
+    assert.ok(Array.isArray(stagedRaw?.items[0]?.dns_before_records), 'pre-update DNS snapshot was not persisted')
+    await app.ctx.workflows.saasBatch.retryFailed(stagedJob.id)
+    await app.ctx.platform.jobs.drain()
+    const stagedRetried = await app.ctx.workflows.saasBatch.find(stagedJob.id)
+    assert.equal(stagedRetried?.status, 'completed')
+    assert.equal(stagedRemoteUpdates, 1, 'SaaS batch retry replayed an already-applied remote update')
+    assert.equal(stagedCollectCalls, 1, 'SaaS batch retry recollected post-update DNS state')
+    assert.deepEqual(stagedResyncBefore, stagedBeforeRecords, 'SaaS batch retry lost the pre-update DNS snapshot')
+    stagedGateway.idByHostname = stagedOriginalId
+    stagedGateway.show = stagedOriginalShow
+    stagedGateway.update = stagedOriginalUpdate
+    app.ctx.modules.saas.preferences.markOwnershipTxtCleaned = originalMarkOwnership
+    stagedSync.collectSaaSRecords = originalCollectSaaSRecords
+    stagedSync.resyncSaaSHostname = originalResyncSaaSHostname
+
     const hostnameGateway = (
       app.ctx.modules.saas.hostnames as unknown as {
-        cloudflareHostnames: { idByHostname: (...args: unknown[]) => Promise<string> }
+        cloudflareHostnames: {
+          idByHostname: (...args: unknown[]) => Promise<string>
+          delete: (...args: unknown[]) => Promise<Record<string, unknown>>
+        }
       }
     ).cloudflareHostnames
     const originalIdByHostname = hostnameGateway.idByHostname.bind(hostnameGateway)
+    const originalHostnameDelete = hostnameGateway.delete.bind(hostnameGateway)
     for (const [hostnameId, hostname] of [
       ['network-pref', 'network.example.com'],
       ['auth-pref', 'auth.example.com'],
@@ -542,7 +727,7 @@ try {
       ['missing.example.com', new ApiError('saas_hostname_not_found', 'not found', 404), 'missing-pref', true],
       [
         'upstream-missing.example.com',
-        new ApiError('http_error', 'upstream not found', 404),
+        new ApiError('http_error', 'upstream not found', 400, { upstream_status: 404 }),
         'upstream-missing-pref',
         true,
       ],
@@ -557,7 +742,23 @@ try {
       const localPreference = await app.ctx.modules.saas.preferences.get('cf-owner', preferenceId)
       assert.equal(localPreference === null, shouldClear, `${hostname} local preference clear policy`)
     }
+    await app.ctx.modules.saas.preferences.setSyncConfig({
+      cloudflareProviderId: 'cf-owner',
+      hostnameId: 'delete-404-pref',
+      syncTarget: 'dnspod',
+      syncProviderId: 'dns-target',
+      syncZone: 'example.com',
+      autoPreferred: false,
+      hostname: 'delete-404.example.com',
+    })
+    hostnameGateway.idByHostname = async () => 'delete-404-pref'
+    hostnameGateway.delete = async () => {
+      throw new ApiError('saas_hostname_delete_failed', 'upstream hostname missing', 502, { upstream_status: 404 })
+    }
+    await app.ctx.modules.saas.hostnames.deleteHostname('saas-owner', 'example.com', 'delete-404.example.com')
+    assert.equal(await app.ctx.modules.saas.preferences.get('cf-owner', 'delete-404-pref'), null)
     hostnameGateway.idByHostname = originalIdByHostname
+    hostnameGateway.delete = originalHostnameDelete
 
     const createTunnel = await app.inject({
       method: 'POST',
@@ -608,7 +809,7 @@ try {
     }
     if (!value || typeof value !== 'object') return
     const row = value as Record<string, unknown>
-    for (const field of ['operation_id', 'attempt', 'item_key']) {
+    for (const field of ['operation_id', 'attempt', 'item_key', 'dns_before_records']) {
       assert.equal(field in row, false, `${location} leaked ${field}`)
     }
     for (const [key, child] of Object.entries(row)) assertNoBatchInternals(child, `${location}.${key}`)

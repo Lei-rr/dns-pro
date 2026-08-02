@@ -14,6 +14,7 @@ import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
 import { useRowBusy } from '@/shared/lib/row-busy'
 import { confirmDelete } from '@/shared/ui/confirm'
+import { isProviderSecretField } from '../model/provider-fields'
 
 const saving = ref(false)
 const providers = ref<Provider[]>([])
@@ -62,10 +63,6 @@ const filteredProviders = computed(() => {
   return providers.value.filter((item) => item.type === typeFilter.value)
 })
 
-function isSecretField(field: string) {
-  return /key|token|secret|password/i.test(field)
-}
-
 function resetFormFields(type: string) {
   form.type = type
   form.fields = {}
@@ -98,7 +95,7 @@ function openEdit(record: Provider) {
   form.fields = {}
   // 编辑时密钥只回填「已配置」占位，提交空串表示不改
   for (const field of record.editable_fields?.length ? record.editable_fields : Object.keys(record.fields || {})) {
-    if (isSecretField(field)) {
+    if (isProviderSecretField(field)) {
       form.fields[field] = ''
     } else {
       form.fields[field] = String(record[field] || record.fields?.[field] || '')
@@ -108,6 +105,7 @@ function openEdit(record: Provider) {
 }
 
 async function save() {
+  if (saving.value) return
   const errors: FieldErrors = {}
   if (!editing.value && !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(form.id.trim()))
     errors.id = '请输入合法 ID（字母或数字开头，可含 _ 和 -）'

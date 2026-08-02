@@ -1,5 +1,6 @@
 /* Vendor payloads are intentionally loose — presenters coerce fields. */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { ApiError } from '../../shared/http/api-error.js'
 
 export type DnsPodDomain = Record<string, any>
 export type DnsPodRecord = Record<string, any>
@@ -11,12 +12,16 @@ function asRecord(value: unknown): Record<string, any> {
 }
 
 function requireRecord(value: unknown): Record<string, any> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('DNSPod invalid response')
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ApiError('dnspod_invalid_response', 'DNSPod invalid response', 502)
+  }
   return value as Record<string, any>
 }
 
 function requireField(record: Record<string, any>, field: string): void {
-  if (record[field] === undefined || record[field] === null) throw new Error(`DNSPod response missing ${field}`)
+  if (record[field] === undefined || record[field] === null) {
+    throw new ApiError('dnspod_invalid_response', `DNSPod response missing ${field}`, 502)
+  }
 }
 
 function asArray(value: unknown): any[] {
@@ -51,7 +56,9 @@ export const dnspodDomainInfoSchema = {
 export const dnspodDomainListResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
     const r = requireRecord(v)
-    if (!Array.isArray(r.DomainList)) throw new Error('DNSPod invalid domain list response')
+    if (!Array.isArray(r.DomainList)) {
+      throw new ApiError('dnspod_invalid_response', 'DNSPod invalid domain list response', 502)
+    }
     return {
       ...r,
       DomainList: asRecordArray(r.DomainList),
@@ -78,7 +85,9 @@ export const dnspodMutationResponseSchema = {
 export const dnspodRecordListResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
     const r = requireRecord(v)
-    if (!Array.isArray(r.RecordList)) throw new Error('DNSPod invalid record list response')
+    if (!Array.isArray(r.RecordList)) {
+      throw new ApiError('dnspod_invalid_response', 'DNSPod invalid record list response', 502)
+    }
     return {
       ...r,
       RecordList: asRecordArray(r.RecordList),

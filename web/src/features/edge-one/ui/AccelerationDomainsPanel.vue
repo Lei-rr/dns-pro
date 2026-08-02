@@ -362,18 +362,35 @@ async function batchDeleteSelected() {
 
 async function resumeJobs() {
   if (jobProgress.running.value) return
-  const finished = await jobProgress.resumeActive(() => edgeOneApi.batchActive(props.providerId, props.zoneId), {
-    label: 'EdgeOne 批量',
-    fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as JobLike) || {},
-  })
+  const scopeOwner = captureMutationOwner()
+  const finished = await jobProgress.resumeActive(
+    () => edgeOneApi.batchActive(scopeOwner.value.providerId, scopeOwner.value.zoneId),
+    {
+      label: 'EdgeOne 批量',
+      fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as JobLike) || {},
+    }
+  )
   if (finished) {
+    const jobId = String(finished.id || '')
     const failed = jobProgress.failedItems(finished)
     if (failed.length) {
-      showBatchFailures(
+      await showBatchFailures(
         finished.message || 'EdgeOne 批量完成',
         failed.map((i) => formatFailedJobItem(i)),
         '个',
-        { onRetry: () => edgeOneApi.batchRetry(props.providerId, String(finished.id || '')) }
+        {
+          onRetry: async () => {
+            if (!scopeOwner.active()) return null
+            await edgeOneApi.batchRetry(scopeOwner.value.providerId, jobId)
+            if (!scopeOwner.active()) return null
+            return jobProgress.pollJob(jobId, {
+              label: 'EdgeOne 批量',
+              fetchJob: async (id) =>
+                ((await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data as JobLike) || {},
+            })
+          },
+          isActive: () => scopeOwner.active(),
+        }
       )
     }
     await runLoad()
