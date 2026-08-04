@@ -22,6 +22,7 @@ export function useJobProgress() {
   const resumeError = ref('')
   let clearTimer: ReturnType<typeof setTimeout> | null = null
   const ownership = createScopeGeneration()
+  let resumeProbe = 0
 
   function isActiveStatus(status?: string) {
     return status === 'pending' || status === 'running'
@@ -105,13 +106,17 @@ export function useJobProgress() {
     return pollOwned(jobId, options, owner)
   }
 
-  /** Resume an in-flight backend job; a later begin/reset makes every late response inert. */
+  /**
+   * Probe for an in-flight backend job without showing progress during the probe.
+   * Only a confirmed job id owns the visible progress UI.
+   */
   async function resumeActive(
     fetchActive: () => Promise<{ data?: unknown } | unknown>,
     options: PollJobOptions
   ): Promise<JobLike | null> {
-    if (running.value) return job.value
-    const owner = begin()
+    if (running.value || resumeProbe) return job.value
+    const owner = ownership.claim()
+    const probe = ++resumeProbe
     resumeError.value = ''
     try {
       const response = await fetchActive()
@@ -121,14 +126,13 @@ export function useJobProgress() {
           ? (response as { data?: unknown }).data
           : response
       if (!data) {
-        release(owner)
         return null
       }
       const jobId = extractJobId(data)
       if (!jobId) {
-        release(owner)
         return null
       }
+      running.value = true
       if (typeof data === 'object') {
         job.value = data as JobLike
         text.value = progressText(data as JobLike, options.label)
@@ -138,11 +142,13 @@ export function useJobProgress() {
     } catch (error) {
       resumeError.value = error instanceof Error ? error.message : String(error)
       if (owner.active()) {
+        running.value = false
         text.value = `${options.label || '任务'}恢复失败：${resumeError.value}`
         job.value = { status: 'failed', message: text.value }
       }
-      release(owner)
       return null
+    } finally {
+      if (probe === resumeProbe) resumeProbe = 0
     }
   }
 
@@ -159,6 +165,7 @@ export function useJobProgress() {
 
   function reset() {
     ownership.invalidate()
+    resumeProbe++
     cancelAutoClear()
     running.value = false
     text.value = ''

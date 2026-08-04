@@ -16,11 +16,11 @@
 - Cloudflare Tunnel
 - 腾讯云 EdgeOne
 
-| 层   | 技术                                          |
-| ---- | --------------------------------------------- |
-| 后端 | Fastify 5 + TypeScript                        |
-| 前端 | Vue 3 + Vite + Tailwind CSS + shadcn 风格组件 |
-| 存储 | 本地 JSON，无数据库                           |
+| 层   | 技术                                              |
+| ---- | ------------------------------------------------- |
+| 后端 | Fastify 5 + TypeScript                            |
+| 前端 | Vue 3 + Vite + Tailwind CSS + shadcn-vue 风格组件 |
+| 存储 | 本地 JSON，无数据库                               |
 
 ---
 
@@ -37,6 +37,16 @@
 - 批量任务落盘（`data/jobs/`），重启可恢复
 - 单用户登录（AES-GCM session cookie）
 - Docker / 本地 Node 双模式运行
+
+## 最近更新
+
+### 2026-08
+
+- 优化 DNS 批量任务恢复：打开域名时静默检查是否存在未完成任务，只有确认发现真实 Job 后才显示进度，不再把恢复探测误显示成“DNS 批量任务”转圈。
+- 保留批量任务的持久化、重启恢复、进度轮询和失败重试能力。
+- 修复 Cloudflare Tunnel 安装面板在手机窄屏下被长 Token、命令和 Tabs 撑破页面宽度的问题。
+- 安装命令支持窄屏自动断行，系统与架构 Tabs 在移动端可在容器内横向滚动。
+- 补充移动端宽度与 Job 进度恢复的隔离 Probe，并纳入项目验证流程。
 
 ## 快速开始
 
@@ -70,6 +80,8 @@ http://127.0.0.1:2022
 ```
 
 > 首次登录后请立即修改 `data/config.json` 中的默认账号密码。已有配置不会被覆盖。Session 密钥优先读取 `SESSION_SECRET`；未设置时会在 `data/session-secret` 自动生成并持久化，升级时请保留该文件。
+
+> `data/` 是运行时数据目录，不应提交到 Git，也不应在升级时用代码目录覆盖。生产部署只同步源码和镜像，保留原有 `data/`。
 
 ## Docker 部署
 
@@ -137,6 +149,17 @@ web/src/
   shared/                   # shadcn-vue UI、HTTP、列表/分页/异步所有权工具
 ```
 
+### 前端组件说明
+
+项目采用 **shadcn-vue 风格**：组件源码保存在项目的 `web/src/shared/ui/`，样式由 Tailwind CSS 控制，交互原语使用 Vue 生态的 `reka-ui`。这不是两套重复的 UI 框架，而是“shadcn-vue 风格封装 + Reka UI 无样式交互基础”的组合。业务页面只依赖项目自己的 `shared/ui`，不直接依赖底层原语。
+
+### API 与路由
+
+- HTTP API 统一使用 `/api` 前缀，不使用 `/api/v1`。
+- 公开系统接口只有 `GET /api/health`；业务接口需要登录。
+- 前端使用原生 `fetch`，会话使用 HttpOnly AES-GCM cookie。
+- `/api`、`/api/v1/*`、不存在的静态资源和当前 hashed asset 的状态与 MIME 类型属于发布验收契约。
+
 ### 终态原则
 
 - 无 DI 容器、无服务注册表；所有实例只在 `bootstrap/` 构造并显式注入
@@ -173,6 +196,14 @@ SESSION_SECRET='至少 32 位随机字符串' node dist/server.js --port 2022 --
 - 生产环境建议设置强 `SESSION_SECRET`，或妥善保留自动生成的 `data/session-secret`
 - 启用 HTTPS 反向代理
 - 首次登录后修改自动生成的 `admin/admin` 默认账号密码
+- 不要把 `data/`、Provider Token、Session Secret 或生产日志提交到公开仓库
+- 生产数据文件由应用启动时收紧为 `0600`；请确保宿主机数据目录本身也受到访问控制
+
+## 发布边界
+
+- `fast` 是当前持续发布分支；推送后 GitHub Actions 会先执行 `npm run verify`，成功后再构建 GHCR 镜像。
+- `latest` 镜像只代表通过验证的发布产物；更新现有实例时应保留挂载的数据目录，并在重建后检查 health、登录会话、静态资源 MIME 和任务状态。
+- 本项目面向个人与小团队，不以内置多实例、分布式锁、Redis、消息队列或数据库为目标。若未来需要多实例，应先引入标准外部存储/队列/锁，而不是继续扩展本地 JSON 方案。
 
 ## 贡献
 
@@ -181,6 +212,8 @@ Issue / PR 欢迎。建议：
 1. `npm run verify` 通过
 2. 保持依赖方向：`bootstrap → workflows → modules → platform/shared`，组装只在 `bootstrap/`
 3. 不引入 Nest / DI 容器 / 额外文档目录
+
+提交前请确认：没有把 `data/`、密钥、Token、构建产物或本地配置加入提交；涉及 UI 的改动还应覆盖桌面与移动端状态。
 
 ## 许可证
 

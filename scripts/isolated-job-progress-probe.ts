@@ -119,6 +119,19 @@ await newListRequest
 assert.equal(listPage.loading.value, false, 'latest list request did not release loading')
 
 const progress = useJobProgress()
+const silentProbe = useJobProgress()
+const pendingActive = deferred<{ data?: unknown }>()
+const silentResume = silentProbe.resumeActive(() => pendingActive.promise, {
+  label: '待恢复任务',
+  intervalMs: 300,
+  autoClearMs: 0,
+  fetchJob: async () => ({ id: 'pending', status: 'completed' }),
+})
+assert.equal(silentProbe.running.value, false, 'active-job probe showed progress before finding a job')
+pendingActive.resolve({ data: null })
+assert.equal(await silentResume, null)
+assert.equal(silentProbe.running.value, false, 'empty active-job probe left progress running')
+
 const oldActive = deferred<{ data: JobLike }>()
 const oldResume = progress.resumeActive(() => oldActive.promise, {
   label: '旧任务',
