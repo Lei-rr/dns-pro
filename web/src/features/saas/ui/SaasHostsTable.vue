@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { EllipsisVertical } from '@lucide/vue'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
@@ -112,12 +112,14 @@ function isBusy(record: SaaSHostname) {
             </Button>
           </TableCell>
           <TableCell
-            ><Badge :variant="statusVariant(record.status)">{{ statusLabel(record.status) }}</Badge></TableCell
+            ><StatusBadge :variant="statusVariant(record.status)">{{
+              statusLabel(record.status)
+            }}</StatusBadge></TableCell
           >
           <TableCell
-            ><Badge :variant="statusVariant(record.ssl?.status)">{{
+            ><StatusBadge :variant="statusVariant(record.ssl?.status)">{{
               statusLabel(record.ssl?.status)
-            }}</Badge></TableCell
+            }}</StatusBadge></TableCell
           >
           <TableCell class="max-w-[180px] truncate">{{ record.custom_origin_server || '默认回源' }}</TableCell>
           <TableCell class="max-w-[160px] truncate" :title="preferredDomain(record) || undefined">{{

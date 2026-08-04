@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { EllipsisVertical } from '@lucide/vue'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
@@ -87,10 +87,10 @@ function toggleAll(value: boolean | 'indeterminate') {
           </TableCell>
           <TableCell class="font-medium">{{ domainName(record) }}</TableCell>
           <TableCell
-            ><Badge variant="secondary">{{ edgeOneStatusLabel(record.status) }}</Badge></TableCell
+            ><StatusBadge>{{ edgeOneStatusLabel(record.status) }}</StatusBadge></TableCell
           >
           <TableCell
-            ><Badge variant="secondary">{{ edgeOneHttpsStatusLabel(record.certificate) }}</Badge></TableCell
+            ><StatusBadge>{{ edgeOneHttpsStatusLabel(record.certificate) }}</StatusBadge></TableCell
           >
           <TableCell class="max-w-[220px] truncate">{{ record.cname || '-' }}</TableCell>
           <TableCell class="max-w-[180px] truncate">{{ record.origin?.value || record.origin_type || '-' }}</TableCell>

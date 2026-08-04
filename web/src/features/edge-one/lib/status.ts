@@ -9,9 +9,7 @@ export function edgeOneStatusLabel(status?: string) {
       init: '未生效',
       active: '已生效',
       pending: '配置中',
-    }[key] ||
-    status ||
-    '-'
+    }[key] || (key ? '状态未知' : '-')
   )
 }
 
@@ -19,10 +17,10 @@ export function edgeOneStatusLabel(status?: string) {
 export function edgeOneAccessLabel(type?: string) {
   const key = String(type || '')
   const map: Record<string, string> = {
-    dnsPodAccess: 'DNSPod 接入',
-    partial: 'CNAME 接入',
-    full: '全量接入',
-    noDomainAccess: '无域名接入',
+    dnsPodAccess: 'DNSPod',
+    partial: 'CNAME',
+    full: '全量',
+    noDomainAccess: '无域名',
     pages: 'Pages',
     ai: 'AI',
   }
@@ -37,9 +35,7 @@ export function certificateStatusLabel(status?: string) {
       deployed: '已部署',
       processing: '部署中',
       failed: '申请失败',
-    }[key] ||
-    status ||
-    '-'
+    }[key] || (key ? '状态未知' : '-')
   )
 }
 

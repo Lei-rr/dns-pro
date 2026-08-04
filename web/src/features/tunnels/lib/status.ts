@@ -5,8 +5,6 @@ export function tunnelStatusLabel(status?: string) {
       degraded: '降级',
       down: '已断开',
       inactive: '未连接',
-    }[String(status || '')] ||
-    status ||
-    '-'
+    }[String(status || '').toLowerCase()] || (String(status || '').trim() ? '状态未知' : '-')
   )
 }

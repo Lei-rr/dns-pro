@@ -3,7 +3,7 @@ const GOLD = new Set(['pending', 'pending_validation', 'pending_issuance', 'pend
 const RED = new Set(['deleted', 'blocked', 'pending_deletion', 'deactivated'])
 
 const STATUS_LABELS: Record<string, string> = {
-  active: '有效',
+  active: '已生效',
   active_renewing: '续期中',
   pending: '待处理',
   pending_validation: '待验证',
@@ -27,12 +27,12 @@ const TLS_LABELS: Record<string, string> = {
 
 export function statusLabel(status?: string | null) {
   if (!status) return '-'
-  return STATUS_LABELS[status] || status
+  return STATUS_LABELS[String(status).toLowerCase()] || '状态未知'
 }
 
 export function statusVariant(status?: string | null): 'default' | 'secondary' | 'outline' | 'destructive' {
   if (!status) return 'outline'
-  if (GREEN.has(status)) return 'default'
+  if (GREEN.has(status)) return 'secondary'
   if (RED.has(status)) return 'destructive'
   if (GOLD.has(status)) return 'secondary'
   return 'outline'

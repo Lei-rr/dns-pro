@@ -5,7 +5,7 @@ import { EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { AppDialog } from '@/shared/ui/dialog'
@@ -185,7 +185,7 @@ onUnmounted(() => {
               >
             </TableCell>
             <TableCell>
-              <Badge variant="secondary">{{ tunnelStatusLabel(record.status) }}</Badge>
+              <StatusBadge>{{ tunnelStatusLabel(record.status) }}</StatusBadge>
             </TableCell>
             <TableCell>{{ replicaCount(record) }}</TableCell>
             <TableCell class="max-w-[220px] truncate text-sm">{{ record.id || '-' }}</TableCell>

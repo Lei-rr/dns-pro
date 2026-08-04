@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
@@ -38,15 +38,16 @@ function claimScope() {
 }
 
 const statusLabel = computed(() => {
+  const key = String(status.value || '')
+    .trim()
+    .toLowerCase()
   return (
     {
       initializing: '初始化中',
       pending_deployment: '待部署',
       pending_deletion: '删除中',
       active: '已生效',
-    }[status.value] ||
-    status.value ||
-    '-'
+    }[key] || (key ? '状态未知' : '-')
   )
 })
 
@@ -169,7 +170,7 @@ onUnmounted(() => scopeGeneration.invalidate())
       <Field v-if="currentOrigin">
         <FieldLabel>当前状态</FieldLabel>
         <div class="flex items-center gap-2">
-          <Badge variant="secondary">{{ statusLabel }}</Badge>
+          <StatusBadge>{{ statusLabel }}</StatusBadge>
           <span class="text-muted-foreground text-sm">{{ currentOrigin }}</span>
         </div>
       </Field>

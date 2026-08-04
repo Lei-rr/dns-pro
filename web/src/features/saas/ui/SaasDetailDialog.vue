@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/ui/collapsible'
 import { Button, LoadingButton } from '@/shared/ui/button'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import type { SaaSHostname, SaaSHostnameSSL } from '@/features/saas/model/types'
 import { formatDate, minTlsLabel, statusLabel, statusVariant } from '@/features/saas/lib/status'
 
@@ -128,7 +128,7 @@ function onRefresh() {
 
           <div class="text-muted-foreground">主机名状态</div>
           <div>
-            <Badge :variant="statusVariant(record.status)">{{ statusLabel(record.status) }}</Badge>
+            <StatusBadge :variant="statusVariant(record.status)">{{ statusLabel(record.status) }}</StatusBadge>
           </div>
 
           <div class="text-muted-foreground">回源服务器</div>
@@ -145,7 +145,7 @@ function onRefresh() {
 
           <div class="text-muted-foreground">证书状态</div>
           <div>
-            <Badge :variant="statusVariant(ssl.status)">{{ statusLabel(ssl.status) }}</Badge>
+            <StatusBadge :variant="statusVariant(ssl.status)">{{ statusLabel(ssl.status) }}</StatusBadge>
           </div>
         </div>
       </div>

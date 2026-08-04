@@ -5,7 +5,7 @@ import { RefreshCw, Search } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
 import { edgeOneAccessLabel, edgeOneStatusLabel } from '@/features/edge-one/lib/status'
@@ -133,12 +133,10 @@ onMounted(() => runLoad())
               </TableCell>
               <TableCell>{{ zone.area || '-' }}</TableCell>
               <TableCell>
-                <Badge variant="outline">{{ edgeOneAccessLabel(zone.type) }}</Badge>
+                <StatusBadge>{{ edgeOneAccessLabel(zone.type) }}</StatusBadge>
               </TableCell>
               <TableCell>
-                <Badge variant="secondary">{{
-                  edgeOneStatusLabel(String(zone.active_status || zone.status || ''))
-                }}</Badge>
+                <StatusBadge>{{ edgeOneStatusLabel(String(zone.active_status || zone.status || '')) }}</StatusBadge>
               </TableCell>
               <TableCell class="text-right">
                 <Button variant="ghost" size="sm" @click="openZone(zone)">管理</Button>

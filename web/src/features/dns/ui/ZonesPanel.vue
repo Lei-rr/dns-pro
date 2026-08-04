@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
+
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { TablePagination } from '@/shared/ui/pagination'
@@ -22,6 +22,8 @@ import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
+import { StatusBadge } from '@/shared/ui/status-badge'
+import { dnsZoneStatusLabel } from '@/features/dns/lib/status'
 import { createScopeGeneration, type ScopeOwner } from '@/shared/lib/scope-generation'
 
 const props = defineProps<{ provider: DnsProviderRef }>()
@@ -214,13 +216,12 @@ onUnmounted(() => {
             <TableRow class="!border-0">
               <TableHead class="rounded-l-lg px-4">域名</TableHead>
               <TableHead>状态</TableHead>
-              <TableHead>类型</TableHead>
               <TableHead class="rounded-r-lg w-[7.5rem] text-right">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
             <TableRow v-if="!filtered.length && !loading">
-              <TableCell colspan="4" class="text-muted-foreground py-10 text-center">暂无域名</TableCell>
+              <TableCell colspan="3" class="text-muted-foreground py-10 text-center">暂无域名</TableCell>
             </TableRow>
             <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">
@@ -234,9 +235,10 @@ onUnmounted(() => {
                 </Button>
               </TableCell>
               <TableCell>
-                <Badge variant="outline">{{ zone.access_status || zone.status || zone.dns_status || '-' }}</Badge>
+                <StatusBadge>{{
+                  dnsZoneStatusLabel(zone.access_status || zone.status || zone.dns_status)
+                }}</StatusBadge>
               </TableCell>
-              <TableCell class="text-muted-foreground">{{ provider?.type || '-' }}</TableCell>
               <TableCell class="text-right">
                 <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">
                   <Button

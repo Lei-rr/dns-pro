@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { Copy, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { cloudflaredApi } from '@/features/tunnels/api/tunnel-api'
 import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
 
@@ -257,7 +257,7 @@ onUnmounted(() => {
       <div class="rounded-lg border bg-card p-4">
         <div class="text-muted-foreground text-xs">状态</div>
         <div class="mt-1">
-          <Badge>{{ tunnelStatusLabel(tunnel?.status) }}</Badge>
+          <StatusBadge>{{ tunnelStatusLabel(tunnel?.status) }}</StatusBadge>
         </div>
       </div>
       <div class="rounded-lg border bg-card p-4">

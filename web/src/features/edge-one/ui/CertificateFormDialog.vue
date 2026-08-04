@@ -2,7 +2,7 @@
 import { reactive, computed, ref, watch } from 'vue'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
-import { Badge } from '@/shared/ui/badge'
+import { StatusBadge } from '@/shared/ui/status-badge'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { certificateStatusLabel } from '@/features/edge-one/lib/status'
@@ -66,7 +66,7 @@ function submit() {
           </div>
           <div class="flex items-center gap-2">
             <span class="text-muted-foreground">状态：</span>
-            <Badge variant="secondary">{{ certificateStatusLabel(currentCert.status) }}</Badge>
+            <StatusBadge>{{ certificateStatusLabel(currentCert.status) }}</StatusBadge>
           </div>
           <div class="flex items-center gap-2">
             <span class="text-muted-foreground">到期：</span>
