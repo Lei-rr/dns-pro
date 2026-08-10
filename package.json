@@ -9,6 +9,13 @@
   "engines": {
     "node": ">=20.19.0"
   },
+  "overrides": {
+    "nanoid": ">=3.3.17",
+    "brace-expansion": ">=5.0.9",
+    "fast-uri": ">=4.1.2",
+    "image-size": ">=1.2.1",
+    "less": ">=4.8.1"
+  },
   "scripts": {
     "dev": "npm run dev:server",
     "dev:server": "tsx watch server/src/server.ts --port 3022",
