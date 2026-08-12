@@ -7,14 +7,6 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import type { FieldErrors } from '@/shared/lib/field-errors'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 import type { DnsZoneOption, SaaSSyncProvider } from '../model/types'
-import {
-  Combobox,
-  ComboboxAnchor,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxTextInput,
-  ComboboxViewport,
-} from '@/shared/ui/combobox'
 
 export type HostnameFormModel = {
   hostname: string
@@ -152,33 +144,16 @@ const emit = defineEmits<{
         <FieldLabel>自定义源服务器</FieldLabel>
       </Field>
       <Field v-if="form.use_custom_origin_server" :data-invalid="!!errors.custom_origin_server">
-        <Combobox v-model="form.custom_origin_server" open-on-focus open-on-click :reset-search-term-on-select="true">
-          <ComboboxAnchor class="w-full">
-            <ComboboxTextInput
-              :model-value="form.custom_origin_server"
-              placeholder="输入或从已用源服务器选择，如 origin.example.com"
-              :display-value="(value) => String(value || '')"
-              @update:model-value="form.custom_origin_server = String($event)"
-            />
-          </ComboboxAnchor>
-          <ComboboxList
-            v-if="originSuggestions.length"
-            hide-when-empty
-            class="max-h-48 w-[var(--reka-combobox-trigger-width)] max-w-[calc(100vw-1rem)]"
-          >
-            <ComboboxViewport class="max-h-48 overflow-y-auto p-1">
-              <ComboboxItem
-                v-for="item in originSuggestions"
-                :key="item"
-                :value="item"
-                :text-value="item"
-                class="data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground relative flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none select-none"
-              >
-                {{ item }}
-              </ComboboxItem>
-            </ComboboxViewport>
-          </ComboboxList>
-        </Combobox>
+        <div class="relative">
+          <Input
+            v-model="form.custom_origin_server"
+            placeholder="如 origin.example.com"
+            list="origin-suggestions-list"
+          />
+          <datalist id="origin-suggestions-list">
+            <option v-for="item in originSuggestions" :key="item" :value="item" />
+          </datalist>
+        </div>
         <FieldError :errors="errors.custom_origin_server ? [errors.custom_origin_server] : []" />
       </Field>
 
