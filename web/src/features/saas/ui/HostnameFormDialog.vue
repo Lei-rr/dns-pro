@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -8,14 +8,6 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import type { FieldErrors } from '@/shared/lib/field-errors'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 import type { DnsZoneOption, SaaSSyncProvider } from '../model/types'
-import {
-  Combobox,
-  ComboboxAnchor,
-  ComboboxItem,
-  ComboboxList,
-  ComboboxTextInput,
-  ComboboxViewport,
-} from '@/shared/ui/combobox'
 
 export type HostnameFormModel = {
   hostname: string
@@ -34,7 +26,7 @@ export type HostnameFormModel = {
 const open = defineModel<boolean>('open', { required: true })
 const form = defineModel<HostnameFormModel>('form', { required: true })
 
-defineProps<{
+const props = defineProps<{
   editing: boolean
   saving: boolean
   syncProviders: SaaSSyncProvider[]
@@ -52,15 +44,24 @@ const emit = defineEmits<{
   retryPreferredOptions: []
 }>()
 
-// 自定义源服务器 Combobox 的“选中值”与输入文本分开管理：
-// Combobox v-model 只跟踪下拉选中的项，输入框文本直接绑 form，
-// 避免 reka-ui 内部 watch(modelValue) 触发 resetSearchTerm 覆盖正在输入的字符。
-const originSelected = ref<string>('')
+const showOriginDropdown = ref(false)
 
-// 从下拉选中项时，同步到表单
-watch(originSelected, (value) => {
-  if (value) form.value.custom_origin_server = value
+const filteredOriginSuggestions = computed(() => {
+  const query = form.value.custom_origin_server.trim().toLowerCase()
+  if (!query) return props.originSuggestions
+  return props.originSuggestions.filter((item) => item.toLowerCase().includes(query))
 })
+
+function selectOrigin(item: string) {
+  form.value.custom_origin_server = item
+  showOriginDropdown.value = false
+}
+
+function onOriginBlur() {
+  setTimeout(() => {
+    showOriginDropdown.value = false
+  }, 200)
+}
 </script>
 
 <template>
@@ -163,31 +164,28 @@ watch(originSelected, (value) => {
         <FieldLabel>自定义源服务器</FieldLabel>
       </Field>
       <Field v-if="form.use_custom_origin_server" :data-invalid="!!errors.custom_origin_server">
-        <Combobox v-model="originSelected" open-on-focus open-on-click :reset-search-term-on-select="false">
-          <ComboboxAnchor class="w-full">
-            <ComboboxTextInput
-              v-model="form.custom_origin_server"
-              placeholder="输入或从已用源服务器选择，如 origin.example.com"
-            />
-          </ComboboxAnchor>
-          <ComboboxList
-            v-if="originSuggestions.length"
-            hide-when-empty
-            class="max-h-48 w-[var(--reka-combobox-trigger-width)] max-w-[calc(100vw-1rem)]"
+        <div class="relative w-full">
+          <Input
+            v-model="form.custom_origin_server"
+            placeholder="输入或从已用源服务器选择，如 origin.example.com"
+            autocomplete="off"
+            @focus="showOriginDropdown = true"
+            @blur="onOriginBlur"
+          />
+          <div
+            v-if="showOriginDropdown && filteredOriginSuggestions.length"
+            class="bg-popover text-popover-foreground absolute top-full z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border p-1 shadow-md"
           >
-            <ComboboxViewport class="max-h-48 overflow-y-auto p-1">
-              <ComboboxItem
-                v-for="item in originSuggestions"
-                :key="item"
-                :value="item"
-                :text-value="item"
-                class="data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground relative flex w-full cursor-default items-center rounded-sm px-2 py-1.5 text-sm outline-none select-none"
-              >
-                {{ item }}
-              </ComboboxItem>
-            </ComboboxViewport>
-          </ComboboxList>
-        </Combobox>
+            <div
+              v-for="item in filteredOriginSuggestions"
+              :key="item"
+              class="hover:bg-accent hover:text-accent-foreground flex cursor-pointer items-center rounded-sm px-2 py-1.5 text-sm outline-none select-none"
+              @mousedown.prevent="selectOrigin(item)"
+            >
+              {{ item }}
+            </div>
+          </div>
+        </div>
         <FieldError :errors="errors.custom_origin_server ? [errors.custom_origin_server] : []" />
       </Field>
 
