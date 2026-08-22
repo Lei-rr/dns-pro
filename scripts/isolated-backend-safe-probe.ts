@@ -109,6 +109,27 @@ try {
     headers: { cookie },
   })
   assert.equal(invalidTunnel.statusCode, 400)
+
+  // Verify Job cancel and prune
+  const pendingJob = await app.ctx.platform.jobs.create(
+    'test_job',
+    { test: true },
+    [
+      { name: 'item1', status: 'pending' },
+      { name: 'item2', status: 'pending' },
+    ],
+    { start: false }
+  )
+  const cancelled = await app.ctx.platform.jobs.cancel(pendingJob.id)
+  assert.equal(cancelled?.status, 'cancelled')
+  assert.equal(cancelled?.items[0].status, 'skipped')
+  const pruned = await app.ctx.platform.jobs.prune({ maxAgeMs: 0, keep: 0 })
+  assert.ok(pruned >= 1)
+
+  // Verify orphan prune
+  const pruneRes = await app.ctx.modules.saas.preferences.pruneOrphans(new Set(), new Set())
+  assert.equal(typeof pruneRes.removedCount, 'number')
+
   console.log('backend-safe-probe=ok')
 } finally {
   if (app) await app.close()

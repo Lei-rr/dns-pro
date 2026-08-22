@@ -9,6 +9,7 @@ import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
 
 import { parseRecordNames } from '@/features/dns/lib/record-names'
 import { buildDnsRecordDisplayRows, dnsRecordMatchesKeyword, dnsRecordRowKey } from '@/features/dns/lib/record-display'
+import { exportRecordsAsCsv, exportRecordsAsJson, exportRecordsAsZone } from '@/features/dns/lib/record-export'
 import type { DnsRecord } from '@/features/dns/model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -20,8 +21,10 @@ import { formatFailedJobItem, JobProgressAlert, runBatchJob, showBatchFailures, 
 import type { JobLike } from '@/shared/job'
 import RecordFormDialog from '@/features/dns/ui/RecordFormDialog.vue'
 import BatchEditDialog from '@/features/dns/ui/BatchEditDialog.vue'
+import RecordImportDialog from '@/features/dns/ui/RecordImportDialog.vue'
 import RecordsToolbar from '@/features/dns/ui/RecordsToolbar.vue'
 import RecordsTable from '@/features/dns/ui/RecordsTable.vue'
+import type { ParsedImportRecord } from '@/features/dns/lib/record-import'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 import { createScopeGeneration, type ScopeOwner } from '@/shared/lib/scope-generation'
@@ -505,6 +508,46 @@ onMounted(async () => {
   await runLoad()
   await resumeJobs()
 })
+const importOpen = ref(false)
+const importSubmitting = ref(false)
+
+async function handleImportSubmit(parsedRecords: ParsedImportRecord[]) {
+  importSubmitting.value = true
+  try {
+    importOpen.value = false
+    await runBatchJob({
+      label: '批量导入',
+      create: () =>
+        dnsApi.batchCreateRecords(props.provider, props.zoneId, {
+          records: parsedRecords,
+        }),
+      fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as Record<string, unknown>) || {},
+      retry: (id) => dnsApi.batchRetry(props.provider, id),
+      onDone: () => runLoad(),
+      jobProgress,
+    })
+  } catch (error) {
+    toast.error(errorMessage(error))
+  } finally {
+    importSubmitting.value = false
+  }
+}
+
+function handleExport(format: 'json' | 'csv' | 'zone') {
+  if (!records.value.length) {
+    toast.warning('当前暂无可导出的 DNS 记录')
+    return
+  }
+  const name = zoneName.value || 'zone'
+  if (format === 'json') {
+    exportRecordsAsJson(records.value, name)
+  } else if (format === 'csv') {
+    exportRecordsAsCsv(records.value, name)
+  } else if (format === 'zone') {
+    exportRecordsAsZone(records.value, name)
+  }
+  toast.success(`已导出 ${records.value.length} 条记录 (${format.toUpperCase()})`)
+}
 </script>
 
 <template>
@@ -534,6 +577,8 @@ onMounted(async () => {
       @search="onSearch"
       @refresh="onRefresh"
       @update:type-filter="setTypeFilter"
+      @export="handleExport"
+      @import="importOpen = true"
     />
 
     <RecordsTable
@@ -607,6 +652,13 @@ onMounted(async () => {
       :line-options="dnspodLineOptions"
       :error="batchEditError"
       @submit="batchUpdateSelected"
+    />
+
+    <RecordImportDialog
+      v-model:open="importOpen"
+      :zone-name="zoneName"
+      :submitting="importSubmitting"
+      @submit="handleImportSubmit"
     />
   </div>
 </template>

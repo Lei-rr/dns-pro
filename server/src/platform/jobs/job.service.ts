@@ -240,6 +240,60 @@ export class JobService {
     return claim
   }
 
+  async cancel(id: string): Promise<JobRecord | null> {
+    await this.flushProgress(id)
+    let updated: JobRecord | null = null
+    await this.store.transaction((current) => {
+      const items = (current.items ?? []).map((job) => {
+        if (job.id !== id || TERMINAL.includes(job.status)) return job
+        const pendingItems = job.items.map((item) =>
+          item.status === 'pending' || item.status === 'running'
+            ? { ...item, status: 'skipped', message: '任务已被取消' }
+            : item
+        )
+        updated = {
+          ...job,
+          status: 'cancelled',
+          items: pendingItems,
+          ...summarizeJobItems(pendingItems),
+          finished_at: Date.now(),
+          updated_at: Date.now(),
+          message: '任务已被取消',
+        }
+        return updated
+      })
+      return { next: { items: this.compactList(items) } }
+    })
+    return updated
+  }
+
+  async prune(options: { maxAgeMs?: number; keep?: number } = {}): Promise<number> {
+    const keep = Math.max(0, options.keep ?? 20)
+    const now = Date.now()
+    const maxAgeMs = options.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000
+    let removedCount = 0
+
+    await this.store.transaction((current) => {
+      const items = current.items ?? []
+      const active = items.filter((job) => ACTIVE.includes(job.status))
+      const finished = items.filter((job) => !ACTIVE.includes(job.status))
+
+      const keptFinished = finished.filter((job, index) => {
+        const finishedAt = job.finished_at || job.updated_at || job.created_at
+        const isTooOld = now - finishedAt > maxAgeMs
+        if (isTooOld && index >= keep) {
+          removedCount++
+          return false
+        }
+        return true
+      })
+
+      return { next: { items: [...keptFinished, ...active] } }
+    })
+
+    return removedCount
+  }
+
   async completePending(
     id: string,
     patch: Partial<JobRecord> & { status: 'completed' | 'failed' }

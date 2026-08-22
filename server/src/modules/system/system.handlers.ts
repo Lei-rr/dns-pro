@@ -27,6 +27,8 @@ async function isFileReadable(filePath: string): Promise<boolean> {
   }
 }
 
+import { APP_VERSION } from '../../shared/version.js'
+
 export async function getHealthHandler(
   request: FastifyRequest<RequestOf<typeof noRequestSchema>>,
   reply: FastifyReply
@@ -40,7 +42,8 @@ export async function getHealthHandler(
 
   const payload = {
     status: 'ok',
-    data_dir: { path: dataRoot, writable, config_readable: configReadable },
+    version: APP_VERSION,
+    data_dir: { writable, config_readable: configReadable },
     cache: providerCacheStats(),
     jobs,
   }

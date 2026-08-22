@@ -16,7 +16,8 @@ export async function getSessionHandler(
   request: FastifyRequest<RequestOf<typeof noRequestSchema>>,
   reply: FastifyReply
 ) {
-  return reply.send(success(request.server.ctx.modules.auth.session.currentSession(request)))
+  const session = await request.server.ctx.modules.auth.session.currentSession(request)
+  return reply.send(success(session))
 }
 
 export async function deleteSessionHandler(

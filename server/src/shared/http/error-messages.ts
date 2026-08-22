@@ -2,6 +2,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   // 鉴权
   unauthenticated: '请先登录',
   invalid_credentials: '用户名或密码不正确',
+  auth_rate_limited: '登录失败次数过多，请稍后重试',
 
   // 通用
   validation_failed: '参数校验未通过',

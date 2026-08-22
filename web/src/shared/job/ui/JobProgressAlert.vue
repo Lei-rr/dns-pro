@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Spinner } from '@/shared/ui/spinner'
 import { Progress } from '@/shared/ui/progress'
+import { Button } from '@/shared/ui/button'
 import { cn } from '@/shared/lib/utils'
 
 const props = withDefaults(
@@ -13,10 +14,15 @@ const props = withDefaults(
     status?: string
     percent?: number | null
     tone?: 'info' | 'warning'
+    cancelable?: boolean
     class?: string
   }>(),
-  { tone: 'info', percent: null }
+  { tone: 'info', percent: null, cancelable: false }
 )
+
+const emit = defineEmits<{
+  cancel: []
+}>()
 
 /** Only show when running OR real progress text — never fake default string. */
 const visible = computed(() => Boolean(props.running || props.text))
@@ -58,7 +64,19 @@ const isTerminal = computed(
           class="mt-0.5 shrink-0"
         />
         <div class="min-w-0 flex-1">
-          <div class="font-medium">{{ titleText }}</div>
+          <div class="flex items-center justify-between gap-2">
+            <div class="font-medium truncate">{{ titleText }}</div>
+            <Button
+              v-if="running && cancelable"
+              type="button"
+              variant="outline"
+              size="sm"
+              class="h-6 text-xs px-2 text-destructive hover:bg-destructive/10 shrink-0"
+              @click="emit('cancel')"
+            >
+              终止任务
+            </Button>
+          </div>
           <div v-if="description || (text && title)" class="text-muted-foreground mt-0.5 text-xs">
             {{ description || text }}
           </div>

@@ -3,6 +3,8 @@ import http from '@/shared/api/http'
 export interface SessionState {
   authenticated: boolean
   username: string | null
+  version?: string
+  is_default_credential?: boolean
 }
 
 export const authApi = {

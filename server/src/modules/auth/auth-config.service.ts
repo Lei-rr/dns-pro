@@ -1,5 +1,12 @@
+import crypto from 'node:crypto'
 import { AppConfigRepository } from './auth-config.repository.js'
 import { ApiError } from '../../shared/http/api-error.js'
+
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const hashA = crypto.createHash('sha256').update(a).digest()
+  const hashB = crypto.createHash('sha256').update(b).digest()
+  return crypto.timingSafeEqual(hashA, hashB)
+}
 
 export class AuthConfig {
   constructor(private readonly repository: AppConfigRepository) {}
@@ -21,6 +28,11 @@ export class AuthConfig {
       )
     }
 
-    return expectedUser === username && expectedPass === password
+    return timingSafeEqualStr(expectedUser, username) && timingSafeEqualStr(expectedPass, password)
+  }
+
+  async isDefaultCredential(): Promise<boolean> {
+    const config = await this.repository.read()
+    return (config.auth?.username ?? '') === 'admin' && (config.auth?.password ?? '') === 'admin'
   }
 }

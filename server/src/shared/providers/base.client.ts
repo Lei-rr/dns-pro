@@ -36,6 +36,25 @@ function buildUrl(baseURL: string, path: string, params?: Record<string, unknown
   return url.toString()
 }
 
+const MAX_IDEMPOTENT_RETRIES = 2
+const INITIAL_BACKOFF_MS = 150
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isRetryable(method: string, error: unknown): boolean {
+  if (method !== 'GET' && method !== 'HEAD') return false
+  if (error instanceof ApiError) {
+    const upstreamStatus = (error.details as Record<string, unknown> | undefined)?.upstream_status
+    if (typeof upstreamStatus === 'number') {
+      return [500, 502, 503, 504, 429].includes(upstreamStatus)
+    }
+    return error.statusCode === 502
+  }
+  return true
+}
+
 export class BaseGateway {
   protected readonly baseURL: string
   protected readonly defaultHeaders: Record<string, string>
@@ -49,6 +68,26 @@ export class BaseGateway {
 
   protected async request(config: GatewayRequestConfig): Promise<unknown> {
     const method = (config.method ?? 'GET').toUpperCase()
+    const maxAttempts = method === 'GET' || method === 'HEAD' ? 1 + MAX_IDEMPOTENT_RETRIES : 1
+
+    let lastError: unknown
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await sleep(INITIAL_BACKOFF_MS * 2 ** (attempt - 1))
+      }
+      try {
+        return await this.sendOnce(method, config)
+      } catch (error) {
+        lastError = error
+        if (!isRetryable(method, error) || attempt === maxAttempts - 1) {
+          throw error
+        }
+      }
+    }
+    throw lastError
+  }
+
+  private async sendOnce(method: string, config: GatewayRequestConfig): Promise<unknown> {
     const url = buildUrl(this.baseURL, config.url, config.params)
     const headers: Record<string, string> = {
       ...this.defaultHeaders,

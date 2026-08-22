@@ -37,6 +37,12 @@ function registerShutdownHooks(app: FastifyInstance) {
   for (const signal of SHUTDOWN_SIGNALS) {
     process.once(signal, () => {
       app.log.info({ signal }, 'received shutdown signal, closing server...')
+      const forceExitTimer = setTimeout(() => {
+        app.log.error('Forced shutdown due to timeout')
+        process.exit(1)
+      }, 10000)
+      forceExitTimer.unref()
+
       app.close().then(
         () => process.exit(0),
         (err) => {

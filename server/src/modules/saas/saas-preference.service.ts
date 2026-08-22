@@ -157,6 +157,47 @@ export class SaaSPreferenceService {
     )
   }
 
+  async pruneOrphans(
+    validCloudflareProviderIds: Set<string>,
+    validAllProviderIds: Set<string>
+  ): Promise<{ removedCount: number; repairedCount: number }> {
+    let removedCount = 0
+    let repairedCount = 0
+
+    await this.providerIntegrity.run(() =>
+      this.store.transaction((current) => {
+        const items = { ...(current.items ?? {}) }
+        for (const [key, value] of Object.entries(items)) {
+          const colonIdx = key.indexOf(':')
+          if (colonIdx === -1) {
+            delete items[key]
+            removedCount++
+            continue
+          }
+          const cfId = key.slice(0, colonIdx)
+          if (!validCloudflareProviderIds.has(cfId)) {
+            delete items[key]
+            removedCount++
+            continue
+          }
+
+          if (value && typeof value === 'object') {
+            const row = value as Record<string, unknown>
+            const syncProviderId = String(row.sync_provider_id ?? '').trim()
+            if (syncProviderId !== '' && !validAllProviderIds.has(syncProviderId)) {
+              row.sync_provider_id = ''
+              row.sync_target = ''
+              repairedCount++
+            }
+          }
+        }
+        return { next: { items } }
+      })
+    )
+
+    return { removedCount, repairedCount }
+  }
+
   private async withOwner<T>(
     cloudflareProviderId: string,
     task: (providers: Awaited<ReturnType<ProviderRepository['all']>>) => Promise<T>

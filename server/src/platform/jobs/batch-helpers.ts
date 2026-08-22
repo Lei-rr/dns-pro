@@ -34,6 +34,9 @@ export type BatchItemResult = {
 export async function finishBatchJob(jobs: JobService, jobId: string, label: string): Promise<JobRecord | null> {
   const finalJob = await jobs.get(jobId)
   if (!finalJob) return null
+  if (finalJob.status === 'cancelled') {
+    return finalJob
+  }
   const { success, failed, skipped } = summarizeJobItems(finalJob.items)
   return jobs.patch(jobId, {
     status: failed > 0 ? 'failed' : 'completed',
@@ -128,6 +131,11 @@ export async function runBatchItems(
   }
 ): Promise<void> {
   for (const raw of job.items) {
+    const freshJob = await jobs.get(job.id)
+    if (!freshJob || freshJob.status === 'cancelled') {
+      break
+    }
+
     const item = raw as Record<string, unknown>
     const key = options.itemKey(item)
     if ((!key && options.skipEmptyKey !== false) || item.status === 'success' || item.status === 'skipped') {
