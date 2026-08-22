@@ -2,70 +2,52 @@
 import { computed } from 'vue'
 import {
   AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog'
-import { buttonVariants } from '@/shared/ui/button'
-import { cn } from '@/shared/lib/utils'
+import { Button } from '@/shared/ui/button'
 import { confirmState, settleConfirm } from './confirm'
 
-const confirmClass = computed(() =>
-  cn(
-    buttonVariants({
-      variant: confirmState.options.value.destructive ? 'destructive' : 'default',
-    })
-  )
+const confirmVariant = computed<'destructive' | 'default'>(() =>
+  confirmState.options.value.destructive ? 'destructive' : 'default'
 )
 
-/**
- * reka AlertDialogAction = DialogClose：点确认会先关弹窗再/同时冒泡 click。
- * 若 @update:open(false) 同步 settle(false)，会冲掉 settle(true) → 看起来“确定没用”。
- * 取消关闭延后到 microtask，让确认 click 先 resolve。
- */
 function onOpenChange(value: boolean) {
-  if (value) {
-    confirmState.open.value = true
-    return
+  if (!value) {
+    settleConfirm(false)
   }
-  queueMicrotask(() => {
-    if (confirmState.open.value || confirmState.hasPending()) {
-      settleConfirm(false)
-    }
-  })
 }
 
-function onConfirm(e: Event) {
-  e.preventDefault()
+function onConfirm() {
   settleConfirm(true)
 }
 
-function onCancel(e: Event) {
-  e.preventDefault()
+function onCancel() {
   settleConfirm(false)
 }
 </script>
 
 <template>
   <AlertDialog :open="confirmState.open.value" @update:open="onOpenChange">
-    <AlertDialogContent class="max-h-[calc(100svh-1rem)] overflow-y-auto p-4 sm:max-h-[calc(100svh-2rem)] sm:p-6">
+    <AlertDialogContent
+      class="max-h-[calc(100svh-1rem)] overflow-y-auto p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-md sm:p-6"
+    >
       <AlertDialogHeader>
         <AlertDialogTitle>{{ confirmState.options.value.title }}</AlertDialogTitle>
         <AlertDialogDescription class="whitespace-pre-wrap">
           {{ confirmState.options.value.description }}
         </AlertDialogDescription>
       </AlertDialogHeader>
-      <AlertDialogFooter class="[&>*]:w-full sm:[&>*]:w-auto">
-        <AlertDialogCancel @click="onCancel">
+      <AlertDialogFooter class="flex flex-row items-center justify-end gap-2 [&>*]:w-auto mt-2">
+        <Button variant="outline" type="button" @click="onCancel">
           {{ confirmState.options.value.cancelText }}
-        </AlertDialogCancel>
-        <AlertDialogAction :class="confirmClass" @click="onConfirm">
+        </Button>
+        <Button :variant="confirmVariant" type="button" @click="onConfirm">
           {{ confirmState.options.value.confirmText }}
-        </AlertDialogAction>
+        </Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
