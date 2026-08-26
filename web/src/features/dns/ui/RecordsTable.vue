@@ -7,6 +7,7 @@ import { Checkbox } from '@/shared/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
+import { AppTooltip } from '@/shared/ui/tooltip'
 import { orderedPurposeLabels } from '@/features/dns/lib/record-remark'
 import { dnsRecordRowKey, dnsRecordTtlDisplay, type DnsRecordDisplayRow } from '@/features/dns/lib/record-display'
 import type { DnsRecord } from '@/features/dns/model/types'
@@ -188,17 +189,17 @@ function recordValue(record: DnsRecord) {
             <TableCell class="w-[14rem] max-w-[18rem]">
               <div class="flex min-w-0 items-center gap-1">
                 <div class="min-w-0 flex-1 truncate" :title="recordValue(record)">{{ recordValue(record) || '-' }}</div>
-                <Button
-                  v-if="recordValue(record)"
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  class="size-7 shrink-0"
-                  title="复制记录值"
-                  @click.stop="emit('copy', record)"
-                >
-                  <Copy class="size-3.5" />
-                </Button>
+                <AppTooltip v-if="recordValue(record)" content="复制记录值">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    class="size-7 shrink-0 cursor-pointer"
+                    @click.stop="emit('copy', record)"
+                  >
+                    <Copy class="size-3.5" />
+                  </Button>
+                </AppTooltip>
               </div>
             </TableCell>
             <TableCell>{{ dnsRecordTtlDisplay(record.ttl) }}</TableCell>
@@ -260,16 +261,17 @@ function recordValue(record: DnsRecord) {
                 <div class="min-w-0 flex-1 truncate" :title="recordValue(row.record)">
                   {{ recordValue(row.record) || '-' }}
                 </div>
-                <Button
-                  v-if="recordValue(row.record)"
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  class="size-7 shrink-0"
-                  title="复制记录值"
-                  @click.stop="emit('copy', row.record)"
-                  ><Copy class="size-3.5"
-                /></Button>
+                <AppTooltip v-if="recordValue(row.record)" content="复制记录值">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    class="size-7 shrink-0 cursor-pointer"
+                    @click.stop="emit('copy', row.record)"
+                  >
+                    <Copy class="size-3.5" />
+                  </Button>
+                </AppTooltip>
               </div>
             </TableCell>
             <TableCell>{{ dnsRecordTtlDisplay(row.record.ttl) }}</TableCell>

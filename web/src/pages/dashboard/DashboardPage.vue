@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { ArrowRight, Cloud, Globe2, Radar, Server, Settings2, Shield } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
+import { Skeleton } from '@/shared/ui/skeleton'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/shared/ui/empty'
 import {
   loadProviders,
@@ -46,7 +47,10 @@ onMounted(async () => {
     <div class="flex flex-col gap-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
       <div class="min-w-0">
         <h1 class="text-xl font-semibold tracking-tight sm:text-2xl">控制台</h1>
-        <p class="text-muted-foreground text-sm">已接入 {{ count }} 个服务商</p>
+        <p class="text-muted-foreground text-sm">
+          <template v-if="providerStore.loading">正在加载服务商数据...</template>
+          <template v-else>已接入 {{ count }} 个服务商</template>
+        </p>
       </div>
       <RouterLink to="/providers">
         <Button size="sm" class="gap-1.5">
@@ -56,7 +60,16 @@ onMounted(async () => {
       </RouterLink>
     </div>
 
-    <div v-if="count" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <!-- 骨架屏：统计卡片 -->
+    <div v-if="providerStore.loading" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div v-for="i in 4" :key="i" class="bg-muted/40 rounded-lg px-3 py-2 space-y-1.5">
+        <Skeleton class="h-3 w-12" />
+        <Skeleton class="h-6 w-8" />
+      </div>
+    </div>
+
+    <!-- 真实数据：统计卡片 -->
+    <div v-else-if="count" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <div class="bg-muted/40 rounded-lg px-3 py-2">
         <div class="text-muted-foreground text-xs">服务商</div>
         <div class="text-lg font-semibold tabular-nums">{{ count }}</div>
@@ -81,6 +94,7 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- 空状态 -->
     <Empty v-if="!providers.length && !providerStore.loading">
       <EmptyHeader>
         <EmptyMedia variant="icon">
@@ -99,8 +113,26 @@ onMounted(async () => {
       </EmptyContent>
     </Empty>
 
-    <!-- 模块入口：略加大，仍保持横排 -->
-    <div v-if="providers.length || providerStore.loading" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <!-- 骨架屏：服务商卡片列表 -->
+    <div v-if="providerStore.loading" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div
+        v-for="i in 3"
+        :key="i"
+        class="flex min-w-0 items-center gap-3 rounded-2xl bg-muted/20 border border-border/40 p-3 sm:gap-3.5 sm:p-4"
+      >
+        <Skeleton class="size-11 rounded-xl shrink-0" />
+        <div class="min-w-0 flex-1 space-y-2">
+          <div class="flex items-center gap-2">
+            <Skeleton class="h-4 w-24" />
+            <Skeleton class="h-4 w-12" />
+          </div>
+          <Skeleton class="h-3 w-32" />
+        </div>
+      </div>
+    </div>
+
+    <!-- 真实数据：服务商卡片列表 -->
+    <div v-else-if="providers.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <RouterLink
         v-for="provider in providers"
         :key="provider.id"

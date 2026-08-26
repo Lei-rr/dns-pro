@@ -18,9 +18,10 @@ import {
   UserRound,
 } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
-import { Input } from '@/shared/ui/input'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Badge } from '@/shared/ui/badge'
+import { AppTooltip } from '@/shared/ui/tooltip'
+import { CommandDialog, type CommandItem } from '@/shared/ui/command'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,7 +44,6 @@ const providerStore = useProviderStore()
 const securityAlertOpen = ref(false)
 
 const commandOpen = ref(false)
-const commandQuery = ref('')
 const isDark = ref(false)
 
 const providers = computed(() => providerStore.providers || [])
@@ -78,16 +78,6 @@ const currentNavLabel = computed(() => {
   if (active?.name) return String(active.name)
   return '控制台'
 })
-
-interface CommandItem {
-  id: string
-  title: string
-  subtitle?: string
-  category: '导航' | '服务商' | '快捷操作'
-  icon: Component
-  badge?: string
-  action: () => void
-}
 
 const commandItems = computed<CommandItem[]>(() => {
   const list: CommandItem[] = [
@@ -168,15 +158,7 @@ const commandItems = computed<CommandItem[]>(() => {
     }
   )
 
-  const q = commandQuery.value.trim().toLowerCase()
-  if (!q) return list
-  return list.filter((item) =>
-    [item.title, item.subtitle, item.category, item.badge].some((text) =>
-      String(text || '')
-        .toLowerCase()
-        .includes(q)
-    )
-  )
+  return list
 })
 
 function initTheme() {
@@ -194,9 +176,6 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     commandOpen.value = !commandOpen.value
-    if (commandOpen.value) {
-      commandQuery.value = ''
-    }
   }
 }
 
@@ -307,25 +286,29 @@ function toggleDark() {
 
         <div class="ml-auto flex shrink-0 items-center gap-1.5">
           <!-- 快捷搜索命令入口 -->
-          <Button
-            variant="outline"
-            size="sm"
-            class="h-8 gap-1.5 text-xs text-muted-foreground px-2.5 hidden sm:flex"
-            @click="commandOpen = true"
-          >
-            <Search class="size-3.5" />
-            <span>搜索导航...</span>
-            <kbd
-              class="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+          <AppTooltip content="快捷搜索与跳转 (⌘K)">
+            <Button
+              variant="outline"
+              size="sm"
+              class="h-8 gap-1.5 text-xs text-muted-foreground px-2.5 hidden sm:flex cursor-pointer"
+              @click="commandOpen = true"
             >
-              ⌘K
-            </kbd>
-          </Button>
+              <Search class="size-3.5" />
+              <span>搜索导航...</span>
+              <kbd
+                class="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+              >
+                ⌘K
+              </kbd>
+            </Button>
+          </AppTooltip>
 
-          <Button variant="ghost" size="icon" class="size-9" title="主题" @click="toggleDark">
-            <Sun v-if="isDark" class="size-4" />
-            <Moon v-else class="size-4" />
-          </Button>
+          <AppTooltip :content="isDark ? '切换为浅色模式' : '切换为深色模式'">
+            <Button variant="ghost" size="icon" class="size-9 cursor-pointer" @click="toggleDark">
+              <Sun v-if="isDark" class="size-4" />
+              <Moon v-else class="size-4" />
+            </Button>
+          </AppTooltip>
 
           <!-- 右上角账户下拉：服务商管理 + 退出 -->
           <DropdownMenu>
@@ -354,47 +337,7 @@ function toggleDark() {
     </header>
 
     <!-- 全局快捷跳转对话框 (Command Palette) -->
-    <AppDialog v-model:open="commandOpen" title="快速跳转与命令" content-class="sm:max-w-md p-3 sm:p-4">
-      <div class="space-y-3">
-        <div class="relative">
-          <Search class="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
-          <Input
-            v-model="commandQuery"
-            autofocus
-            class="pl-9 h-9 text-sm"
-            placeholder="输入服务商名称、页面或命令..."
-          />
-        </div>
-
-        <div class="max-h-[300px] overflow-y-auto space-y-1 pr-1 text-sm">
-          <div v-if="!commandItems.length" class="text-muted-foreground py-6 text-center text-xs">
-            未找到匹配的页面或命令
-          </div>
-          <button
-            v-for="item in commandItems"
-            :key="item.id"
-            type="button"
-            class="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-accent transition-colors cursor-pointer text-sm"
-            @click="item.action()"
-          >
-            <div class="size-7 rounded-md bg-muted flex items-center justify-center shrink-0">
-              <component :is="item.icon" class="size-3.5 text-foreground/80" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1.5">
-                <span class="font-medium truncate">{{ item.title }}</span>
-                <Badge v-if="item.badge" variant="secondary" class="text-[10px] h-4 px-1">
-                  {{ item.badge }}
-                </Badge>
-              </div>
-              <div v-if="item.subtitle" class="text-xs text-muted-foreground truncate">
-                {{ item.subtitle }}
-              </div>
-            </div>
-          </button>
-        </div>
-      </div>
-    </AppDialog>
+    <CommandDialog v-model:open="commandOpen" :items="commandItems" />
 
     <!-- 默认密码安全提示弹窗 (Modal) -->
     <AppDialog v-model:open="securityAlertOpen" title="安全提示" content-class="sm:max-w-md">
@@ -447,21 +390,22 @@ function toggleDark() {
           <span class="hidden sm:inline text-muted-foreground/60">· 一体化 DNS 与隧道管理面板</span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
-          <a
-            href="https://github.com/lei-rr/dns-pro"
-            target="_blank"
-            rel="noreferrer"
-            class="p-1 rounded-md hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center"
-            title="GitHub 仓库"
-          >
-            <svg class="size-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill-rule="evenodd"
-                clip-rule="evenodd"
-                d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
-              />
-            </svg>
-          </a>
+          <AppTooltip content="GitHub 源码仓库">
+            <a
+              href="https://github.com/lei-rr/dns-pro"
+              target="_blank"
+              rel="noreferrer"
+              class="p-1 rounded-md hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center"
+            >
+              <svg class="size-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill-rule="evenodd"
+                  clip-rule="evenodd"
+                  d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                />
+              </svg>
+            </a>
+          </AppTooltip>
         </div>
       </div>
     </footer>

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { Copy } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
+import { AppTooltip } from '@/shared/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { toast } from '@/shared/lib/toast'
 
@@ -134,14 +135,16 @@ async function copyCommand(command: string) {
           v-if="step.command"
           class="relative min-w-0 max-w-full rounded-md bg-zinc-900 p-3 pr-12 font-mono text-xs leading-6 break-all whitespace-pre-wrap text-zinc-100"
         >
-          <Button
-            variant="ghost"
-            size="icon"
-            class="absolute top-1 right-1 size-8 text-zinc-200 hover:bg-zinc-800 hover:text-white"
-            @click="copyCommand(step.command)"
-          >
-            <Copy class="size-4" />
-          </Button>
+          <AppTooltip content="复制安装命令">
+            <Button
+              variant="ghost"
+              size="icon"
+              class="absolute top-1 right-1 size-8 text-zinc-200 hover:bg-zinc-800 hover:text-white cursor-pointer"
+              @click="copyCommand(step.command)"
+            >
+              <Copy class="size-4" />
+            </Button>
+          </AppTooltip>
           {{ step.command }}
         </div>
       </li>

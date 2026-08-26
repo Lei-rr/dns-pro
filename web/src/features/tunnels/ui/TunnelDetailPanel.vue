@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { Copy, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { AppTooltip } from '@/shared/ui/tooltip'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { cloudflaredApi } from '@/features/tunnels/api/tunnel-api'
 import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
@@ -275,10 +276,12 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="flex gap-2">
-          <Button variant="outline" size="sm" :disabled="!token" @click="copyToken">
-            <Copy class="size-4" />
-            复制
-          </Button>
+          <AppTooltip content="复制安装 Token">
+            <Button variant="outline" size="sm" :disabled="!token" class="cursor-pointer" @click="copyToken">
+              <Copy class="size-4" />
+              复制
+            </Button>
+          </AppTooltip>
           <LoadingButton variant="outline" size="sm" :loading="rotating" @click="rotateToken">轮换</LoadingButton>
         </div>
       </div>
