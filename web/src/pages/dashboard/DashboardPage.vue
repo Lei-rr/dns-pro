@@ -43,17 +43,17 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex flex-1 flex-col gap-5">
+  <div class="flex flex-1 flex-col gap-6">
     <div class="flex flex-col gap-3 min-[360px]:flex-row min-[360px]:items-center min-[360px]:justify-between">
-      <div class="min-w-0">
-        <h1 class="text-xl font-semibold tracking-tight sm:text-2xl">控制台</h1>
+      <div class="min-w-0 space-y-0.5">
+        <h1 class="text-2xl font-bold tracking-tight">控制台</h1>
         <p class="text-muted-foreground text-sm">
           <template v-if="providerStore.loading">正在加载服务商数据...</template>
           <template v-else>已接入 {{ count }} 个服务商</template>
         </p>
       </div>
       <RouterLink to="/providers">
-        <Button size="sm" class="gap-1.5 cursor-pointer">
+        <Button size="sm" class="gap-1.5 cursor-pointer shadow-xs">
           <Settings2 class="size-4" />
           管理服务商
         </Button>
@@ -61,34 +61,34 @@ onMounted(async () => {
     </div>
 
     <!-- 骨架屏：统计指标 -->
-    <div v-if="providerStore.loading" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <div v-for="i in 4" :key="i" class="bg-muted/40 rounded-lg px-3 py-2 space-y-1.5">
-        <Skeleton class="h-3 w-12" />
-        <Skeleton class="h-6 w-8" />
+    <div v-if="providerStore.loading" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div v-for="i in 4" :key="i" class="bg-muted/40 rounded-xl px-4 py-3 space-y-1.5">
+        <Skeleton class="h-3 w-14" />
+        <Skeleton class="h-7 w-10" />
       </div>
     </div>
 
-    <!-- 真实数据：统计指标（恢复清爽柔和无生硬边框质感） -->
-    <div v-else-if="count" class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <div class="bg-muted/40 rounded-lg px-3 py-2">
-        <div class="text-muted-foreground text-xs">服务商</div>
-        <div class="text-lg font-semibold tabular-nums">{{ count }}</div>
+    <!-- 真实数据：统计指标（大气柔和质感） -->
+    <div v-else-if="count" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div class="bg-muted/40 hover:bg-muted/60 transition-colors rounded-xl px-4 py-3">
+        <div class="text-xs font-medium text-muted-foreground">服务商总数</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums mt-0.5">{{ count }}</div>
       </div>
-      <div class="bg-muted/40 rounded-lg px-3 py-2">
-        <div class="text-muted-foreground text-xs">DNS</div>
-        <div class="text-lg font-semibold tabular-nums">
+      <div class="bg-muted/40 hover:bg-muted/60 transition-colors rounded-xl px-4 py-3">
+        <div class="text-xs font-medium text-muted-foreground">DNS 托管</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums mt-0.5">
           {{ providers.filter((p) => ['dnspod', 'cloudflare'].includes(p.type)).length }}
         </div>
       </div>
-      <div class="bg-muted/40 rounded-lg px-3 py-2">
-        <div class="text-muted-foreground text-xs">加速 / SaaS</div>
-        <div class="text-lg font-semibold tabular-nums">
+      <div class="bg-muted/40 hover:bg-muted/60 transition-colors rounded-xl px-4 py-3">
+        <div class="text-xs font-medium text-muted-foreground">SaaS / 加速</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums mt-0.5">
           {{ providers.filter((p) => ['saas', 'edgeone'].includes(p.type)).length }}
         </div>
       </div>
-      <div class="bg-muted/40 rounded-lg px-3 py-2">
-        <div class="text-muted-foreground text-xs">隧道</div>
-        <div class="text-lg font-semibold tabular-nums">
+      <div class="bg-muted/40 hover:bg-muted/60 transition-colors rounded-xl px-4 py-3">
+        <div class="text-xs font-medium text-muted-foreground">Cloudflare 隧道</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums mt-0.5">
           {{ providers.filter((p) => p.type === 'cloudflared').length }}
         </div>
       </div>
@@ -105,7 +105,7 @@ onMounted(async () => {
       </EmptyHeader>
       <EmptyContent>
         <RouterLink to="/providers">
-          <Button size="sm" class="gap-1.5">
+          <Button size="sm" class="gap-1.5 shadow-xs">
             <Settings2 class="size-4" />
             管理服务商
           </Button>
@@ -118,7 +118,7 @@ onMounted(async () => {
       <div
         v-for="i in 3"
         :key="i"
-        class="flex min-w-0 items-center gap-3 rounded-2xl bg-muted/20 border border-border/40 p-3 sm:gap-3.5 sm:px-4 sm:py-3.5"
+        class="flex min-w-0 items-center gap-3.5 rounded-2xl bg-muted/20 border border-border/40 p-3 sm:gap-3.5 sm:px-4 sm:py-3.5"
       >
         <Skeleton class="size-11 rounded-xl shrink-0" />
         <div class="min-w-0 flex-1 space-y-2">
@@ -131,13 +131,13 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- 真实数据：服务商大卡片列表（恢复圆润灵动 rounded-2xl & hover 背景过渡，去除厚重边框） -->
+    <!-- 真实数据：服务商卡片列表 -->
     <div v-else-if="providers.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <RouterLink
         v-for="provider in providers"
         :key="provider.id"
         :to="providerPath(provider.id)"
-        class="group hover:bg-muted/50 flex min-w-0 items-center gap-3 rounded-2xl px-3 py-3.5 transition-colors sm:gap-3.5 sm:px-4 cursor-pointer"
+        class="group hover:bg-muted/50 flex min-w-0 items-center gap-3.5 rounded-2xl border border-border/40 hover:border-border/80 px-4 py-3.5 transition-all cursor-pointer"
       >
         <div
           class="flex size-11 shrink-0 items-center justify-center rounded-xl text-white shadow-xs"
@@ -147,15 +147,15 @@ onMounted(async () => {
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex min-w-0 items-center gap-2">
-            <span class="truncate text-base font-medium text-foreground">{{ provider.name }}</span>
+            <span class="truncate text-base font-semibold tracking-tight text-foreground">{{ provider.name }}</span>
             <Badge variant="secondary" class="h-5 shrink-0 px-1.5 text-[11px] font-normal">
               {{ providerTypeLabel(provider.type) }}
             </Badge>
           </div>
-          <div class="text-muted-foreground mt-0.5 truncate text-sm">{{ metaOf(provider.type).blurb }}</div>
+          <div class="text-muted-foreground mt-0.5 truncate text-xs">{{ metaOf(provider.type).blurb }}</div>
         </div>
         <ArrowRight
-          class="text-muted-foreground size-4 shrink-0 opacity-60 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100"
+          class="text-muted-foreground size-4 shrink-0 opacity-40 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100"
         />
       </RouterLink>
     </div>

@@ -218,10 +218,7 @@ function toggleDark() {
 <template>
   <div class="bg-background relative flex min-h-svh flex-col">
     <header class="bg-background/80 backdrop-blur-md sticky top-0 z-50 w-full border-b border-border/40">
-      <!-- 手机全宽+内边距；桌面 ~80vw（用户：手机版不用 80%） -->
-      <div
-        class="mx-auto flex h-14 w-full max-w-none min-w-0 items-center gap-1.5 px-3 sm:h-16 sm:gap-2 sm:px-6 md:w-[80vw] md:px-0"
-      >
+      <div class="mx-auto flex h-14 w-full max-w-6xl min-w-0 items-center gap-2 px-4 sm:h-16 sm:px-6 lg:px-8">
         <RouterLink to="/" class="mr-2 flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-tight">
           <span
             class="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md text-sm font-bold shadow-xs"
@@ -366,9 +363,7 @@ function toggleDark() {
     </AppDialog>
 
     <main class="flex flex-1 flex-col">
-      <div
-        class="mx-auto w-full max-w-none min-w-0 flex-1 px-3 pt-4 pb-8 sm:px-6 sm:pt-6 sm:pb-10 md:w-[80vw] md:px-0 md:pb-12"
-      >
+      <div class="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <RouterView v-slot="{ Component, route: currentRoute }">
           <Transition name="page-fade" mode="out-in">
             <component :is="Component" :key="currentRoute.fullPath" />
@@ -378,9 +373,9 @@ function toggleDark() {
     </main>
 
     <!-- 页脚：版本号与项目链接 -->
-    <footer class="mt-auto border-t border-border/40 py-4 text-xs text-muted-foreground">
+    <footer class="mt-auto border-t border-border/40 py-5 text-xs text-muted-foreground">
       <div
-        class="mx-auto flex h-6 w-full items-center justify-between px-3 sm:px-6 md:w-[80vw] md:px-0 whitespace-nowrap"
+        class="mx-auto flex h-6 w-full max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8 whitespace-nowrap"
       >
         <div class="flex items-center gap-2 overflow-hidden text-ellipsis">
           <span class="font-semibold text-foreground/90">DNS-PRO</span>
