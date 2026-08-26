@@ -217,33 +217,24 @@ function toggleDark() {
 
 <template>
   <div class="bg-background relative flex min-h-svh flex-col">
-    <header class="bg-background/80 backdrop-blur-md sticky top-0 z-50 w-full border-b border-border/60">
+    <header class="bg-background/80 backdrop-blur-md sticky top-0 z-50 w-full border-b border-border/40">
       <!-- 手机全宽+内边距；桌面 ~80vw（用户：手机版不用 80%） -->
       <div
         class="mx-auto flex h-14 w-full max-w-none min-w-0 items-center gap-1.5 px-3 sm:h-16 sm:gap-2 sm:px-6 md:w-[80vw] md:px-0"
       >
-        <RouterLink to="/" class="mr-2 flex shrink-0 items-center gap-2.5 text-sm font-bold tracking-tight">
+        <RouterLink to="/" class="mr-2 flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-tight">
           <span
-            class="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md text-xs font-black shadow-xs"
+            class="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md text-sm font-bold shadow-xs"
           >
             D
           </span>
-          <span class="hidden sm:inline font-bold tracking-tight">DNS-PRO</span>
+          <span class="hidden sm:inline">DNS-PRO</span>
         </RouterLink>
 
-        <!-- 常驻：控制台 + 各服务商（非「服务商管理」入口） -->
-        <nav class="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex">
-          <Button variant="ghost" as-child size="sm" class="h-8 shrink-0 px-2.5 text-xs font-medium cursor-pointer">
-            <RouterLink
-              to="/"
-              :class="
-                cn(
-                  isActivePath('/')
-                    ? 'bg-secondary text-secondary-foreground font-semibold shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground'
-                )
-              "
-            >
+        <!-- 常驻：控制台 + 各服务商（文字字号恢复为舒适大字号 text-[15px]） -->
+        <nav class="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto lg:flex">
+          <Button variant="ghost" as-child size="sm" class="h-9 shrink-0 px-3 text-[15px] cursor-pointer">
+            <RouterLink to="/" :class="cn(isActivePath('/') && 'bg-accent text-accent-foreground font-medium')">
               控制台
             </RouterLink>
           </Button>
@@ -253,17 +244,11 @@ function toggleDark() {
             variant="ghost"
             as-child
             size="sm"
-            class="h-8 shrink-0 px-2.5 text-xs font-medium cursor-pointer"
+            class="h-9 shrink-0 px-3 text-[15px] cursor-pointer"
           >
             <RouterLink
               :to="providerPath(item.id)"
-              :class="
-                cn(
-                  activeProviderId === item.id
-                    ? 'bg-secondary text-secondary-foreground font-semibold shadow-xs'
-                    : 'text-muted-foreground hover:text-foreground'
-                )
-              "
+              :class="cn(activeProviderId === item.id && 'bg-accent text-accent-foreground font-medium')"
             >
               {{ item.name }}
             </RouterLink>
@@ -305,13 +290,13 @@ function toggleDark() {
             <Button
               variant="outline"
               size="sm"
-              class="h-8 gap-2 text-xs text-muted-foreground px-2.5 hidden sm:flex cursor-pointer border-border/60 bg-muted/30 hover:bg-accent hover:text-accent-foreground shadow-2xs"
+              class="h-8 gap-1.5 text-xs text-muted-foreground px-2.5 hidden sm:flex cursor-pointer border-border/60"
               @click="commandOpen = true"
             >
               <Search class="size-3.5" />
               <span>搜索导航...</span>
               <kbd
-                class="pointer-events-none inline-flex h-4.5 select-none items-center gap-1 rounded bg-background border border-border/60 px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+                class="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
               >
                 ⌘K
               </kbd>
@@ -319,7 +304,7 @@ function toggleDark() {
           </AppTooltip>
 
           <AppTooltip :content="isDark ? '切换为浅色模式' : '切换为深色模式'">
-            <Button variant="ghost" size="icon" class="size-8 cursor-pointer" @click="toggleDark">
+            <Button variant="ghost" size="icon" class="size-9 cursor-pointer" @click="toggleDark">
               <Sun v-if="isDark" class="size-4" />
               <Moon v-else class="size-4" />
             </Button>
@@ -328,10 +313,10 @@ function toggleDark() {
           <!-- 右上角账户下拉：服务商管理 + 退出 -->
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" class="h-8 gap-1.5 px-2.5 text-xs font-medium cursor-pointer">
-                <UserRound class="size-3.5 text-muted-foreground" />
+              <Button variant="ghost" class="h-9 gap-1.5 px-3 text-[15px] cursor-pointer">
+                <UserRound class="size-4 text-muted-foreground" />
                 <span class="hidden max-w-[7rem] truncate sm:inline">{{ session.username || '账户' }}</span>
-                <ChevronDown class="size-3 opacity-60" />
+                <ChevronDown class="size-4 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="w-48">
