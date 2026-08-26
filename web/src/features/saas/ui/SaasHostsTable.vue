@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { EllipsisVertical } from '@lucide/vue'
+import { EllipsisVertical, Shield } from '@lucide/vue'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
@@ -84,7 +84,13 @@ function isBusy(record: SaaSHostname) {
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
         <TableRow v-if="!hostnames.length && !loading">
-          <TableCell colspan="7" class="text-muted-foreground py-10 text-center">暂无自定义主机名</TableCell>
+          <TableCell colspan="7" class="text-muted-foreground py-10 text-center">
+            <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+              <Shield class="size-8 text-muted-foreground/40 stroke-1" />
+              <div class="font-medium text-foreground/80 text-sm">暂无自定义主机名</div>
+              <div class="text-xs text-muted-foreground">点击上方「新增主机名」开始接入</div>
+            </div>
+          </TableCell>
         </TableRow>
         <TableRow
           v-for="record in hostnames"

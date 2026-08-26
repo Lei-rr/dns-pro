@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { ChevronDown, ChevronRight, Copy, EllipsisVertical } from '@lucide/vue'
+import { ref, computed } from 'vue'
+import { Check, ChevronDown, ChevronRight, Copy, EllipsisVertical, Globe2 } from '@lucide/vue'
 import { Badge } from '@/shared/ui/badge'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
@@ -106,6 +106,17 @@ function purposeLabels(records: DnsRecord[]) {
 function recordValue(record: DnsRecord) {
   return String(record.value || record.content || '')
 }
+
+const copiedKeys = ref<Record<string, boolean>>({})
+
+function onCopyClick(record: DnsRecord) {
+  const key = dnsRecordRowKey(record)
+  copiedKeys.value = { ...copiedKeys.value, [key]: true }
+  setTimeout(() => {
+    copiedKeys.value = { ...copiedKeys.value, [key]: false }
+  }, 2000)
+  emit('copy', record)
+}
 </script>
 
 <template>
@@ -127,7 +138,13 @@ function recordValue(record: DnsRecord) {
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
         <TableRow v-if="!records.length && !loading">
-          <TableCell colspan="8" class="text-muted-foreground py-10 text-center">暂无记录</TableCell>
+          <TableCell colspan="8" class="text-muted-foreground py-10 text-center">
+            <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+              <Globe2 class="size-8 text-muted-foreground/40 stroke-1" />
+              <div class="font-medium text-foreground/80 text-sm">暂无解析记录</div>
+              <div class="text-xs text-muted-foreground">可通过上方「添加记录」或「导入」快速添加</div>
+            </div>
+          </TableCell>
         </TableRow>
 
         <template v-for="row in rows" :key="row.key">
@@ -189,15 +206,19 @@ function recordValue(record: DnsRecord) {
             <TableCell class="w-[14rem] max-w-[18rem]">
               <div class="flex min-w-0 items-center gap-1">
                 <div class="min-w-0 flex-1 truncate" :title="recordValue(record)">{{ recordValue(record) || '-' }}</div>
-                <AppTooltip v-if="recordValue(record)" content="复制记录值">
+                <AppTooltip
+                  v-if="recordValue(record)"
+                  :content="copiedKeys[dnsRecordRowKey(record)] ? '已复制！' : '复制记录值'"
+                >
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     class="size-7 shrink-0 cursor-pointer"
-                    @click.stop="emit('copy', record)"
+                    @click.stop="onCopyClick(record)"
                   >
-                    <Copy class="size-3.5" />
+                    <Check v-if="copiedKeys[dnsRecordRowKey(record)]" class="size-3.5 text-emerald-500" />
+                    <Copy v-else class="size-3.5" />
                   </Button>
                 </AppTooltip>
               </div>
@@ -261,15 +282,19 @@ function recordValue(record: DnsRecord) {
                 <div class="min-w-0 flex-1 truncate" :title="recordValue(row.record)">
                   {{ recordValue(row.record) || '-' }}
                 </div>
-                <AppTooltip v-if="recordValue(row.record)" content="复制记录值">
+                <AppTooltip
+                  v-if="recordValue(row.record)"
+                  :content="copiedKeys[dnsRecordRowKey(row.record)] ? '已复制！' : '复制记录值'"
+                >
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
                     class="size-7 shrink-0 cursor-pointer"
-                    @click.stop="emit('copy', row.record)"
+                    @click.stop="onCopyClick(row.record)"
                   >
-                    <Copy class="size-3.5" />
+                    <Check v-if="copiedKeys[dnsRecordRowKey(row.record)]" class="size-3.5 text-emerald-500" />
+                    <Copy v-else class="size-3.5" />
                   </Button>
                 </AppTooltip>
               </div>

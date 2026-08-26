@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import ProviderFormDialog from './ProviderFormDialog.vue'
 import ProvidersTable from './ProvidersTable.vue'
 import { providersApi } from '../api/provider-api'
@@ -204,21 +205,15 @@ onUnmounted(resetRowOperations)
 
     <!-- products-01 style toolbar + table -->
     <div class="flex w-full flex-col gap-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <Button size="sm" :variant="typeFilter === 'all' ? 'default' : 'outline'" @click="typeFilter = 'all'">
-            全部
-          </Button>
-          <Button
-            v-for="item in definitions"
-            :key="item.type"
-            size="sm"
-            :variant="typeFilter === item.type ? 'default' : 'outline'"
-            @click="typeFilter = item.type"
-          >
-            {{ item.name || item.type }}
-          </Button>
-        </div>
+      <div v-if="definitions.length" class="overflow-x-auto">
+        <Tabs v-model="typeFilter">
+          <TabsList class="h-8 w-max">
+            <TabsTrigger value="all" class="text-xs px-3">全部</TabsTrigger>
+            <TabsTrigger v-for="item in definitions" :key="item.type" :value="item.type" class="text-xs px-3">
+              {{ item.name || item.type }}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
       <ProvidersTable

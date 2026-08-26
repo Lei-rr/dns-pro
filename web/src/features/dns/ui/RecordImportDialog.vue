@@ -4,6 +4,7 @@ import { FileUp, Info, Upload } from '@lucide/vue'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
+import { cn } from '@/shared/lib/utils'
 import { parseDnsFile, type ParsedImportRecord } from '../lib/record-import'
 import { toast } from '@/shared/lib/toast'
 
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 const parsedRecords = ref<ParsedImportRecord[]>([])
 const fileName = ref('')
 const parseError = ref('')
+const isDragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 
 watch(open, (isOpen) => {
@@ -28,6 +30,7 @@ watch(open, (isOpen) => {
     parsedRecords.value = []
     fileName.value = ''
     parseError.value = ''
+    isDragging.value = false
     if (fileInput.value) fileInput.value.value = ''
   }
 })
@@ -36,11 +39,7 @@ function triggerSelect() {
   fileInput.value?.click()
 }
 
-async function onFileSelected(e: Event) {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0]
-  if (!file) return
-
+async function processFile(file: File) {
   fileName.value = file.name
   parseError.value = ''
   try {
@@ -59,6 +58,20 @@ async function onFileSelected(e: Event) {
   }
 }
 
+async function onFileSelected(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  await processFile(file)
+}
+
+async function onFileDrop(e: DragEvent) {
+  isDragging.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (!file) return
+  await processFile(file)
+}
+
 function handleConfirm() {
   if (!parsedRecords.value.length) return
   emit('submit', parsedRecords.value)
@@ -71,13 +84,33 @@ function handleConfirm() {
       <input ref="fileInput" type="file" class="hidden" accept=".json,.csv,.zone,.txt,.bind" @change="onFileSelected" />
 
       <div
-        class="border-border/80 hover:bg-muted/30 flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-colors cursor-pointer"
+        :class="
+          cn(
+            'flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-6 text-center transition-all cursor-pointer select-none',
+            isDragging
+              ? 'border-primary bg-primary/10 ring-4 ring-primary/20 scale-[1.01]'
+              : 'border-border/80 hover:border-primary/50 hover:bg-muted/30'
+          )
+        "
         @click="triggerSelect"
+        @dragover.prevent="isDragging = true"
+        @dragenter.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="onFileDrop"
       >
-        <div class="bg-muted flex size-10 items-center justify-center rounded-full">
-          <Upload class="text-muted-foreground size-5" />
+        <div
+          :class="
+            cn(
+              'flex size-11 items-center justify-center rounded-full transition-colors',
+              isDragging ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+            )
+          "
+        >
+          <Upload class="size-5" />
         </div>
-        <div class="mt-3 font-medium">点击上传文件</div>
+        <div class="mt-3 font-medium">
+          {{ isDragging ? '松开鼠标立即解析文件' : '点击或拖拽文件到此处' }}
+        </div>
         <p class="text-muted-foreground mt-1 text-xs">支持 CSV（推荐）、JSON、BIND Zone 格式文本文件</p>
         <div v-if="fileName" class="mt-2 flex items-center gap-1.5 text-xs font-medium text-primary">
           <FileUp class="size-3.5" />

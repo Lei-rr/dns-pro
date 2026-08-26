@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Copy, Plus, RefreshCw } from '@lucide/vue'
+import { Check, Copy, Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { Card } from '@/shared/ui/card'
 import { AppTooltip } from '@/shared/ui/tooltip'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { cloudflaredApi } from '@/features/tunnels/api/tunnel-api'
@@ -188,10 +189,16 @@ async function rotateToken() {
   }
 }
 
+const isTokenCopied = ref(false)
+
 async function copyToken() {
   if (!token.value) return
   try {
     await navigator.clipboard.writeText(token.value)
+    isTokenCopied.value = true
+    setTimeout(() => {
+      isTokenCopied.value = false
+    }, 2000)
     toast.success('Token 已复制')
   } catch {
     toast.warning('复制失败，请手动选择复制')
@@ -247,50 +254,53 @@ onUnmounted(() => {
 
     <!-- Overview cards -->
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <div class="rounded-lg border bg-card p-4">
-        <div class="text-muted-foreground text-xs">活动副本</div>
-        <div class="mt-1 text-2xl font-semibold">{{ tunnel?.connections?.length || 0 }}</div>
-      </div>
-      <div class="rounded-lg border bg-card p-4">
-        <div class="text-muted-foreground text-xs">路由</div>
-        <div class="mt-1 text-2xl font-semibold">{{ routes.length }}</div>
-      </div>
-      <div class="rounded-lg border bg-card p-4">
-        <div class="text-muted-foreground text-xs">状态</div>
+      <Card class="gap-1 p-4 shadow-xs">
+        <div class="text-muted-foreground text-xs font-medium">活动副本</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums">{{ tunnel?.connections?.length || 0 }}</div>
+      </Card>
+      <Card class="gap-1 p-4 shadow-xs">
+        <div class="text-muted-foreground text-xs font-medium">路由</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums">{{ routes.length }}</div>
+      </Card>
+      <Card class="gap-1 p-4 shadow-xs">
+        <div class="text-muted-foreground text-xs font-medium">状态</div>
         <div class="mt-1">
           <StatusBadge>{{ tunnelStatusLabel(tunnel?.status) }}</StatusBadge>
         </div>
-      </div>
-      <div class="rounded-lg border bg-card p-4">
-        <div class="text-muted-foreground text-xs">隧道 ID</div>
-        <div class="text-muted-foreground mt-1 truncate text-sm font-mono">{{ tunnel?.id || '-' }}</div>
-      </div>
+      </Card>
+      <Card class="gap-1 p-4 shadow-xs">
+        <div class="text-muted-foreground text-xs font-medium">隧道 ID</div>
+        <div class="text-muted-foreground mt-1 truncate text-xs font-mono">{{ tunnel?.id || '-' }}</div>
+      </Card>
     </div>
 
-    <div class="min-w-0 space-y-3 rounded-lg bg-muted/30 p-4">
+    <Card class="gap-3 bg-muted/30 p-4 shadow-xs">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="min-w-0 flex-1">
-          <div class="text-sm font-medium">安装 Token</div>
+          <div class="text-sm font-semibold">安装 Token</div>
           <div class="text-muted-foreground mt-1 min-w-0 max-w-3xl truncate font-mono text-xs">
             {{ token || '暂无 Token' }}
           </div>
         </div>
         <div class="flex gap-2">
-          <AppTooltip content="复制安装 Token">
-            <Button variant="outline" size="sm" :disabled="!token" class="cursor-pointer" @click="copyToken">
-              <Copy class="size-4" />
-              复制
+          <AppTooltip :content="isTokenCopied ? '已复制！' : '复制安装 Token'">
+            <Button variant="outline" size="sm" :disabled="!token" class="cursor-pointer shadow-xs" @click="copyToken">
+              <Check v-if="isTokenCopied" class="size-4 text-emerald-500" />
+              <Copy v-else class="size-4" />
+              {{ isTokenCopied ? '已复制' : '复制' }}
             </Button>
           </AppTooltip>
-          <LoadingButton variant="outline" size="sm" :loading="rotating" @click="rotateToken">轮换</LoadingButton>
+          <LoadingButton variant="outline" size="sm" :loading="rotating" class="shadow-xs" @click="rotateToken"
+            >轮换</LoadingButton
+          >
         </div>
       </div>
-    </div>
+    </Card>
 
-    <div v-if="token" class="min-w-0 rounded-lg border p-4">
-      <div class="mb-3 text-sm font-medium">安装 cloudflared 连接器</div>
+    <Card v-if="token" class="gap-3 p-4 shadow-xs">
+      <div class="text-sm font-semibold">安装 cloudflared 连接器</div>
       <TunnelInstallPanel :token="token" />
-    </div>
+    </Card>
 
     <TunnelRoutesTable
       :routes="pagedRoutes"

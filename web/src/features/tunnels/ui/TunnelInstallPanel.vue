@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Copy } from '@lucide/vue'
+import { Check, Copy } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { AppTooltip } from '@/shared/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
@@ -101,9 +101,15 @@ watch(os, () => {
   arch.value = archTabs.value[0]?.key || 'amd64'
 })
 
-async function copyCommand(command: string) {
+const copiedIndex = ref<number | null>(null)
+
+async function copyCommand(command: string, index: number) {
   try {
     await navigator.clipboard.writeText(command)
+    copiedIndex.value = index
+    setTimeout(() => {
+      if (copiedIndex.value === index) copiedIndex.value = null
+    }, 2000)
     toast.success('命令已复制')
   } catch {
     toast.warning('复制失败，请手动选择')
@@ -135,14 +141,15 @@ async function copyCommand(command: string) {
           v-if="step.command"
           class="relative min-w-0 max-w-full rounded-md bg-zinc-900 p-3 pr-12 font-mono text-xs leading-6 break-all whitespace-pre-wrap text-zinc-100"
         >
-          <AppTooltip content="复制安装命令">
+          <AppTooltip :content="copiedIndex === index ? '已复制！' : '复制安装命令'">
             <Button
               variant="ghost"
               size="icon"
               class="absolute top-1 right-1 size-8 text-zinc-200 hover:bg-zinc-800 hover:text-white cursor-pointer"
-              @click="copyCommand(step.command)"
+              @click="copyCommand(step.command, index)"
             >
-              <Copy class="size-4" />
+              <Check v-if="copiedIndex === index" class="size-4 text-emerald-400" />
+              <Copy v-else class="size-4" />
             </Button>
           </AppTooltip>
           {{ step.command }}

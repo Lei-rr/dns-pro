@@ -217,24 +217,33 @@ function toggleDark() {
 
 <template>
   <div class="bg-background relative flex min-h-svh flex-col">
-    <header class="bg-background sticky top-0 z-50 w-full border-b border-border/40">
+    <header class="bg-background/80 backdrop-blur-md sticky top-0 z-50 w-full border-b border-border/60">
       <!-- 手机全宽+内边距；桌面 ~80vw（用户：手机版不用 80%） -->
       <div
         class="mx-auto flex h-14 w-full max-w-none min-w-0 items-center gap-1.5 px-3 sm:h-16 sm:gap-2 sm:px-6 md:w-[80vw] md:px-0"
       >
-        <RouterLink to="/" class="mr-1 flex shrink-0 items-center gap-2 text-[15px] font-semibold tracking-tight">
+        <RouterLink to="/" class="mr-2 flex shrink-0 items-center gap-2.5 text-sm font-bold tracking-tight">
           <span
-            class="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md text-sm font-bold"
+            class="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md text-xs font-black shadow-xs"
           >
             D
           </span>
-          <span class="hidden sm:inline">DNS-PRO</span>
+          <span class="hidden sm:inline font-bold tracking-tight">DNS-PRO</span>
         </RouterLink>
 
         <!-- 常驻：控制台 + 各服务商（非「服务商管理」入口） -->
-        <nav class="hidden min-w-0 flex-1 items-center gap-0.5 overflow-x-auto lg:flex">
-          <Button variant="ghost" as-child size="sm" class="h-9 shrink-0 px-3 text-[15px]">
-            <RouterLink to="/" :class="cn(isActivePath('/') && 'bg-accent text-accent-foreground')">
+        <nav class="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto lg:flex">
+          <Button variant="ghost" as-child size="sm" class="h-8 shrink-0 px-2.5 text-xs font-medium cursor-pointer">
+            <RouterLink
+              to="/"
+              :class="
+                cn(
+                  isActivePath('/')
+                    ? 'bg-secondary text-secondary-foreground font-semibold shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                )
+              "
+            >
               控制台
             </RouterLink>
           </Button>
@@ -244,11 +253,17 @@ function toggleDark() {
             variant="ghost"
             as-child
             size="sm"
-            class="h-9 shrink-0 px-3 text-[15px]"
+            class="h-8 shrink-0 px-2.5 text-xs font-medium cursor-pointer"
           >
             <RouterLink
               :to="providerPath(item.id)"
-              :class="cn(activeProviderId === item.id && 'bg-accent text-accent-foreground')"
+              :class="
+                cn(
+                  activeProviderId === item.id
+                    ? 'bg-secondary text-secondary-foreground font-semibold shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                )
+              "
             >
               {{ item.name }}
             </RouterLink>
@@ -290,13 +305,13 @@ function toggleDark() {
             <Button
               variant="outline"
               size="sm"
-              class="h-8 gap-1.5 text-xs text-muted-foreground px-2.5 hidden sm:flex cursor-pointer"
+              class="h-8 gap-2 text-xs text-muted-foreground px-2.5 hidden sm:flex cursor-pointer border-border/60 bg-muted/30 hover:bg-accent hover:text-accent-foreground shadow-2xs"
               @click="commandOpen = true"
             >
               <Search class="size-3.5" />
               <span>搜索导航...</span>
               <kbd
-                class="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
+                class="pointer-events-none inline-flex h-4.5 select-none items-center gap-1 rounded bg-background border border-border/60 px-1.5 font-mono text-[10px] font-medium text-muted-foreground"
               >
                 ⌘K
               </kbd>
@@ -304,7 +319,7 @@ function toggleDark() {
           </AppTooltip>
 
           <AppTooltip :content="isDark ? '切换为浅色模式' : '切换为深色模式'">
-            <Button variant="ghost" size="icon" class="size-9 cursor-pointer" @click="toggleDark">
+            <Button variant="ghost" size="icon" class="size-8 cursor-pointer" @click="toggleDark">
               <Sun v-if="isDark" class="size-4" />
               <Moon v-else class="size-4" />
             </Button>
@@ -313,10 +328,10 @@ function toggleDark() {
           <!-- 右上角账户下拉：服务商管理 + 退出 -->
           <DropdownMenu>
             <DropdownMenuTrigger as-child>
-              <Button variant="ghost" class="h-9 gap-1.5 px-3 text-[15px]">
-                <UserRound class="size-4" />
+              <Button variant="ghost" class="h-8 gap-1.5 px-2.5 text-xs font-medium cursor-pointer">
+                <UserRound class="size-3.5 text-muted-foreground" />
                 <span class="hidden max-w-[7rem] truncate sm:inline">{{ session.username || '账户' }}</span>
-                <ChevronDown class="size-4 opacity-60" />
+                <ChevronDown class="size-3 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" class="w-48">
@@ -378,16 +393,16 @@ function toggleDark() {
     </main>
 
     <!-- 页脚：版本号与项目链接 -->
-    <footer class="mt-auto border-t border-border/40 py-3.5 text-xs text-muted-foreground/70">
+    <footer class="mt-auto border-t border-border/40 py-4 text-xs text-muted-foreground">
       <div
         class="mx-auto flex h-6 w-full items-center justify-between px-3 sm:px-6 md:w-[80vw] md:px-0 whitespace-nowrap"
       >
         <div class="flex items-center gap-2 overflow-hidden text-ellipsis">
-          <span class="font-medium text-foreground/80">DNS-PRO</span>
-          <Badge variant="outline" class="h-4.5 px-1.5 text-[10px] font-normal shrink-0"
+          <span class="font-semibold text-foreground/90">DNS-PRO</span>
+          <Badge variant="outline" class="h-4.5 px-1.5 text-[10px] font-normal shrink-0 border-border/60"
             >v{{ session.version || '1.0.0' }}</Badge
           >
-          <span class="hidden sm:inline text-muted-foreground/60">· 一体化 DNS 与隧道管理面板</span>
+          <span class="hidden sm:inline text-muted-foreground/70">· 一体化 DNS 与隧道管理面板</span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
           <AppTooltip content="GitHub 源码仓库">
@@ -395,7 +410,7 @@ function toggleDark() {
               href="https://github.com/lei-rr/dns-pro"
               target="_blank"
               rel="noreferrer"
-              class="p-1 rounded-md hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center"
+              class="p-1.5 rounded-md hover:text-foreground hover:bg-accent transition-colors flex items-center justify-center cursor-pointer"
             >
               <svg class="size-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
                 <path

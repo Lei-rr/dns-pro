@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Search, CornerDownLeft } from '@lucide/vue'
 import { Dialog, DialogContent } from '@/shared/ui/dialog'
 import { Badge } from '@/shared/ui/badge'
+import { Separator } from '@/shared/ui/separator'
 import { cn } from '@/shared/lib/utils'
 import type { Component } from 'vue'
 
@@ -184,10 +185,10 @@ function scrollToActive() {
         </div>
       </div>
 
+      <Separator />
+
       <!-- Footer Guide -->
-      <div
-        class="flex items-center justify-between border-t border-border bg-muted/30 px-3.5 py-2 text-[11px] text-muted-foreground"
-      >
+      <div class="flex items-center justify-between bg-muted/30 px-3.5 py-2 text-[11px] text-muted-foreground">
         <div class="flex items-center gap-3">
           <span class="flex items-center gap-1">
             <kbd class="rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px]">↑</kbd>

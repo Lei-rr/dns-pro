@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { EllipsisVertical } from '@lucide/vue'
+import { EllipsisVertical, Server } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
@@ -32,7 +32,13 @@ const emit = defineEmits<{
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
         <TableRow v-if="!routes.length && !loading">
-          <TableCell colspan="4" class="text-muted-foreground py-10 text-center">暂无路由</TableCell>
+          <TableCell colspan="4" class="text-muted-foreground py-10 text-center">
+            <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+              <Server class="size-8 text-muted-foreground/40 stroke-1" />
+              <div class="font-medium text-foreground/80 text-sm">暂无路由规则</div>
+              <div class="text-xs text-muted-foreground">点击上方「添加路由」将外部请求分发至内网服务</div>
+            </div>
+          </TableCell>
         </TableRow>
         <TableRow
           v-for="(record, index) in routes"

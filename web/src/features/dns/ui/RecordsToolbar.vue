@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Download, RefreshCw, Search, Upload } from '@lucide/vue'
+import { Download, RefreshCw, Search, Upload, X } from '@lucide/vue'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import { Input } from '@/shared/ui/input'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 
@@ -26,18 +27,34 @@ const emit = defineEmits<{
   export: [format: 'json' | 'csv' | 'zone']
   import: []
 }>()
+
+function clearKeyword() {
+  emit('update:keyword', '')
+  emit('search')
+}
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex flex-wrap items-center gap-2">
-      <Input
-        :model-value="keyword"
-        class="h-8 w-full sm:w-72"
-        placeholder="搜索主机 / 记录值"
-        @update:model-value="emit('update:keyword', String($event))"
-        @keyup.enter="emit('search')"
-      />
+      <div class="relative w-full sm:w-72">
+        <Input
+          :model-value="keyword"
+          class="h-8 w-full pr-7"
+          placeholder="搜索主机 / 记录值"
+          @update:model-value="emit('update:keyword', String($event))"
+          @keyup.enter="emit('search')"
+        />
+        <button
+          v-if="keyword"
+          type="button"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+          title="清空"
+          @click="clearKeyword"
+        >
+          <X class="size-3.5" />
+        </button>
+      </div>
       <Button variant="outline" size="sm" @click="emit('search')">
         <Search class="size-4" />
         搜索
@@ -75,25 +92,15 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-1.5">
-      <Button
-        size="sm"
-        class="h-7 text-xs px-2.5"
-        :variant="typeFilter === 'all' ? 'default' : 'outline'"
-        @click="emit('update:typeFilter', 'all')"
-      >
-        全部
-      </Button>
-      <Button
-        v-for="item in typeOptions"
-        :key="item"
-        size="sm"
-        class="h-7 text-xs px-2.5"
-        :variant="typeFilter === item ? 'default' : 'outline'"
-        @click="emit('update:typeFilter', item)"
-      >
-        {{ item }}
-      </Button>
+    <div v-if="typeOptions.length" class="overflow-x-auto">
+      <Tabs :model-value="typeFilter" @update:model-value="emit('update:typeFilter', String($event))">
+        <TabsList class="h-8 w-max">
+          <TabsTrigger value="all" class="text-xs px-3">全部</TabsTrigger>
+          <TabsTrigger v-for="item in typeOptions" :key="item" :value="item" class="text-xs px-3">
+            {{ item }}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
     </div>
   </div>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { EllipsisVertical, Plus, RefreshCw } from '@lucide/vue'
+import { EllipsisVertical, Plus, RefreshCw, Server } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -171,7 +171,11 @@ onUnmounted(() => {
         <TableBody class="**:data-[slot=table-cell]:py-2.5">
           <TableRow v-if="!tunnels.length && !loading">
             <TableCell colspan="5" class="text-muted-foreground py-10 text-center">
-              暂无隧道，点击「创建隧道」开始
+              <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+                <Server class="size-8 text-muted-foreground/40 stroke-1" />
+                <div class="font-medium text-foreground/80 text-sm">暂无隧道</div>
+                <div class="text-xs text-muted-foreground">点击右上角「创建隧道」开始配置 Cloudflare Tunnel</div>
+              </div>
             </TableCell>
           </TableRow>
           <TableRow v-for="record in pagedTunnels" :key="String(record.id || record.name)">

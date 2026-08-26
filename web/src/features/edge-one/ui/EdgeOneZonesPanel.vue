@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { RefreshCw, Search } from '@lucide/vue'
+import { Radar, RefreshCw, Search, X } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -80,6 +80,11 @@ watch(
 )
 
 onMounted(() => runLoad())
+
+function clearSearch() {
+  keyword.value = ''
+  resetPage()
+}
 </script>
 
 <template>
@@ -98,8 +103,19 @@ onMounted(() => runLoad())
     </PageHeader>
 
     <div class="flex w-full flex-col gap-4">
-      <div class="flex items-center gap-2">
-        <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索站点" @keyup.enter="resetPage()" />
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <div class="relative w-full sm:w-64">
+          <Input v-model="keyword" class="h-8 w-full pr-7" placeholder="搜索站点" @keyup.enter="resetPage()" />
+          <button
+            v-if="keyword"
+            type="button"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+            title="清空"
+            @click="clearSearch"
+          >
+            <X class="size-3.5" />
+          </button>
+        </div>
         <Button variant="outline" size="sm" @click="resetPage()">
           <Search class="size-4" />
           搜索
@@ -120,7 +136,13 @@ onMounted(() => runLoad())
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
             <TableRow v-if="!filtered.length && !loading">
-              <TableCell colspan="6" class="text-muted-foreground py-10 text-center">暂无 EdgeOne 站点</TableCell>
+              <TableCell colspan="6" class="text-muted-foreground py-10 text-center">
+                <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+                  <Radar class="size-8 text-muted-foreground/40 stroke-1" />
+                  <div class="font-medium text-foreground/80 text-sm">暂无 EdgeOne 站点</div>
+                  <div class="text-xs text-muted-foreground">未检测到关联站点，请在腾讯云控制台接入域名</div>
+                </div>
+              </TableCell>
             </TableRow>
             <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">

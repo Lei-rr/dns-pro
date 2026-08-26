@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoa
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { EllipsisVertical, Plus, RefreshCw, Search } from '@lucide/vue'
+import { EllipsisVertical, Globe2, Plus, RefreshCw, Search, X } from '@lucide/vue'
 import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
 
 import type { Zone } from '@/features/dns/model/types'
@@ -178,6 +178,10 @@ onUnmounted(() => {
   scopeGeneration.invalidate()
   resetRowOperations()
 })
+function clearSearch() {
+  keyword.value = ''
+  onSearch()
+}
 </script>
 
 <template>
@@ -201,8 +205,19 @@ onUnmounted(() => {
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex items-center gap-2">
-          <Input v-model="keyword" class="h-8 w-full sm:w-64" placeholder="搜索域名" @keyup.enter="onSearch()" />
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <div class="relative w-full sm:w-64">
+            <Input v-model="keyword" class="h-8 w-full pr-7" placeholder="搜索域名" @keyup.enter="onSearch()" />
+            <button
+              v-if="keyword"
+              type="button"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+              title="清空"
+              @click="clearSearch"
+            >
+              <X class="size-3.5" />
+            </button>
+          </div>
           <Button variant="outline" size="sm" @click="onSearch()">
             <Search class="size-4" />
             搜索
@@ -221,7 +236,13 @@ onUnmounted(() => {
           </TableHeader>
           <TableBody class="**:data-[slot=table-cell]:py-2.5">
             <TableRow v-if="!filtered.length && !loading">
-              <TableCell colspan="3" class="text-muted-foreground py-10 text-center">暂无域名</TableCell>
+              <TableCell colspan="3" class="text-muted-foreground py-10 text-center">
+                <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+                  <Globe2 class="size-8 text-muted-foreground/40 stroke-1" />
+                  <div class="font-medium text-foreground/80 text-sm">暂无域名</div>
+                  <div class="text-xs text-muted-foreground">点击右上角「添加域名」开始解析配置</div>
+                </div>
+              </TableCell>
             </TableRow>
             <TableRow v-for="zone in pagedZones" :key="String(zone.id || zone.name)">
               <TableCell class="px-4">

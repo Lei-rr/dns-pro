@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
+import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { TablePagination } from '@/shared/ui/pagination'
 import { Plus } from '@lucide/vue'
 import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
@@ -607,30 +608,31 @@ function handleExport(format: 'json' | 'csv' | 'zone') {
       @update:page-size="onPageSizeChange"
     />
 
-    <!-- 勾选后：底部居中操作条 -->
-    <div
-      v-if="selectedCount && !jobProgress.running.value"
-      class="pointer-events-none sticky bottom-4 z-20 flex justify-center px-2"
+    <!-- 勾选后：底部悬浮操作条 -->
+    <FloatingSelectionBar
+      :show="selectedCount > 0 && !jobProgress.running.value"
+      :count="selectedCount"
+      :disabled="jobProgress.running.value || batchSubmitting"
+      @clear="selection.clear()"
     >
-      <div
-        class="bg-card pointer-events-auto flex w-full max-w-md flex-wrap items-center justify-center gap-2 rounded-xl border px-3 py-2 shadow-md sm:w-auto sm:max-w-none sm:rounded-full"
+      <Button
+        size="sm"
+        class="h-7 px-3 text-xs cursor-pointer"
+        :disabled="jobProgress.running.value || batchSubmitting"
+        @click="openBatchEdit"
       >
-        <span class="text-muted-foreground px-1 text-sm whitespace-nowrap"> 已选 {{ selectedCount }} </span>
-        <Button size="sm" :disabled="jobProgress.running.value || batchSubmitting" @click="openBatchEdit">
-          批量管理
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          class="text-destructive"
-          :disabled="jobProgress.running.value || batchSubmitting"
-          @click="batchDeleteSelected"
-        >
-          批量删除
-        </Button>
-        <Button size="sm" variant="ghost" @click="selection.clear()">取消</Button>
-      </div>
-    </div>
+        批量管理
+      </Button>
+      <Button
+        size="sm"
+        variant="destructive"
+        class="h-7 px-3 text-xs cursor-pointer"
+        :disabled="jobProgress.running.value || batchSubmitting"
+        @click="batchDeleteSelected"
+      >
+        批量删除
+      </Button>
+    </FloatingSelectionBar>
 
     <RecordFormDialog
       v-model:open="dialogOpen"

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { Plus, RefreshCw, Search } from '@lucide/vue'
+import { Plus, RefreshCw, Search, X } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldLabel } from '@/shared/ui/field'
@@ -75,6 +76,11 @@ const {
   loadSyncZones,
   loadPreferredOptions,
 } = useSaasHostsPanel(props)
+
+function clearSearch() {
+  keyword.value = ''
+  onSearch()
+}
 </script>
 
 <template>
@@ -109,7 +115,18 @@ const {
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap items-center gap-2">
-        <Input v-model="keyword" class="h-8 w-full sm:w-72" placeholder="搜索主机名" @keyup.enter="onSearch" />
+        <div class="relative w-full sm:w-72">
+          <Input v-model="keyword" class="h-8 w-full pr-7" placeholder="搜索主机名" @keyup.enter="onSearch" />
+          <button
+            v-if="keyword"
+            type="button"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+            title="清空"
+            @click="clearSearch"
+          >
+            <X class="size-3.5" />
+          </button>
+        </div>
         <Button variant="outline" size="sm" @click="onSearch">
           <Search class="size-4" />
           搜索
@@ -160,6 +177,32 @@ const {
         @update:page-size="onPageSizeChange"
       />
     </div>
+
+    <!-- 勾选后：底部悬浮操作条 -->
+    <FloatingSelectionBar
+      :show="selectedCount > 0 && !jobProgress.running.value && !applyingPreferred"
+      :count="selectedCount"
+      :disabled="jobProgress.running.value || batchSubmitting || applyingPreferred"
+      @clear="selection.clear()"
+    >
+      <Button
+        size="sm"
+        class="h-7 px-3 text-xs cursor-pointer"
+        :disabled="jobProgress.running.value || batchSubmitting || applyingPreferred"
+        @click="openBatchPreferred"
+      >
+        批量改优选
+      </Button>
+      <Button
+        size="sm"
+        variant="destructive"
+        class="h-7 px-3 text-xs cursor-pointer"
+        :disabled="jobProgress.running.value || batchSubmitting || applyingPreferred"
+        @click="batchDeleteSelected"
+      >
+        批量删除
+      </Button>
+    </FloatingSelectionBar>
 
     <HostnameFormDialog
       v-model:open="dialogOpen"

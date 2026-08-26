@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { EllipsisVertical } from '@lucide/vue'
+import { EllipsisVertical, Radar } from '@lucide/vue'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
@@ -74,7 +74,13 @@ function toggleAll(value: boolean | 'indeterminate') {
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
         <TableRow v-if="!domains.length && !loading">
-          <TableCell colspan="7" class="text-muted-foreground py-10 text-center">暂无加速域名</TableCell>
+          <TableCell colspan="7" class="text-muted-foreground py-10 text-center">
+            <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+              <Radar class="size-8 text-muted-foreground/40 stroke-1" />
+              <div class="font-medium text-foreground/80 text-sm">暂无加速域名</div>
+              <div class="text-xs text-muted-foreground">点击上方「添加域名」开始配置 EdgeOne 加速</div>
+            </div>
+          </TableCell>
         </TableRow>
         <TableRow v-for="record in domains" :key="domainName(record)" :class="busy(record) && 'bg-muted/40 opacity-80'">
           <TableCell class="px-3">

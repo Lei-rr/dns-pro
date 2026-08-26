@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Plus, RefreshCw, Search } from '@lucide/vue'
+import { Plus, RefreshCw, Search, X } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { Input } from '@/shared/ui/input'
 import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
 
@@ -107,6 +108,11 @@ function onPageSizeChange(next: number) {
   setPageSize(next)
   resetPage()
   selection.clear()
+}
+
+function clearSearch() {
+  keyword.value = ''
+  resetPage()
 }
 
 function domainName(record: EdgeOneAccelerationDomain) {
@@ -461,12 +467,23 @@ onMounted(() => {
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap items-center gap-2">
-        <Input
-          v-model="keyword"
-          class="h-8 w-full sm:w-72"
-          placeholder="搜索加速域名 / CNAME"
-          @keyup.enter="resetPage()"
-        />
+        <div class="relative w-full sm:w-72">
+          <Input
+            v-model="keyword"
+            class="h-8 w-full pr-7"
+            placeholder="搜索加速域名 / CNAME"
+            @keyup.enter="resetPage()"
+          />
+          <button
+            v-if="keyword"
+            type="button"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+            title="清空"
+            @click="clearSearch"
+          >
+            <X class="size-3.5" />
+          </button>
+        </div>
         <Button variant="outline" size="sm" @click="resetPage()">
           <Search class="size-4" />
           搜索
@@ -512,6 +529,32 @@ onMounted(() => {
         @update:page-size="onPageSizeChange"
       />
     </div>
+
+    <!-- 勾选后：底部悬浮操作条 -->
+    <FloatingSelectionBar
+      :show="selectedCount > 0 && !jobProgress.running.value"
+      :count="selectedCount"
+      :disabled="jobProgress.running.value"
+      @clear="selection.clear()"
+    >
+      <Button
+        size="sm"
+        class="h-7 px-3 text-xs cursor-pointer"
+        :disabled="jobProgress.running.value"
+        @click="batchDisableSelected"
+      >
+        批量停用
+      </Button>
+      <Button
+        size="sm"
+        variant="destructive"
+        class="h-7 px-3 text-xs cursor-pointer"
+        :disabled="jobProgress.running.value"
+        @click="batchDeleteSelected"
+      >
+        批量删除
+      </Button>
+    </FloatingSelectionBar>
 
     <EdgeOneDomainForm
       v-model:open="dialogOpen"

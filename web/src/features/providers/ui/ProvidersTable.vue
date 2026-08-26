@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { EllipsisVertical, LoaderCircle } from '@lucide/vue'
+import { EllipsisVertical, LoaderCircle, Settings2 } from '@lucide/vue'
 import { Badge } from '@/shared/ui/badge'
 import { Button } from '@/shared/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
@@ -37,7 +37,13 @@ const emit = defineEmits<{
       </TableHeader>
       <TableBody class="**:data-[slot=table-cell]:py-2.5">
         <TableRow v-if="!providers.length && !loading">
-          <TableCell colspan="4" class="text-muted-foreground py-10 text-center">暂无服务商</TableCell>
+          <TableCell colspan="4" class="text-muted-foreground py-10 text-center">
+            <div class="flex flex-col items-center justify-center gap-1.5 py-4">
+              <Settings2 class="size-8 text-muted-foreground/40 stroke-1" />
+              <div class="font-medium text-foreground/80 text-sm">暂无服务商</div>
+              <div class="text-xs text-muted-foreground">点击右上角「新增服务商」开始配置 DNS / 隧道凭据</div>
+            </div>
+          </TableCell>
         </TableRow>
         <TableRow v-for="record in providers" :key="record.id">
           <TableCell class="px-4">
