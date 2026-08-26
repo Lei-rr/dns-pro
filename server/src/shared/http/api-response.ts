@@ -34,8 +34,9 @@ export function error(
 ): ErrorResponseBody {
   const code = errorCode ?? 'error'
   const translated = translateError(code)
+  const isCustomMessage = messageOrCode && messageOrCode !== code
   return {
-    message: translated ?? messageOrCode,
+    message: isCustomMessage ? messageOrCode : (translated ?? messageOrCode),
     code,
     status: statusCode,
     details,

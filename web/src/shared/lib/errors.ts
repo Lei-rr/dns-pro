@@ -34,6 +34,7 @@ export function errorMessage(error: unknown, fallback = '请求失败'): string 
   const serverMessage = String(err?.response?.data?.message || err?.message || '').trim()
   const status = Number(err?.status || err?.response?.status || 0)
 
+  if (serverMessage && (code === 'auth_rate_limited' || status === 429)) return serverMessage
   if (code && CODE_HINTS[code]) return CODE_HINTS[code]
   if (serverMessage) {
     if (/sync zone/i.test(serverMessage) || /does not match hostname/i.test(serverMessage)) {

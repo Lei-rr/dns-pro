@@ -63,7 +63,7 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
     }
 
     if (err instanceof ApiError) {
-      return reply.status(err.statusCode).send(error(err.code, err.statusCode, err.code, err.details))
+      return reply.status(err.statusCode).send(error(err.message, err.statusCode, err.code, err.details))
     }
 
     if (err.code === 'FST_ERR_VALIDATION') {

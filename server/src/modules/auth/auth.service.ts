@@ -14,10 +14,12 @@ export interface SessionState {
 }
 
 const MAX_LOGIN_ATTEMPTS = 5
-const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 15 minutes
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000 // 锁定 15 分钟
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000 // 连续输错时间窗口 15 分钟
 
 interface FailedAttempt {
   count: number
+  lastAttemptAt: number
   lockedUntil?: number
 }
 
@@ -41,7 +43,7 @@ export class SessionService {
     const valid = await this.authConfig.verifyCredentials(username, password)
     if (!valid) {
       this.recordFailedAttempt(ip)
-      throw new ApiError('invalid_credentials', 'Invalid username or password', 401)
+      throw new ApiError('invalid_credentials', '用户名或密码不正确', 401)
     }
 
     this.clearFailedAttempts(ip)
@@ -71,9 +73,15 @@ export class SessionService {
     const now = Date.now()
     if (record.lockedUntil && record.lockedUntil > now) {
       const secondsLeft = Math.ceil((record.lockedUntil - now) / 1000)
-      throw new ApiError('auth_rate_limited', `登录失败次数过多，已被临时锁定，请 ${secondsLeft} 秒后再试`, 429, {
-        retry_after: secondsLeft,
-      })
+      const minutesLeft = Math.ceil(secondsLeft / 60)
+      throw new ApiError(
+        'auth_rate_limited',
+        `登录连续失败已达5次，IP已被锁定15分钟，请 ${minutesLeft} 分钟后再试（剩余 ${secondsLeft} 秒）`,
+        429,
+        {
+          retry_after: secondsLeft,
+        }
+      )
     }
     if (record.lockedUntil && record.lockedUntil <= now) {
       this.failedAttempts.delete(ip)
@@ -82,12 +90,28 @@ export class SessionService {
 
   private recordFailedAttempt(ip: string): void {
     const now = Date.now()
-    const record = this.failedAttempts.get(ip) ?? { count: 0 }
+    let record = this.failedAttempts.get(ip)
+    if (!record || (record.lastAttemptAt && now - record.lastAttemptAt > ATTEMPT_WINDOW_MS)) {
+      record = { count: 0, lastAttemptAt: now }
+    }
     record.count += 1
+    record.lastAttemptAt = now
     if (record.count >= MAX_LOGIN_ATTEMPTS) {
       record.lockedUntil = now + LOCKOUT_DURATION_MS
     }
     this.failedAttempts.set(ip, record)
+
+    // 内存保护自清理
+    if (this.failedAttempts.size > 2000) {
+      for (const [key, val] of this.failedAttempts.entries()) {
+        if (
+          (val.lockedUntil && val.lockedUntil <= now) ||
+          (val.lastAttemptAt && now - val.lastAttemptAt > ATTEMPT_WINDOW_MS)
+        ) {
+          this.failedAttempts.delete(key)
+        }
+      }
+    }
   }
 
   private clearFailedAttempts(ip: string): void {

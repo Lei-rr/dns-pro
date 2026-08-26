@@ -147,6 +147,47 @@ try {
   assert.equal(badLogin.statusCode, 401)
   assert.equal(badLogin.json().code, 'invalid_credentials')
 
+  // Verify rate limiting: 5 failed attempts from a specific IP lock out that IP for 15 minutes
+  for (let i = 0; i < 4; i++) {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/session',
+      payload: { username: 'probe-admin', password: 'wrong-password' },
+      remoteAddress: '192.168.1.100',
+    })
+    assert.equal(res.statusCode, 401)
+    assert.equal(res.json().code, 'invalid_credentials')
+  }
+  const fifthFailed = await app.inject({
+    method: 'POST',
+    url: '/api/session',
+    payload: { username: 'probe-admin', password: 'wrong-password' },
+    remoteAddress: '192.168.1.100',
+  })
+  assert.equal(fifthFailed.statusCode, 401)
+
+  // 6th attempt: should be blocked with 429 and retry_after in details
+  const rateLimited = await app.inject({
+    method: 'POST',
+    url: '/api/session',
+    payload: { username: 'probe-admin', password: 'probe-password' },
+    remoteAddress: '192.168.1.100',
+  })
+  assert.equal(rateLimited.statusCode, 429)
+  assert.equal(rateLimited.json().code, 'auth_rate_limited')
+  assert.match(String(rateLimited.json().message), /锁定/)
+  assert.ok(Number((rateLimited.json().details as { retry_after: number })?.retry_after) > 0)
+
+  // Other IP is not affected
+  const otherIpLogin = await app.inject({
+    method: 'POST',
+    url: '/api/session',
+    payload: { username: 'probe-admin', password: 'probe-password' },
+    remoteAddress: '192.168.1.200',
+  })
+  assert.equal(otherIpLogin.statusCode, 200)
+  assert.equal(otherIpLogin.json().data.authenticated, true)
+
   const login = await app.inject({
     method: 'POST',
     url: '/api/session',
