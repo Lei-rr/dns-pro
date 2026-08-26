@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import fp from 'fastify-plugin'
 import fastifyCookie from '@fastify/cookie'
 import fastifyHelmet from '@fastify/helmet'
+import fastifyRateLimit from '@fastify/rate-limit'
 import type { AppConfig } from '../bootstrap/app-config.js'
 import { attachAppSession, writeAppSessionCookie, type AppSession } from '../shared/auth/app-session.js'
 
@@ -16,6 +17,7 @@ export type SecurityPluginOptions = {
 
 /**
  * Official security stack:
+ * - @fastify/rate-limit (standard Fastify rate limiter)
  * - @fastify/helmet
  * - @fastify/cookie
  * + app-session cookie (domain-specific AES-GCM; no sodium/secure-session)
@@ -31,6 +33,24 @@ const securityPluginImpl: FastifyPluginAsync<SecurityPluginOptions> = async (app
     secure: config.cookieSecure,
     sameSite: config.cookieSameSite,
   }
+
+  await app.register(fastifyRateLimit, {
+    global: false,
+    errorResponseBuilder: (_request, context) => {
+      const secondsLeft = Math.ceil(context.ttl / 1000)
+      const minutesLeft = Math.ceil(secondsLeft / 60)
+      return {
+        statusCode: 429,
+        code: 'auth_rate_limited',
+        message: `登录请求过于频繁，已被锁定15分钟，请 ${minutesLeft} 分钟后再试（剩余 ${secondsLeft} 秒）`,
+        status: 429,
+        details: {
+          retry_after: secondsLeft,
+          ttl: context.ttl,
+        },
+      }
+    },
+  })
 
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: {

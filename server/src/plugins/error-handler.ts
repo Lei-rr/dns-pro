@@ -66,6 +66,15 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
       return reply.status(err.statusCode).send(error(err.message, err.statusCode, err.code, err.details))
     }
 
+    if (err.statusCode === 429 || (err as unknown as { status?: number }).status === 429) {
+      const errObj = err as unknown as { code?: string; message?: string; details?: unknown }
+      return reply
+        .status(429)
+        .send(
+          error(errObj.message || '请求过于频繁，请稍后重试', 429, errObj.code || 'auth_rate_limited', errObj.details)
+        )
+    }
+
     if (err.code === 'FST_ERR_VALIDATION') {
       const errors = validationFieldErrors(err.validation ?? [])
       return reply.status(400).send(error('参数校验未通过', 400, 'validation_error', { errors }))
