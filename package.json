@@ -1,6 +1,6 @@
 {
   "name": "dns-pro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / 腾讯云 EdgeOne 一体的 DNS 与隧道管理面板（Node.js 版）",
   "type": "module",
   "workspaces": [
@@ -12,7 +12,7 @@
   "overrides": {
     "nanoid": ">=3.3.17",
     "brace-expansion": ">=5.0.9",
-    "fast-uri": ">=4.1.2",
+    "fast-uri": ">=4.2.1",
     "image-size": ">=1.2.1",
     "less": ">=4.8.1"
   },
@@ -30,6 +30,8 @@
     "lint:fix": "eslint server/src web/src --fix",
     "format": "prettier --write \"server/src/**/*.ts\" \"web/src/**/*.{ts,js,vue}\" \"scripts/**/*.{mjs,ts}\" \"*.{json,mjs}\" \"web/*.json\"",
     "format:check": "prettier --check \"server/src/**/*.ts\" \"web/src/**/*.{ts,js,vue}\" \"scripts/**/*.{mjs,ts}\" \"*.{json,mjs}\" \"web/*.json\"",
+    "version:sync": "node scripts/version.mjs sync",
+    "version:check": "node scripts/version.mjs check",
     "arch": "node scripts/check-architecture.mjs",
     "arch:final": "ARCH_FINAL=1 node scripts/check-architecture.mjs",
     "deadcode": "knip --treat-config-hints-as-errors",
@@ -44,7 +46,7 @@
     "probe:static": "tsx scripts/isolated-static-probe.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "npm --workspace dns-pro-web run typecheck",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:platform && npm run probe:workflow && npm run probe:functional && npm run build && npm run probe:static"
+    "verify": "npm run format:check && npm run version:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:platform && npm run probe:workflow && npm run probe:functional && npm run build && npm run probe:static"
   },
   "dependencies": {
     "@fastify/compress": "^9.1.0",
@@ -53,7 +55,7 @@
     "@fastify/rate-limit": "^11.2.0",
     "@fastify/static": "^10.1.2",
     "@fastify/type-provider-typebox": "^6.1.0",
-    "fastify": "^5.2.1",
+    "fastify": "^5.12.5",
     "fastify-plugin": "^5.1.0",
     "typebox": "^1.3.9"
   },

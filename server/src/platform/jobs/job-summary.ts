@@ -1,6 +1,6 @@
 import type { JobRecord } from './job.types.js'
 
-export type JobItemSummary = Pick<JobRecord, 'done' | 'success' | 'failed' | 'skipped'>
+type JobItemSummary = Pick<JobRecord, 'done' | 'success' | 'failed' | 'skipped'>
 
 export function summarizeJobItems(items: Array<Record<string, unknown>>): JobItemSummary {
   let success = 0

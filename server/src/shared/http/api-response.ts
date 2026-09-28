@@ -1,21 +1,19 @@
 import type { SideEffects } from '../providers/side-effect-result.js'
 import { translateError } from './error-messages.js'
 
-export interface SuccessResponseBody<T = unknown> {
+interface SuccessResponseBody<T = unknown> {
   code: 0
   message: 'success'
   data: T
   side_effects?: SideEffects
 }
 
-export interface ErrorResponseBody {
+interface ErrorResponseBody {
   message: string
   code: string
   status: number
   details: unknown
 }
-
-export type ApiResponseBody<T = unknown> = SuccessResponseBody<T> | ErrorResponseBody
 
 export function success<T>(data: T, sideEffects?: SideEffects): SuccessResponseBody<T> {
   return {

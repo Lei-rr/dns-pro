@@ -25,10 +25,6 @@ export function buildDnsSideEffects(effects: { sync?: DnsSideEffect; cleanup?: D
   return { dns }
 }
 
-export function completed(message: string, details: unknown[] = []): DnsSideEffect {
-  return { status: 'completed', message, details }
-}
-
 export interface DnsOperationResult {
   [key: string]: unknown
   action: string

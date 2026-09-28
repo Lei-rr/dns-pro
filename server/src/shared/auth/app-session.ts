@@ -36,7 +36,7 @@ function fromB64url(value: string) {
   return Buffer.from(value, 'base64url')
 }
 
-export function sealSession(data: SessionData, secret: string, maxAgeSeconds: number): string {
+function sealSession(data: SessionData, secret: string, maxAgeSeconds: number): string {
   const key = keyFromSecret(secret)
   const iv = crypto.randomBytes(12)
   const payload = Buffer.from(
@@ -52,12 +52,12 @@ export function sealSession(data: SessionData, secret: string, maxAgeSeconds: nu
   return `${b64url(iv)}.${b64url(tag)}.${b64url(encrypted)}`
 }
 
-export function unsealSession(token: string | undefined, secret: string): SessionData | null {
+function unsealSession(token: string | undefined, secret: string): SessionData | null {
   if (!token) return null
   const parts = token.split('.')
   if (parts.length !== 3) return null
   try {
-    const [ivPart, tagPart, dataPart] = parts
+    const [ivPart, tagPart, dataPart] = parts as [string, string, string]
     const key = keyFromSecret(secret)
     const iv = fromB64url(ivPart)
     const tag = fromB64url(tagPart)
@@ -77,7 +77,7 @@ export function unsealSession(token: string | undefined, secret: string): Sessio
 }
 
 /** Collect every value for a cookie name. Browsers may send duplicates after session format changes. */
-export function readCookieValues(request: FastifyRequest, name: string): string[] {
+function readCookieValues(request: FastifyRequest, name: string): string[] {
   const values: string[] = []
   const raw = request.headers.cookie
   if (typeof raw === 'string' && raw.length > 0) {
@@ -108,7 +108,7 @@ export function readCookieValues(request: FastifyRequest, name: string): string[
   return values
 }
 
-export function resolveSessionData(request: FastifyRequest, options: SessionOptions): SessionData {
+function resolveSessionData(request: FastifyRequest, options: SessionOptions): SessionData {
   const tokens = readCookieValues(request, options.cookieName)
   // Prefer the last valid token (usually the newest Set-Cookie after login).
   for (let i = tokens.length - 1; i >= 0; i--) {
@@ -122,7 +122,7 @@ export function resolveSessionData(request: FastifyRequest, options: SessionOpti
   return {}
 }
 
-export function createAppSession(initial: SessionData = {}): AppSession {
+function createAppSession(initial: SessionData = {}): AppSession {
   const data: SessionData = { ...initial }
   let dirty = false
   let deleted = false

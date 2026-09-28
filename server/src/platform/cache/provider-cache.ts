@@ -1,12 +1,12 @@
 import { memoryCache } from './memory-cache.js'
 
-export type CacheMeta = {
+type CacheMeta = {
   cache: boolean
   cached: boolean
   source: 'cache' | 'provider'
 }
 
-export type CachedResult<T> = {
+type CachedResult<T> = {
   value: T
   meta: CacheMeta
   hit: boolean
@@ -30,12 +30,6 @@ type InflightEntry = {
   tagGenerations: ReadonlyArray<readonly [string, number]>
 }
 const inflight = new Map<string, InflightEntry>()
-
-export function parseRefreshFlag(value: unknown): boolean {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') return ['1', 'true'].includes(value.trim().toLowerCase())
-  return false
-}
 
 /** Cache-first provider read. A cold miss loads; refresh bypasses and replaces the entry. */
 export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Promise<CachedResult<T>> {

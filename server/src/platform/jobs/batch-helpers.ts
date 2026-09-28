@@ -22,7 +22,7 @@ export type BatchJobViewBase = {
   finished_at?: number
 }
 
-export type BatchItemResult = {
+type BatchItemResult = {
   status: 'success' | 'failed' | 'skipped'
   message?: string
   extra?: Record<string, unknown>
@@ -70,18 +70,6 @@ export async function findActiveBatchJob(
       return Object.entries(scope).every(([key, value]) => String(payload[key] ?? '') === value)
     }) ?? null
   )
-}
-
-export async function assertNoActiveBatchJob(
-  jobs: JobService,
-  types: string[],
-  scope: Record<string, string>,
-  message = 'A batch job is already running for this zone'
-): Promise<void> {
-  const active = await findActiveBatchJob(jobs, types, scope)
-  if (active) {
-    throw new ApiError('batch_job_running', message, 409, { job_id: active.id })
-  }
 }
 
 /**

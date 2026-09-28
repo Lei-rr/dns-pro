@@ -1,6 +1,6 @@
 import { TencentCloudGateway, type TencentCloudCredentials } from '../../shared/providers/tencent-cloud.client.js'
 
-export type EdgeOneCredentials = TencentCloudCredentials
+type EdgeOneCredentials = TencentCloudCredentials
 
 export class EdgeOneGateway extends TencentCloudGateway {
   /** Create a short-lived gateway so replaced credentials are not retained in a process-global map. */

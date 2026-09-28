@@ -17,6 +17,8 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/login', component: LoginPage, meta: { public: true } },
+    // 未匹配路径（含三段以上）回首页，避免空白页。
+    { path: '/:pathMatch(.*)*', redirect: '/' },
     {
       path: '/',
       component: AppLayout,
@@ -37,11 +39,11 @@ function firstRouteSegment(to: RouteLocationNormalized) {
 async function ensureAuthenticated(to: RouteLocationNormalized) {
   try {
     const session = await useSessionStore().load()
-    if (to.path === '/login') return session.authenticated ? '/' : true
+    if (to.meta.public) return session.authenticated ? '/' : true
     if (!session.authenticated) return '/login'
     return true
   } catch {
-    if (to.path === '/login') return true
+    if (to.meta.public) return true
     return '/login'
   }
 }

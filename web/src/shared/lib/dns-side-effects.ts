@@ -1,6 +1,6 @@
-export type DnsSideEffectKind = 'sync' | 'cleanup'
+type DnsSideEffectKind = 'sync' | 'cleanup'
 
-export interface DnsSideEffectData {
+interface DnsSideEffectData {
   status?: string
   message?: string
   [key: string]: unknown

@@ -1,44 +1,15 @@
 /* Vendor payloads are intentionally loose — presenters coerce fields. */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ApiError } from '../../shared/http/api-error.js'
-
+import {
+  asArray,
+  asRecord,
+  asRecordArray,
+  requireField,
+  requireRecord,
+} from '../../shared/providers/response-guards.js'
 export type DnsPodDomain = Record<string, any>
 export type DnsPodRecord = Record<string, any>
-export type DnsPodDomainInfo = Record<string, any>
-export type DnsPodResponse = { Response: Record<string, any>; RequestId?: string }
-
-function asRecord(value: unknown): Record<string, any> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
-}
-
-function requireRecord(value: unknown): Record<string, any> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new ApiError('dnspod_invalid_response', 'DNSPod invalid response', 502)
-  }
-  return value as Record<string, any>
-}
-
-function requireField(record: Record<string, any>, field: string): void {
-  if (record[field] === undefined || record[field] === null) {
-    throw new ApiError('dnspod_invalid_response', `DNSPod response missing ${field}`, 502)
-  }
-}
-
-function asArray(value: unknown): any[] {
-  return Array.isArray(value) ? value : []
-}
-
-function asRecordArray(value: unknown): Array<Record<string, any>> {
-  return asArray(value).filter(
-    (item) => item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length > 0
-  )
-}
-
-export function parseDnsPodResponse(response: unknown): { Response: Record<string, unknown>; RequestId?: string } {
-  const root = asRecord(response)
-  const Response = asRecord(root.Response ?? root)
-  return { Response, RequestId: Response.RequestId ? String(Response.RequestId) : undefined }
-}
 
 export const dnspodDomainSchema = {
   parse: (v: unknown): Record<string, any> => {
@@ -55,7 +26,7 @@ export const dnspodDomainInfoSchema = {
 }
 export const dnspodDomainListResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
-    const r = requireRecord(v)
+    const r = requireRecord(v, 'dnspod_invalid_response', 'DNSPod')
     if (!Array.isArray(r.DomainList)) {
       throw new ApiError('dnspod_invalid_response', 'DNSPod invalid domain list response', 502)
     }
@@ -70,21 +41,21 @@ export const dnspodDomainListResponseSchema = {
 }
 export const dnspodDomainCreateResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
-    const r = requireRecord(v)
-    requireField(r, 'DomainInfo')
+    const r = requireRecord(v, 'dnspod_invalid_response', 'DNSPod')
+    requireField(r, 'DomainInfo', 'dnspod_invalid_response', 'DNSPod')
     return { ...r, DomainInfo: r.DomainInfo, RequestId: r.RequestId }
   },
 }
 export const dnspodMutationResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
-    const r = requireRecord(v)
-    requireField(r, 'RequestId')
+    const r = requireRecord(v, 'dnspod_invalid_response', 'DNSPod')
+    requireField(r, 'RequestId', 'dnspod_invalid_response', 'DNSPod')
     return r
   },
 }
 export const dnspodRecordListResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
-    const r = requireRecord(v)
+    const r = requireRecord(v, 'dnspod_invalid_response', 'DNSPod')
     if (!Array.isArray(r.RecordList)) {
       throw new ApiError('dnspod_invalid_response', 'DNSPod invalid record list response', 502)
     }
@@ -100,7 +71,7 @@ export const dnspodRecordListResponseSchema = {
 export const dnspodRecordMutationResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
     const r = dnspodMutationResponseSchema.parse(v)
-    requireField(r, 'RecordId')
+    requireField(r, 'RecordId', 'dnspod_invalid_response', 'DNSPod')
     return r
   },
 }

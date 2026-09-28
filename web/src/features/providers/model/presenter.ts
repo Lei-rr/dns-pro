@@ -1,10 +1,10 @@
 import type { Provider } from './types'
 
-export function isProviderConfigured(provider: Provider) {
+function isProviderConfigured(provider: Provider) {
   return !!provider.configured
 }
 
-export function providerFieldValues(provider: Provider) {
+function providerFieldValues(provider: Provider) {
   return provider.fields || {}
 }
 

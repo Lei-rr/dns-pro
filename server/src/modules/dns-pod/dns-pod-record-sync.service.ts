@@ -4,8 +4,9 @@ import { DnsPodZoneService } from './dns-pod-zone.service.js'
 import { DnsPodRecordService, type RecordCreateInput } from './dns-pod-record.service.js'
 import type { EdgeOneProvider, ProviderType, SaaSProvider } from '../providers/provider.types.js'
 import type { DnsSyncRecord } from './dns-sync-record.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
 
-export interface PrecleanedRecord {
+interface PrecleanedRecord {
   type: string
   name: string
   value: string
@@ -14,7 +15,7 @@ export interface PrecleanedRecord {
   error?: string
 }
 
-export interface DeletedRecord {
+interface DeletedRecord {
   type: string
   name: string
   record_id: string
@@ -61,7 +62,7 @@ export class DnsPodRecordOps {
   }
 
   async resolveDnsPodZone(dnspodProviderId: string, fqdn: string, errorCodePrefix: string): Promise<string> {
-    const normalizedFqdn = fqdn.toLowerCase().replace(/\.$/, '')
+    const normalizedFqdn = normalizeFqdn(fqdn)
     if (normalizedFqdn === '') {
       throw new ApiError(`${errorCodePrefix}_fqdn_empty`, 'Empty FQDN', 422)
     }
@@ -262,7 +263,7 @@ export class DnsPodRecordOps {
   }
 
   subdomainFromFqdn(fqdn: string, zoneName: string): string {
-    const normalizedFqdn = fqdn.toLowerCase().replace(/\.$/, '')
+    const normalizedFqdn = normalizeFqdn(fqdn)
     const zone = zoneName.toLowerCase()
     if (normalizedFqdn === zone) return '@'
     const suffix = '.' + zone

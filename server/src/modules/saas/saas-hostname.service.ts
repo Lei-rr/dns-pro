@@ -376,8 +376,7 @@ export class SaaSHostnameService {
     hostname: CloudflareCustomHostname,
     cfId: string,
     zoneId: string,
-    hostnameId: string,
-    previousStatus = ''
+    hostnameId: string
   ): Promise<CloudflareCustomHostname> {
     const ssl = hostname.ssl ?? {}
     const dcvUuid = String(ssl.dcv_delegation_uuid ?? '')
@@ -386,10 +385,6 @@ export class SaaSHostnameService {
     const enriched: CloudflareCustomHostname = {
       ...hostname,
       ssl: { ...ssl, dcv_delegation_uuid: effectiveUuid },
-    }
-
-    if (previousStatus !== '') {
-      enriched.previous_status = previousStatus
     }
 
     return this.applyEffectiveSyncConfig(providerId, await this.withPreference(enriched, cfId, hostnameId))

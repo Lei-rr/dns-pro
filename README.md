@@ -1,6 +1,6 @@
 # dns-pro
 
-[![Verify](https://github.com/lei-rr/dns-pro/actions/workflows/verify.yml/badge.svg?branch=fast)](https://github.com/lei-rr/dns-pro/actions/workflows/verify.yml)
+[![Verify](https://github.com/lei-rr/dns-pro/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/lei-rr/dns-pro/actions/workflows/verify.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![GHCR](https://img.shields.io/badge/GHCR-lei--rr%2Fdns--pro-blue?logo=github)](https://ghcr.io/lei-rr/dns-pro)
@@ -40,6 +40,12 @@
 
 ## 最近更新
 
+### 2026-09
+
+- **发布 v1.1.0**：全量代码审计与重构。消除三处重复实现的厂商响应守卫与分页护栏、统一 FQDN 归一化；清理死代码与冗余依赖；修复空响应体崩溃、凭证泄露面、`NaN` 污染等缺陷；请求超时按调用场景分级；开启 `noUncheckedIndexedAccess`。
+- **引入版本机制**：根 `package.json` 为唯一版本源，`npm run version:sync` 同步，`npm run version:check` 接入 `npm run verify` 门禁；前端经 Vite `define` 注入 `__APP_VERSION__`，构建产物内的版本号不再硬编码。
+- 新增 `CHANGELOG.md` 记录版本变更。
+
 ### 2026-08
 
 - 优化 DNS 批量任务恢复：打开域名时静默检查是否存在未完成任务，只有确认发现真实 Job 后才显示进度，不再把恢复探测误显示成“DNS 批量任务”转圈。
@@ -59,7 +65,7 @@
 ### 安装运行
 
 ```bash
-git clone -b fast https://github.com/lei-rr/dns-pro.git
+git clone -b main https://github.com/lei-rr/dns-pro.git
 cd dns-pro
 npm ci
 npm run build
@@ -85,11 +91,11 @@ http://127.0.0.1:2022
 
 ## Docker 部署
 
-GitHub Actions 在推送 `fast` 后自动构建并推送到 GHCR：
+GitHub Actions 在推送 `main` 后自动构建并推送到 GHCR：
 
 ```text
 ghcr.io/lei-rr/dns-pro:latest
-ghcr.io/lei-rr/dns-pro:fast
+ghcr.io/lei-rr/dns-pro:main
 ```
 
 ### 直接运行镜像（推荐）
@@ -201,7 +207,7 @@ SESSION_SECRET='至少 32 位随机字符串' node dist/server.js --port 2022 --
 
 ## 发布边界
 
-- `fast` 是当前持续发布分支；推送后 GitHub Actions 会先执行 `npm run verify`，成功后再构建 GHCR 镜像。
+- `main` 是当前持续发布分支；推送后 GitHub Actions 会先执行 `npm run verify`，成功后再构建 GHCR 镜像。
 - `latest` 镜像只代表通过验证的发布产物；更新现有实例时应保留挂载的数据目录，并在重建后检查 health、登录会话、静态资源 MIME 和任务状态。
 - 本项目面向个人与小团队，不以内置多实例、分布式锁、Redis、消息队列或数据库为目标。若未来需要多实例，应先引入标准外部存储/队列/锁，而不是继续扩展本地 JSON 方案。
 

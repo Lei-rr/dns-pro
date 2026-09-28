@@ -1,4 +1,4 @@
-import http from '@/shared/api/http'
+import http, { POLL_TIMEOUT_MS } from '@/shared/api/http'
 
 export interface SessionState {
   authenticated: boolean
@@ -10,5 +10,5 @@ export interface SessionState {
 export const authApi = {
   login: (username: string, password: string) => http.post<SessionState>('/session', { username, password }),
   logout: () => http.delete('/session'),
-  me: () => http.get<SessionState>('/session'),
+  me: () => http.get<SessionState>('/session', { timeout: POLL_TIMEOUT_MS }),
 }

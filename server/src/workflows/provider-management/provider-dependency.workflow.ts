@@ -3,7 +3,7 @@ import type { Provider } from '../../modules/providers/provider.types.js'
 import { PROVIDER_LINK_RULES } from '../../modules/providers/provider-reference.js'
 import type { SaaSPreferenceService } from '../../modules/saas/saas-preference.service.js'
 
-export interface ProviderDependency {
+interface ProviderDependency {
   kind: string
   type: string
   id: string

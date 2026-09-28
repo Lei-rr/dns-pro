@@ -10,7 +10,7 @@ import type { ApiResponse, ListResponse } from '@/shared/api/types'
 
 export type RequestError = Error & { code: string; details: unknown; status: number }
 
-export type RequestConfig = {
+type RequestConfig = {
   params?: Record<string, unknown>
   headers?: Record<string, string>
   signal?: AbortSignal
@@ -20,15 +20,18 @@ export type RequestConfig = {
 
 const DEFAULT_TIMEOUT_MS = 120000
 
+/** 轮询 / 会话检查等轻量请求：单次请求不该卡住进度 UI。 */
+export const POLL_TIMEOUT_MS = 10000
+
 let unauthorizedHandler: (() => void) | null = null
 
 export function setUnauthorizedHandler(handler: () => void) {
   unauthorizedHandler = handler
 }
 
+// Same-origin only: the returned path drops any origin, so absolute URLs never escape the app host.
 function buildUrl(baseURL: string, url: string, params?: Record<string, unknown>): string {
-  const path = url.startsWith('http') ? url : `${baseURL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`
-  const target = new URL(path, typeof window !== 'undefined' ? window.location.origin : 'http://localhost')
+  const target = new URL(`${baseURL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`, 'http://localhost')
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value === undefined || value === null || value === '') continue
@@ -94,7 +97,7 @@ async function request<T = unknown>(method: string, url: string, config: Request
       method,
       headers,
       body,
-      credentials: 'include',
+      credentials: 'same-origin',
       signal: controller.signal,
     })
     const payload = await parseBody(response)
@@ -156,7 +159,9 @@ function isListResponse<T>(data: unknown): data is ListResponse<T> {
 }
 
 export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
+  // 204/empty body yields null — a list endpoint always resolves to an array.
   const data = response.data
+  if (data == null) return { ...response, data: [] as unknown as T }
   if (Array.isArray(data)) {
     return { ...response, data: data as T }
   }

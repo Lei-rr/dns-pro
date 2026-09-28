@@ -1,4 +1,4 @@
-import http, { unwrapItems, withRefresh } from '@/shared/api/http'
+import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse } from '@/shared/api/types'
 import type { DnsRecord, Zone } from '@/features/dns/model/types'
 import { encodePath } from '@/shared/lib/path'
@@ -167,7 +167,9 @@ export const dnsApi = {
     domain: string,
     data: { records: Array<Record<string, unknown>>; patch: Record<string, unknown> }
   ) => http.post(endpoints.recordsBatchUpdate(provider, domain), data),
-  batchJob: (provider: DnsProviderRef, jobId: string) => http.get(endpoints.recordsBatchJob(provider, jobId)),
+  batchJob: (provider: DnsProviderRef, jobId: string) =>
+    http.get(endpoints.recordsBatchJob(provider, jobId), { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (provider: DnsProviderRef, jobId: string) => http.post(endpoints.recordsBatchRetry(provider, jobId)),
-  batchActive: (provider: DnsProviderRef, domain: string) => http.get(endpoints.recordsBatchActive(provider, domain)),
+  batchActive: (provider: DnsProviderRef, domain: string) =>
+    http.get(endpoints.recordsBatchActive(provider, domain), { timeout: POLL_TIMEOUT_MS }),
 }

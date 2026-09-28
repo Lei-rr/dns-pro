@@ -26,10 +26,3 @@ export const toast = {
   loading: (title: string, description?: string) => sonner.loading(title, opts({ description })),
   dismiss: (id?: string | number) => sonner.dismiss(id),
 }
-
-export type ToastItem = {
-  id: number | string
-  title: string
-  description?: string
-  variant?: 'default' | 'destructive' | 'success'
-}

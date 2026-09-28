@@ -1,4 +1,3 @@
-import type { FastifyInstance } from 'fastify'
 import Fastify from 'fastify'
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
 import type { AppConfig } from './bootstrap/app-config.js'
@@ -61,5 +60,3 @@ export async function buildApp(config: AppConfig) {
 
   return app
 }
-
-export type { FastifyInstance }

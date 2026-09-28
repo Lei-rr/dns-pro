@@ -49,8 +49,7 @@ export class ProviderService {
     let updated: ProviderInput | null = null
 
     const savedProviders = await this.providers.mutateAll((providers) => {
-      const index = this.locate(providers, id)
-      const current = providers[index]
+      const { index, provider: current } = this.locate(providers, id)
       if (data.type && data.type !== '' && data.type !== current.type) {
         throw new ApiError('provider_type_immutable', 'Provider type cannot be changed', 422)
       }
@@ -82,7 +81,7 @@ export class ProviderService {
     const ordered = await this.providers.mutateAll((providers) => {
       this.validateSortOrder(trimmedIds, providers)
       const byId = this.indexById(providers)
-      return trimmedIds.map((id) => byId[id])
+      return trimmedIds.map((id) => byId[id] as Provider)
     })
 
     return this.presenter.presentAll(ordered)
@@ -115,12 +114,12 @@ export class ProviderService {
     return providers.some((p) => p.id === id)
   }
 
-  private locate(providers: Provider[], id: string): number {
+  private locate(providers: Provider[], id: string): { index: number; provider: Provider } {
     const index = providers.findIndex((p) => p.id === id)
     if (index === -1) {
       throw new ApiError('provider_not_found', 'Provider not found', 404)
     }
-    return index
+    return { index, provider: providers[index] as Provider }
   }
 
   private indexById(providers: Provider[]): Record<string, Provider> {

@@ -9,7 +9,7 @@ export type ParsedImportRecord = {
   proxied?: boolean
 }
 
-export function parseJsonRecords(text: string): ParsedImportRecord[] {
+function parseJsonRecords(text: string): ParsedImportRecord[] {
   const data = JSON.parse(text)
   if (!Array.isArray(data)) {
     throw new Error('JSON 内容必须是记录对象数组')
@@ -81,7 +81,7 @@ function parseCsvLine(line: string): string[] {
   return cells
 }
 
-export function parseCsvRecords(text: string): ParsedImportRecord[] {
+function parseCsvRecords(text: string): ParsedImportRecord[] {
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -89,7 +89,7 @@ export function parseCsvRecords(text: string): ParsedImportRecord[] {
 
   if (!lines.length) return []
 
-  const header = parseCsvLine(lines[0]).map((h) => h.toLowerCase())
+  const header = parseCsvLine(lines[0] as string).map((h) => h.toLowerCase())
   const nameIdx = header.findIndex((h) => h.includes('name') || h.includes('名称') || h.includes('主机'))
   const typeIdx = header.findIndex((h) => h.includes('type') || h.includes('类型'))
   const valIdx = header.findIndex(
@@ -104,7 +104,7 @@ export function parseCsvRecords(text: string): ParsedImportRecord[] {
   const results: ParsedImportRecord[] = []
 
   for (let i = 1; i < lines.length; i++) {
-    const cells = parseCsvLine(lines[i])
+    const cells = parseCsvLine(lines[i] as string)
     if (!cells.length) continue
 
     const name = (nameIdx >= 0 ? cells[nameIdx] : cells[0]) || '@'
@@ -132,7 +132,7 @@ export function parseCsvRecords(text: string): ParsedImportRecord[] {
   return results
 }
 
-export function parseZoneRecords(text: string, currentZone = ''): ParsedImportRecord[] {
+function parseZoneRecords(text: string, currentZone = ''): ParsedImportRecord[] {
   const lines = text.split(/\r?\n/)
   const results: ParsedImportRecord[] = []
   let origin = currentZone.toLowerCase().replace(/\.$/, '')
@@ -141,7 +141,7 @@ export function parseZoneRecords(text: string, currentZone = ''): ParsedImportRe
   const validTypes = new Set(['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA', 'PTR'])
 
   for (const rawLine of lines) {
-    const cleanLine = rawLine.split(';')[0].split('#')[0].trim()
+    const cleanLine = ((rawLine.split(';')[0] as string).split('#')[0] as string).trim()
     if (!cleanLine) continue
 
     if (cleanLine.startsWith('$ORIGIN')) {
@@ -160,7 +160,7 @@ export function parseZoneRecords(text: string, currentZone = ''): ParsedImportRe
     const tokens = cleanLine.split(/\s+/)
     if (tokens.length < 3) continue
 
-    let name = tokens[0]
+    let name = tokens[0] as string
     let remaining = tokens.slice(1)
 
     if (origin && name.endsWith(`.${origin}.`)) {
@@ -172,23 +172,23 @@ export function parseZoneRecords(text: string, currentZone = ''): ParsedImportRe
     }
 
     let ttl = defaultTtl
-    if (remaining.length > 0 && /^\d+$/.test(remaining[0])) {
+    if (remaining.length > 0 && /^\d+$/.test(remaining[0] as string)) {
       ttl = Number(remaining[0])
       remaining = remaining.slice(1)
     }
 
-    if (remaining.length > 0 && remaining[0].toUpperCase() === 'IN') {
+    if (remaining.length > 0 && (remaining[0] as string).toUpperCase() === 'IN') {
       remaining = remaining.slice(1)
     }
 
     if (remaining.length < 2) continue
 
-    const type = remaining[0].toUpperCase()
+    const type = (remaining[0] as string).toUpperCase()
     if (!validTypes.has(type)) continue
     remaining = remaining.slice(1)
 
     let priority: number | undefined
-    if (type === 'MX' && remaining.length >= 2 && /^\d+$/.test(remaining[0])) {
+    if (type === 'MX' && remaining.length >= 2 && /^\d+$/.test(remaining[0] as string)) {
       priority = Number(remaining[0])
       remaining = remaining.slice(1)
     }

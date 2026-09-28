@@ -10,7 +10,7 @@ export interface ProviderDefinition {
   labels: Record<string, string>
 }
 
-export interface BaseProvider {
+interface BaseProvider {
   type: ProviderType
   id: string
   name: string

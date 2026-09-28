@@ -18,9 +18,10 @@ import {
 } from './cloudflare-response.schema.js'
 import { parseBool } from '../../shared/lib/parse-bool.js'
 import { providerNullableString } from '../../shared/providers/provider-values.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'cloudflare'
-const MAX_PROVIDER_PAGES = 1000
 
 interface ZonePresentation {
   [key: string]: unknown
@@ -64,7 +65,7 @@ interface CreateZonePayload {
 }
 
 function bestMatchingCloudflareZoneId(zones: Array<{ id?: unknown; name?: unknown }>, fqdn: string): string {
-  const normalized = fqdn.toLowerCase().trim().replace(/\.$/, '')
+  const normalized = normalizeFqdn(fqdn)
   let bestName = ''
   let bestId = ''
   for (const zone of zones) {
@@ -231,7 +232,7 @@ export class CloudflareZoneService {
       }
 
       page++
-      if (page > MAX_PROVIDER_PAGES) {
+      if (page >= MAX_PROVIDER_PAGES) {
         throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
       }
     } while (page <= totalPages)

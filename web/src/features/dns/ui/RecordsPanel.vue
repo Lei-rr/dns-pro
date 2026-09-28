@@ -74,7 +74,14 @@ const batchPatch = reactive({
 })
 
 const isCloudflare = computed(() => props.provider.type === 'cloudflare')
-const zoneName = computed(() => decodeURIComponent(props.zoneId))
+// 路由参数可能含畸形百分号编码，解码失败时回退原值而不是中断渲染。
+const zoneName = computed(() => {
+  try {
+    return decodeURIComponent(props.zoneId)
+  } catch {
+    return props.zoneId
+  }
+})
 
 const typeOptions = ['A', 'AAAA', 'CNAME', 'TXT', 'MX']
 // DNSPod 常用线路（对齐旧 hook.recordLines）
@@ -220,7 +227,7 @@ async function save() {
       ttl: Number(form.ttl) || (isCloudflare.value ? 1 : 600),
       line: form.line,
       remark: form.remark,
-      priority: form.priority === '' ? undefined : Number(form.priority),
+      priority: form.priority === '' || !Number.isFinite(Number(form.priority)) ? undefined : Number(form.priority),
       proxied: form.proxied,
     }
 
@@ -402,15 +409,24 @@ async function batchUpdateSelected() {
   const scopeOwner = captureScope()
   const { selectedRows } = captureSelectedRecords()
   const patch: Record<string, unknown> = {}
+  let invalid = ''
   if (batchPatch.value.trim()) patch.value = batchPatch.value.trim()
-  if (batchPatch.ttl.trim()) patch.ttl = Number(batchPatch.ttl) || batchPatch.ttl
+  if (batchPatch.ttl.trim()) {
+    const ttlNum = Number(batchPatch.ttl)
+    if (Number.isFinite(ttlNum) && ttlNum > 0) patch.ttl = ttlNum
+    else invalid = 'TTL 需为正整数'
+  }
   if (batchPatch.line && batchPatch.line !== '__keep') patch.line = batchPatch.line
   if (batchPatch.remark.trim()) patch.remark = batchPatch.remark.trim()
-  if (batchPatch.priority.trim()) patch.priority = Number(batchPatch.priority)
+  if (batchPatch.priority.trim()) {
+    const prioNum = Number(batchPatch.priority)
+    if (Number.isFinite(prioNum)) patch.priority = prioNum
+    else invalid = '优先级需为数字'
+  }
   if (batchPatch.proxied === 'true' || batchPatch.proxied === 'false') {
     patch.proxied = batchPatch.proxied === 'true'
   }
-  batchEditError.value = Object.keys(patch).length ? '' : '请至少填写一项要修改的字段'
+  batchEditError.value = invalid || (Object.keys(patch).length ? '' : '请至少填写一项要修改的字段')
   if (batchEditError.value) return
   const payload = selectedRows
     .filter((row) => !isRowBusy(dnsRecordRowKey(row)))
@@ -452,7 +468,7 @@ async function resumeJobs() {
     () => dnsApi.batchActive(scopeOwner.value.provider, scopeOwner.value.zoneId),
     {
       label: 'DNS 批量',
-      fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as JobLike) || {},
+      fetchJob: async (id) => ((await dnsApi.batchJob(scopeOwner.value.provider, id)).data as JobLike) || {},
     }
   )
   if (finished) {

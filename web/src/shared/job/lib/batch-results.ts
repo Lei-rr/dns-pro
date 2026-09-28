@@ -12,7 +12,7 @@ export function formatFailedJobItem(item: JobItem): string {
   return `${head || '项目'}: ${item.message || '失败'}`
 }
 
-export function failedLinesFromJob(job?: JobLike | null): string[] {
+function failedLinesFromJob(job?: JobLike | null): string[] {
   return (job?.items || []).filter((i) => i.status === 'failed').map((i) => formatFailedJobItem(i))
 }
 

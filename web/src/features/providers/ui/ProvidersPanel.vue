@@ -99,7 +99,7 @@ function openEdit(record: Provider) {
     if (isProviderSecretField(field)) {
       form.fields[field] = ''
     } else {
-      form.fields[field] = String(record[field] || record.fields?.[field] || '')
+      form.fields[field] = String(record[field] ?? record.fields?.[field] ?? '')
     }
   }
   dialogOpen.value = true

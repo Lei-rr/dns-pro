@@ -1,4 +1,4 @@
-import http, { unwrapItems, withRefresh } from '@/shared/api/http'
+import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse } from '@/shared/api/types'
 import type { SaaSDnsRepairResult, SaaSFallbackOrigin, SaaSHostname } from '@/features/saas/model/types'
 import { encodePath } from '@/shared/lib/path'
@@ -74,15 +74,17 @@ export const saasApi = {
   preferredApply: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/preferred-apply`, data),
   preferredApplyActive: (provider: string, zone: string) =>
-    http.get(`${zoneBase(provider, zone)}/preferred-apply/active`),
-  preferredApplyJob: (jobId: string) => http.get(`/saas/preferred-apply/${encodePath(jobId)}`),
+    http.get(`${zoneBase(provider, zone)}/preferred-apply/active`, { timeout: POLL_TIMEOUT_MS }),
+  preferredApplyJob: (jobId: string) =>
+    http.get(`/saas/preferred-apply/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   preferredApplyRetry: (jobId: string) => http.post(`/saas/preferred-apply/${encodePath(jobId)}/retry`),
   batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/delete`, data),
   batchUpdate: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/update`, data),
-  batchActive: (provider: string, zone: string) => http.get(`${zoneBase(provider, zone)}/batch/active`),
-  batchJob: (jobId: string) => http.get(`/saas/batch/${encodePath(jobId)}`),
+  batchActive: (provider: string, zone: string) =>
+    http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: POLL_TIMEOUT_MS }),
+  batchJob: (jobId: string) => http.get(`/saas/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (jobId: string) => http.post(`/saas/batch/${encodePath(jobId)}/retry`),
 }
 

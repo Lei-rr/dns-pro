@@ -1,7 +1,7 @@
 import { ApiError } from '../../shared/http/api-error.js'
 import type { Provider, ProviderType } from './provider.types.js'
 
-export type ProviderLinkRule = {
+type ProviderLinkRule = {
   field: string
   label: string
   appliesTo: ProviderType[]

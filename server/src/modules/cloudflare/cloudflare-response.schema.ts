@@ -1,35 +1,12 @@
 /* Vendor payloads are intentionally loose — presenters coerce fields. */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ApiError } from '../../shared/http/api-error.js'
-
-export type CloudflareZone = Record<string, any>
-export type CloudflareDnsRecord = Record<string, any>
-export type CloudflareResultInfo = Record<string, any>
-export type CloudflareCustomHostnameResponse = Record<string, any>
-export type CloudflareApiResponse = {
-  success?: boolean
-  errors?: unknown[]
-  messages?: unknown[]
-  result?: unknown
-  result_info?: Record<string, any>
-}
-export type CloudflareFallbackOrigin = Record<string, any>
+import { asArray, asRecord, asRecordArray } from '../../shared/providers/response-guards.js'
 export type CloudflareTunnel = Record<string, any>
 export type CloudflareRouteConfig = Record<string, any>
 
-function asRecord(value: unknown): Record<string, any> {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
-}
-
-function asArray(value: unknown): any[] {
-  return Array.isArray(value) ? value : []
-}
-
-function asRecordArray(value: unknown): Array<Record<string, any>> {
-  return asArray(value).filter(
-    (item) => item && typeof item === 'object' && !Array.isArray(item) && Object.keys(item).length > 0
-  )
-}
+type CloudflareResultInfo = Record<string, any>
+export type CloudflareFallbackOrigin = Record<string, any>
 
 export function parseCloudflareListResponse<T = Record<string, any>>(
   response: unknown
@@ -86,4 +63,3 @@ export const cloudflareCustomHostnameSchema = {
   },
 }
 export const cloudflareResultInfoSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }
-export const cloudflareApiResponseSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }

@@ -1,8 +1,6 @@
 import { ref } from 'vue'
 import type { ConfirmOptions } from './types'
 
-export type { ConfirmOptions }
-
 const open = ref(false)
 const options = ref<ConfirmOptions>({
   title: '确认操作',
@@ -52,7 +50,7 @@ export function settleConfirm(value: boolean) {
   r(value)
 }
 
-export function hasPendingConfirm() {
+function hasPendingConfirm() {
   return resolver != null
 }
 

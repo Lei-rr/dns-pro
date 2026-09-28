@@ -1,6 +1,6 @@
 import { TencentCloudGateway, type TencentCloudCredentials } from '../../shared/providers/tencent-cloud.client.js'
 
-export type DnsPodCredentials = TencentCloudCredentials
+type DnsPodCredentials = TencentCloudCredentials
 
 export class DnsPodGateway extends TencentCloudGateway {
   /** Create a short-lived gateway so replaced credentials are not retained in a process-global map. */

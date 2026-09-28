@@ -6,7 +6,7 @@ import { createScopeGeneration } from './scope-generation'
  * The same row is mutually exclusive; different rows may run concurrently.
  * A stale finally block can only release the token it acquired.
  */
-export type RowOperationOwner = { active: () => boolean }
+type RowOperationOwner = { active: () => boolean }
 
 export function useRowBusy() {
   const operations = ref(new Map<string, symbol>())
@@ -61,7 +61,7 @@ export function patchListItem<T>(
   const idx = list.value.findIndex(match)
   if (idx < 0) return false
   const copy = list.value.slice()
-  copy[idx] = typeof next === 'function' ? (next as (current: T) => T)(copy[idx]) : next
+  copy[idx] = typeof next === 'function' ? (next as (current: T) => T)(copy[idx] as T) : next
   list.value = copy
   return true
 }

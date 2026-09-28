@@ -4,9 +4,7 @@ import { ApiError } from '../../shared/http/api-error.js'
 import { signIn, signOut, isSignedIn, getUsername } from '../../shared/auth/auth-session.js'
 import { APP_VERSION } from '../../shared/version.js'
 
-export { APP_VERSION }
-
-export interface SessionState {
+interface SessionState {
   authenticated: boolean
   username: string | null
   version?: string

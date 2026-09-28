@@ -8,16 +8,10 @@ const providerBrands: Record<string, { color: string; avatarColor: string }> = {
   saas: { color: 'orange', avatarColor: '#fa8c16' },
 }
 
-export function providerBrand(type: string) {
+function providerBrand(type: string) {
   return providerBrands[type] || defaultBrand
 }
 
 export function providerAvatarColor(type: string) {
   return providerBrand(type).avatarColor
 }
-
-export function providerTagColor(type: string) {
-  return providerBrand(type).color
-}
-
-export { defaultBrand }

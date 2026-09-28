@@ -9,7 +9,7 @@ import { resolveEdgeOneApiCredentials } from './edge-one-credentials.js'
 import { parseBool } from '../../shared/lib/parse-bool.js'
 import { providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
 
-export interface EdgeOneZone {
+interface EdgeOneZone {
   id: string
   name: string
   area?: string

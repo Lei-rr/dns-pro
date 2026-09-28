@@ -8,6 +8,7 @@ import {
 } from '../../platform/cache/provider-cache.js'
 import { invalidateCloudflareRecordCache } from './cloudflare.cache.js'
 import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
+import { ApiError } from '../../shared/http/api-error.js'
 import type { CloudflareProvider } from '../providers/provider.types.js'
 import {
   cloudflareDnsRecordSchema,
@@ -16,9 +17,10 @@ import {
 } from './cloudflare-response.schema.js'
 import { parseBool } from '../../shared/lib/parse-bool.js'
 import { providerNullableNumber, providerNullableString } from '../../shared/providers/provider-values.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'cloudflare'
-const MAX_PROVIDER_PAGES = 1000
 
 interface RecordPresentation {
   [key: string]: unknown
@@ -81,7 +83,7 @@ function exactCloudflareRecords<T extends { name?: unknown; type?: unknown }>(
   name: string,
   type: string
 ): T[] {
-  const expectedName = name.toLowerCase().trim().replace(/\.$/, '')
+  const expectedName = normalizeFqdn(name)
   const expectedType = type.toUpperCase().trim()
   return records.filter((record) => {
     const recordName = String(record.name ?? '')
@@ -168,7 +170,9 @@ export class CloudflareDnsRecordService {
       const totalPages = Number(result.pagination.total_pages ?? 0)
       const sourceCount = Number(result.pagination.count ?? result.items.length)
       if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
-      if (page >= MAX_PROVIDER_PAGES) throw new Error('Cloudflare pagination limit reached')
+      if (page >= MAX_PROVIDER_PAGES) {
+        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
+      }
       page++
     }
 
@@ -214,7 +218,9 @@ export class CloudflareDnsRecordService {
       const totalPages = Number(result.pagination.total_pages ?? 0)
       const sourceCount = Number(result.pagination.count ?? result.items.length)
       if (totalPages > 0 ? page >= totalPages : sourceCount < 100) break
-      if (page >= MAX_PROVIDER_PAGES) throw new Error('Cloudflare pagination limit reached')
+      if (page >= MAX_PROVIDER_PAGES) {
+        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
+      }
       page++
     }
     return matches

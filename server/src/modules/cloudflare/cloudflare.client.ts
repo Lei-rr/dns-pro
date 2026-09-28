@@ -1,7 +1,7 @@
 import { BaseGateway, type GatewayRequestConfig } from '../../shared/providers/base.client.js'
 import { ApiError } from '../../shared/http/api-error.js'
 
-export interface CloudflareApiResponse<T = unknown> {
+interface CloudflareApiResponse<T = unknown> {
   success?: boolean
   errors?: unknown[]
   messages?: unknown[]

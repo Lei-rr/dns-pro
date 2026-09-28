@@ -19,10 +19,11 @@ import {
   dnspodRecordSchema,
 } from './dns-pod-response.schema.js'
 import type { DnsPodProvider } from '../providers/provider.types.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'dnspod'
 
-export interface RecordListFilters {
+interface RecordListFilters {
   offset?: number
   limit?: number
   subdomain?: string
@@ -31,7 +32,7 @@ export interface RecordListFilters {
   refresh?: boolean
 }
 
-export interface RecordListItem {
+interface RecordListItem {
   id: number
   name: string
   type: string
@@ -48,7 +49,7 @@ export interface RecordListItem {
   updated_on: string
 }
 
-export interface RecordListResult {
+interface RecordListResult {
   items: RecordListItem[]
   pagination: {
     offset: number
@@ -73,7 +74,7 @@ export interface RecordCreateInput {
   remark?: string
 }
 
-export interface RecordMutationResult {
+interface RecordMutationResult {
   id: number
   request_id?: string
 }
@@ -125,7 +126,8 @@ export class DnsPodRecordService {
           requestId = parsed.RequestId ?? requestId
           offset += sourceCount
           if (sourceCount < pageSize || (total !== null && offset >= total)) break
-          if (pages >= 1000) throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
+          if (pages >= MAX_PROVIDER_PAGES)
+            throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
         }
 
         return {

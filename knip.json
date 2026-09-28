@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "exclude": ["exports", "types"],
+  "exclude": [],
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,ts}"],
@@ -10,5 +10,10 @@
       "entry": ["src/app/styles/index.css"],
       "project": ["src/**/*.{ts,vue}"]
     }
+  },
+  "ignoreIssues": {
+    "server/src/modules/cloudflare/cloudflare-response.schema.ts": ["types"],
+    "server/src/modules/dns-pod/dns-pod-response.schema.ts": ["types"],
+    "server/src/modules/edge-one/edge-one-response.schema.ts": ["types"]
   }
 }

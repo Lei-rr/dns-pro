@@ -1,6 +1,6 @@
 import type { SyncRecord } from './saas-dns-sync.types.js'
 
-export type SyncResult = Record<string, unknown>
+type SyncResult = Record<string, unknown>
 
 export async function withSyncPurpose(record: SyncRecord, result: Promise<SyncResult>): Promise<SyncResult> {
   return { purpose: record.purpose, ...(await result) }

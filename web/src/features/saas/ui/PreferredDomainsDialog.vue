@@ -135,6 +135,7 @@ async function move(index: number, delta: number) {
   if (next < 0 || next >= items.value.length) return
   const copy = items.value.slice()
   const [row] = copy.splice(index, 1)
+  if (!row) return
   copy.splice(next, 0, row)
   items.value = copy
   saving.value = true

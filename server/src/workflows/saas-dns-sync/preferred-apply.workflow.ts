@@ -15,7 +15,7 @@ import { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 import { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
 
 /** API-facing job shape (keeps frontend fields stable). */
-export type PreferredApplyJob = BatchJobViewBase & {
+type PreferredApplyJob = BatchJobViewBase & {
   provider_id: string
   zone_name: string
   preferred_domain: string

@@ -7,7 +7,7 @@ export interface TencentCloudCredentials {
   secretKey: string
 }
 
-export interface TencentCloudGatewayOptions {
+interface TencentCloudGatewayOptions {
   endpoint: string
   service: string
   version: string

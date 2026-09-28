@@ -1,6 +1,6 @@
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 
-export interface EdgeOneDomainFormValues {
+interface EdgeOneDomainFormValues {
   prefix: string
   origin_type: string
   origin: string

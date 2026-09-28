@@ -380,7 +380,7 @@ function toggleDark() {
         <div class="flex items-center gap-2 overflow-hidden text-ellipsis">
           <span class="font-semibold text-foreground/90">DNS-PRO</span>
           <Badge variant="outline" class="h-4.5 px-1.5 text-[10px] font-normal shrink-0 border-border/60"
-            >v{{ session.version || '1.0.0' }}</Badge
+            >v{{ session.version }}</Badge
           >
           <span class="hidden sm:inline text-muted-foreground/70">· 一体化 DNS 与隧道管理面板</span>
         </div>

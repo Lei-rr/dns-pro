@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import type { Provider, ProviderDefinition } from '../model/types'
 import { isProviderSecretField } from '../model/provider-fields'
 
-export type ProviderFormModel = {
+type ProviderFormModel = {
   id: string
   type: string
   name: string

@@ -13,8 +13,6 @@ import {
   type TUnion,
 } from 'typebox'
 
-export type JsonSchema = TSchema
-
 type Optionalize<Properties extends TProperties, Required extends readonly PropertyKey[]> = {
   [Key in keyof Properties]: Key extends Required[number] ? Properties[Key] : TOptional<Properties[Key]>
 }
@@ -42,7 +40,7 @@ export type RequestOf<Schema extends RequestParts> = (Schema extends { params: i
 export const text = (maxLength = 1024): TString => Type.String({ minLength: 1, maxLength })
 export const optionalText = (maxLength = 1024): TString => Type.String({ maxLength })
 export const bool: TBoolean = Type.Boolean()
-export const boolQuery: TUnion<[TLiteral<'true'>, TLiteral<'false'>]> = Type.Union([
+const boolQuery: TUnion<[TLiteral<'true'>, TLiteral<'false'>]> = Type.Union([
   Type.Literal('true'),
   Type.Literal('false'),
 ])

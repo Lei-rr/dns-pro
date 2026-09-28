@@ -1,3 +1,4 @@
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
 /** Pure SaaS hostname helpers (no I/O) — keep SaaSHostnameService focused on orchestration. */
 
 export function guessZoneFromFqdn(fqdn: string): string {
@@ -11,8 +12,8 @@ export function guessZoneFromFqdn(fqdn: string): string {
  * Returns normalized value or null if invalid (caller maps to ApiError).
  */
 export function tryNormalizeFallbackOrigin(zoneName: string, origin: string): string | null {
-  const zone = zoneName.toLowerCase().replace(/\.$/, '').trim()
-  const value = origin.toLowerCase().replace(/\.$/, '').trim()
+  const zone = normalizeFqdn(zoneName)
+  const value = normalizeFqdn(origin)
 
   if (value === '' || value === zone || !value.endsWith('.' + zone)) {
     return null
@@ -21,8 +22,8 @@ export function tryNormalizeFallbackOrigin(zoneName: string, origin: string): st
 }
 
 export function zoneOwnsHostname(zone: string, fqdn: string): boolean {
-  const z = zone.toLowerCase().replace(/\.$/, '').trim()
-  const h = fqdn.toLowerCase().replace(/\.$/, '').trim()
+  const z = normalizeFqdn(zone)
+  const h = normalizeFqdn(fqdn)
   if (!z || !h) return false
   return h === z || h.endsWith('.' + z)
 }

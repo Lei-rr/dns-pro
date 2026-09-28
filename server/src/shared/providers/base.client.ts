@@ -1,6 +1,6 @@
 import { ApiError } from '../http/api-error.js'
 
-export interface GatewayOptions {
+interface GatewayOptions {
   baseURL: string
   headers?: Record<string, string>
   timeout?: number

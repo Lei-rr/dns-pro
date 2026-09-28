@@ -26,8 +26,8 @@ export class ProviderManagementWorkflow {
   }
 
   async get(id: string): Promise<PresentedProvider | null> {
-    const providers = await this.list()
-    return providers.find((provider) => provider.id === id) ?? null
+    const provider = await this.providers.find(id)
+    return provider ? this.enrichMutation(provider) : null
   }
 
   create(data: Record<string, unknown>): Promise<PresentedProvider> {
@@ -66,6 +66,7 @@ export class ProviderManagementWorkflow {
   }
 
   private async enrichMutation(provider: PresentedProvider): Promise<PresentedProvider> {
-    return { ...provider, dependencies: await this.dependencies.forProvider(provider.id) }
+    // Pass the single provider so dependency mapping skips a full provider-table scan.
+    return { ...provider, dependencies: await this.dependencies.forProvider(provider.id, [provider]) }
   }
 }

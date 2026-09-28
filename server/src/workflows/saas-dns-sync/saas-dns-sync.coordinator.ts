@@ -10,6 +10,7 @@ import { DnsPodRecordOps } from '../../modules/dns-pod/dns-pod-record-sync.servi
 import type { SyncDriver, SyncRecord } from './saas-dns-sync.types.js'
 import { cloudflareDnsCleanupRecipe, dnspodSaaSCleanupRecipe } from './saas-dns-cleanup.js'
 import { zoneOwnsHostname } from '../../modules/saas/saas-hostname.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
 
 /**
  * SaaS DNS sync coordinator.
@@ -61,7 +62,7 @@ export class SaaSDnsSyncCoordinator {
     providerId: string,
     hostnameFqdn: string
   ): Promise<{ hostname_fqdn: string; records: SyncRecord[] }> {
-    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const fqdn = normalizeFqdn(hostnameFqdn)
     if (fqdn === '') return { hostname_fqdn: '', records: [] }
 
     const config = await this.resolveFallbackSyncConfig(providerId, fqdn)

@@ -5,7 +5,7 @@ import { Input } from '@/shared/ui/input'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 
-export type BatchPatchModel = {
+type BatchPatchModel = {
   value: string
   ttl: string
   line: string

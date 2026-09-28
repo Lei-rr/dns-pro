@@ -10,15 +10,16 @@ import {
   edgeoneAccelerationDomainListResponseSchema,
   edgeoneMutationResponseSchema,
 } from './edge-one-response.schema.js'
-import { providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
+import { providerFiniteNumber, providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
 import { resolveEdgeOneApiCredentials } from './edge-one-credentials.js'
 import {
   buildEdgeOneOriginInfo,
   normalizeAccelerationDomainPayload,
   type AccelerationDomainPayload,
 } from './edge-one-domain-payload.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
-export interface EdgeOneAccelerationDomain {
+interface EdgeOneAccelerationDomain {
   zone_id: string
   name: string
   status?: string
@@ -101,7 +102,8 @@ export class EdgeOneDomainService {
           requestId = parsed.RequestId ?? requestId
           offset += sourceCount
           if (sourceCount < pageSize || (total !== null && offset >= total)) break
-          if (pages >= 1000) throw new ApiError('edgeone_pagination_limit', 'EdgeOne pagination limit reached', 502)
+          if (pages >= MAX_PROVIDER_PAGES)
+            throw new ApiError('edgeone_pagination_limit', 'EdgeOne pagination limit reached', 502)
         }
 
         return {
@@ -265,15 +267,15 @@ export class EdgeOneDomainService {
     const certificate = domain.Certificate ?? {}
 
     return {
-      zone_id: this.scalarString(domain.ZoneId, zoneId),
-      name: this.scalarString(domain.DomainName),
+      zone_id: providerString(domain.ZoneId, zoneId),
+      name: providerString(domain.DomainName),
       status: providerOptionalString(domain.DomainStatus),
       cname: providerOptionalString(domain.Cname),
       ipv6_status: providerOptionalString(domain.IPv6Status),
       identification_status: providerOptionalString(domain.IdentificationStatus),
       origin_protocol: providerOptionalString(domain.OriginProtocol),
-      http_origin_port: domain.HttpOriginPort == null ? undefined : this.finiteNumber(domain.HttpOriginPort),
-      https_origin_port: domain.HttpsOriginPort == null ? undefined : this.finiteNumber(domain.HttpsOriginPort),
+      http_origin_port: domain.HttpOriginPort == null ? undefined : providerFiniteNumber(domain.HttpOriginPort),
+      https_origin_port: domain.HttpsOriginPort == null ? undefined : providerFiniteNumber(domain.HttpsOriginPort),
       origin: {
         type: providerOptionalString(origin.OriginType),
         value: providerOptionalString(origin.Origin),
@@ -297,15 +299,6 @@ export class EdgeOneDomainService {
       created_on: providerOptionalString(domain.CreatedOn),
       modified_on: providerOptionalString(domain.ModifiedOn),
     }
-  }
-
-  private scalarString(value: unknown, fallback = ''): string {
-    return typeof value === 'string' || typeof value === 'number' ? String(value) : fallback
-  }
-
-  private finiteNumber(value: unknown): number {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : 0
   }
 
   private gatewayFor(provider: DnsPodProvider): EdgeOneGateway {

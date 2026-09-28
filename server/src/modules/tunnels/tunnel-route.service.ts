@@ -17,8 +17,9 @@ import { parseCloudflareItemResponse } from '../cloudflare/cloudflare-response.s
 import { CloudflareZoneService } from '../cloudflare/cloudflare-zone.service.js'
 import { CloudflaredDnsService } from './tunnel-dns.service.js'
 import type { CloudflareProvider, CloudflaredProvider } from '../providers/provider.types.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
 
-export interface CloudflaredRoute {
+interface CloudflaredRoute {
   hostname: string
   service: string
   path: string
@@ -223,7 +224,7 @@ export class CloudflaredRouteService {
   }
 
   private normalizeRoute(route: CloudflaredRoute): CloudflaredRoute {
-    const hostname = route.hostname.toLowerCase().trim().replace(/\.$/, '')
+    const hostname = normalizeFqdn(route.hostname)
     const service = route.service.trim()
     const path = (route.path ?? '').trim()
     if (hostname === '' || service === '') {

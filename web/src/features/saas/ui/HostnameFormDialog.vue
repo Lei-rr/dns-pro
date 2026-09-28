@@ -9,7 +9,7 @@ import type { FieldErrors } from '@/shared/lib/field-errors'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 import type { DnsZoneOption, SaaSSyncProvider } from '../model/types'
 
-export type HostnameFormModel = {
+type HostnameFormModel = {
   hostname: string
   hostname_prefix: string
   sync_provider_id: string

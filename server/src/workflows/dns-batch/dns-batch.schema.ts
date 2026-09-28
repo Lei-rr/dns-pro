@@ -48,9 +48,7 @@ const patch = objectSchema({
 })
 const zoneParams = paramsSchema('providerId', 'zone')
 
-export const dnsProviderParamsSchema = requestSchema({ params: paramsSchema('providerId') })
 export const dnsZoneParamsSchema = requestSchema({ params: zoneParams })
-export const dnsRecordParamsSchema = requestSchema({ params: paramsSchema('providerId', 'zone', 'recordId') })
 export const dnsJobParamsSchema = requestSchema({ params: paramsSchema('providerId', 'jobId') })
 export const dnsBatchCreateSchema = requestSchema({
   params: zoneParams,

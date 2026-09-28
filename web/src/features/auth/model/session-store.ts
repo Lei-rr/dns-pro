@@ -17,7 +17,7 @@ export const useSessionStore = defineStore('session', () => {
   const authenticated = computed(() => session.value?.authenticated === true)
   const username = computed(() => session.value?.username ?? null)
   const isDefaultCredential = computed(() => session.value?.is_default_credential === true)
-  const version = computed(() => session.value?.version || '1.0.0')
+  const version = computed(() => session.value?.version || __APP_VERSION__)
 
   let pendingSession: Promise<SessionState> | null = null
   let requestToken = 0

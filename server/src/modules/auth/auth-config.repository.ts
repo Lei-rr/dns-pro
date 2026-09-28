@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { JsonStore } from '../../platform/storage/json-store.js'
 
-export interface AppConfigData {
+interface AppConfigData {
   auth: {
     username: string
     password: string

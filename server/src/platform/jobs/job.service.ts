@@ -4,7 +4,7 @@ import type { JobRecord, JobStatus } from './job.types.js'
 import { ApiError } from '../../shared/http/api-error.js'
 import { summarizeJobItems } from './job-summary.js'
 
-export type { JobRecord, JobStatus } from './job.types.js'
+export type { JobRecord } from './job.types.js'
 
 type StoreShape = { items: JobRecord[] }
 const ACTIVE: JobStatus[] = ['pending', 'running']
@@ -12,7 +12,7 @@ const TERMINAL: JobStatus[] = ['completed', 'failed', 'cancelled']
 const FINISHED_RETENTION = 100
 const PROGRESS_FLUSH_MS = 250
 
-export type ItemExecutionClaim = { state: 'execute'; item: Record<string, unknown> } | { state: 'skip' | 'uncertain' }
+type ItemExecutionClaim = { state: 'execute'; item: Record<string, unknown> } | { state: 'skip' | 'uncertain' }
 
 /** Durable jobs for the single application process which owns the data directory. */
 export class JobService {
@@ -281,7 +281,7 @@ export class JobService {
       const keptFinished = finished.filter((job, index) => {
         const finishedAt = job.finished_at || job.updated_at || job.created_at
         const isTooOld = now - finishedAt > maxAgeMs
-        if (isTooOld && index >= keep) {
+        if (isTooOld && index < finished.length - keep) {
           removedCount++
           return false
         }

@@ -15,7 +15,7 @@ export type BatchRecordInput = {
   weight?: number | string
 }
 
-export type BatchRecordPatch = Partial<
+type BatchRecordPatch = Partial<
   Pick<
     BatchRecordInput,
     'value' | 'ttl' | 'line' | 'record_line_id' | 'priority' | 'remark' | 'proxied' | 'status' | 'weight'

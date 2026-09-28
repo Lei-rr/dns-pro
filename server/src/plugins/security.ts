@@ -11,7 +11,7 @@ const NO_STORE_HEADERS = {
   Pragma: 'no-cache',
 }
 
-export type SecurityPluginOptions = {
+type SecurityPluginOptions = {
   config: AppConfig
 }
 

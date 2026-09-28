@@ -13,14 +13,14 @@ export type SaaSDeleteCleanupRecipe = {
   records: SyncRecord[]
 }
 
-export type SaaSDeleteOptions = {
+type SaaSDeleteOptions = {
   primaryDeleted?: boolean
   cleanup?: SaaSDeleteCleanupRecipe
   onCleanupPrepared?: (cleanup: SaaSDeleteCleanupRecipe) => Promise<void>
   onPrimaryDeleted?: () => Promise<void>
 }
 
-export type SaaSUpdateOptions = {
+type SaaSUpdateOptions = {
   remoteApplied?: boolean
   beforeRecords?: SyncRecord[]
   onBeforeRecordsPrepared?: (records: SyncRecord[]) => Promise<void>

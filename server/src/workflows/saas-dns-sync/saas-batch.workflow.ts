@@ -15,7 +15,7 @@ import { SAAS_BATCH_DELETE_JOB, SAAS_BATCH_UPDATE_JOB, SAAS_ZONE_JOB_TYPES } fro
 import { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
 import { SaaSDnsSyncWorkflow, type SaaSDeleteCleanupRecipe } from './saas-dns-sync.workflow.js'
 
-export type SaaSBatchJobView = BatchJobViewBase & {
+type SaaSBatchJobView = BatchJobViewBase & {
   provider_id: string
   zone_name: string
 }

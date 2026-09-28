@@ -2,11 +2,11 @@ function text(value: unknown): string {
   return String(value ?? '').trim()
 }
 
-export function normalizeDnsName(value: unknown): string {
+function normalizeDnsName(value: unknown): string {
   return text(value).toLowerCase().replace(/\.+$/, '')
 }
 
-export function normalizeDnsValue(type: unknown, value: unknown): string {
+function normalizeDnsValue(type: unknown, value: unknown): string {
   const recordType = text(type).toUpperCase()
   return ['CNAME', 'NS', 'PTR', 'MX'].includes(recordType) ? normalizeDnsName(value) : text(value)
 }

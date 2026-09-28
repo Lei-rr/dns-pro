@@ -1,7 +1,7 @@
 import { providerTypeLabel } from './paths'
 import type { Provider } from './types'
 
-export type ProviderConfigItem = { key: string; value: string; ok?: boolean }
+type ProviderConfigItem = { key: string; value: string; ok?: boolean }
 
 function linkedProviderName(providers: Provider[], providerId: string) {
   const linked = providers.find((item) => item.id === providerId)

@@ -17,10 +17,11 @@ export function buildDnsRecordDisplayRows(records: DnsRecord[], zoneName: string
   const singles: DnsRecordDisplayRow[] = []
 
   for (let i = 0; i < sorted.length;) {
-    const record = sorted[i]
+    // Index bounds are guaranteed by the loop conditions; the casts keep the grouping scan linear.
+    const record = sorted[i] as DnsRecord
     const hostKey = recordHostKey(record, zoneName)
     let end = i + 1
-    while (end < sorted.length && recordHostKey(sorted[end], zoneName) === hostKey) end++
+    while (end < sorted.length && recordHostKey(sorted[end] as DnsRecord, zoneName) === hostKey) end++
 
     const chunk = sorted.slice(i, end)
     if (shouldCollapseHostGroup(chunk, zoneName)) {

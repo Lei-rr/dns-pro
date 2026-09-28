@@ -42,7 +42,7 @@ type RecordUpdater = {
   update(providerId: string, zone: string, recordId: string, data: Record<string, unknown>): Promise<unknown>
 }
 
-export type DnsBatchJobView = BatchJobViewBase & {
+type DnsBatchJobView = BatchJobViewBase & {
   provider_type: string
   provider_id: string
   zone: string

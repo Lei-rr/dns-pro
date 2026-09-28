@@ -23,17 +23,18 @@ import {
   providerOptionalString,
   providerString,
 } from '../../shared/providers/provider-values.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'dnspod'
 
-export interface ZoneListFilters {
+interface ZoneListFilters {
   offset?: number
   limit?: number
   keyword?: string
   refresh?: boolean
 }
 
-export interface ZoneListItem {
+interface ZoneListItem {
   id: number
   name: string
   punycode: string
@@ -50,7 +51,7 @@ export interface ZoneListItem {
   updated_on: string
 }
 
-export interface ZoneListResult {
+interface ZoneListResult {
   items: ZoneListItem[]
   pagination: {
     offset: number
@@ -61,14 +62,14 @@ export interface ZoneListResult {
   meta: ReturnType<typeof offsetPaginationMeta>
 }
 
-export interface ZoneCreateResult {
+interface ZoneCreateResult {
   id: number
   name: string
   name_servers: string[]
   request_id?: string
 }
 
-export interface ZoneDeleteResult {
+interface ZoneDeleteResult {
   name: string
   request_id?: string
 }
@@ -113,7 +114,8 @@ export class DnsPodZoneService {
           requestId = parsed.RequestId ?? requestId
           offset += sourceCount
           if (sourceCount < pageSize || (total !== null && offset >= total)) break
-          if (pages >= 1000) throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
+          if (pages >= MAX_PROVIDER_PAGES)
+            throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
         }
 
         return {

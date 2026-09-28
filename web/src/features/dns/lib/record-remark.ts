@@ -14,7 +14,7 @@
  * → 合成「邮箱」折叠组
  */
 
-export type SaasRemarkPurpose =
+type SaasRemarkPurpose =
   | 'origin'
   | 'preferred'
   | 'dcv'
@@ -27,7 +27,7 @@ export type SaasRemarkPurpose =
   | 'other'
   | 'none'
 
-export type ParsedSaasRemark = {
+type ParsedSaasRemark = {
   purpose: SaasRemarkPurpose
   purposeLabel: string
   fqdn: string

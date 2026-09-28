@@ -5,7 +5,7 @@ export interface EdgeOneOrigin {
   [key: string]: unknown
 }
 
-export interface EdgeOneCertificateItem {
+interface EdgeOneCertificateItem {
   cert_id?: string
   status?: string
   type?: string

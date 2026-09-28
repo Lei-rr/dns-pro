@@ -49,5 +49,3 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
     edgeOneBatch: new EdgeOneBatchJobWorkflow(platform.jobs, modules.edgeOne.domains, edgeOneDnsSync),
   }
 }
-
-export type AppWorkflows = ReturnType<typeof createWorkflows>

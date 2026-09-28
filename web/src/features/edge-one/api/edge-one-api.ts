@@ -1,4 +1,4 @@
-import http, { unwrapItems, withRefresh } from '@/shared/api/http'
+import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse } from '@/shared/api/types'
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/features/edge-one/model/types'
 import { encodePath } from '@/shared/lib/path'
@@ -43,8 +43,10 @@ export const edgeOneApi = {
     http.post(`${zoneBase(provider, zone)}/batch/disable`, data),
   batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/delete`, data),
-  batchActive: (provider: string, zone: string) => http.get(`${zoneBase(provider, zone)}/batch/active`),
-  batchJob: (provider: string, jobId: string) => http.get(`${providerBase(provider)}/batch/${encodePath(jobId)}`),
+  batchActive: (provider: string, zone: string) =>
+    http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: POLL_TIMEOUT_MS }),
+  batchJob: (provider: string, jobId: string) =>
+    http.get(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (provider: string, jobId: string) =>
     http.post(`${providerBase(provider)}/batch/${encodePath(jobId)}/retry`),
 }

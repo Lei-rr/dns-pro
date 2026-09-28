@@ -16,8 +16,9 @@ import {
 } from '../cloudflare/cloudflare-response.schema.js'
 import type { CloudflareProvider } from '../providers/provider.types.js'
 import { providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
-export interface CloudflareCustomHostnameSslDcvDelegationRecord {
+interface CloudflareCustomHostnameSslDcvDelegationRecord {
   cname: string
   cname_target: string
   [key: string]: unknown
@@ -51,7 +52,6 @@ export interface CloudflareCustomHostname {
   ssl?: CloudflareCustomHostnameSsl
   ownership_verification?: CloudflareCustomHostnameOwnership | null
   custom_metadata?: Record<string, unknown> | null
-  previous_status?: string
   preferred_domain?: string
   auto_preferred?: boolean
   [key: string]: unknown
@@ -127,7 +127,8 @@ export class CloudflareCustomHostnameGateway {
       const totalPages = Number(result.pagination.total_pages ?? 0)
       const sourceCount = Number(result.pagination.source_count ?? result.items.length)
       if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
-      if (page >= 1000) throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
+      if (page >= MAX_PROVIDER_PAGES)
+        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
       page++
     }
     return {
@@ -301,7 +302,8 @@ export class CloudflareCustomHostnameGateway {
       const totalPages = Number(result.pagination.total_pages ?? 1)
       hasMore = page < totalPages
       page++
-      if (page > 1000) throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
+      if (page >= MAX_PROVIDER_PAGES)
+        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
     }
     return null
   }

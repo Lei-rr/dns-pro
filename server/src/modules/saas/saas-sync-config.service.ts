@@ -4,8 +4,9 @@ import type { SaaSProvider } from '../providers/provider.types.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import { guessZoneFromFqdn, zoneOwnsHostname } from './saas-hostname.js'
 import { SaaSPreferenceService, type HostnamePreference } from './saas-preference.service.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
 
-export type ExplicitSyncConfig = {
+type ExplicitSyncConfig = {
   hostname: string
   sync_target: string
   sync_provider_id: string
@@ -13,7 +14,7 @@ export type ExplicitSyncConfig = {
   auto_preferred: boolean
 }
 
-export type EffectiveSyncConfig = ExplicitSyncConfig & {
+type EffectiveSyncConfig = ExplicitSyncConfig & {
   explicit: boolean
 }
 
@@ -28,7 +29,7 @@ export class SaaSSyncConfigService {
   ) {}
 
   async preferenceForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<HostnamePreference | null> {
-    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const fqdn = normalizeFqdn(hostnameFqdn)
     if (fqdn === '') return null
     const map = await this.preferences.listByProvider(cloudflareProviderId)
     for (const pref of Object.values(map)) {
@@ -45,7 +46,7 @@ export class SaaSSyncConfigService {
   }
 
   async clearPreferencesForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<number> {
-    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const fqdn = normalizeFqdn(hostnameFqdn)
     if (fqdn === '') return 0
     const map = await this.preferences.listByProvider(cloudflareProviderId)
     let cleared = 0
@@ -110,7 +111,7 @@ export class SaaSSyncConfigService {
     hostnameFqdn: string,
     explicit: ExplicitSyncConfig
   ): Promise<EffectiveSyncConfig> {
-    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const fqdn = normalizeFqdn(hostnameFqdn)
     let target = String(explicit.sync_target ?? '').trim()
     let provider = String(explicit.sync_provider_id ?? '').trim()
     let syncZone = String(explicit.sync_zone ?? '')
@@ -162,7 +163,7 @@ export class SaaSSyncConfigService {
     existing: HostnamePreference,
     data: Record<string, unknown>
   ): Promise<{ sync_target: string; sync_provider_id: string; sync_zone: string; auto_preferred: boolean }> {
-    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const fqdn = normalizeFqdn(hostnameFqdn)
     const requestedTarget = 'sync_target' in data ? String(data.sync_target ?? '').trim() : ''
     const requestedProvider = 'sync_provider_id' in data ? String(data.sync_provider_id ?? '').trim() : ''
     const requestedZone =
@@ -182,20 +183,18 @@ export class SaaSSyncConfigService {
     const autoPreferred =
       'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false)
 
-    // If frontend sends CF zone that cannot host this hostname, ignore and fall back.
+    // Stored CF config may be polluted: fall back first, clear when the fallback is also invalid.
     if (target === 'cloudflare_dns' && zone !== '' && !zoneOwnsHostname(zone, fqdn)) {
       target = String(existing.sync_target ?? '').trim()
       provider = String(existing.sync_provider_id ?? '').trim()
       zone = String(existing.sync_zone ?? '')
         .trim()
         .toLowerCase()
-    }
-
-    // Existing polluted config also needs repair.
-    if (target === 'cloudflare_dns' && zone !== '' && !zoneOwnsHostname(zone, fqdn)) {
-      target = ''
-      provider = ''
-      zone = ''
+      if (target === 'cloudflare_dns' && zone !== '' && !zoneOwnsHostname(zone, fqdn)) {
+        target = ''
+        provider = ''
+        zone = ''
+      }
     }
 
     if (target === '') {

@@ -19,7 +19,7 @@ import {
 } from './edge-one-dns-sync-job.types.js'
 import { EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
 
-export type EdgeOneBatchJobView = BatchJobViewBase & {
+type EdgeOneBatchJobView = BatchJobViewBase & {
   provider_id: string
   zone_id: string
 }

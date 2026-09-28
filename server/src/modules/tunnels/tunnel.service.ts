@@ -10,8 +10,9 @@ import type { CloudflareProvider, CloudflaredProvider } from '../providers/provi
 import { parseBool } from '../../shared/lib/parse-bool.js'
 import { providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
 import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
+import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
-export interface CloudflaredTunnel {
+interface CloudflaredTunnel {
   id: string
   name: string
   status: string
@@ -60,7 +61,7 @@ export class CloudflaredTunnelService {
             items.push(this.presentTunnel(tunnel))
           }
           hasMore = parsed.source_count >= 100
-          if (hasMore && page >= 1000)
+          if (hasMore && page >= MAX_PROVIDER_PAGES)
             throw new ApiError('cloudflared_pagination_limit', 'Cloudflare Tunnel pagination limit reached', 502)
           page++
         }

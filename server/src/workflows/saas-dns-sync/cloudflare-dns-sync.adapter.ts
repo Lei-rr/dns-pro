@@ -11,8 +11,9 @@ import { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js
 import { isHostnameActive } from '../../modules/saas/saas-host-status.js'
 import type { SyncDriver, SyncRecord } from './saas-dns-sync.types.js'
 import { deleteRemovedSyncRecords, syncRecordIdentity, withSyncPurpose } from './record-reconciliation.js'
+import { normalizeFqdn } from '../../shared/lib/fqdn.js'
 
-export interface CloudflareDnsSyncRecord extends SyncRecord {
+interface CloudflareDnsSyncRecord extends SyncRecord {
   zone_name?: string
   comment?: string
 }
@@ -202,7 +203,7 @@ export class CloudflareDnsSaaSDriver implements SyncDriver {
       throw new ApiError('saas_cloudflare_sync_zone_missing', 'Cloudflare DNS sync zone is required', 422)
 
     // Guard: never try writing api.example.com into an unrelated zone like 100022.xyz.
-    const fqdn = hostnameFqdn.toLowerCase().replace(/\.$/, '').trim()
+    const fqdn = normalizeFqdn(hostnameFqdn)
     if (fqdn !== zoneName && !fqdn.endsWith('.' + zoneName)) {
       throw new ApiError(
         'saas_cloudflare_sync_zone_mismatch',

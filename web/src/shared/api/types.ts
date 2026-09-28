@@ -1,4 +1,4 @@
-export type MutationSideEffectStatus = 'completed' | 'skipped' | 'failed'
+type MutationSideEffectStatus = 'completed' | 'skipped' | 'failed'
 
 export interface MutationSideEffect {
   status: MutationSideEffectStatus
@@ -27,13 +27,6 @@ export interface ApiSuccessResponse<T = unknown> {
   meta?: Record<string, unknown>
   side_effects?: SideEffects
   [key: string]: unknown
-}
-
-export interface ApiErrorResponse {
-  message: string
-  code: string
-  status: number
-  details?: unknown
 }
 
 export type ApiResponse<T = unknown> = ApiSuccessResponse<T>
