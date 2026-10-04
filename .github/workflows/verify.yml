@@ -29,7 +29,8 @@ jobs:
 
   docker:
     needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 仅在打 v* 标签时构建镜像：日常提交只跑 verify，不更新 GHCR 镜像
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -40,6 +41,13 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Check tag matches package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          echo "tag=$tag package=$pkg"
+          [ "$tag" = "$pkg" ] || { echo "::error::标签版本与 package.json 不一致，请先执行 npm run version:sync"; exit 1; }
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -54,9 +62,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
             type=sha
 
       - name: Build and push

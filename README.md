@@ -229,8 +229,9 @@ SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=1 n
 
 ## 发布边界
 
-- `main` 是当前持续发布分支；推送后 GitHub Actions 会先执行 `npm run verify`，成功后再构建 GHCR 镜像。
-- `latest` 镜像只代表通过验证的发布产物；更新现有实例时应保留挂载的数据目录，并在重建后检查 health、登录会话、静态资源 MIME 和任务状态。
+- 所有分支与 PR 推送都会执行 `npm run verify`；**只有推 `v*` 标签时**才会构建并推送 GHCR 镜像，日常提交不会更新镜像。
+- 发布流程：`npm run version:sync` 同步版本 → 更新 CHANGELOG → 提交 → 打标签（如 `git tag v1.2.0 && git push origin v1.2.0`）。标签版本必须与 `package.json` 一致，否则 CI 会直接失败。
+- 镜像标签：`<版本>`、`<主>.<次>`、`latest` 与 `sha-<短哈希>`；更新实例时保留挂载的数据目录，并在重建后检查 health、登录会话、静态资源 MIME 和任务状态。
 - 本项目面向个人与小团队，不以内置多实例、分布式锁、Redis、消息队列或数据库为目标。若未来需要多实例，应先引入标准外部存储/队列/锁，而不是继续扩展本地 JSON 方案。
 
 ## 贡献
