@@ -54,14 +54,18 @@ function toValue(record: CloudflareRecord, zone: string): DnsRecordValue {
 export function cloudflareRecordPort(zones: CloudflareZoneService, records: CloudflareDnsRecordService): DnsRecordPort {
   const zoneIdOf = (providerId: string, zone: string) => zones.idByName(providerId, zone)
   return {
+    /** 省略 type 时按名称过滤全量列表（列表有进程内缓存） */
     async find(providerId: string, zone: string, probe: DnsRecordProbe): Promise<DnsRecordRef[]> {
       const zoneId = await zoneIdOf(providerId, zone)
-      const rows = await records.findExact(
-        providerId,
-        zoneId,
-        toFqdn(probe.name, zone),
-        String(probe.type).toUpperCase()
-      )
+      const fqdn = toFqdn(probe.name, zone)
+      const recordType = String(probe.type ?? '')
+        .trim()
+        .toUpperCase()
+      const rows = recordType
+        ? await records.findExact(providerId, zoneId, fqdn, recordType)
+        : (await records.listAll(providerId, zoneId)).items.filter(
+            (row) => String(row.name ?? '').toLowerCase() === fqdn.toLowerCase()
+          )
       return rows
         .filter((row) => row.id !== null && row.id !== '')
         .map((row) => ({ id: String(row.id), value: toValue(row, zone) }))

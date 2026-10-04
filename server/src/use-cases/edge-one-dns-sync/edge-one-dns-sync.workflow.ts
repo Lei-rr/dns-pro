@@ -8,7 +8,10 @@ import {
   toSyncSideEffect,
 } from '../../kernel/providers/side-effect-result.js'
 import { DNSPOD_DEFAULT_LINE } from '../../domains/dnspod/dns-pod-record.service.js'
-import type { DnsPodRecordSyncService } from '../../domains/dnspod/dns-pod-record-sync.service.js'
+import type { DnsPodAccess } from '../../domains/dnspod/access.js'
+import type { DnsPodZoneCatalog } from '../../domains/dnspod/zone-catalog.js'
+import type { DnsWriter } from '../derived-records/dns-writer.js'
+import type { DesiredRecord } from '../derived-records/sync-plan.js'
 import type { EdgeOneDomainService } from '../../domains/edgeone/edge-one-domain.service.js'
 import { normalizeAccelerationDomainPayload } from '../../domains/edgeone/edge-one-domain-payload.js'
 import { invalidateEdgeOneDomainCache } from '../../domains/edgeone/edge-one.cache.js'
@@ -28,7 +31,11 @@ type DeleteOptions = {
 export class EdgeOneDnsSyncWorkflow {
   constructor(
     private readonly domains: EdgeOneDomainService,
-    private readonly dns: DnsPodRecordSyncService
+    /** 关联 DNSPod 账号解析（D3-2 底座） */
+    private readonly access: DnsPodAccess,
+    /** FQDN → DNSPod 域名 解析（D3-2 底座） */
+    private readonly catalog: DnsPodZoneCatalog,
+    private readonly writer: DnsWriter
   ) {}
 
   /**
@@ -37,11 +44,11 @@ export class EdgeOneDnsSyncWorkflow {
    */
   async resourceKeys(providerId: string, zoneId: string, domains: string[]): Promise<string[]> {
     const keys = [edgeOneZoneKey(providerId, zoneId)]
-    const dnspodProviderId = await this.dns.lookupDnsPodProviderId(providerId, 'edgeone', 'EdgeOne').catch(() => '')
+    const dnspodProviderId = await this.access.linkedProviderId(providerId, 'edgeone', 'EdgeOne').catch(() => '')
     if (!dnspodProviderId) return keys
     for (const domain of new Set(domains.map((item) => normalizeFqdn(item)))) {
       if (domain === '') continue
-      const zone = await this.dns.matchZone(dnspodProviderId, domain).catch(() => '')
+      const zone = await this.catalog.match(dnspodProviderId, domain).catch(() => '')
       if (zone) keys.push(dnsZoneKey('dnspod', dnspodProviderId, zone))
     }
     return keys
@@ -120,8 +127,8 @@ export class EdgeOneDnsSyncWorkflow {
   private async resolveDnsTarget(providerId: string, domainName: string) {
     const fqdn = normalizeFqdn(domainName)
     if (fqdn === '') throw new ApiError('validation_failed', 'Domain name is required', 422)
-    const dnspodProviderId = await this.dns.requireDnsPodProviderId(providerId, 'edgeone', 'EdgeOne')
-    const dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
+    const dnspodProviderId = await this.access.requireLinkedProviderId(providerId, 'edgeone', 'EdgeOne')
+    const dnspodZone = await this.catalog.resolve(dnspodProviderId, fqdn, 'edgeone')
     return { fqdn, dnspodProviderId, dnspodZone }
   }
 
@@ -129,37 +136,29 @@ export class EdgeOneDnsSyncWorkflow {
   private async syncCname(providerId: string, domainName: string, cname: string) {
     if (cname === '') throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME is empty', 422)
     const { fqdn, dnspodProviderId, dnspodZone } = await this.resolveDnsTarget(providerId, domainName)
-    const precleaned = await this.dns.precleanConflicts(dnspodProviderId, dnspodZone, fqdn)
-    const record = await this.dns.sync(dnspodProviderId, dnspodZone, edgeOneCnameRecord(fqdn, cname, dnspodProviderId))
+    const precleaned = await this.writer.preclean('dnspod', dnspodProviderId, dnspodZone, { fqdn, type: 'CNAME' })
+    const [record] = await this.writer.sync('dnspod', dnspodProviderId, dnspodZone, [edgeOneCnameDesired(fqdn, cname)])
     return { domain_name: fqdn, dnspod_zone: dnspodZone, precleaned, record }
   }
 
   /** 删除关联 DNSPod 的默认线路 CNAME；未知目标时按名称删除 */
   private async cleanupCname(providerId: string, domainName: string, cname: string) {
-    const dnspodProviderId = await this.dns.lookupDnsPodProviderId(providerId, 'edgeone', 'EdgeOne')
+    const dnspodProviderId = await this.access.linkedProviderId(providerId, 'edgeone', 'EdgeOne')
     if (dnspodProviderId === '') return { cleaned: 0, records: [], reason: 'dnspod_provider_missing' }
 
     const fqdn = normalizeFqdn(domainName)
     let dnspodZone: string
     try {
-      dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
+      dnspodZone = await this.catalog.resolve(dnspodProviderId, fqdn, 'edgeone')
     } catch (error) {
       if (!(error instanceof ApiError && error.code === 'edgeone_dnspod_zone_not_found')) throw error
       return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
     }
 
-    const records =
-      cname !== ''
-        ? [await this.dns.delete(dnspodProviderId, dnspodZone, edgeOneCnameRecord(fqdn, cname, dnspodProviderId))]
-        : await this.dns.deleteRecordsByNameType(
-            dnspodProviderId,
-            dnspodZone,
-            fqdn,
-            'CNAME',
-            DNSPOD_DEFAULT_LINE,
-            // 只清理本流程写入的记录，避免误删人工 CNAME
-            edgeOneCnameRecord(fqdn, cname, dnspodProviderId).remark
-          )
+    // 只清理本流程写入的记录（值或备注可证明归属），避免误删人工 CNAME
+    const records = await this.writer.sync('dnspod', dnspodProviderId, dnspodZone, [
+      { ...edgeOneCnameDesired(fqdn, cname), keep: false },
+    ])
     return {
       cleaned: records.filter((record) => record.status === 'deleted').length,
       dnspod_zone: dnspodZone,
@@ -168,15 +167,20 @@ export class EdgeOneDnsSyncWorkflow {
   }
 }
 
-function edgeOneCnameRecord(fqdn: string, cname: string, dnspodProviderId: string) {
+/** EdgeOne 同步解析的 TTL 默认值 */
+const EDGEONE_CNAME_TTL = 600
+
+function edgeOneCnameDesired(fqdn: string, cname: string): DesiredRecord {
   return {
-    type: 'CNAME',
-    name: fqdn,
-    value: cname,
-    line: DNSPOD_DEFAULT_LINE,
     purpose: 'edgeone_cname',
-    provider_id: dnspodProviderId,
-    remark: `EdgeOne 加速丨${fqdn}`,
+    fqdn,
+    record: {
+      type: 'CNAME',
+      value: cname,
+      line: DNSPOD_DEFAULT_LINE,
+      note: `EdgeOne 加速丨${fqdn}`,
+      ttl: EDGEONE_CNAME_TTL,
+    },
   }
 }
 

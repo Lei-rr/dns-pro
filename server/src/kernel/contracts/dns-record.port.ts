@@ -23,7 +23,8 @@ export interface DnsRecordRef {
   value: DnsRecordValue
 }
 
-export type DnsRecordProbe = Pick<DnsRecordValue, 'name' | 'type'> & Partial<DnsRecordValue>
+/** 查询条件：name 必填；type 省略时返回该主机名下的全部类型（冲突清理需要） */
+export type DnsRecordProbe = Pick<DnsRecordValue, 'name'> & Partial<DnsRecordValue>
 
 export interface DnsRecordPort {
   /** 精确查询同名（同类型/同线路）记录，返回值已归一化 */
@@ -39,6 +40,21 @@ const text = (value: unknown) => String(value ?? '').trim()
 function normalizeDnsValue(type: string, value: unknown): string {
   const upper = type.toUpperCase()
   return ['CNAME', 'NS', 'PTR', 'MX'].includes(upper) ? text(value).toLowerCase().replace(/\.+$/, '') : text(value)
+}
+
+/** 值相等判定（只比较记录值本身，用于识别"同一条记录的另一个版本"） */
+export function sameDnsValue(actual: DnsRecordValue, expected: DnsRecordValue): boolean {
+  const type = text(expected.type).toUpperCase()
+  return normalizeDnsValue(type, actual.value) === normalizeDnsValue(type, expected.value)
+}
+
+/** FQDN → 相对主机记录（与 zone 相同时返回 '@'） */
+export function relativeRecordName(fqdn: string, zone: string): string {
+  const host = text(fqdn).toLowerCase().replace(/\.+$/, '')
+  const base = text(zone).toLowerCase().replace(/\.+$/, '')
+  if (base === '' || host === base) return '@'
+  const suffix = `.${base}`
+  return host.endsWith(suffix) ? host.slice(0, -suffix.length) : host
 }
 
 /** 幂等重放判定：创建前用它确认记录是否已存在（厂商字段差异不参与比较） */

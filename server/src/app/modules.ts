@@ -6,7 +6,9 @@ import { CloudflareDnsRecordService } from '../domains/cloudflare/cloudflare-dns
 import { CloudflareZoneService } from '../domains/cloudflare/cloudflare-zone.service.js'
 import { ZoneCatalog } from '../domains/cloudflare/zone-catalog.js'
 import { DnsPodLineService } from '../domains/dnspod/dns-pod-line.service.js'
+import { DnsPodAccess } from '../domains/dnspod/access.js'
 import { DnsPodRecordSyncService } from '../domains/dnspod/dns-pod-record-sync.service.js'
+import { DnsPodZoneCatalog } from '../domains/dnspod/zone-catalog.js'
 import { DnsPodRecordService } from '../domains/dnspod/dns-pod-record.service.js'
 import { DnsPodZoneService } from '../domains/dnspod/dns-pod-zone.service.js'
 import { EdgeOneDomainService } from '../domains/edgeone/edge-one-domain.service.js'
@@ -80,6 +82,8 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
       lines: new DnsPodLineService(providers, dnsPodZones),
       records: dnsPodRecords,
       recordSync: new DnsPodRecordSyncService(providers, dnsPodZones, dnsPodRecords),
+      access: new DnsPodAccess(providers),
+      catalog: new DnsPodZoneCatalog(dnsPodZones),
     },
     saas: {
       preferredDomains,

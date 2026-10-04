@@ -1,6 +1,7 @@
 import { cloudflareRecordPort } from '../domains/cloudflare/dns/cloudflare-record.adapter.js'
 import { dnsPodRecordPort } from '../domains/dnspod/dns/dnspod-record.adapter.js'
 import { DnsBatchWorkflow } from '../use-cases/dns-batch/dns-batch.workflow.js'
+import { DnsWriter } from '../use-cases/derived-records/dns-writer.js'
 import { EdgeOneBatchWorkflow } from '../use-cases/edge-one-dns-sync/edge-one-batch.workflow.js'
 import { EdgeOneDnsSyncWorkflow } from '../use-cases/edge-one-dns-sync/edge-one-dns-sync.workflow.js'
 import { ProviderDependencyWorkflow } from '../use-cases/provider-management/provider-dependency.workflow.js'
@@ -27,7 +28,13 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
       cloudflare.records
     )
   )
-  const edgeOneDnsSync = new EdgeOneDnsSyncWorkflow(edgeOne.domains, dnsPod.recordSync)
+  // 端口实例在手写装配处共享：批量任务与 D3 写入口用同一组适配器
+  const dnsPorts = {
+    dnspod: dnsPodRecordPort(dnsPod.records),
+    cloudflare: cloudflareRecordPort(cloudflare.zones, cloudflare.records),
+  }
+  const dnsWriter = new DnsWriter(dnsPorts)
+  const edgeOneDnsSync = new EdgeOneDnsSyncWorkflow(edgeOne.domains, dnsPod.access, dnsPod.catalog, dnsWriter)
 
   return {
     providerManagement: new ProviderManagementWorkflow(
@@ -39,10 +46,7 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
     saasDnsSync,
     saasPreferredApply: new SaaSPreferredApplyWorkflow(platform.jobs, saasDnsSync, saas.hostnames),
     saasBatch: new SaaSBatchWorkflow(platform.jobs, saasDnsSync, saas.hostnames),
-    dnsBatch: new DnsBatchWorkflow(platform.jobs, {
-      dnspod: dnsPodRecordPort(dnsPod.records),
-      cloudflare: cloudflareRecordPort(cloudflare.zones, cloudflare.records),
-    }),
+    dnsBatch: new DnsBatchWorkflow(platform.jobs, dnsPorts),
     edgeOneDnsSync,
     edgeOneBatch: new EdgeOneBatchWorkflow(platform.jobs, edgeOne.domains, edgeOneDnsSync),
   }

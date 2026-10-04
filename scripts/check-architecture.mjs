@@ -234,7 +234,8 @@ for (const edge of imports) {
       report('ARCH002', edge.from, edge.line, `cloudflare/${fromProduct} must not import cloudflare/${toProduct}`)
     const fromUseCase = edge.from.match(/^server\/src\/use-cases\/([^/]+)/)?.[1]
     const toUseCase = edge.to.match(/^server\/src\/use-cases\/([^/]+)/)?.[1]
-    if (finalMode && fromUseCase && toUseCase && fromUseCase !== toUseCase)
+    // derived-records 是跨产品线共享的 DNS 写入口（D3），允许被其他用例依赖
+    if (finalMode && fromUseCase && toUseCase && fromUseCase !== toUseCase && toUseCase !== 'derived-records')
       report('ARCH003', edge.from, edge.line, `use-case ${fromUseCase} must not import use-case ${toUseCase}`)
   }
   if (edge.from.startsWith('web/src/') && edge.to.startsWith('web/src/')) {
