@@ -1,4 +1,3 @@
-import type { ProviderRepository } from '../../kernel/providers/provider.repository.js'
 import { buildCacheKey, providerCacheTag, withProviderCache, zoneCacheTag } from '../../kernel/cache/provider-cache.js'
 import { ApiError } from '../../kernel/http/api-error.js'
 import { normalizeFqdn, parseBool } from '../../lib/values.js'
@@ -10,7 +9,7 @@ import {
 } from '../../kernel/providers/provider-call.js'
 import { providerNullableString } from '../../kernel/providers/provider-values.js'
 import { invalidateCloudflareZoneCache } from './cloudflare.cache.js'
-import { cloudflareClientFor } from './cloudflare.client.js'
+import type { CloudflareAccess } from './access.js'
 import {
   cloudflareZoneSchema,
   parseCloudflareItemResponse,
@@ -44,7 +43,7 @@ export interface ZoneListResult {
 
 /** Cloudflare 站点（Zone）管理 */
 export class CloudflareZoneService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(private readonly access: CloudflareAccess) {}
 
   /** 单页查询（带缓存），name 为精确站点名过滤 */
   async page(providerId: string, page: number, perPage: number, name = '', refresh = false) {
@@ -53,7 +52,7 @@ export class CloudflareZoneService {
       tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
       refresh,
       loader: async () => {
-        const { client } = await cloudflareClientFor(this.providers, providerId)
+        const { client } = await this.access.forProvider(providerId)
         const response = await callProvider(
           { code: 'cloudflare_zone_list_failed', message: 'Cloudflare zone list failed', providerId },
           () => client.get('zones', { page, per_page: perPage, name: name || undefined })
@@ -74,7 +73,7 @@ export class CloudflareZoneService {
   }
 
   async create(providerId: string, name: string): Promise<ZonePresentation> {
-    const { provider, client } = await cloudflareClientFor(this.providers, providerId)
+    const { provider, client } = await this.access.forProvider(providerId)
     const accountId = provider.account_id.trim()
     if (accountId === '') {
       throw new ApiError('cloudflare_account_id_required', 'Cloudflare account_id is required', 422)
@@ -94,7 +93,7 @@ export class CloudflareZoneService {
   }
 
   async delete(providerId: string, zoneId: string): Promise<{ id: string }> {
-    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const { client } = await this.access.forProvider(providerId)
     const response = await callProvider(
       {
         code: 'cloudflare_zone_delete_failed',
@@ -125,43 +124,6 @@ export class CloudflareZoneService {
       provider_id: providerId,
       name: normalized,
     })
-  }
-
-  /** 按最长后缀匹配 FQDN 所属站点；未匹配返回空串 */
-  async bestMatchId(providerId: string, fqdn: string, refresh = false): Promise<string> {
-    const normalized = normalizeFqdn(fqdn)
-    let best = { name: '', id: '' }
-    for (const zone of (await this.listAll(providerId, refresh)).items) {
-      const name = normalizeFqdn(zone.name)
-      if (!name || !zone.id) continue
-      if ((normalized === name || normalized.endsWith(`.${name}`)) && name.length > best.name.length) {
-        best = { name, id: zone.id }
-      }
-    }
-    return best.id
-  }
-
-  /** 站点级 DCV 委派 UUID（SaaS 证书委派用） */
-  async dcvDelegationUuid(providerId: string, zoneId: string, refresh = false): Promise<string> {
-    const cached = await withProviderCache<{ uuid: string }>({
-      key: { prefix: `${PROVIDER_TYPE}:dcv_delegation`, parts: { provider_id: providerId, zone_id: zoneId } },
-      tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
-      refresh,
-      loader: async () => {
-        const { client } = await cloudflareClientFor(this.providers, providerId)
-        const response = await callProvider(
-          {
-            code: 'cloudflare_dcv_failed',
-            message: 'Cloudflare DCV delegation fetch failed',
-            providerId,
-            details: { zone: zoneId },
-          },
-          () => client.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
-        )
-        return { uuid: String(parseCloudflareItemResponse(response).result.uuid ?? '') }
-      },
-    })
-    return cached.value.uuid
   }
 }
 

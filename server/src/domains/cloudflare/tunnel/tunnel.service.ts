@@ -1,5 +1,4 @@
 import crypto from 'node:crypto'
-import type { ProviderRepository } from '../../../kernel/providers/provider.repository.js'
 import {
   cloudflaredTunnelsCacheTag,
   providerCacheTag,
@@ -18,7 +17,8 @@ import {
   type CloudflareTunnel as RawTunnel,
 } from '../cloudflare-response.schema.js'
 import { invalidateTunnelListCache, invalidateTunnelRouteCache } from './tunnel.cache.js'
-import { resolveTunnelAccount, tunnelPath, type TunnelAccount } from './tunnel-account.js'
+import { tunnelPath } from './tunnel-path.js'
+import type { CloudflareAccess, TunnelAccount } from '../access.js'
 
 interface CloudflaredTunnel {
   id: string
@@ -36,15 +36,15 @@ const newTunnelSecret = () => crypto.randomBytes(32).toString('base64')
 
 /** Cloudflare Tunnel 生命周期与令牌管理 */
 export class TunnelService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(private readonly access: CloudflareAccess) {}
 
   async list(providerId: string, refresh = false): Promise<{ items: CloudflaredTunnel[] }> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     const cached = await withProviderCache<{ items: CloudflaredTunnel[] }>({
       key: `cloudflared:tunnels:${providerId}`,
       tags: [
         providerCacheTag(providerId),
-        providerCacheTag(account.cloudflare.id),
+        providerCacheTag(account.provider.id),
         cloudflaredTunnelsCacheTag(providerId),
       ],
       refresh,
@@ -65,12 +65,12 @@ export class TunnelService {
   }
 
   async show(providerId: string, tunnelId: string, refresh = false): Promise<CloudflaredTunnel> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     const cached = await withProviderCache<CloudflaredTunnel>({
       key: `cloudflared:tunnel:${providerId}:${tunnelId}`,
       tags: [
         providerCacheTag(providerId),
-        providerCacheTag(account.cloudflare.id),
+        providerCacheTag(account.provider.id),
         cloudflaredTunnelsCacheTag(providerId),
       ],
       refresh,
@@ -95,7 +95,7 @@ export class TunnelService {
     providerId: string,
     name: string
   ): Promise<{ tunnel: CloudflaredTunnel; token: string | null; side_effects?: SideEffects }> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     const response = await callProvider(
       { code: 'cloudflared_tunnel_create_failed', message: 'Cloudflare Tunnel create failed', providerId },
       () =>
@@ -122,7 +122,7 @@ export class TunnelService {
 
   /** 先断开连接再删除；连接不存在视为已断开 */
   async delete(providerId: string, tunnelId: string): Promise<{ id: string }> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     const path = tunnelPath(account.accountId, tunnelId)
     try {
       await account.client.delete(`${path}/connections`)
@@ -153,13 +153,13 @@ export class TunnelService {
   }
 
   async token(providerId: string, tunnelId: string): Promise<{ token: string }> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     return { token: await this.fetchToken(account, tunnelId) }
   }
 
   /** 轮换隧道密钥后返回新令牌 */
   async rotateToken(providerId: string, tunnelId: string): Promise<{ token: string }> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     await callProvider(
       {
         code: 'cloudflared_tunnel_token_rotate_failed',
@@ -178,7 +178,7 @@ export class TunnelService {
       {
         code: 'cloudflared_tunnel_token_failed',
         message: 'Cloudflare Tunnel token fetch failed',
-        providerId: account.cloudflare.id,
+        providerId: account.provider.id,
         details: { tunnel_id: tunnelId },
       },
       () => account.client.get(`${tunnelPath(account.accountId, tunnelId)}/token`)

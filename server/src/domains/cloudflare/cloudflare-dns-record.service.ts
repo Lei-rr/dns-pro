@@ -1,4 +1,3 @@
-import type { ProviderRepository } from '../../kernel/providers/provider.repository.js'
 import {
   buildCacheKey,
   providerCacheTag,
@@ -14,7 +13,7 @@ import {
 } from '../../kernel/providers/provider-call.js'
 import { providerNullableNumber, providerNullableString } from '../../kernel/providers/provider-values.js'
 import { invalidateCloudflareRecordCache } from './cloudflare.cache.js'
-import { cloudflareClientFor } from './cloudflare.client.js'
+import type { CloudflareAccess } from './access.js'
 import {
   cloudflareDnsRecordSchema,
   parseCloudflareItemResponse,
@@ -71,7 +70,7 @@ const recordPath = (zoneId: string, recordId?: string) =>
 
 /** Cloudflare DNS 记录 CRUD（参数为 zoneId） */
 export class CloudflareDnsRecordService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(private readonly access: CloudflareAccess) {}
 
   /** 全量记录列表 */
   async listAll(providerId: string, zoneId: string, refresh = false): Promise<RecordListResult> {
@@ -100,7 +99,7 @@ export class CloudflareDnsRecordService {
   }
 
   async create(providerId: string, zoneId: string, data: RecordPayload | Record<string, unknown>) {
-    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const { client } = await this.access.forProvider(providerId)
     const response = await callProvider(
       {
         code: 'cloudflare_record_create_failed',
@@ -115,7 +114,7 @@ export class CloudflareDnsRecordService {
   }
 
   async update(providerId: string, zoneId: string, recordId: string, data: RecordPayload | Record<string, unknown>) {
-    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const { client } = await this.access.forProvider(providerId)
     const response = await callProvider(
       {
         code: 'cloudflare_record_update_failed',
@@ -130,7 +129,7 @@ export class CloudflareDnsRecordService {
   }
 
   async delete(providerId: string, zoneId: string, recordId: string): Promise<{ id: string }> {
-    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const { client } = await this.access.forProvider(providerId)
     const response = await callProvider(
       {
         code: 'cloudflare_record_delete_failed',
@@ -174,7 +173,7 @@ export class CloudflareDnsRecordService {
     perPage: number,
     filters: PageFilters
   ): Promise<CloudflarePage<CloudflareRecord>> {
-    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const { client } = await this.access.forProvider(providerId)
     const response = await callProvider(
       {
         code: 'cloudflare_record_list_failed',

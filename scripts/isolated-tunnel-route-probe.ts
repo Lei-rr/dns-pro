@@ -15,7 +15,7 @@ let failNextZoneLookup = false
 // repair 场景：让下一次站点查询抛错（验证单条失败不中断其它主机名）
 let failNextZoneLookupOnce = false
 const zones = {
-  async bestMatchId() {
+  async resolve() {
     if (failNextZoneLookupOnce) {
       failNextZoneLookupOnce = false
       throw new Error('zone lookup 502')
@@ -25,7 +25,7 @@ const zones = {
       order.push('cleanup-old-dns')
       throw new Error('zone lookup 502')
     }
-    return 'zone-1'
+    return { providerId: 'cf-owner', zoneId: 'zone-1', zoneName: 'example.com' }
   },
 }
 // findExact 返回值可切换：数组=固定结果，函数=按主机名返回（覆盖归属冲突与幂等重放）
@@ -48,11 +48,13 @@ const dnsRecords = {
 }
 const dns = new TunnelDnsService(zones as never, dnsRecords as never)
 
-const providers = {
-  async requireType(_id: string, type: string) {
-    return type === 'cloudflared'
-      ? { id: 'tunnel-owner', type: 'cloudflared', cloudflare_provider: 'cf-owner' }
-      : { id: 'cf-owner', type: 'cloudflare', api_token: 'token', account_id: 'acct' }
+// D2：隧道服务依赖 CloudflareAccess（账号 + 客户端），探针桩掉账号解析
+const access = {
+  async forTunnel() {
+    return { provider: { id: 'cf-owner' }, accountId: 'acct', client: new CloudflareClient('token') }
+  },
+  async linkedProviderId() {
+    return 'cf-owner'
   },
 }
 
@@ -85,7 +87,7 @@ CloudflareClient.prototype.put = async function (path: string, data?: unknown) {
   return { success: true, result: remoteConfig } as never
 }
 
-const service = new TunnelRouteService(providers as never, zones as never, dns)
+const service = new TunnelRouteService(access as never, zones as never, dns)
 
 // 1. 更新路由：写 ingress → 同步新 CNAME → 清理旧 CNAME
 const result = await service.updateRoute('tunnel-owner', 'tunnel-1', 'old.example.com', '', {

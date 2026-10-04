@@ -1,4 +1,5 @@
 import type { CloudflareZoneService, ZoneListResult } from '../cloudflare-zone.service.js'
+import type { ZoneCatalog } from '../zone-catalog.js'
 import { ApiError } from '../../../kernel/http/api-error.js'
 import { errorMessage, normalizeFqdn } from '../../../lib/values.js'
 import { isExplicitNotFound } from '../../../kernel/providers/provider-error.js'
@@ -22,6 +23,7 @@ type HostnameRef = { cloudflareProviderId: string; zoneId: string; hostnameId: s
 export class SaaSHostnameService {
   constructor(
     private readonly cloudflareZones: CloudflareZoneService,
+    private readonly zoneCatalog: ZoneCatalog,
     private readonly customHostnames: SaaSCustomHostnameClient,
     private readonly fallbackOrigins: SaaSFallbackOriginClient,
     private readonly preferredDomains: PreferredDomainService,
@@ -277,7 +279,7 @@ export class SaaSHostnameService {
     // 主机名未返回 DCV UUID 时用站点级 UUID 兜底
     const dcvUuid =
       String(ssl.dcv_delegation_uuid ?? '') ||
-      (await this.cloudflareZones.dcvDelegationUuid(ref.cloudflareProviderId, ref.zoneId))
+      (await this.zoneCatalog.dcvDelegationUuid(ref.cloudflareProviderId, ref.zoneId))
     const enriched = { ...hostname, ssl: { ...ssl, dcv_delegation_uuid: dcvUuid } }
     return this.applyEffectiveSyncConfig(
       providerId,

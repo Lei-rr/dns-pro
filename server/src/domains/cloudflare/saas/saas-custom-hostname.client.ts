@@ -1,5 +1,5 @@
-import type { ProviderRepository } from '../../../kernel/providers/provider.repository.js'
-import { cloudflareClientFor } from '../cloudflare.client.js'
+import type { CloudflareClient } from '../cloudflare.client.js'
+import type { CloudflareAccess } from '../access.js'
 import {
   cloudflareCustomHostnameSchema,
   parseCloudflareItemResponse,
@@ -64,7 +64,7 @@ const hostnamesPath = (zoneId: string, hostnameId?: string) =>
 
 /** Cloudflare for SaaS 自定义主机名 API */
 export class SaaSCustomHostnameClient {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(private readonly access: CloudflareAccess) {}
 
   async listAll(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<CloudflareCustomHostname[]> {
     return collectNumberedPages(
@@ -182,9 +182,9 @@ export class SaaSCustomHostnameClient {
     cloudflareProviderId: string,
     action: 'list' | 'show' | 'create' | 'update' | 'delete',
     details: Record<string, unknown>,
-    fn: (client: Awaited<ReturnType<typeof cloudflareClientFor>>['client']) => Promise<T>
+    fn: (client: CloudflareClient) => Promise<T>
   ): Promise<T> {
-    const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+    const { client } = await this.access.forProvider(cloudflareProviderId)
     return callProvider(
       {
         code: `saas_hostname_${action}_failed`,

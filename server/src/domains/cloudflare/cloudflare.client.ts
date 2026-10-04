@@ -1,6 +1,5 @@
 import { ApiError } from '../../kernel/http/api-error.js'
 import { BaseHttpClient, type HttpRequestConfig } from '../../kernel/http/base-http.client.js'
-import type { ProviderRepository } from '../../kernel/providers/provider.repository.js'
 import type { CloudflareProvider } from '../../kernel/providers/provider.types.js'
 
 export interface CloudflareApiResponse {
@@ -75,18 +74,4 @@ function cloudflareError(response: CloudflareApiResponse): ApiError {
     502,
     { errors: response.errors }
   )
-}
-
-/** 读取 Cloudflare 服务商并构建客户端 */
-export async function cloudflareClientFor(
-  providers: ProviderRepository,
-  providerId: string
-): Promise<{ provider: CloudflareProvider; client: CloudflareClient }> {
-  const provider = await providers.requireType<CloudflareProvider>(
-    providerId,
-    'cloudflare',
-    'Cloudflare provider not found',
-    'cloudflare_provider_not_found'
-  )
-  return { provider, client: CloudflareClient.forProvider(provider) }
 }

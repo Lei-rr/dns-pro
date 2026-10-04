@@ -1,8 +1,10 @@
 import { AuthConfigRepository, type AuthConfigData } from '../domains/system/auth/auth-config.repository.js'
 import type { AppConfig } from './config.js'
 import { AuthService } from '../domains/system/auth/auth.service.js'
+import { CloudflareAccess } from '../domains/cloudflare/access.js'
 import { CloudflareDnsRecordService } from '../domains/cloudflare/cloudflare-dns-record.service.js'
 import { CloudflareZoneService } from '../domains/cloudflare/cloudflare-zone.service.js'
+import { ZoneCatalog } from '../domains/cloudflare/zone-catalog.js'
 import { DnsPodLineService } from '../domains/dnspod/dns-pod-line.service.js'
 import { DnsPodRecordSyncService } from '../domains/dnspod/dns-pod-record-sync.service.js'
 import { DnsPodRecordService } from '../domains/dnspod/dns-pod-record.service.js'
@@ -41,13 +43,15 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
   const integrity = new ProviderIntegrity()
   const providers = new ProviderRepository(createStore<ProvidersFile>('providers'), createSecretBox(deps.credentialKey))
 
-  const cloudflareZones = new CloudflareZoneService(providers)
-  const cloudflareRecords = new CloudflareDnsRecordService(providers)
+  const cloudflareAccess = new CloudflareAccess(providers)
+  const cloudflareZones = new CloudflareZoneService(cloudflareAccess)
+  const cloudflareRecords = new CloudflareDnsRecordService(cloudflareAccess)
+  const zoneCatalog = new ZoneCatalog(cloudflareAccess, cloudflareZones)
   const dnsPodZones = new DnsPodZoneService(providers)
   const dnsPodRecords = new DnsPodRecordService(providers)
   const edgeOneZones = new EdgeOneZoneService(providers)
   const edgeOneDomains = new EdgeOneDomainService(providers)
-  const tunnels = new TunnelService(providers)
+  const tunnels = new TunnelService(cloudflareAccess)
 
   const preferredDomains = new PreferredDomainService(createStore<PreferredDomainsFile>('preferredDomains'))
   const saasPreferences = new SaaSPreferenceService(
@@ -83,8 +87,9 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
       syncConfigs: saasSyncConfigs,
       hostnames: new SaaSHostnameService(
         cloudflareZones,
-        new SaaSCustomHostnameClient(providers),
-        new SaaSFallbackOriginClient(providers),
+        zoneCatalog,
+        new SaaSCustomHostnameClient(cloudflareAccess),
+        new SaaSFallbackOriginClient(cloudflareAccess),
         preferredDomains,
         saasPreferences,
         saasSyncConfigs
@@ -94,9 +99,9 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
     tunnels: {
       tunnels,
       routes: new TunnelRouteService(
-        providers,
-        cloudflareZones,
-        new TunnelDnsService(cloudflareZones, cloudflareRecords)
+        cloudflareAccess,
+        zoneCatalog,
+        new TunnelDnsService(zoneCatalog, cloudflareRecords)
       ),
     },
   }

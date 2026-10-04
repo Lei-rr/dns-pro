@@ -1,5 +1,3 @@
-import type { ProviderRepository } from '../../../kernel/providers/provider.repository.js'
-import type { CloudflareZoneService } from '../cloudflare-zone.service.js'
 import { parseCloudflareItemResponse, type CloudflareRouteConfig } from '../cloudflare-response.schema.js'
 import {
   cloudflaredTunnelConfigCacheTag,
@@ -18,7 +16,9 @@ import {
 } from '../../../kernel/providers/side-effect-result.js'
 import { invalidateTunnelRouteCache } from './tunnel.cache.js'
 import { runSerial } from '../../../lib/serial-queue.js'
-import { linkedCloudflareProviderId, resolveTunnelAccount, tunnelPath } from './tunnel-account.js'
+import { tunnelPath } from './tunnel-path.js'
+import type { CloudflareAccess } from '../access.js'
+import type { ZoneCatalog } from '../zone-catalog.js'
 import type { TunnelDnsService } from './tunnel-dns.service.js'
 
 export interface TunnelRoute {
@@ -47,18 +47,18 @@ const ingressKey = (providerId: string, tunnelId: string) => `tunnel-ingress:${p
 /** 隧道 Ingress 路由管理；写入路由后同步 Cloudflare CNAME */
 export class TunnelRouteService {
   constructor(
-    private readonly providers: ProviderRepository,
-    private readonly zones: CloudflareZoneService,
+    private readonly access: CloudflareAccess,
+    private readonly catalog: ZoneCatalog,
     private readonly dns: TunnelDnsService
   ) {}
 
   async getConfig(providerId: string, tunnelId: string, refresh = false): Promise<TunnelConfig> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     const cached = await withProviderCache<TunnelConfig>({
       key: `cloudflared:tunnel_config:${providerId}:${tunnelId}`,
       tags: [
         providerCacheTag(providerId),
-        providerCacheTag(account.cloudflare.id),
+        providerCacheTag(account.provider.id),
         cloudflaredTunnelConfigCacheTag(providerId, tunnelId),
       ],
       refresh,
@@ -195,7 +195,7 @@ export class TunnelRouteService {
     tunnelId: string
   ): Promise<Record<string, unknown>> {
     try {
-      const zoneId = await this.zones.bestMatchId(cfProviderId, hostname)
+      const zoneId = (await this.catalog.resolve(cfProviderId, hostname))?.zoneId ?? ''
       if (zoneId === '') return { hostname, zone_id: '', action: 'skipped', reason: 'zone_not_found' }
       return { hostname, zone_id: zoneId, ...(await this.dns.ensureCname(cfProviderId, zoneId, hostname, tunnelId)) }
     } catch (error) {
@@ -204,7 +204,7 @@ export class TunnelRouteService {
   }
 
   private cfProviderIdOf(providerId: string): Promise<string> {
-    return linkedCloudflareProviderId(this.providers, providerId)
+    return this.access.linkedProviderId(providerId)
   }
 
   // 变更前总是读取最新配置（含 catch_all），避免覆盖他处修改
@@ -218,7 +218,7 @@ export class TunnelRouteService {
     routes: TunnelRoute[],
     catchAll = CATCH_ALL_SERVICE
   ): Promise<void> {
-    const account = await resolveTunnelAccount(this.providers, providerId)
+    const account = await this.access.forTunnel(providerId)
     // 原样保留规则里的扩展字段（originRequest 等），只更新本服务管理的字段
     const ingress = [
       ...routes.map((route) => {
@@ -239,7 +239,7 @@ export class TunnelRouteService {
   }
 
   private async requireZoneId(cfProviderId: string, hostname: string): Promise<string> {
-    const zoneId = await this.zones.bestMatchId(cfProviderId, hostname)
+    const zoneId = (await this.catalog.resolve(cfProviderId, hostname))?.zoneId ?? ''
     if (zoneId === '') throw new ApiError('cloudflared_zone_not_found', `No Cloudflare zone matches ${hostname}`, 422)
     return zoneId
   }

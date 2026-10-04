@@ -1,5 +1,4 @@
-import type { ProviderRepository } from '../../../kernel/providers/provider.repository.js'
-import { cloudflareClientFor } from '../cloudflare.client.js'
+import type { CloudflareAccess } from '../access.js'
 import { parseCloudflareItemResponse, type CloudflareFallbackOrigin } from '../cloudflare-response.schema.js'
 import { fallbackOriginCacheTag, providerCacheTag, withProviderCache } from '../../../kernel/cache/provider-cache.js'
 import { isExplicitNotFound } from '../../../kernel/providers/provider-error.js'
@@ -13,7 +12,7 @@ const fallbackPath = (zoneId: string) => `zones/${encodeURIComponent(zoneId)}/cu
 
 /** Cloudflare for SaaS 默认回源（Fallback Origin）API */
 export class SaaSFallbackOriginClient {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(private readonly access: CloudflareAccess) {}
 
   async show(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<FallbackOriginInfo> {
     const cached = await withProviderCache<FallbackOriginInfo>({
@@ -21,7 +20,7 @@ export class SaaSFallbackOriginClient {
       tags: [providerCacheTag(cloudflareProviderId), fallbackOriginCacheTag(cloudflareProviderId, zoneId)],
       refresh,
       loader: async () => {
-        const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+        const { client } = await this.access.forProvider(cloudflareProviderId)
         try {
           return presentFallback(parseCloudflareItemResponse(await client.get(fallbackPath(zoneId))).result)
         } catch (error) {
@@ -43,7 +42,7 @@ export class SaaSFallbackOriginClient {
   }
 
   async set(cloudflareProviderId: string, zoneId: string, origin: string): Promise<FallbackOriginInfo> {
-    const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+    const { client } = await this.access.forProvider(cloudflareProviderId)
     const response = await callProvider(
       {
         code: 'saas_fallback_origin_set_failed',
@@ -58,7 +57,7 @@ export class SaaSFallbackOriginClient {
   }
 
   async delete(cloudflareProviderId: string, zoneId: string): Promise<FallbackOriginInfo> {
-    const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+    const { client } = await this.access.forProvider(cloudflareProviderId)
     await callProvider(
       {
         code: 'saas_fallback_origin_delete_failed',

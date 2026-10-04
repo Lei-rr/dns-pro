@@ -1,5 +1,5 @@
 import type { CloudflareDnsRecordService } from '../cloudflare-dns-record.service.js'
-import type { CloudflareZoneService } from '../cloudflare-zone.service.js'
+import type { ZoneCatalog } from '../zone-catalog.js'
 import { errorMessage, normalizeFqdn } from '../../../lib/values.js'
 import type { DnsOperationResult } from '../../../kernel/providers/side-effect-result.js'
 
@@ -8,7 +8,7 @@ const tunnelTarget = (tunnelId: string) => `${tunnelId}.cfargotunnel.com`
 /** 隧道路由对应的 Cloudflare CNAME（主机名 → <tunnel>.cfargotunnel.com）；所有方法不抛异常 */
 export class TunnelDnsService {
   constructor(
-    private readonly zones: CloudflareZoneService,
+    private readonly catalog: ZoneCatalog,
     private readonly records: CloudflareDnsRecordService
   ) {}
 
@@ -47,7 +47,7 @@ export class TunnelDnsService {
   removeCname(cfProviderId: string, hostname: string, tunnelId: string): Promise<DnsOperationResult> {
     return safely(async () => {
       const fqdn = normalizeFqdn(hostname)
-      const zoneId = await this.zones.bestMatchId(cfProviderId, fqdn, true)
+      const zoneId = (await this.catalog.resolve(cfProviderId, fqdn, true))?.zoneId ?? ''
       if (zoneId === '') return { action: 'skipped', reason: 'zone_not_found' }
 
       const records = await this.records.findExact(cfProviderId, zoneId, fqdn, 'CNAME')
