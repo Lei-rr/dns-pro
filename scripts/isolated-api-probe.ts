@@ -970,8 +970,6 @@ try {
       undefined,
       { status: 'failed', success: 0, failed: 1, skipped: 0, message: 'probe' }
     )
-    await fs.writeFile(path.join(dataDir, 'jobs/jobs.json'), `${JSON.stringify({ items: [job] }, null, 2)}\n`)
-    setDataRoot(dataDir)
     const response = await app.inject({ method: 'GET', url: `${presenter.url}/${job.id}`, headers: { cookie } })
     assert.equal(response.statusCode, 200, `${presenter.type} presenter status`)
     assertNoBatchInternals(response.json().data, presenter.type)

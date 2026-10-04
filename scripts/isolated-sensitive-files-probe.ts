@@ -29,9 +29,9 @@ try {
   await assertPrivate(secretPath, 'existing session secret must be made private')
   assert.equal(await fs.readFile(secretPath, 'utf8'), secretBefore)
 
-  const store = new JsonStore('jobs/jobs.json', { items: [] as Array<{ id: string }> }, root)
+  const store = new JsonStore('probe/store-probe.json', { items: [] as Array<{ id: string }> }, root)
   await store.write({ items: [{ id: 'one' }] })
-  const storePath = path.join(root, 'jobs/jobs.json')
+  const storePath = path.join(root, 'probe/store-probe.json')
   await assertPrivate(storePath, 'new JSON store file must be private')
 
   await fs.chmod(storePath, 0o644)
@@ -57,7 +57,6 @@ try {
       ['providers.json', { items: [] }],
       ['saas/preferred-domains.json', { items: ['example.com'] }],
       ['saas/preferences.json', { items: {} }],
-      ['jobs/jobs.json', { items: [] }],
     ] as const
     for (const [file, value] of files) {
       const filePath = path.join(coldRoot, file)

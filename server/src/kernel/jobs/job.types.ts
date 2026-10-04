@@ -1,4 +1,4 @@
-/** 持久化任务类型定义 */
+/** 任务类型定义 */
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 export type JobItem = Record<string, unknown>

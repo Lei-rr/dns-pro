@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { JsonStore } from '../server/src/kernel/store/json-store.js'
-import { JobService, type JobRecord } from '../server/src/kernel/jobs/job.service.js'
+import { JobService } from '../server/src/kernel/jobs/job.service.js'
 import { runBatchItems } from '../server/src/kernel/jobs/batch-job.js'
 import { summarizeJobItems } from '../server/src/kernel/jobs/job.types.js'
 import { invalidateProviderCache, withProviderCache } from '../server/src/kernel/cache/provider-cache.js'
@@ -126,7 +126,7 @@ try {
   assert.equal(refreshed.value, 'refreshed')
   assert.equal(refreshLoaderCalls, 2, 'refresh joined a cold single-flight instead of bypassing it')
 
-  const jobs = new JobService(new JsonStore('jobs/jobs.json', { items: [] }, dataDir))
+  const jobs = new JobService()
   let runnerCalls = 0
   const runnerStarted = deferred<void>()
   const release = deferred<void>()
@@ -145,9 +145,8 @@ try {
   await jobs.drain()
   assert.equal((await jobs.get(once.id))?.status, 'completed')
 
-  // Closing waits for a running job to finish and persist its terminal state.
-  const closeStore = new JsonStore<{ items: JobRecord[] }>('jobs/close.json', { items: [] }, dataDir)
-  const closingJobs = new JobService(closeStore)
+  // Closing waits for a running job to finish and settle its terminal state in memory.
+  const closingJobs = new JobService()
   const closeRunnerStarted = deferred<void>()
   const releaseCloseRunner = deferred<void>()
   closingJobs.registerRunner('close', async () => {
@@ -165,27 +164,16 @@ try {
   await closeResult
   assert.equal(closeBeforeRelease, 'waiting', 'close returned before the running runner settled')
   assert.equal(
-    (await closeStore.readFresh()).items.find((job) => job.id === closing.id)?.status,
+    (await closingJobs.get(closing.id))?.status,
     'completed',
-    'close returned before the terminal job state was durable'
+    'close returned before the terminal job state was set'
   )
 
-  // A durable running item is uncertain after restart and its side effect is not replayed.
-  const recoveryStore = new JsonStore('jobs/recovery.json', { items: [] }, dataDir)
-  const creator = new JobService(recoveryStore)
-  const recovering = await creator.create(
-    'recover',
-    {},
-    [
-      { key: 'uncertain', status: 'running' },
-      { key: 'pending', status: 'pending' },
-    ],
-    { start: false }
-  )
+  // An item left in running state is uncertain: its side effect is not replayed.
+  const uncertainJobs = new JobService()
   const effects: string[] = []
-  const resumed = new JobService(new JsonStore('jobs/recovery.json', { items: [] }, dataDir))
-  resumed.registerRunner('recover', async (job) => {
-    await runBatchItems(resumed, job, {
+  uncertainJobs.registerRunner('uncertain', async (job) => {
+    await runBatchItems(uncertainJobs, job, {
       itemKey: (item) => String(item.key),
       runningMessage: 'running',
       progressMessage: 'running',
@@ -195,12 +183,22 @@ try {
       },
     })
   })
-  assert.equal(await resumed.resumeActiveJobs(), 1)
-  await resumed.drain()
-  const recovered = await resumed.get(recovering.id)
+  const uncertain = await uncertainJobs.create(
+    'uncertain',
+    {},
+    [
+      { key: 'uncertain', status: 'running' },
+      { key: 'pending', status: 'pending' },
+    ],
+    { start: false }
+  )
+  await uncertainJobs.get(uncertain.id)
+  await uncertainJobs.drain()
+  const settled = await uncertainJobs.get(uncertain.id)
   assert.deepEqual(effects, ['pending'])
-  assert.equal(recovered?.status, 'failed')
-  assert.equal(recovered?.items[0]?.status, 'failed')
+  assert.equal(settled?.status, 'failed')
+  assert.equal(settled?.items[0]?.status, 'failed')
+  assert.match(String(settled?.items[0]?.message), /待确认/)
 
   const terminal = await jobs.createTerminalExclusive('terminal', {}, [{ key: 'x', status: 'success' }], undefined, {
     status: 'completed',

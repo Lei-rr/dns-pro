@@ -14,7 +14,6 @@
 data/
 ├── config.json                  # 账号、密码哈希、会话代次（store: auth）
 ├── providers.json               # 服务商清单；secret_key / api_token 为 enc:v1: 密文（store: providers）
-├── jobs/jobs.json               # 批量任务记录，紧凑写入（store: jobs）
 ├── saas/
 │   ├── preferred-domains.json   # 优选域名白名单（store: preferredDomains）
 │   └── preferences.json         # 主机名偏好与同步状态（store: saasPreferences）
@@ -24,6 +23,8 @@ data/
 └── backups/                     # 自动备份（迁移前）
     └── pre-v0-20261004-235959/
 ```
+
+**批量任务不落盘**：任务只存在于服务进程内存（内存执行器），进程重启后任务记录清空；前端轮询、失败重试与跨工作流资源键互斥行为不变。旧版本遗留的 `jobs/jobs.json` 不再读取，可手动删除。
 
 **数据文件清单的单一来源**是 `server/src/kernel/store/store-registry.ts`：新增持久化文件必须在此登记，数据子目录由 `storeSubdirectories()` 派生（`server/src/main.ts` 启动时按注册表建目录）。`credential.key`、`session-secret`、`__meta.json`、`backups/` 属于运行时文件，不在 store 注册表内。
 
@@ -56,7 +57,7 @@ data/
 | `probe:api` | 以真实装配 + Fastify inject 验证 API 契约（含路由、鉴权、错误体） |
 | `probe:job` | 前端任务进度模型（`useJobProgress`、`runBatchJob`、行忙碌 / 选择 / 作用域代次） |
 | `probe:platform` | 平台并发、敏感文件、维护契约、数据迁移、缓存五个探针 |
-| `probe:workflow` | 任务恢复、隧道路由、请求参数、EdgeOne 载荷、默认配置、批量请求量、上游重试 |
+| `probe:workflow` | 任务失败重试、隧道路由、请求参数、EdgeOne 载荷、默认配置、批量请求量、上游重试 |
 | `probe:functional` | 前端审计、EdgeOne HTTPS 状态、SaaS DNS repair、稳定性断言 |
 | `probe:security` | 安全回归（会话吊销 / CSRF / 路径注入 / 信息泄露 / 暴力破解）、密码、凭据加密 |
 | `build` | esbuild 打包 `dist/server.js` + Vite 构建 `web/dist` |
@@ -82,11 +83,11 @@ npm run build                 # 只构建
 | `scripts/isolated-api-probe.ts` | 真实装配 + inject 的 API 契约与路由指纹（最大的一份） |
 | `scripts/isolated-backend-safe-probe.ts` | 装配、输入归一化、presenter 输出的安全面 |
 | `scripts/isolated-backend-careful-probe.ts` | 边界值：`ApiError`、HTTP 客户端、密码哈希、厂商响应守卫 |
-| `scripts/isolated-platform-concurrency-probe.ts` | `JsonStore` 串行、`JobService`、批量条目汇总 |
-| `scripts/isolated-workflow-recovery-probe.ts` | SaaS 批量任务恢复语义 |
+| `scripts/isolated-platform-concurrency-probe.ts` | `JsonStore` 串行、内存 `JobService`、批量条目汇总 |
+| `scripts/isolated-workflow-recovery-probe.ts` | SaaS 批量任务失败重试语义（不重放已完成阶段） |
 | `scripts/isolated-tunnel-route-probe.ts` | 隧道路由写回顺序、扩展字段与 `catch_all` 保留、并发串行、CNAME 归属保护、repair 幂等 |
 | `scripts/isolated-batch-request-probe.ts` | 请求量守卫：过滤下推上游、不随条目数重复全量拉取 |
-| `scripts/isolated-provider-retry-probe.ts` | 上游限流重试与任务文件体积 |
+| `scripts/isolated-provider-retry-probe.ts` | 上游限流重试与任务快照剥离（失败任务保留快照） |
 | `scripts/isolated-request-param-probe.ts` | 路径参数与 schema 校验 |
 | `scripts/isolated-edgeone-payload-probe.ts` | EdgeOne 加速域名载荷归一化 |
 | `scripts/isolated-saas-dns-repair-probe.ts` | SaaS DNS repair 编排 |

@@ -22,9 +22,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   constructor(
     private readonly relativePath: string,
     private readonly defaultValue: T = {} as T,
-    private readonly dataRoot?: string,
-    /** pretty=false 时紧凑写入：任务等机器读写的大文件可显著减小体积 */
-    private readonly options: { pretty?: boolean } = {}
+    private readonly dataRoot?: string
   ) {
     // 构造时即校验路径不越界
     this.absolutePath()
@@ -88,7 +86,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     try {
       const handle = await fs.open(temporary, 'wx', 0o600)
       try {
-        await handle.writeFile(`${JSON.stringify(data, null, this.options.pretty === false ? 0 : 2)}\n`, 'utf8')
+        await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
         await handle.sync()
       } finally {
         await handle.close()

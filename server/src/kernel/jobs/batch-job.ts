@@ -145,7 +145,7 @@ async function requeueFailedBatchItems(jobs: JobService, job: JobRecord, lock: J
   return jobs.requeue(job.id, { items, ...summarizeJobItems(items), message: '失败项重试中' }, lock)
 }
 
-/** 顺序执行批量条目；每条目先认领再执行，崩溃恢复时不重放进行中的条目 */
+/** 顺序执行批量条目；每条目先认领再执行，停在执行中的条目不自动重放 */
 export async function runBatchItems(
   jobs: JobService,
   job: JobRecord,
@@ -181,7 +181,7 @@ export async function runBatchItems(
   }
 }
 
-/** 持久化阶段标记并立即落盘，再继续下一个不可逆外部操作 */
+/** 记录阶段标记，再继续下一个不可逆外部操作 */
 export async function persistItemStage(
   jobs: JobService,
   jobId: string,

@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// 上游限流重试与任务文件体积守卫
+// 上游限流重试与任务快照体积守卫
 import assert from 'node:assert/strict'
-import fs from 'node:fs/promises'
-import os from 'node:os'
-import path from 'node:path'
-import { JsonStore } from '../server/src/kernel/store/json-store.js'
 import { JobService } from '../server/src/kernel/jobs/job.service.js'
 import { ApiError } from '../server/src/kernel/http/api-error.js'
 import { BaseHttpClient } from '../server/src/kernel/http/base-http.client.js'
@@ -102,49 +98,36 @@ try {
   globalThis.fetch = originalFetch
 }
 
-// 5. 任务文件：完成的任务剥离执行期快照，且紧凑写入
-const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-jobs-size-'))
-try {
-  const store = new JsonStore<{ items: any[] }>('jobs/jobs.json', { items: [] }, dataDir, { pretty: false })
-  const jobs = new JobService(store)
-  const bigSnapshot = { type: 'CNAME', name: 'a.example.com', value: 'x'.repeat(4096), purpose: 'origin_cname' }
-  const created = await jobs.create(
-    'size.probe',
-    {},
-    [
-      {
-        hostname: 'a.example.com',
-        status: 'pending',
-        dns_before_records: [bigSnapshot],
-        cleanup_recipe: { hostname_fqdn: 'a.example.com', records: [bigSnapshot] },
-      },
-    ],
-    { start: false }
-  )
-  await jobs.patch(created.id, { status: 'completed', finished_at: Date.now() })
+// 5. 任务记录：已完成任务剥离执行期快照，失败任务保留快照供重试
+const jobs = new JobService()
+const bigSnapshot = { type: 'CNAME', name: 'a.example.com', value: 'x'.repeat(4096), purpose: 'origin_cname' }
+const created = await jobs.create(
+  'size.probe',
+  {},
+  [
+    {
+      hostname: 'a.example.com',
+      status: 'pending',
+      dns_before_records: [bigSnapshot],
+      cleanup_recipe: { hostname_fqdn: 'a.example.com', records: [bigSnapshot] },
+    },
+  ],
+  { start: false }
+)
+await jobs.patch(created.id, { status: 'completed', finished_at: Date.now() })
 
-  const file = JSON.parse(await fs.readFile(path.join(dataDir, 'jobs/jobs.json'), 'utf8'))
-  const item = file.items[0].items[0]
-  assert.equal('dns_before_records' in item, false, '已完成任务不应保留 DNS 快照')
-  assert.equal('cleanup_recipe' in item, false, '已完成任务不应保留清理配方')
-  assert.equal(item.hostname, 'a.example.com', '完成任务的展示字段必须保留')
+const completedItem = (await jobs.get(created.id))?.items[0] ?? {}
+assert.equal('dns_before_records' in completedItem, false, '已完成任务不应保留 DNS 快照')
+assert.equal('cleanup_recipe' in completedItem, false, '已完成任务不应保留清理配方')
+assert.equal(completedItem.hostname, 'a.example.com', '完成任务的展示字段必须保留')
 
-  // 失败任务保留快照，重试才能恢复更新前状态
-  const failed = await jobs.create('size.probe', {}, [{ hostname: 'b.example.com', status: 'pending' }], {
-    start: false,
-  })
-  await jobs.patchItem(failed.id, () => true, { status: 'failed', dns_before_records: [bigSnapshot] })
-  await jobs.patch(failed.id, { status: 'failed', finished_at: Date.now() })
-  const afterFail = JSON.parse(await fs.readFile(path.join(dataDir, 'jobs/jobs.json'), 'utf8'))
-  const failedItem = afterFail.items.find((job: any) => job.id === failed.id).items[0]
-  assert.ok(Array.isArray(failedItem.dns_before_records), '失败任务必须保留快照供重试')
+// 失败任务保留快照，重试才能恢复更新前状态
+const failed = await jobs.create('size.probe', {}, [{ hostname: 'b.example.com', status: 'pending' }], {
+  start: false,
+})
+await jobs.patchItem(failed.id, () => true, { status: 'failed', dns_before_records: [bigSnapshot] })
+await jobs.patch(failed.id, { status: 'failed', finished_at: Date.now() })
+const failedItem = (await jobs.get(failed.id))?.items[0] ?? {}
+assert.ok(Array.isArray(failedItem.dns_before_records), '失败任务必须保留快照供重试')
 
-  const raw = await fs.readFile(path.join(dataDir, 'jobs/jobs.json'), 'utf8')
-  assert.ok(!raw.includes('\n  '), '任务文件应为紧凑写入')
-  // 文件中只应剩下失败任务的那一份快照；若已完成任务的快照未剥离，体积会翻倍
-  assert.ok(raw.length < 6000, `任务文件应只保留失败任务的快照，实际 ${raw.length} 字节`)
-
-  console.log('provider-retry-probe=ok ratelimit=honored backoff=bounded snapshots=stripped store=compact')
-} finally {
-  await fs.rm(dataDir, { recursive: true, force: true })
-}
+console.log('provider-retry-probe=ok ratelimit=honored backoff=bounded snapshots=trimmed')
