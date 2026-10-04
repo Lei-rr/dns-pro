@@ -5,11 +5,28 @@
 
 ## [Unreleased]
 
+后端全量重构（Phase 1-4：数据安全、可观测性、契约链路、探针瘦身；Phase 5a：五顶层结构；Phase 5b：D2 共享底座与 D1-1 DNS 端口）、交付成熟度补齐（Phase 6）、性能优化与安全加固。
+
+### 新增
+
+- 交付成熟度（Phase 6）：新增 `.github/workflows/security.yml`——构建镜像后跑 Trivy 扫描（`severity: HIGH,CRITICAL`，存在修复版本的漏洞阻断流水线）并将 SARIF 上报 GitHub Security，同时用 Anchore Syft 生成 SPDX SBOM 作为制品上传；触发条件为 main 推送、PR 与每周定时。
+- 交付成熟度（Phase 6）：新增 `.github/dependabot.yml`——npm（根工作区 / `web` 工作区）、`docker`、`github-actions` 每周更新，npm 按生产 / 开发依赖分组（组内只合并 minor + patch），每个生态 `open-pull-requests-limit: 5`，提交信息前缀 `chore(deps)`。
+- 交付成熟度（Phase 6）：新增 8 篇架构决策记录（`docs/adr/0001`–`0008`，对应目标架构 D1–D8）与运维手册 `docs/operations.md`（数据目录布局、verify 步骤、探针清单、部署与健康检查、版本同步、备份恢复、故障排查）。
+- 数据安全（Phase 1）：`StoreRegistry` 成为数据文件与目录的单一来源（`server/src/kernel/store/store-registry.ts`）；新增迁移框架（`migrations.ts` + `data/__meta.json` 的 `schema_version`），迁移前自动整目录备份并保留最近 5 份；provider 凭据（`secret_key` / `api_token`）改为 AES-256-GCM 加密落盘（`enc:v1:` 前缀，密钥为 `data/credential.key`），存量明文在启动迁移中自动加密。
+- 可观测性（Phase 2）：日志级别默认 `info`，非法值 fail-fast；迁移、孤儿偏好清理、任务恢复、明文凭据升级等关键操作写入结构化日志。
+- 契约（Phase 3）：前端经 `@server` 路径复用后端类型，类型漂移在编译期暴露。
+- 快赢三项：优选域名白名单校验前置到任务创建（不再"任务创建成功、全员失败"）；新增隧道 repair 端点；隧道 `ensureCname` 补归属校验。
+
 ### 变更
 
+- 结构重构（Phase 5a）：后端迁移为五顶层 `app / domains / use-cases / kernel / lib` + `main.ts`（142 个文件移动、140 个文件导入重写）；架构守卫的层矩阵同步更新为 `app → use-cases → domains → kernel → lib`，`version.mjs`、`knip.json`、`package.json` 入口一并调整。
+- 共享底座（Phase 5b / D2）：抽出 `CloudflareAccess`（provider → 账号 → client 的唯一定义）与 `ZoneCatalog`（FQDN 最长后缀匹配 + DCV 委派），DNS / SaaS / 隧道三条产品线只依赖底座、互不引用；删除 `tunnel-account.ts`、`cloudflareClientFor`、`bestMatchId` 等重复路径。
+- DNS 端口（Phase 5b / D1-1）：引入 `DnsRecordPort` 与 Cloudflare / DNSPod 适配器，厂商字段映射（`content`/`comment`、`subdomain`/`record_line`/`mx`）收敛到适配器；`dns-batch` 只依赖端口，删除厂商 body 构造器与逐厂商等值判定（`dns-batch.adapters.ts`、`dns-record-equivalence.ts`）。
 - CI：GHCR 镜像仅在推送 `v*` 标签时构建（日常提交只跑 `verify`），并校验标签版本与 `package.json` 一致。
 
-后端全量重构、性能优化与安全加固。
+### 移除
+
+- 探针瘦身（Phase 4）：删除源码文本断言型探针（含 `isolated-functional-surface-probe.ts`，约 -233 行），全部行为探针保留。
 
 ### 安全
 

@@ -136,16 +136,12 @@ npm run dev:web
 ```text
 server/
   src/
-    app.ts / server.ts       # Fastify 应用与进程入口
-    bootstrap/               # 唯一组装根：配置、Platform、Modules、Workflows、Routes
-    plugins/                 # Fastify 插件：上下文、安全、静态资源、错误处理
-    modules/                 # 单一业务能力与 Provider client；不反向依赖 Workflows
-    workflows/               # 跨模块用例、DNS 同步与批量任务编排
-    platform/
-      cache/                # 仅 memory-cache.ts + provider-cache.ts；永久进程内缓存
-      jobs/                 # 持久 Job、单进程 inflight、恢复/重试与终态收敛
-      storage/              # JsonStore、进程内串行队列与原子文件替换
-    shared/                  # auth、HTTP 契约、Provider 基础设施与通用工具
+    main.ts                  # 进程入口
+    app/                     # 唯一组装根：config / context / modules / use-cases / routes / plugins
+    domains/                 # 产品线域：cloudflare、dnspod、edgeone、system
+    use-cases/               # 跨域用例、DNS 同步与批量任务编排
+    kernel/                  # 通用运行时：store、jobs、cache、http、providers、crypto、contracts
+    lib/                     # 纯工具，无业务语义与 IO
     types/fastify.d.ts
 
 web/src/
@@ -168,8 +164,8 @@ web/src/
 
 ### 终态原则
 
-- 无 DI 容器、无服务注册表；所有实例只在 `bootstrap/` 构造并显式注入
-- 依赖方向固定为 `bootstrap → workflows → modules → platform/shared`
+- 无 DI 容器、无服务注册表；所有实例只在 `app/` 构造并显式注入
+- 依赖方向固定为 `app → use-cases → domains → kernel → lib`，只允许向右；`domains` 内产品线之间互不引用
 - HTTP schema、handler、service 分离；API 统一挂在 `/api`，不保留旧字段 alias
 - 供应商查询为进程内永久缓存（无 TTL、容量淘汰或 sweeper）；冷缺失回填，仅显式 `refresh=1` 绕过并覆盖，mutation 按 key/tag 精确失效
 - JsonStore 是本地状态源；跨文件引用完整性使用锁内 fresh read
@@ -239,7 +235,7 @@ SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=1 n
 Issue / PR 欢迎。建议：
 
 1. `npm run verify` 通过
-2. 保持依赖方向：`bootstrap → workflows → modules → platform/shared`，组装只在 `bootstrap/`
+2. 保持依赖方向：`app → use-cases → domains → kernel → lib`，组装只在 `app/`
 3. 不引入 Nest / DI 容器 / 额外文档目录
 
 提交前请确认：没有把 `data/`、密钥、Token、构建产物或本地配置加入提交；涉及 UI 的改动还应覆盖桌面与移动端状态。

@@ -1,0 +1,95 @@
+name: security
+
+# 供应链检查：镜像漏洞扫描（Trivy → SARIF 上报 Security 面板）+ SPDX SBOM（Syft → 制品）。
+# 独立于 verify.yml —— verify 的既有步骤语义保持不变，这里只新增 job/流程。
+# 触发：main 推送、PR、每周一定时（捕获基础镜像层新披露的 CVE）。
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: '15 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  image-scan:
+    name: 镜像扫描与 SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # upload-sarif 需要写入仓库 Security 面板
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 只构建到本地 daemon（不推送）；扫描对象与发布镜像共用 Dockerfile
+      - name: Build image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: dns-pro:scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 第一遍只产出 SARIF：exit-code 保持 0，保证后续上报步骤一定执行
+      - name: Trivy scan (SARIF)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: dns-pro:scan
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          # 只对「已有修复版本」的漏洞阻断/上报：基础镜像里不可修复的 CVE 不应让门禁永久变红
+          ignore-unfixed: true
+          exit-code: '0'
+
+      - name: Upload SARIF to GitHub Security
+        # fork PR 的 GITHUB_TOKEN 为只读，无法写 Security 面板；硬门禁仍由下一步保证
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-image
+
+      # 第二遍是硬门禁：HIGH/CRITICAL 且存在修复版本 → exit 1
+      - name: Trivy gate (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: dns-pro:scan
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+      - name: Generate SPDX SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: dns-pro:scan
+          format: spdx-json
+          output-file: sbom/dns-pro-image.spdx.json
+          # 上传交给下面的显式制品步骤，便于固定制品名与保留期
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dns-pro-sbom-spdx
+          path: sbom/dns-pro-image.spdx.json
+          if-no-files-found: error
+          retention-days: 30
