@@ -82,8 +82,12 @@ export class CloudflareDnsRecordService {
   }
 
   /**
-   * 精确匹配 名称+类型：过滤下推到 Cloudflare（name + type），且不经过列表缓存，
-   * 保证同步/删除前读到的是最新状态。
+   * 精确匹配 名称+类型：过滤下推到 Cloudflare（name + type）。
+   *
+   * 刻意不经过列表缓存：调用方会依据这次读的结果决定 create/update/delete，
+   * 拿缓存做写决策等于把「读到的世界」和「要改的世界」解耦，故障极难复现。
+   * 分页缓存键已含 type/name（见 cloudflareRecordPageKey），所以这里是显式的新鲜度选择，
+   * 而不是缓存键缺成分时的规避手段。
    */
   async findExact(providerId: string, zoneId: string, name: string, type: string): Promise<CloudflareRecord[]> {
     // Cloudflare 以 punycode 返回域名，含非 ASCII 时先转换再精确匹配
