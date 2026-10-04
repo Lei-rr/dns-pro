@@ -66,6 +66,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   // EdgeOne
   edgeone_provider_not_found: 'EdgeOne 服务商不存在',
   edgeone_dnspod_provider_not_found: '关联的 DNSPod 服务商不存在',
+  edgeone_dnspod_zone_not_found: 'DNSPod 中找不到与该加速域名匹配的域名',
   edgeone_zone_not_found: 'EdgeOne 站点不存在',
   edgeone_zone_list_failed: 'EdgeOne 站点列表获取失败',
   edgeone_cname_empty: 'EdgeOne 加速域名尚未生成 CNAME',
