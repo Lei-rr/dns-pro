@@ -42,7 +42,7 @@ export function useSaasHostJobs(options: {
         )
         if (!owner.active() || !scopeOwner.active()) return
         const data = (preview.data || {}) as Record<string, unknown>
-        toast.message('预览完成', `将变更 ${Number(data.will_change || data.total || 0)} 项`)
+        toast.message('预览完成', `将变更 ${Number(data.will_change ?? data.total ?? 0)} 项`)
         return
       }
       await runBatchJob({

@@ -5,12 +5,9 @@ import { SaaSDnsSyncWorkflow } from '../server/src/workflows/saas-dns-sync/saas-
 
 const calls: string[] = []
 const sync = {
-  async syncSaaSHostname(_providerId: string, _zoneName: string, hostname: string) {
+  async sync(_providerId: string, _zoneName: string, hostname: string) {
     calls.push(`sync:${hostname}`)
     return { status: 'completed', records: [{ type: 'CNAME', status: 'updated' }] }
-  },
-  normalizeSyncSideEffect(result: Record<string, unknown>, message: string) {
-    return { status: result.status, message, details: [result] }
   },
 }
 const workflow = new SaaSDnsSyncWorkflow({} as never, {} as never, sync as never)

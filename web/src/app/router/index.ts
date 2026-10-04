@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory, type RouteLocationNormalized } from 'vue-router'
-import { getCachedProvider, loadProviders } from '@/features/providers'
+import { getCachedProviderAny, loadProviders } from '@/features/providers'
 import { useSessionStore } from '@/features/auth'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -43,6 +43,8 @@ async function ensureAuthenticated(to: RouteLocationNormalized) {
     if (!session.authenticated) return '/login'
     return true
   } catch {
+    // 会话检查失败（网络/服务异常）与未登录不同：提示后按未登录处理，下次导航会自动重试
+    toast.error('会话状态检查失败，请刷新页面重试')
     if (to.meta.public) return true
     return '/login'
   }
@@ -52,8 +54,8 @@ async function ensureProviderRoute(to: RouteLocationNormalized) {
   const first = firstRouteSegment(to)
   if (systemRouteIds.has(first)) return true
   await loadProviders()
-  if (getCachedProvider(first)) return true
-  toast.warning('该 DNS 服务商未配置或不可用')
+  if (getCachedProviderAny(first)) return true
+  toast.warning('未找到该服务商')
   return '/'
 }
 

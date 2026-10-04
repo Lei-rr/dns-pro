@@ -20,7 +20,10 @@ export async function runBatchJob(options: {
   jobProgress?: ReturnType<typeof useJobProgress>
 }): Promise<JobLike | null> {
   const jobProgress = options.jobProgress || useJobProgress()
-  if (jobProgress.running.value) return null
+  if (jobProgress.running.value) {
+    toast.warning('已有批量任务在执行，请等待完成后再试')
+    return null
+  }
   const owner = jobProgress.begin(`${options.label}创建中`)
   let created: CreateJobResult
   try {

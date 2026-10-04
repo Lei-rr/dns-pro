@@ -31,10 +31,13 @@ export function error(
   details: unknown = undefined
 ): ErrorResponseBody {
   const code = errorCode ?? 'error'
+  const provided = String(messageOrCode ?? '').trim()
   const translated = translateError(code)
-  const isCustomMessage = messageOrCode && messageOrCode !== code
+  // 已本地化（含中文）的消息原样返回；否则优先使用错误码的中文映射，
+  // 避免内部英文错误文本直接暴露在中文界面上。
+  const localized = /[\u4e00-\u9fff]/.test(provided)
   return {
-    message: isCustomMessage ? messageOrCode : (translated ?? messageOrCode),
+    message: localized ? provided : (translated ?? provided),
     code,
     status: statusCode,
     details,

@@ -1,5 +1,4 @@
-export const PROVIDER_TYPES = ['dnspod', 'cloudflare', 'edgeone', 'saas', 'cloudflared'] as const
-export type ProviderType = (typeof PROVIDER_TYPES)[number]
+export type ProviderType = 'dnspod' | 'cloudflare' | 'edgeone' | 'saas' | 'cloudflared'
 
 export interface ProviderDefinition {
   type: ProviderType

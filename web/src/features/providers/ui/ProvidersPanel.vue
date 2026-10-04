@@ -20,6 +20,11 @@ import { isProviderSecretField } from '../model/provider-fields'
 const saving = ref(false)
 const providers = ref<Provider[]>([])
 const definitions = ref<ProviderDefinition[]>([])
+
+/** 按类型取服务商定义（密钥字段判定以内置定义为准） */
+function definitionForType(type: string): ProviderDefinition | undefined {
+  return definitions.value.find((item) => item.type === type)
+}
 const labels = ref<Record<string, string>>({})
 const dialogOpen = ref(false)
 const editing = ref<Provider | null>(null)
@@ -94,9 +99,9 @@ function openEdit(record: Provider) {
   formErrors.value = {}
   form.name = record.name
   form.fields = {}
-  // 编辑时密钥只回填「已配置」占位，提交空串表示不改
+  // 编辑时密钥字段留空表示不修改；非密钥字段回填真实值便于核对
   for (const field of record.editable_fields?.length ? record.editable_fields : Object.keys(record.fields || {})) {
-    if (isProviderSecretField(field)) {
+    if (isProviderSecretField(field, definitionForType(record.type))) {
       form.fields[field] = ''
     } else {
       form.fields[field] = String(record[field] ?? record.fields?.[field] ?? '')

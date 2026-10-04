@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { EllipsisVertical, Radar } from '@lucide/vue'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Button } from '@/shared/ui/button'
@@ -28,28 +29,28 @@ const emit = defineEmits<{
   remove: [record: EdgeOneAccelerationDomain]
 }>()
 
-function selectedSet() {
-  return new Set(props.selected)
-}
+// 选择状态缓存为 computed：避免每次渲染/每行都重建 Set
+const selectedSet = computed(() => new Set(props.selected))
+const selectableDomains = computed(() => props.domains.filter((record) => !props.busy(record)))
 
 function isSelected(record: EdgeOneAccelerationDomain) {
-  return selectedSet().has(props.domainName(record))
+  return selectedSet.value.has(props.domainName(record))
 }
 
 function toggle(record: EdgeOneAccelerationDomain, checked: boolean) {
-  const keys = selectedSet()
+  const keys = new Set(selectedSet.value)
   const key = props.domainName(record)
   if (checked) keys.add(key)
   else keys.delete(key)
   emit('update:selected', [...keys])
 }
 
-function headerChecked(): boolean | 'indeterminate' {
-  const selectable = props.domains.filter((record) => !props.busy(record))
+const headerChecked = computed<boolean | 'indeterminate'>(() => {
+  const selectable = selectableDomains.value
   if (!selectable.length) return false
-  const count = selectable.filter(isSelected).length
+  const count = selectable.filter((record) => selectedSet.value.has(props.domainName(record))).length
   return count === selectable.length ? true : count > 0 ? 'indeterminate' : false
-}
+})
 
 function toggleAll(value: boolean | 'indeterminate') {
   emit('update:selected', value === true ? selectableRowKeys(props.domains, props.domainName, props.busy) : [])
@@ -62,7 +63,7 @@ function toggleAll(value: boolean | 'indeterminate') {
       <TableHeader class="bg-muted/50">
         <TableRow class="!border-0">
           <TableHead class="w-10 rounded-l-lg px-3">
-            <Checkbox :model-value="headerChecked()" aria-label="全选当前列表" @update:model-value="toggleAll" />
+            <Checkbox :model-value="headerChecked" aria-label="全选当前列表" @update:model-value="toggleAll" />
           </TableHead>
           <TableHead>加速域名</TableHead>
           <TableHead>状态</TableHead>

@@ -26,10 +26,24 @@ async function run(dataDir: string, expected: { username: string; password: stri
   try {
     await app.ready()
     const generated = JSON.parse(await fs.readFile(path.join(dataDir, 'config.json'), 'utf8'))
-    assert.deepEqual(generated.auth, expected)
     if (generatedFile) {
+      // 首启：只落盘哈希，明文不落盘
+      assert.equal(generated.auth.username, 'admin')
+      assert.equal(generated.auth.password, undefined, '首启不得写入明文密码')
+      assert.ok(String(generated.auth.password_hash).startsWith('scrypt$'), '首启必须写入 scrypt 哈希')
+      assert.ok(app.ctx.initialPassword, '首启必须返回初始密码用于日志输出')
       const mode = (await fs.stat(path.join(dataDir, 'config.json'))).mode & 0o777
       assert.equal(mode, 0o600)
+      const defaultLogin = await app.inject({
+        method: 'POST',
+        url: '/api/session',
+        payload: { username: 'admin', password: 'admin' },
+      })
+      assert.equal(defaultLogin.statusCode, 401, '随机初始密码生效后 admin/admin 必须失败')
+      expected = { username: 'admin', password: String(app.ctx.initialPassword) }
+    } else {
+      // 既有明文配置：保持可登录，登录后自动升级为哈希
+      assert.equal(generated.auth.username, expected.username)
     }
     const login = await app.inject({ method: 'POST', url: '/api/session', payload: expected })
     assert.equal(login.statusCode, 200)
@@ -46,7 +60,9 @@ try {
   await fs.writeFile(path.join(existingDir, 'config.json'), `${JSON.stringify(custom, null, 2)}\n`)
   await run(existingDir, custom.auth)
   const preserved = JSON.parse(await fs.readFile(path.join(existingDir, 'config.json'), 'utf8'))
-  assert.deepEqual(preserved, custom)
+  assert.equal(preserved.auth.username, custom.auth.username)
+  assert.equal(preserved.auth.password, undefined, '登录后明文密码必须被哈希替换')
+  assert.ok(String(preserved.auth.password_hash).startsWith('scrypt$'), '登录后必须落盘 scrypt 哈希')
   console.log('default-config-probe=ok')
 } finally {
   await fs.rm(missingDir, { recursive: true, force: true })

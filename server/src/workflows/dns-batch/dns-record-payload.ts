@@ -1,4 +1,4 @@
-/** Unified DNS batch commands + provider request builders (no I/O). */
+/** DNS 批量操作：统一指令 → 服务商请求体（纯函数，无 I/O） */
 
 export type BatchRecordInput = {
   id?: string
@@ -64,17 +64,18 @@ export function buildCreateBody(
   return body
 }
 
-/** Merge a unified record snapshot + unified patch into the provider's required full update body. */
+/** 记录快照 + 修改补丁 → 服务商完整更新请求体 */
 export function buildUpdateBody(
   providerType: string,
   zone: string,
   item: Record<string, unknown>,
   patch: Record<string, unknown>
 ): Record<string, unknown> {
-  const pick = (key: string) => {
+  // item.status 是任务条目状态，记录启停状态保存在 record_status
+  const pick = (key: string, itemKey = key) => {
     const patched = patch[key]
     if (patched !== undefined && patched !== null && patched !== '') return patched
-    const current = item[key]
+    const current = item[itemKey]
     return current !== undefined && current !== null && current !== '' ? current : undefined
   }
 
@@ -108,7 +109,7 @@ export function buildUpdateBody(
   if (remark !== undefined) body.remark = String(remark)
   const lineId = pick('record_line_id')
   if (lineId !== undefined) body.record_line_id = String(lineId)
-  const status = pick('status')
+  const status = pick('status', 'record_status')
   if (status !== undefined) body.status = String(status).toUpperCase()
   const weight = pick('weight')
   if (weight !== undefined) body.weight = Number(weight)

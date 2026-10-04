@@ -1,5 +1,6 @@
 import {
   booleanQuerySchema,
+  domainName,
   objectSchema,
   optionalText,
   paramsSchema,
@@ -31,9 +32,13 @@ export const dnspodZonesIndexSchema = requestSchema({
 })
 export const dnspodZoneStoreSchema = requestSchema({
   params: paramsSchema('providerId'),
-  body: objectSchema({ domain: text(253) }, ['domain']),
+  body: objectSchema({ domain: domainName() }, ['domain']),
 })
 export const dnspodZoneParamsSchema = requestSchema({ params: paramsSchema('providerId', 'zone') })
+export const dnspodLinesIndexSchema = requestSchema({
+  params: paramsSchema('providerId', 'zone'),
+  querystring: booleanQuerySchema('refresh'),
+})
 export const dnspodRecordsIndexSchema = requestSchema({
   params: paramsSchema('providerId', 'zone'),
   querystring: booleanQuerySchema('refresh'),

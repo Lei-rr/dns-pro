@@ -1,16 +1,18 @@
 import type { ProviderRepository } from '../providers/provider.repository.js'
-import type { CloudflareProvider } from '../providers/provider.types.js'
-import { CloudflareGateway } from '../cloudflare/cloudflare.client.js'
-import { fallbackOriginCacheTag, providerCacheTag, withProviderCache } from '../../platform/cache/provider-cache.js'
-
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
+import { cloudflareClientFor } from '../cloudflare/cloudflare.client.js'
 import { parseCloudflareItemResponse, type CloudflareFallbackOrigin } from '../cloudflare/cloudflare-response.schema.js'
+import { fallbackOriginCacheTag, providerCacheTag, withProviderCache } from '../../platform/cache/provider-cache.js'
+import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
+import { callProvider, wrapProviderError } from '../../shared/providers/provider-call.js'
+import { providerNullableString } from '../../shared/providers/provider-values.js'
+import { invalidateSaaSFallbackOriginCache } from './saas.cache.js'
 
-export type FallbackOriginInfo = { origin?: string | null; status?: string | null }
+export type FallbackOriginInfo = { origin: string | null; status: string | null }
 
-/** Cloudflare for SaaS fallback-origin API adapter. */
-export class CloudflareFallbackOriginGateway {
+const fallbackPath = (zoneId: string) => `zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`
+
+/** Cloudflare for SaaS 默认回源（Fallback Origin）API */
+export class SaaSFallbackOriginClient {
   constructor(private readonly providers: ProviderRepository) {}
 
   async show(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<FallbackOriginInfo> {
@@ -19,18 +21,20 @@ export class CloudflareFallbackOriginGateway {
       tags: [providerCacheTag(cloudflareProviderId), fallbackOriginCacheTag(cloudflareProviderId, zoneId)],
       refresh,
       loader: async () => {
-        const gateway = await this.gateway(cloudflareProviderId)
+        const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
         try {
-          const response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
-          return this.present(parseCloudflareItemResponse(response).result)
+          return presentFallback(parseCloudflareItemResponse(await client.get(fallbackPath(zoneId))).result)
         } catch (error) {
-          if (isExplicitNotFound(error)) return this.present({})
+          // 未设置时上游返回 404
+          if (isExplicitNotFound(error)) return presentFallback({})
           throw wrapProviderError(
             'saas_fallback_origin_show_failed',
             'Cloudflare fallback origin fetch failed',
             cloudflareProviderId,
             error,
-            { zone: zoneId }
+            {
+              zone: zoneId,
+            }
           )
         }
       },
@@ -39,47 +43,39 @@ export class CloudflareFallbackOriginGateway {
   }
 
   async set(cloudflareProviderId: string, zoneId: string, origin: string): Promise<FallbackOriginInfo> {
-    const gateway = await this.gateway(cloudflareProviderId)
-    let response
-    try {
-      response = await gateway.put(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`, { origin })
-    } catch (error) {
-      throw wrapProviderError(
-        'saas_fallback_origin_set_failed',
-        'Cloudflare fallback origin update failed',
-        cloudflareProviderId,
-        error,
-        { zone: zoneId }
-      )
-    }
-    return this.present(parseCloudflareItemResponse(response).result)
+    const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+    const response = await callProvider(
+      {
+        code: 'saas_fallback_origin_set_failed',
+        message: 'Cloudflare fallback origin update failed',
+        providerId: cloudflareProviderId,
+        details: { zone: zoneId },
+      },
+      () => client.put(fallbackPath(zoneId), { origin })
+    )
+    invalidateSaaSFallbackOriginCache(cloudflareProviderId, zoneId)
+    return presentFallback(parseCloudflareItemResponse(response).result)
   }
 
   async delete(cloudflareProviderId: string, zoneId: string): Promise<FallbackOriginInfo> {
-    const gateway = await this.gateway(cloudflareProviderId)
-    try {
-      await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/fallback_origin`)
-    } catch (error) {
-      throw wrapProviderError(
-        'saas_fallback_origin_delete_failed',
-        'Cloudflare fallback origin delete failed',
-        cloudflareProviderId,
-        error,
-        { zone: zoneId }
-      )
-    }
-    return this.present({})
+    const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+    await callProvider(
+      {
+        code: 'saas_fallback_origin_delete_failed',
+        message: 'Cloudflare fallback origin delete failed',
+        providerId: cloudflareProviderId,
+        details: { zone: zoneId },
+      },
+      () => client.delete(fallbackPath(zoneId))
+    )
+    invalidateSaaSFallbackOriginCache(cloudflareProviderId, zoneId)
+    return presentFallback({})
   }
+}
 
-  private async gateway(providerId: string): Promise<CloudflareGateway> {
-    const provider = await this.providers.requireType<CloudflareProvider>(providerId, 'cloudflare')
-    return CloudflareGateway.forToken(provider.api_token)
-  }
-
-  private present(result: CloudflareFallbackOrigin): FallbackOriginInfo {
-    const origin =
-      typeof result.origin === 'string' || typeof result.origin === 'number' ? String(result.origin).trim() : ''
-    const status = typeof result.status === 'string' || typeof result.status === 'number' ? String(result.status) : null
-    return { origin: origin || null, status }
+function presentFallback(result: CloudflareFallbackOrigin): FallbackOriginInfo {
+  return {
+    origin: providerNullableString(result.origin)?.trim() || null,
+    status: providerNullableString(result.status),
   }
 }

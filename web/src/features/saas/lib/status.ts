@@ -52,3 +52,13 @@ export function formatDate(value?: string | null) {
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
 }
+
+/** 主机名是否已到达终态（不再需要所有权验证帮助） */
+export function isHostnameSettled(status: string): boolean {
+  return GREEN.has(status) || RED.has(status)
+}
+
+/** 证书/SSL 状态是否已出结果（用于展示"处理中"提示） */
+export function isSslSettled(status: string): boolean {
+  return ['active', 'deleted', 'deactivated', 'pending_deletion'].includes(status)
+}

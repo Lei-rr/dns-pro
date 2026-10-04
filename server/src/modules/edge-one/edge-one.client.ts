@@ -1,23 +1,22 @@
-import { TencentCloudGateway, type TencentCloudCredentials } from '../../shared/providers/tencent-cloud.client.js'
+import { TencentCloudClient } from '../../shared/providers/tencent-cloud.client.js'
+import type { DnsPodProvider } from '../providers/provider.types.js'
 
-type EdgeOneCredentials = TencentCloudCredentials
-
-export class EdgeOneGateway extends TencentCloudGateway {
-  /** Create a short-lived gateway so replaced credentials are not retained in a process-global map. */
-  static forCredentials(credentials: EdgeOneCredentials): EdgeOneGateway {
-    return new EdgeOneGateway({
-      secretId: credentials.secretId.trim(),
-      secretKey: credentials.secretKey.trim(),
-    })
+/** EdgeOne API 客户端：复用关联 DNSPod 的腾讯云密钥 */
+export class EdgeOneClient extends TencentCloudClient {
+  static forProvider(provider: Pick<DnsPodProvider, 'secret_id' | 'secret_key'>): EdgeOneClient {
+    return new EdgeOneClient(provider)
   }
 
-  constructor(credentials: EdgeOneCredentials) {
-    super(credentials, {
-      endpoint: 'teo.tencentcloudapi.com',
-      service: 'teo',
-      version: '2022-09-01',
-      errorCode: 'edgeone_request_failed',
-      errorPrefix: 'EdgeOne API error',
-    })
+  constructor(provider: Pick<DnsPodProvider, 'secret_id' | 'secret_key'>) {
+    super(
+      { secretId: provider.secret_id.trim(), secretKey: provider.secret_key.trim() },
+      {
+        endpoint: 'teo.tencentcloudapi.com',
+        service: 'teo',
+        version: '2022-09-01',
+        errorCode: 'edgeone_request_failed',
+        errorPrefix: 'EdgeOne API error',
+      }
+    )
   }
 }

@@ -1,6 +1,7 @@
 import { Type } from 'typebox'
 import {
   bool,
+  identifier,
   objectSchema,
   optionalText,
   paramsSchema,
@@ -10,7 +11,6 @@ import {
 
 const uint = Type.Integer({ minimum: 0 })
 const recordFields = {
-  id: Type.Optional(optionalText()),
   name: Type.Optional(optionalText()),
   type: Type.Optional(optionalText()),
   value: Type.Optional(optionalText(65535)),
@@ -28,11 +28,11 @@ const createRecord = Type.Object(
   { additionalProperties: false }
 )
 const selectedRecord = Type.Object(
-  { id: text(), name: Type.Optional(optionalText()), type: Type.Optional(optionalText()) },
+  { id: identifier(), name: Type.Optional(optionalText()), type: Type.Optional(optionalText()) },
   { additionalProperties: false }
 )
 const updateRecord = Type.Object(
-  { ...recordFields, id: text(), name: text(), type: text(), value: text(65535) },
+  { ...recordFields, id: identifier(), name: text(), type: text(), value: text(65535) },
   { additionalProperties: false }
 )
 const patch = objectSchema({
@@ -52,13 +52,22 @@ export const dnsZoneParamsSchema = requestSchema({ params: zoneParams })
 export const dnsJobParamsSchema = requestSchema({ params: paramsSchema('providerId', 'jobId') })
 export const dnsBatchCreateSchema = requestSchema({
   params: zoneParams,
-  body: Type.Object({ records: Type.Array(createRecord, { minItems: 1 }) }, { additionalProperties: false }),
+  body: Type.Object(
+    { records: Type.Array(createRecord, { minItems: 1, maxItems: 1000 }) },
+    { additionalProperties: false }
+  ),
 })
 export const dnsBatchDeleteSchema = requestSchema({
   params: zoneParams,
-  body: Type.Object({ records: Type.Array(selectedRecord, { minItems: 1 }) }, { additionalProperties: false }),
+  body: Type.Object(
+    { records: Type.Array(selectedRecord, { minItems: 1, maxItems: 1000 }) },
+    { additionalProperties: false }
+  ),
 })
 export const dnsBatchUpdateSchema = requestSchema({
   params: zoneParams,
-  body: Type.Object({ records: Type.Array(updateRecord, { minItems: 1 }), patch }, { additionalProperties: false }),
+  body: Type.Object(
+    { records: Type.Array(updateRecord, { minItems: 1, maxItems: 1000 }), patch },
+    { additionalProperties: false }
+  ),
 })

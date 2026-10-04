@@ -1,4 +1,4 @@
-export interface EdgeOneOrigin {
+interface EdgeOneOrigin {
   type?: string
   value?: string
   host_header?: string
@@ -13,7 +13,7 @@ interface EdgeOneCertificateItem {
   [key: string]: unknown
 }
 
-export interface EdgeOneCertificate {
+interface EdgeOneCertificate {
   mode?: string
   items?: EdgeOneCertificateItem[]
   list?: EdgeOneCertificateItem[]

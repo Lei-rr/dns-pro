@@ -315,7 +315,7 @@ for (const file of sourceFiles) {
     report('ARCH010', file, 1, 'EventBus platform layer and event envelopes are forbidden')
   if (
     /new JsonStore\s*(?:<|\()/.test(code) &&
-    !['server/src/bootstrap/create-platform.ts', 'server/src/bootstrap/create-modules.ts'].includes(file)
+    !['server/src/bootstrap/create-context.ts', 'server/src/bootstrap/create-modules.ts'].includes(file)
   )
     report('ARCH011', file, 1, 'new JsonStore is only allowed in composition root')
   if (
@@ -324,8 +324,13 @@ for (const file of sourceFiles) {
     !file.endsWith('.cache.ts')
   )
     report('ARCH012', file, 1, 'cache invalidation is only allowed in provider-cache and domain cache helpers')
-  if (/\b(?:CacheTtl|ttlMs|cacheMaxEntries|cacheSweepIntervalMs|globalCache|CacheManager|cacheManager)\b/.test(code))
-    report('ARCH012', file, 1, 'cache TTL, capacity, sweeper, and forwarding manager layers are forbidden')
+  if (/\b(?:globalCache|CacheManager|cacheManager|CacheSweeper|cacheSweep)\b|setInterval\s*\(/.test(code))
+    report(
+      'ARCH012',
+      file,
+      1,
+      'cache forwarding layers and sweeper timers are forbidden (expiry/eviction is lazy, see AGENTS.md)'
+    )
   if (finalMode && /rowOperationTokens|\bclaimRow\s*\(|\breleaseRow\s*\(/.test(code))
     report('ARCH029', file, 1, 'row mutation ownership must use shared useRowBusy')
   if (

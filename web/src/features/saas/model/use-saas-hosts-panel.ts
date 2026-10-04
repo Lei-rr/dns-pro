@@ -13,7 +13,7 @@ import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
-import { dnsSideEffectFromData } from '@/shared/lib/dns-side-effects'
+import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
 import { createScopeGeneration, type ScopeOwner } from '@/shared/lib/scope-generation'
 import type { SaasScope } from './use-saas-host-jobs'
 
@@ -108,6 +108,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     },
   })
   const { page, total, pagedItems: pagedHostnames, resetPage } = useLocalPagination(filtered, pageSize)
+  /** 服务商下的主机名总数（不受搜索过滤影响） */
+  const hostTotal = computed(() => hostnames.value.length)
   const selection = useRowSelection(pagedHostnames, (row) => String(row.hostname || ''))
   const selectedCount = computed(() => selection.selected.value.length)
   const {
@@ -235,10 +237,11 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       const identity = detailIdentity(record)
       detailRefreshing.value = true
       try {
-        const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname, { refresh: true })
+        // reconcile：刷新远端状态，并在激活后清理所有权验证 TXT
+        const response = await saasApi.reconcileHostname(props.providerId, decodedZone.value, record.hostname)
         if (!rowOwner.active() || !isCurrentDetail(detailOwner, identity)) return
         if (response.data) patchHostnameRow(response.data)
-        toast.success('已刷新')
+        toast.success('已刷新状态')
       } catch (error) {
         if (rowOwner.active() && isCurrentDetail(detailOwner, identity)) toast.error(errorMessage(error))
       } finally {
@@ -479,6 +482,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     onRefresh,
     page,
     total,
+    hostTotal,
     pagedHostnames,
     selection,
     preferredDomainOf,

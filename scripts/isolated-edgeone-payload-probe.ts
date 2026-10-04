@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import {
-  buildEdgeOneOriginInfo,
+  buildAccelerationDomainRequest,
   normalizeAccelerationDomainPayload,
 } from '../server/src/modules/edge-one/edge-one-domain-payload.js'
 
@@ -20,11 +20,18 @@ assert.deepEqual(normalized, {
   https_origin_port: 443,
   ipv6_status: 'follow',
 })
-assert.deepEqual(buildEdgeOneOriginInfo(normalized), {
-  OriginType: 'IP_DOMAIN',
-  Origin: '192.0.2.1',
-  HostHeader: 'origin.example.com',
+assert.deepEqual(buildAccelerationDomainRequest('zone-1', normalized), {
+  ZoneId: 'zone-1',
+  DomainName: 'www.example.com',
+  OriginInfo: { OriginType: 'IP_DOMAIN', Origin: '192.0.2.1', HostHeader: 'origin.example.com' },
+  OriginProtocol: 'FOLLOW',
+  IPv6Status: 'follow',
+  HttpOriginPort: 80,
+  HttpsOriginPort: 443,
 })
+const httpsOnly = buildAccelerationDomainRequest('zone-1', { ...normalized, origin_protocol: 'HTTPS' })
+assert.equal(httpsOnly.HttpOriginPort, undefined)
+assert.equal(httpsOnly.HttpsOriginPort, 443)
 assert.throws(
   () => normalizeAccelerationDomainPayload({}),
   (error: any) => error?.code === 'validation_failed'

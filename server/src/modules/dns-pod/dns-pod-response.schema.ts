@@ -68,6 +68,20 @@ export const dnspodRecordListResponseSchema = {
     }
   },
 }
+export const dnspodRecordLineListResponseSchema = {
+  parse: (v: unknown): Record<string, any> => {
+    const r = requireRecord(v, 'dnspod_invalid_response', 'DNSPod')
+    if (!Array.isArray(r.LineList)) {
+      throw new ApiError('dnspod_invalid_response', 'DNSPod invalid record line list response', 502)
+    }
+    return {
+      ...r,
+      LineList: asRecordArray(r.LineList),
+      LineGroupList: asRecordArray(r.LineGroupList),
+      RequestId: r.RequestId,
+    }
+  },
+}
 export const dnspodRecordMutationResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
     const r = dnspodMutationResponseSchema.parse(v)

@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../shared/http/api-response.js'
+import { trimmedParam } from '../../shared/http/route-params.js'
 import type { RequestOf } from '../../shared/http/request-schema.js'
 import {
   edgeoneBatchDeleteSchema,
@@ -10,10 +11,6 @@ import {
   edgeoneJobParamsSchema,
   edgeoneZoneParamsSchema,
 } from '../../modules/edge-one/edge-one.schema.js'
-
-function domainNameParam(request: { params: { domainName: string } }): string {
-  return request.params.domainName.trim()
-}
 
 export async function createEdgeOneDomainHandler(
   request: FastifyRequest<RequestOf<typeof edgeoneDomainStoreSchema>>,
@@ -35,7 +32,7 @@ export async function deleteEdgeOneDomainHandler(
   const result = await request.server.ctx.workflows.edgeOneDnsSync.deleteAccelerationDomain(
     request.params.providerId,
     request.params.zoneId,
-    domainNameParam(request),
+    trimmedParam(request, 'domainName'),
     request.query.auto_cleanup === undefined || request.query.auto_cleanup === 'true'
   )
   return reply.send(success(result))
@@ -48,7 +45,7 @@ export async function repairEdgeOneDomainDnsHandler(
   const result = await request.server.ctx.workflows.edgeOneDnsSync.repairDomainDns(
     request.params.providerId,
     request.params.zoneId,
-    domainNameParam(request)
+    trimmedParam(request, 'domainName')
   )
   return reply.send(success(result))
 }

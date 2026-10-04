@@ -14,21 +14,18 @@ import {
   DNS_BATCH_CREATE_JOB,
   DNS_BATCH_DELETE_JOB,
   DNS_BATCH_UPDATE_JOB,
-} from '../server/src/workflows/dns-batch/dns-batch-job.types.js'
+} from '../server/src/platform/jobs/job-types.js'
 import {
-  PREFERRED_APPLY_JOB_TYPE,
+  PREFERRED_APPLY_JOB,
   SAAS_BATCH_DELETE_JOB,
   SAAS_BATCH_UPDATE_JOB,
-} from '../server/src/workflows/saas-dns-sync/saas-dns-sync-job.types.js'
-import {
-  EDGEONE_BATCH_DELETE_JOB,
-  EDGEONE_BATCH_DISABLE_JOB,
-} from '../server/src/workflows/edge-one-dns-sync/edge-one-dns-sync-job.types.js'
-import { DnsPodGateway } from '../server/src/modules/dns-pod/dns-pod.client.js'
+} from '../server/src/platform/jobs/job-types.js'
+import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/src/platform/jobs/job-types.js'
+import { DnsPodClient } from '../server/src/modules/dns-pod/dns-pod.client.js'
 import { DnsPodRecordService } from '../server/src/modules/dns-pod/dns-pod-record.service.js'
-import { DnsPodDnsBatchAdapter } from '../server/src/workflows/dns-batch/dns-pod-dns-batch.adapter.js'
-import { EdgeOneGateway } from '../server/src/modules/edge-one/edge-one.client.js'
-import { CloudflareGateway } from '../server/src/modules/cloudflare/cloudflare.client.js'
+import { dnsPodBatchPort } from '../server/src/workflows/dns-batch/dns-batch.adapters.js'
+import { EdgeOneClient } from '../server/src/modules/edge-one/edge-one.client.js'
+import { CloudflareClient } from '../server/src/modules/cloudflare/cloudflare.client.js'
 import { ApiError } from '../server/src/shared/http/api-error.js'
 
 const requestSchemaTypeContract: RequestSchemaTypeContract = true
@@ -273,8 +270,12 @@ try {
     'SaaS preference sync provider was not protected by delete guard'
   )
 
-  const originalDnsPodCall = DnsPodGateway.prototype.call
-  DnsPodGateway.prototype.call = async function (action: string): Promise<unknown> {
+  const originalDnsPodCall = DnsPodClient.prototype.call
+  const deletedRecordIds: number[] = []
+  DnsPodClient.prototype.call = async function (
+    action: string,
+    payload: Record<string, unknown> = {}
+  ): Promise<unknown> {
     assert.equal(action, 'DescribeRecordList')
     return {
       RecordCountInfo: { TotalCount: 1 },
@@ -294,8 +295,8 @@ try {
     }
   }
   try {
-    const adapter = new DnsPodDnsBatchAdapter(new DnsPodRecordService(app.ctx.modules.providers.repository))
-    const exact = await adapter.findCreate('dns-target', 'example.com', {
+    const adapter = dnsPodBatchPort(new DnsPodRecordService(app.ctx.modules.providers.repository))
+    const exact = await adapter.findCreated('dns-target', 'example.com', {
       subdomain: 'www',
       record_type: 'A',
       value: '192.0.2.1',
@@ -305,7 +306,41 @@ try {
     })
     assert.notEqual(exact, null, 'DNSPod adapter production chain did not prefer stable line_id')
   } finally {
-    DnsPodGateway.prototype.call = originalDnsPodCall
+    DnsPodClient.prototype.call = originalDnsPodCall
+  }
+
+  // 预清理冲突记录：默认 NS（以及任何 NS/SOA）绝不能删除，其余冲突类型才清理
+  const precleanDeleted: number[] = []
+  DnsPodClient.prototype.call = async function (action: string, payload: Record<string, unknown> = {}) {
+    if (action === 'DeleteRecord') {
+      precleanDeleted.push(Number(payload.RecordId))
+      return { RequestId: 'deleted' }
+    }
+    assert.equal(action, 'DescribeRecordList')
+    return {
+      RecordCountInfo: { TotalCount: 3 },
+      RecordList: [
+        { RecordId: 10, Name: '@', Type: 'NS', Value: 'ns1.dnspod.net', Line: '默认', DefaultNS: true },
+        { RecordId: 12, Name: '@', Type: 'TXT', Value: 'keep-me', Line: '默认' },
+        { RecordId: 11, Name: '@', Type: 'A', Value: '192.0.2.9', Line: '默认' },
+      ],
+      RequestId: 'preclean',
+    }
+  }
+  try {
+    const cleaned = await app.ctx.modules.dnsPod.recordSync.precleanConflicts(
+      'dns-target',
+      'example.com',
+      'example.com'
+    )
+    assert.deepEqual(
+      cleaned.map((item) => item.record_id),
+      ['11'],
+      `预清理只应删除冲突的 A 记录：${JSON.stringify(cleaned)}`
+    )
+    assert.deepEqual(precleanDeleted, [11], '预清理不得删除默认 NS 记录')
+  } finally {
+    DnsPodClient.prototype.call = originalDnsPodCall
   }
 
   await app.ctx.workflows.providerManagement.create({
@@ -327,15 +362,15 @@ try {
   assert.equal(updatedEdgeOwner.configured, true, 'linked provider update response used an incomplete provider set')
   assert.deepEqual(updatedEdgeOwner, listedEdgeOwner, 'provider update response disagrees with immediate list response')
 
-  const originalEdgeOneCall = EdgeOneGateway.prototype.call
-  const originalEdgeDnsPodCall = DnsPodGateway.prototype.call
+  const originalEdgeOneCall = EdgeOneClient.prototype.call
+  const originalEdgeDnsPodCall = DnsPodClient.prototype.call
   let edgeZoneLoads = 0
   let edgeDomainLoads = 0
   let edgeCreateCalls = 0
   let primaryDeleteCalls = 0
   let failDeleteCnameLookup = false
   let dnsRecordLists = 0
-  EdgeOneGateway.prototype.call = async function (action: string, payload: Record<string, unknown>): Promise<unknown> {
+  EdgeOneClient.prototype.call = async function (action: string, payload: Record<string, unknown>): Promise<unknown> {
     if (action === 'CreateAccelerationDomain') {
       edgeCreateCalls++
       return { RequestId: 'created-but-cname-pending' }
@@ -366,7 +401,11 @@ try {
     }
     assert.fail(`unexpected EdgeOne action: ${action}`)
   }
-  DnsPodGateway.prototype.call = async function (action: string): Promise<unknown> {
+  const edgeDeletedRecordIds: number[] = []
+  DnsPodClient.prototype.call = async function (
+    action: string,
+    payload: Record<string, unknown> = {}
+  ): Promise<unknown> {
     if (action === 'DescribeDomainList') {
       return {
         DomainList: [{ DomainId: 1, Name: 'example.com' }],
@@ -377,21 +416,32 @@ try {
     if (action === 'DescribeRecordList') {
       dnsRecordLists++
       if (dnsRecordLists === 1) throw new ApiError('dnspod_request_failed', 'temporary DNS cleanup failure', 502)
+      // 同主机名下混入一条人工记录：清理不得删除它
+      const manual =
+        dnsRecordLists === 2
+          ? [{ RecordId: 900, Name: 'www', Type: 'CNAME', Value: 'manual.example.net', Line: '默认', Remark: '' }]
+          : []
       return {
         RecordList: [
+          ...manual,
           {
             RecordId: dnsRecordLists,
             Name: dnsRecordLists === 2 ? 'www' : 'gone',
             Type: 'CNAME',
             Value: 'target.eo.dnse5.com',
             Line: '默认',
+            // 本流程写入的记录带固定备注：清理只按备注匹配，避免误删人工记录
+            Remark: `EdgeOne 加速丨${dnsRecordLists === 2 ? 'www.example.com' : 'gone.example.com'}`,
           },
         ],
         RecordCountInfo: { TotalCount: 1 },
         RequestId: 'dns-records',
       }
     }
-    if (action === 'DeleteRecord') return { RequestId: 'dns-deleted' }
+    if (action === 'DeleteRecord') {
+      edgeDeletedRecordIds.push(Number(payload.RecordId))
+      return { RequestId: 'dns-deleted' }
+    }
     assert.fail(`unexpected DNSPod action: ${action}`)
   }
   try {
@@ -471,9 +521,10 @@ try {
     assert.equal(missingDeleteState?.items[0]?.status, 'success')
     assert.equal(missingDeleteState?.items[0]?.primary_deleted, true)
     assert.equal(missingDeleteState?.items[0]?.dns_cleanup_status, 'completed')
+    assert.equal(edgeDeletedRecordIds.includes(900), false, '清理误删了人工添加的同名记录')
   } finally {
-    EdgeOneGateway.prototype.call = originalEdgeOneCall
-    DnsPodGateway.prototype.call = originalEdgeDnsPodCall
+    EdgeOneClient.prototype.call = originalEdgeOneCall
+    DnsPodClient.prototype.call = originalEdgeDnsPodCall
   }
 
   await app.ctx.workflows.providerManagement.create({
@@ -491,14 +542,14 @@ try {
     cloudflare_provider: 'cf-owner',
   })
 
-  const originalCloudflareGet = CloudflareGateway.prototype.get
-  const originalCloudflarePost = CloudflareGateway.prototype.post
+  const originalCloudflareGet = CloudflareClient.prototype.get
+  const originalCloudflarePost = CloudflareClient.prototype.post
   let customHostnameCreates = 0
   const saasMutationOrder: string[] = []
   let tunnelCreates = 0
   let tokenFetchFails = true
   const tunnelReads = { list: 0, show: 0, config: 0 }
-  CloudflareGateway.prototype.get = async function (requestPath: string): Promise<Record<string, unknown>> {
+  CloudflareClient.prototype.get = async function (requestPath: string): Promise<Record<string, unknown>> {
     if (requestPath === 'zones') {
       return {
         result: [{ id: 'zone-1', name: 'example.com', status: 'active' }],
@@ -523,7 +574,7 @@ try {
     }
     throw new Error(`Unexpected fake Cloudflare GET ${requestPath}`)
   }
-  CloudflareGateway.prototype.post = async function (requestPath: string): Promise<Record<string, unknown>> {
+  CloudflareClient.prototype.post = async function (requestPath: string): Promise<Record<string, unknown>> {
     if (requestPath === 'zones/zone-1/custom_hostnames') {
       saasMutationOrder.push('remote-create')
       customHostnameCreates++
@@ -629,13 +680,13 @@ try {
 
     const stagedGateway = (
       app.ctx.modules.saas.hostnames as unknown as {
-        cloudflareHostnames: {
+        customHostnames: {
           idByHostname: (...args: unknown[]) => Promise<string>
           show: (...args: unknown[]) => Promise<Record<string, unknown>>
           update: (...args: unknown[]) => Promise<Record<string, unknown>>
         }
       }
-    ).cloudflareHostnames
+    ).customHostnames
     const stagedOriginalId = stagedGateway.idByHostname.bind(stagedGateway)
     const stagedOriginalShow = stagedGateway.show.bind(stagedGateway)
     const stagedOriginalUpdate = stagedGateway.update.bind(stagedGateway)
@@ -672,16 +723,16 @@ try {
     const stagedSync = (
       app.ctx.workflows.saasDnsSync as unknown as {
         sync: {
-          collectSaaSRecords: (...args: unknown[]) => Promise<{
+          collect: (...args: unknown[]) => Promise<{
             hostname_fqdn: string
             records: Record<string, unknown>[]
           }>
-          resyncSaaSHostname: (...args: unknown[]) => Promise<Record<string, unknown>>
+          resync: (...args: unknown[]) => Promise<Record<string, unknown>>
         }
       }
     ).sync
-    const originalCollectSaaSRecords = stagedSync.collectSaaSRecords.bind(stagedSync)
-    const originalResyncSaaSHostname = stagedSync.resyncSaaSHostname.bind(stagedSync)
+    const originalCollect = stagedSync.collect.bind(stagedSync)
+    const originalResync = stagedSync.resync.bind(stagedSync)
     const stagedBeforeRecords = [
       {
         type: 'CNAME',
@@ -695,11 +746,11 @@ try {
     ]
     let stagedCollectCalls = 0
     let stagedResyncBefore: unknown = null
-    stagedSync.collectSaaSRecords = async () => {
+    stagedSync.collect = async () => {
       stagedCollectCalls++
       return { hostname_fqdn: 'batch.example.com', records: stagedBeforeRecords }
     }
-    stagedSync.resyncSaaSHostname = async (_provider, _zone, _hostname, beforeRecords) => {
+    stagedSync.resync = async (_provider, _zone, _hostname, beforeRecords) => {
       stagedResyncBefore = beforeRecords
       return { status: 'completed', records: [] }
     }
@@ -728,17 +779,17 @@ try {
     stagedGateway.show = stagedOriginalShow
     stagedGateway.update = stagedOriginalUpdate
     app.ctx.modules.saas.preferences.markOwnershipTxtCleaned = originalMarkOwnership
-    stagedSync.collectSaaSRecords = originalCollectSaaSRecords
-    stagedSync.resyncSaaSHostname = originalResyncSaaSHostname
+    stagedSync.collect = originalCollect
+    stagedSync.resync = originalResync
 
     const hostnameGateway = (
       app.ctx.modules.saas.hostnames as unknown as {
-        cloudflareHostnames: {
+        customHostnames: {
           idByHostname: (...args: unknown[]) => Promise<string>
           delete: (...args: unknown[]) => Promise<Record<string, unknown>>
         }
       }
-    ).cloudflareHostnames
+    ).customHostnames
     const originalIdByHostname = hostnameGateway.idByHostname.bind(hostnameGateway)
     const originalHostnameDelete = hostnameGateway.delete.bind(hostnameGateway)
     for (const [hostnameId, hostname] of [
@@ -839,8 +890,8 @@ try {
     }
     assert.deepEqual(tunnelReads, { list: 2, show: 2, config: 2 }, 'linked Cloudflare update left tunnel caches stale')
   } finally {
-    CloudflareGateway.prototype.get = originalCloudflareGet
-    CloudflareGateway.prototype.post = originalCloudflarePost
+    CloudflareClient.prototype.get = originalCloudflareGet
+    CloudflareClient.prototype.post = originalCloudflarePost
   }
 
   const assertNoBatchInternals = (value: unknown, location = 'response'): void => {
@@ -850,7 +901,7 @@ try {
     }
     if (!value || typeof value !== 'object') return
     const row = value as Record<string, unknown>
-    for (const field of ['operation_id', 'attempt', 'item_key', 'dns_before_records']) {
+    for (const field of ['attempt', 'item_key', 'dns_before_records', 'cleanup_recipe']) {
       assert.equal(field in row, false, `${location} leaked ${field}`)
     }
     for (const [key, child] of Object.entries(row)) assertNoBatchInternals(child, `${location}.${key}`)
@@ -860,7 +911,6 @@ try {
     {
       hostname: 'www.example.com',
       status: 'failed',
-      operation_id: 'internal-operation',
       attempt: 2,
       item_key: 'internal-item',
     },
@@ -892,7 +942,7 @@ try {
       url: '/api/saas/batch',
     },
     {
-      type: PREFERRED_APPLY_JOB_TYPE,
+      type: PREFERRED_APPLY_JOB,
       payload: { provider_id: 'missing', zone_name: 'example.com', preferred_domain: 'target.example.com' },
       url: '/api/saas/preferred-apply',
     },

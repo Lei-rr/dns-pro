@@ -1,308 +1,29 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
-import { ApiError } from '../../shared/http/api-error.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
 import type { SaaSProvider } from '../providers/provider.types.js'
+import { ApiError } from '../../shared/http/api-error.js'
+import { normalizeFqdn } from '../../shared/lib/values.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
-import { guessZoneFromFqdn, zoneOwnsHostname } from './saas-hostname.js'
-import { SaaSPreferenceService, type HostnamePreference } from './saas-preference.service.js'
-import { normalizeFqdn } from '../../shared/lib/fqdn.js'
+import { guessZoneFromFqdn, zoneOwnsHostname } from './saas-hostname-rules.js'
+import type { HostnamePreference, SaaSPreferenceService, SyncPreference } from './saas-preference.service.js'
 
-type ExplicitSyncConfig = {
-  hostname: string
-  sync_target: string
-  sync_provider_id: string
-  sync_zone: string
-  auto_preferred: boolean
-}
+export type SyncTarget = 'dnspod' | 'cloudflare_dns' | ''
 
-type EffectiveSyncConfig = ExplicitSyncConfig & {
-  explicit: boolean
-}
+export type ExplicitSyncConfig = SyncPreference & { hostname: string }
+type EffectiveSyncConfig = ExplicitSyncConfig & { explicit: boolean }
 
-/**
- * SaaS DNS sync preference resolution / repair.
- * Kept separate from CF custom-hostname CRUD orchestration.
- */
+const text = (value: unknown) => String(value ?? '').trim()
+const zoneText = (value: unknown) => text(value).toLowerCase()
+
+/** SaaS DNS 同步配置解析与脏数据修复（与主机名 CRUD 解耦） */
 export class SaaSSyncConfigService {
   constructor(
     private readonly providers: ProviderRepository,
     private readonly preferences: SaaSPreferenceService
   ) {}
 
-  async preferenceForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<HostnamePreference | null> {
-    const fqdn = normalizeFqdn(hostnameFqdn)
-    if (fqdn === '') return null
-    const map = await this.preferences.listByProvider(cloudflareProviderId)
-    for (const pref of Object.values(map)) {
-      if (
-        String(pref.hostname ?? '')
-          .toLowerCase()
-          .replace(/\.$/, '')
-          .trim() === fqdn
-      ) {
-        return pref
-      }
-    }
-    return null
-  }
-
-  async clearPreferencesForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<number> {
-    const fqdn = normalizeFqdn(hostnameFqdn)
-    if (fqdn === '') return 0
-    const map = await this.preferences.listByProvider(cloudflareProviderId)
-    let cleared = 0
-    for (const [hostnameId, pref] of Object.entries(map)) {
-      if (
-        String(pref.hostname ?? '')
-          .toLowerCase()
-          .replace(/\.$/, '')
-          .trim() !== fqdn
-      )
-        continue
-      await this.preferences.clear(cloudflareProviderId, hostnameId)
-      cleared++
-    }
-    return cleared
-  }
-
-  presentExplicit(preference: HostnamePreference | Record<string, unknown> | null | undefined): ExplicitSyncConfig {
-    const pref = preference ?? {}
-    return {
-      hostname: String((pref as { hostname?: unknown }).hostname ?? ''),
-      sync_target: String((pref as { sync_target?: unknown }).sync_target ?? ''),
-      sync_provider_id: String((pref as { sync_provider_id?: unknown }).sync_provider_id ?? ''),
-      sync_zone: String((pref as { sync_zone?: unknown }).sync_zone ?? ''),
-      auto_preferred: Boolean((pref as { auto_preferred?: unknown }).auto_preferred ?? false),
-    }
-  }
-
-  async defaultSyncTarget(saasProviderId: string): Promise<string> {
-    const provider = await this.providers.requireType<SaaSProvider>(
-      saasProviderId,
-      'saas',
-      'SaaS provider not found',
-      'saas_provider_not_found'
-    )
-    if (provider.dnspod_provider !== '') return 'dnspod'
-    if (provider.cloudflare_dns_provider !== '' || provider.cloudflare_provider !== '') return 'cloudflare_dns'
-    return ''
-  }
-
-  async effectiveSyncProviderId(saasProviderId: string, target: string, explicitProviderId: string): Promise<string> {
-    const explicit = explicitProviderId.trim()
-    if (explicit !== '') return explicit
-
-    const provider = await this.providers.requireType<SaaSProvider>(
-      saasProviderId,
-      'saas',
-      'SaaS provider not found',
-      'saas_provider_not_found'
-    )
-
-    if (target === 'dnspod') return provider.dnspod_provider ?? ''
-    if (target === 'cloudflare_dns') {
-      const cloudflareDns = provider.cloudflare_dns_provider ?? ''
-      return cloudflareDns !== '' ? cloudflareDns : provider.cloudflare_provider
-    }
-    return ''
-  }
-
-  async effectiveSyncConfig(
-    saasProviderId: string,
-    hostnameFqdn: string,
-    explicit: ExplicitSyncConfig
-  ): Promise<EffectiveSyncConfig> {
-    const fqdn = normalizeFqdn(hostnameFqdn)
-    let target = String(explicit.sync_target ?? '').trim()
-    let provider = String(explicit.sync_provider_id ?? '').trim()
-    let syncZone = String(explicit.sync_zone ?? '')
-      .trim()
-      .toLowerCase()
-
-    // Repair polluted configs: e.g. app.example.com linked to cloudflare_dns + wrong zone.
-    if (target === 'cloudflare_dns' && syncZone !== '' && !zoneOwnsHostname(syncZone, fqdn)) {
-      const defaultTarget = await this.defaultSyncTarget(saasProviderId)
-      if (defaultTarget === 'dnspod') {
-        target = 'dnspod'
-        provider = await this.effectiveSyncProviderId(saasProviderId, 'dnspod', '')
-        syncZone = guessZoneFromFqdn(fqdn)
-      } else {
-        syncZone = ''
-      }
-    }
-
-    if (target === '') {
-      target = await this.defaultSyncTarget(saasProviderId)
-    }
-    if (provider === '') {
-      provider = await this.effectiveSyncProviderId(saasProviderId, target, '')
-    }
-    if (syncZone === '' && target === 'dnspod') {
-      syncZone = guessZoneFromFqdn(fqdn)
-    }
-
-    return {
-      hostname: explicit.hostname ?? '',
-      sync_target: target,
-      sync_provider_id: provider,
-      sync_zone: syncZone,
-      auto_preferred: explicit.auto_preferred ?? false,
-      explicit:
-        String(explicit.sync_target ?? '') !== '' ||
-        String(explicit.sync_provider_id ?? '') !== '' ||
-        String(explicit.sync_zone ?? '') !== '',
-    }
-  }
-
-  /**
-   * Normalize/repair sync preference for updates.
-   * Preferred-domain only edits must keep valid linkage and never accept a CF zone that cannot host the FQDN.
-   */
-  async normalizeSyncPreference(
-    saasProviderId: string,
-    hostnameFqdn: string,
-    existing: HostnamePreference,
-    data: Record<string, unknown>
-  ): Promise<{ sync_target: string; sync_provider_id: string; sync_zone: string; auto_preferred: boolean }> {
-    const fqdn = normalizeFqdn(hostnameFqdn)
-    const requestedTarget = 'sync_target' in data ? String(data.sync_target ?? '').trim() : ''
-    const requestedProvider = 'sync_provider_id' in data ? String(data.sync_provider_id ?? '').trim() : ''
-    const requestedZone =
-      'sync_zone' in data
-        ? String(data.sync_zone ?? '')
-            .trim()
-            .toLowerCase()
-        : ''
-
-    let target = requestedTarget || String(existing.sync_target ?? '').trim()
-    let provider = requestedProvider || String(existing.sync_provider_id ?? '').trim()
-    let zone =
-      requestedZone ||
-      String(existing.sync_zone ?? '')
-        .trim()
-        .toLowerCase()
-    const autoPreferred =
-      'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing.auto_preferred ?? false)
-
-    // Stored CF config may be polluted: fall back first, clear when the fallback is also invalid.
-    if (target === 'cloudflare_dns' && zone !== '' && !zoneOwnsHostname(zone, fqdn)) {
-      target = String(existing.sync_target ?? '').trim()
-      provider = String(existing.sync_provider_id ?? '').trim()
-      zone = String(existing.sync_zone ?? '')
-        .trim()
-        .toLowerCase()
-      if (target === 'cloudflare_dns' && zone !== '' && !zoneOwnsHostname(zone, fqdn)) {
-        target = ''
-        provider = ''
-        zone = ''
-      }
-    }
-
-    if (target === '') {
-      target = await this.defaultSyncTarget(saasProviderId)
-    }
-    if (provider === '') {
-      provider = await this.effectiveSyncProviderId(saasProviderId, target, '')
-    }
-    if (zone === '') {
-      zone = guessZoneFromFqdn(fqdn)
-    }
-
-    // Final safety: Cloudflare DNS only when zone can own the hostname.
-    if (target === 'cloudflare_dns' && !zoneOwnsHostname(zone, fqdn)) {
-      const fallback = await this.defaultSyncTarget(saasProviderId)
-      if (fallback === 'dnspod') {
-        target = 'dnspod'
-        provider = await this.effectiveSyncProviderId(saasProviderId, 'dnspod', '')
-        zone = guessZoneFromFqdn(fqdn)
-      }
-    }
-
-    return {
-      sync_target: target,
-      sync_provider_id: provider,
-      sync_zone: zone,
-      auto_preferred: autoPreferred,
-    }
-  }
-
-  mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): CloudflareCustomHostname {
-    const metadata: Record<string, unknown> = {
-      ...((hostname.custom_metadata && typeof hostname.custom_metadata === 'object'
-        ? hostname.custom_metadata
-        : {}) as Record<string, unknown>),
-    }
-
-    const fromPreference = String(preference?.preferred_domain ?? '').trim()
-    const fromMetadata = String(metadata.preferred_domain ?? '').trim()
-    const fromTop = String(hostname.preferred_domain ?? '').trim()
-    const preferred = fromPreference || fromMetadata || fromTop
-
-    const syncTarget = String(preference?.sync_target ?? hostname.sync_target ?? '').trim()
-    const syncProviderId = String(preference?.sync_provider_id ?? hostname.sync_provider_id ?? '').trim()
-    const syncZone = String(preference?.sync_zone ?? hostname.sync_zone ?? '').trim()
-    const autoPreferred = preference != null ? Boolean(preference.auto_preferred) : Boolean(hostname.auto_preferred)
-
-    if (preferred !== '') {
-      metadata.preferred_domain = preferred
-    }
-
-    return {
-      ...hostname,
-      custom_metadata: Object.keys(metadata).length > 0 ? metadata : null,
-      preferred_domain: preferred,
-      sync_target: syncTarget,
-      sync_provider_id: syncProviderId,
-      sync_zone: syncZone,
-      auto_preferred: autoPreferred,
-    }
-  }
-
-  /**
-   * Build Cloudflare PATCH payload only when CF-managed fields actually change.
-   * Preferred domain / auto_preferred / sync_* are local preference fields.
-   */
-  buildCloudflareUpdatePayload(
-    current: CloudflareCustomHostname,
-    data: Record<string, unknown>
-  ): Record<string, unknown> {
-    const payload: Record<string, unknown> = {}
-
-    if (Object.prototype.hasOwnProperty.call(data, 'custom_origin_server')) {
-      const next = String(data.custom_origin_server ?? '').trim()
-      const prev = String(current.custom_origin_server ?? '').trim()
-      if (next !== prev) {
-        payload.custom_origin_server = next
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(data, 'method')) {
-      const next = String(data.method ?? '').trim()
-      const prev = String(current.ssl?.method ?? '').trim()
-      if (next !== '' && next !== prev) {
-        payload.method = next
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(data, 'min_tls_version')) {
-      const next = String(data.min_tls_version ?? '').trim()
-      const prev = String((current.ssl?.settings as Record<string, unknown> | undefined)?.min_tls_version ?? '').trim()
-      if (next !== '' && next !== prev) {
-        payload.min_tls_version = next
-      }
-    }
-
-    return payload
-  }
-
-  /** Resolve linked Cloudflare provider id for a SaaS provider. */
+  /** SaaS 服务商 → 关联 Cloudflare 服务商 ID */
   async cloudflareProviderId(saasProviderId: string): Promise<string> {
-    const provider = await this.providers.requireType<SaaSProvider>(
-      saasProviderId,
-      'saas',
-      'SaaS provider not found',
-      'saas_provider_not_found'
-    )
-    const cfId = provider.cloudflare_provider.trim()
+    const cfId = (await this.requireSaaS(saasProviderId)).cloudflare_provider.trim()
     if (cfId === '') {
       throw new ApiError(
         'saas_cloudflare_provider_missing',
@@ -312,4 +33,176 @@ export class SaaSSyncConfigService {
     }
     return cfId
   }
+
+  async preferenceForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<HostnamePreference | null> {
+    const fqdn = normalizeFqdn(hostnameFqdn)
+    if (fqdn === '') return null
+    const map = await this.preferences.listByProvider(cloudflareProviderId)
+    return Object.values(map).find((pref) => normalizeFqdn(pref.hostname) === fqdn) ?? null
+  }
+
+  async clearPreferencesForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<number> {
+    const fqdn = normalizeFqdn(hostnameFqdn)
+    if (fqdn === '') return 0
+    const map = await this.preferences.listByProvider(cloudflareProviderId)
+    const ids = Object.keys(map).filter((id) => normalizeFqdn(map[id]?.hostname) === fqdn)
+    for (const id of ids) await this.preferences.clear(cloudflareProviderId, id)
+    return ids.length
+  }
+
+  presentExplicit(preference: Partial<HostnamePreference> | null | undefined): ExplicitSyncConfig {
+    return {
+      hostname: text(preference?.hostname),
+      sync_target: text(preference?.sync_target),
+      sync_provider_id: text(preference?.sync_provider_id),
+      sync_zone: zoneText(preference?.sync_zone),
+      auto_preferred: Boolean(preference?.auto_preferred),
+    }
+  }
+
+  /** 服务商默认同步目标：配置了 DNSPod 优先，否则 Cloudflare DNS */
+  async defaultSyncTarget(saasProviderId: string): Promise<SyncTarget> {
+    const provider = await this.requireSaaS(saasProviderId)
+    if (text(provider.dnspod_provider)) return 'dnspod'
+    if (text(provider.cloudflare_dns_provider) || text(provider.cloudflare_provider)) return 'cloudflare_dns'
+    return ''
+  }
+
+  /** 目标对应的默认同步服务商 */
+  async defaultSyncProviderId(saasProviderId: string, target: string): Promise<string> {
+    const provider = await this.requireSaaS(saasProviderId)
+    if (target === 'dnspod') return text(provider.dnspod_provider)
+    if (target === 'cloudflare_dns') return text(provider.cloudflare_dns_provider) || text(provider.cloudflare_provider)
+    return ''
+  }
+
+  /** 显式配置 + 默认值 → 生效配置；Cloudflare 目标站点不覆盖主机名时回退 */
+  async effectiveSyncConfig(
+    saasProviderId: string,
+    hostnameFqdn: string,
+    explicit: ExplicitSyncConfig
+  ): Promise<EffectiveSyncConfig> {
+    const resolved = await this.resolve(saasProviderId, hostnameFqdn, explicit, false)
+    return {
+      ...resolved,
+      hostname: explicit.hostname,
+      explicit: Boolean(explicit.sync_target || explicit.sync_provider_id || explicit.sync_zone),
+    }
+  }
+
+  /** 合并请求字段与已有偏好，得到可保存的同步配置 */
+  async normalizeSyncPreference(
+    saasProviderId: string,
+    hostnameFqdn: string,
+    existing: HostnamePreference | null,
+    data: Record<string, unknown>
+  ): Promise<SyncPreference> {
+    const fqdn = normalizeFqdn(hostnameFqdn)
+    // 显式提交空 target + 空 provider：表示关闭自动同步
+    if (
+      'sync_target' in data &&
+      String(data.sync_target ?? '').trim() === '' &&
+      String(data.sync_provider_id ?? '').trim() === ''
+    ) {
+      return {
+        sync_target: '',
+        sync_provider_id: '',
+        sync_zone: '',
+        auto_preferred: 'auto_preferred' in data ? Boolean(data.auto_preferred) : Boolean(existing?.auto_preferred),
+      }
+    }
+
+    const stored: SyncPreference = {
+      sync_target: text(existing?.sync_target),
+      sync_provider_id: text(existing?.sync_provider_id),
+      sync_zone: zoneText(existing?.sync_zone),
+      auto_preferred: Boolean(existing?.auto_preferred),
+    }
+    let candidate: SyncPreference = {
+      sync_target: text(data.sync_target) || stored.sync_target,
+      sync_provider_id: text(data.sync_provider_id) || stored.sync_provider_id,
+      sync_zone: zoneText(data.sync_zone) || stored.sync_zone,
+      auto_preferred: 'auto_preferred' in data ? Boolean(data.auto_preferred) : stored.auto_preferred,
+    }
+    // 请求组合非法时先回退到已存配置，已存配置也非法则清空
+    if (isMismatchedCloudflareZone(candidate, fqdn)) {
+      candidate = isMismatchedCloudflareZone(stored, fqdn)
+        ? { ...candidate, sync_target: '', sync_provider_id: '', sync_zone: '' }
+        : { ...stored, auto_preferred: candidate.auto_preferred }
+    }
+    return this.resolve(saasProviderId, fqdn, candidate, true)
+  }
+
+  /** 合并 Cloudflare 主机名与本地偏好；本地偏好优先 */
+  mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): CloudflareCustomHostname {
+    const metadata = { ...(hostname.custom_metadata ?? {}) }
+    const preferred =
+      text(preference?.preferred_domain) || text(metadata.preferred_domain) || text(hostname.preferred_domain)
+    if (preferred !== '') metadata.preferred_domain = preferred
+
+    return {
+      ...hostname,
+      custom_metadata: Object.keys(metadata).length > 0 ? metadata : null,
+      preferred_domain: preferred,
+      sync_target: text(preference?.sync_target ?? hostname.sync_target),
+      sync_provider_id: text(preference?.sync_provider_id ?? hostname.sync_provider_id),
+      sync_zone: text(preference?.sync_zone ?? hostname.sync_zone),
+      auto_preferred: preference ? preference.auto_preferred : Boolean(hostname.auto_preferred),
+    }
+  }
+
+  /** 仅在 Cloudflare 托管字段实际变化时生成 PATCH 内容；优选/同步字段属于本地偏好 */
+  buildCloudflareUpdatePayload(current: CloudflareCustomHostname, data: Record<string, unknown>) {
+    const payload: Record<string, unknown> = {}
+    if (Object.hasOwn(data, 'custom_origin_server')) {
+      const next = text(data.custom_origin_server)
+      if (next !== text(current.custom_origin_server)) payload.custom_origin_server = next
+    }
+    const method = text(data.method)
+    if (method !== '' && method !== text(current.ssl?.method)) payload.method = method
+    const minTls = text(data.min_tls_version)
+    if (minTls !== '' && minTls !== text(current.ssl?.settings?.min_tls_version)) payload.min_tls_version = minTls
+    return payload
+  }
+
+  /**
+   * 填充默认值并修复脏配置：Cloudflare 站点不覆盖主机名时，默认目标为 DNSPod 则改走 DNSPod，否则清空站点。
+   * inferCloudflareZone：保存配置时为 Cloudflare 推断站点；展示生效配置时只为 DNSPod 推断。
+   */
+  private async resolve(
+    saasProviderId: string,
+    fqdnRaw: string,
+    input: SyncPreference,
+    inferCloudflareZone: boolean
+  ): Promise<SyncPreference> {
+    const fqdn = normalizeFqdn(fqdnRaw)
+    let { sync_target: target, sync_provider_id: provider, sync_zone: zone } = input
+
+    if (isMismatchedCloudflareZone(input, fqdn)) {
+      if ((await this.defaultSyncTarget(saasProviderId)) === 'dnspod') {
+        target = 'dnspod'
+        provider = ''
+      }
+      zone = ''
+    }
+    target ||= await this.defaultSyncTarget(saasProviderId)
+    provider ||= await this.defaultSyncProviderId(saasProviderId, target)
+    if (zone === '' && (target === 'dnspod' || inferCloudflareZone)) zone = guessZoneFromFqdn(fqdn)
+
+    return { sync_target: target, sync_provider_id: provider, sync_zone: zone, auto_preferred: input.auto_preferred }
+  }
+
+  private requireSaaS(saasProviderId: string): Promise<SaaSProvider> {
+    return this.providers.requireType<SaaSProvider>(
+      saasProviderId,
+      'saas',
+      'SaaS provider not found',
+      'saas_provider_not_found'
+    )
+  }
+}
+
+/** Cloudflare DNS 目标但站点不覆盖主机名（脏配置） */
+function isMismatchedCloudflareZone(config: SyncPreference, fqdn: string): boolean {
+  return config.sync_target === 'cloudflare_dns' && config.sync_zone !== '' && !zoneOwnsHostname(config.sync_zone, fqdn)
 }

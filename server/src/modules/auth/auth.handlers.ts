@@ -1,29 +1,41 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
-import { success, noContent } from '../../shared/http/api-response.js'
+import { noContent, success } from '../../shared/http/api-response.js'
 import { noRequestSchema, type RequestOf } from '../../shared/http/request-schema.js'
-import { sessionStoreSchema } from './auth.schema.js'
+import type { passwordUpdateSchema, sessionStoreSchema } from './auth.schema.js'
 
 export async function createSessionHandler(
   request: FastifyRequest<RequestOf<typeof sessionStoreSchema>>,
   reply: FastifyReply
 ) {
   const { username, password } = request.body
-  const session = await request.server.ctx.modules.auth.session.login(request, username, password)
-  return reply.send(success(session))
+  return reply.send(success(await request.server.ctx.modules.auth.service.login(reply, username, password, request.ip)))
 }
 
 export async function getSessionHandler(
   request: FastifyRequest<RequestOf<typeof noRequestSchema>>,
   reply: FastifyReply
 ) {
-  const session = await request.server.ctx.modules.auth.session.currentSession(request)
-  return reply.send(success(session))
+  return reply.send(success(await request.server.ctx.modules.auth.service.currentSession(request)))
 }
 
 export async function deleteSessionHandler(
   request: FastifyRequest<RequestOf<typeof noRequestSchema>>,
   reply: FastifyReply
 ) {
-  request.server.ctx.modules.auth.session.logout(request)
+  await request.server.ctx.modules.auth.service.logout(request, reply)
   return reply.status(204).send(noContent())
+}
+
+export async function updatePasswordHandler(
+  request: FastifyRequest<RequestOf<typeof passwordUpdateSchema>>,
+  reply: FastifyReply
+) {
+  const { current_password: currentPassword, new_password: newPassword } = request.body
+  const session = await request.server.ctx.modules.auth.service.changePassword(
+    reply,
+    currentPassword,
+    newPassword,
+    request.ip
+  )
+  return reply.send(success(session))
 }

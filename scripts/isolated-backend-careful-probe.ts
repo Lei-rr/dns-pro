@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { ApiError } from '../server/src/shared/http/api-error.js'
-import { BaseGateway } from '../server/src/shared/providers/base.client.js'
+import { BaseHttpClient } from '../server/src/shared/providers/http.client.js'
 import { fromDnsOperationResult } from '../server/src/shared/providers/side-effect-result.js'
-import { DEFAULT_APP_CONFIG } from '../server/src/modules/auth/auth-config.repository.js'
+import { hashPassword, verifyPassword } from '../server/src/shared/auth/password.js'
 import {
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
@@ -21,7 +21,12 @@ import {
   edgeoneZoneListResponseSchema,
 } from '../server/src/modules/edge-one/edge-one-response.schema.js'
 
-assert.deepEqual(DEFAULT_APP_CONFIG.auth, { username: 'admin', password: 'admin' })
+// 密码以 scrypt 自描述哈希存储，校验不接受错误密码
+const stored = hashPassword('correct horse battery staple')
+assert.ok(stored.startsWith('scrypt$'), '密码必须以 scrypt 哈希存储')
+assert.equal(verifyPassword('correct horse battery staple', stored), true)
+assert.equal(verifyPassword('wrong password', stored), false)
+assert.equal(verifyPassword('anything', 'plaintext-legacy'), false, '非哈希输入必须校验失败')
 assert.equal(fromDnsOperationResult({ action: 'completed', records: [{ status: 'failed' }] }, 'done').status, 'failed')
 for (const [label, parse, malformed] of [
   ['cf-list-empty', parseCloudflareListResponse, {}],
@@ -38,7 +43,7 @@ for (const [label, parse, malformed] of [
 ] as const)
   assert.throws(() => parse(malformed), undefined, label)
 
-class ProbeGateway extends BaseGateway {
+class ProbeGateway extends BaseHttpClient {
   constructor() {
     super({ baseURL: 'https://provider.invalid' })
   }

@@ -1,4 +1,5 @@
 import { ApiError } from '../../shared/http/api-error.js'
+import { errorMessage } from '../../shared/lib/values.js'
 import type { ProviderRepository } from './provider.repository.js'
 import type { ProviderType } from './provider.types.js'
 
@@ -11,28 +12,19 @@ export type ProviderConnectionResult = {
 
 type ProviderProbes = {
   dnspodZones: {
-    list(
-      providerId: string,
-      options: { offset: number; limit: number; refresh: boolean }
-    ): Promise<{
-      items: unknown[]
-      pagination?: { total?: number | null }
-    }>
+    list(providerId: string, options: { refresh: boolean }): Promise<{ items: unknown[] }>
   }
   cloudflareZones: {
-    list(
+    page(
       providerId: string,
       page: number,
       perPage: number,
       name: string,
       refresh: boolean
-    ): Promise<{
-      items: unknown[]
-      pagination?: { total_count?: number | null }
-    }>
+    ): Promise<{ items: unknown[]; totalCount: number | null }>
   }
   edgeoneZones: { zones(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
-  cloudflaredTunnels: { list(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
+  tunnels: { list(providerId: string, refresh: boolean): Promise<{ items: unknown[] }> }
 }
 
 /** Vendor-specific connectivity probes, separate from provider persistence/CRUD. */
@@ -56,13 +48,13 @@ export class ProviderConnectionService {
     try {
       switch (provider.type) {
         case 'dnspod': {
-          const zones = await this.probes.dnspodZones.list(provider.id, { offset: 0, limit: 1, refresh: true })
-          const total = zones.pagination?.total ?? zones.items.length
+          const zones = await this.probes.dnspodZones.list(provider.id, { refresh: true })
+          const total = zones.items.length
           return { ok: true, type: provider.type, message: `DNSPod 连接正常（域名 ${total} 个）`, details: { total } }
         }
         case 'cloudflare': {
-          const zones = await this.probes.cloudflareZones.list(provider.id, 1, 1, '', true)
-          const total = zones.pagination?.total_count ?? zones.items.length
+          const zones = await this.probes.cloudflareZones.page(provider.id, 1, 1, '', true)
+          const total = zones.totalCount ?? zones.items.length
           return {
             ok: true,
             type: provider.type,
@@ -97,7 +89,7 @@ export class ProviderConnectionService {
           const linked = provider.cloudflare_provider.trim()
           if (!linked) throw new ApiError('cloudflared_cloudflare_provider_missing', 'Tunnel 未关联 Cloudflare', 422)
           await this.testLinked(linked, 'cloudflare', nextVisited)
-          const tunnels = await this.probes.cloudflaredTunnels.list(provider.id, true)
+          const tunnels = await this.probes.tunnels.list(provider.id, true)
           return {
             ok: true,
             type: provider.type,
@@ -108,12 +100,10 @@ export class ProviderConnectionService {
       }
     } catch (error) {
       if (error instanceof ApiError) throw error
-      throw new ApiError(
-        'provider_test_failed',
-        error instanceof Error ? error.message : String(error || 'Provider test failed'),
-        502,
-        { provider_id: id, type: provider.type }
-      )
+      throw new ApiError('provider_test_failed', errorMessage(error) || 'Provider test failed', 502, {
+        provider_id: id,
+        type: provider.type,
+      })
     }
   }
 

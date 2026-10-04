@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { JsonStore } from '../server/src/platform/storage/json-store.js'
 import { JobService } from '../server/src/platform/jobs/job.service.js'
-import { SaaSBatchJobWorkflow } from '../server/src/workflows/saas-dns-sync/saas-batch.workflow.js'
+import { SaaSBatchWorkflow } from '../server/src/workflows/saas-dns-sync/saas-batch.workflow.js'
 
 type DeleteOptions = {
   primaryDeleted?: boolean
@@ -65,12 +65,13 @@ try {
       }
     },
   }
+  const workflowWithKeys = { ...(workflow as object), resourceKeys: async () => [] }
   const hostnames = {
     async resolveZoneRef() {
       return { cloudflareProviderId: 'cf-owner', zoneId: 'zone-1' }
     },
   }
-  const batch = new SaaSBatchJobWorkflow(jobs, workflow as never, hostnames as never)
+  const batch = new SaaSBatchWorkflow(jobs, workflowWithKeys as never, hostnames as never)
   const created = await batch.createDelete({
     providerId: 'saas-owner',
     zoneName: 'example.com',
@@ -83,7 +84,9 @@ try {
   assert.equal(cleanupRecipeDurableBeforePrimary, true, 'cleanup recipe was not durable before primary delete')
   assert.equal(primaryDeleteDurableBeforeCleanup, true, 'primary delete stage was not durable before DNS cleanup')
   assert.equal(failed?.items[0]?.primary_deleted, true, 'completed primary delete stage was not persisted')
-  assert.ok(failed?.items[0]?.cleanup_recipe, 'cleanup recipe was not persisted before the primary delete')
+  // cleanup_recipe 属于内部执行字段：持久化在原始记录里，但不通过 API 视图暴露
+  assert.ok((await durableItem()).cleanup_recipe, 'cleanup recipe was not persisted before the primary delete')
+  assert.equal('cleanup_recipe' in (failed?.items[0] ?? {}), false, '内部清理配方不应出现在任务视图')
 
   await batch.retryFailed(created.id)
   await jobs.drain()

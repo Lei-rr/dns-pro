@@ -11,7 +11,7 @@ import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
 import { parseRecordNames } from '@/features/dns/lib/record-names'
 import { buildDnsRecordDisplayRows, dnsRecordMatchesKeyword, dnsRecordRowKey } from '@/features/dns/lib/record-display'
 import { exportRecordsAsCsv, exportRecordsAsJson, exportRecordsAsZone } from '@/features/dns/lib/record-export'
-import type { DnsRecord } from '@/features/dns/model/types'
+import type { DnsLineOption, DnsRecord } from '@/features/dns/model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
@@ -84,15 +84,55 @@ const zoneName = computed(() => {
 })
 
 const typeOptions = ['A', 'AAAA', 'CNAME', 'TXT', 'MX']
-// DNSPod 常用线路（对齐旧 hook.recordLines）
-const dnspodLineOptions = [
+
+// 线路随域名套餐变化，从 DNSPod 拉取；拉取失败时退回常用线路
+const FALLBACK_LINE_OPTIONS: DnsLineOption[] = [
   { label: '默认', value: '默认' },
   { label: '境内', value: '境内' },
-  { label: '电信', value: '电信' },
-  { label: '联通', value: '联通' },
-  { label: '移动', value: '移动' },
   { label: '境外', value: '境外' },
 ]
+const fetchedLines = ref<DnsLineOption[]>([])
+const dnspodLineOptions = computed<DnsLineOption[]>(() => {
+  const options = fetchedLines.value.length ? fetchedLines.value : FALLBACK_LINE_OPTIONS
+  // 保证当前编辑/批量选择中的线路始终可选项，避免历史线路值丢失
+  const current = [form.line, batchPatch.line].filter(
+    (line) => line && line !== '__keep' && !options.some((option) => option.value === line)
+  )
+  return [...options, ...current.map((line) => ({ label: line, value: line }))]
+})
+
+/** 选中线路对应的上游线路 ID（分组等无名线路按名称提交） */
+function lineIdOf(line: string): string | undefined {
+  return dnspodLineOptions.value.find((option) => option.value === line)?.lineId
+}
+
+/** 刷新：记录与线路一起更新，避免线路加载失败后永久走回退列表 */
+async function handleRefresh() {
+  await Promise.all([onRefresh(), loadLines(true)])
+}
+
+async function loadLines(refresh = false) {
+  if (isCloudflare.value) {
+    fetchedLines.value = []
+    return
+  }
+  const owner = captureScope()
+  try {
+    const response = await dnsApi.lines(props.provider, zoneName.value, { refresh })
+    if (!owner.active()) return
+    const { items, groups } = response.data
+    fetchedLines.value = [
+      ...items.map((line) => ({ label: line.name, value: line.name, lineId: line.line_id })),
+      // 分组（境内/境外等）按名称提交
+      ...groups
+        .filter((group) => group.name && !items.some((line) => line.name === group.name))
+        .map((group) => ({ label: group.name, value: group.name })),
+    ]
+  } catch {
+    // 线路获取失败不阻断记录管理，退回常用线路
+    if (owner.active()) fetchedLines.value = []
+  }
+}
 const filteredRecords = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   return records.value.filter((record) => {
@@ -226,11 +266,19 @@ async function save() {
       value,
       ttl: Number(form.ttl) || (isCloudflare.value ? 1 : 600),
       line: form.line,
+      record_line_id: lineIdOf(form.line),
       remark: form.remark,
       priority: form.priority === '' || !Number.isFinite(Number(form.priority)) ? undefined : Number(form.priority),
       proxied: form.proxied,
+      // 编辑时必须回传原有启停状态与权重，否则会被上游重置
+      status: editing.value ? String(editing.value.status || '').toUpperCase() || undefined : undefined,
+      weight: editing.value?.weight,
     }
 
+    if (editing.value && !editing.value.id) {
+      toast.error('该记录缺少 ID，无法编辑，请刷新后重试')
+      return
+    }
     if (editing.value?.id) {
       await dnsApi.updateRecord(
         scopeOwner.value.provider,
@@ -416,7 +464,10 @@ async function batchUpdateSelected() {
     if (Number.isFinite(ttlNum) && ttlNum > 0) patch.ttl = ttlNum
     else invalid = 'TTL 需为正整数'
   }
-  if (batchPatch.line && batchPatch.line !== '__keep') patch.line = batchPatch.line
+  if (batchPatch.line && batchPatch.line !== '__keep') {
+    patch.line = batchPatch.line
+    patch.record_line_id = lineIdOf(batchPatch.line)
+  }
   if (batchPatch.remark.trim()) patch.remark = batchPatch.remark.trim()
   if (batchPatch.priority.trim()) {
     const prioNum = Number(batchPatch.priority)
@@ -506,6 +557,7 @@ watch(
     editing.value = null
     saving.value = false
     batchSubmitting.value = false
+    await loadLines()
     jobProgress.reset()
     resetRowOperations()
     selection.clear()
@@ -522,21 +574,51 @@ onUnmounted(() => {
 })
 
 onMounted(async () => {
-  await runLoad()
+  await Promise.all([runLoad(), loadLines()])
   await resumeJobs()
 })
 const importOpen = ref(false)
 const importSubmitting = ref(false)
 
+/** 导入去重：与本地区域内已存在的「主机名+类型+记录值」比对 */
+function dropExistingRecords(parsedRecords: ParsedImportRecord[]): ParsedImportRecord[] {
+  const existing = new Set(
+    records.value.map((record) =>
+      [
+        String(record.name || '').toLowerCase(),
+        String(record.type || '').toUpperCase(),
+        String(record.value || ''),
+      ].join('\u0000')
+    )
+  )
+  return parsedRecords.filter(
+    (record) =>
+      !existing.has(
+        [
+          String(record.name || '').toLowerCase(),
+          String(record.type || '').toUpperCase(),
+          String(record.value || ''),
+        ].join('\u0000')
+      )
+  )
+}
+
 async function handleImportSubmit(parsedRecords: ParsedImportRecord[]) {
   importSubmitting.value = true
   try {
+    const fresh = dropExistingRecords(parsedRecords)
+    const skipped = parsedRecords.length - fresh.length
+    if (!fresh.length) {
+      toast.warning('导入内容与现有记录重复，无需导入')
+      return
+    }
+    if (skipped > 0) toast.message('已跳过重复记录', `${skipped} 条与现有记录同名同值`)
     importOpen.value = false
     await runBatchJob({
       label: '批量导入',
       create: () =>
         dnsApi.batchCreateRecords(props.provider, props.zoneId, {
-          records: parsedRecords,
+          records: fresh,
         }),
       fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as Record<string, unknown>) || {},
       retry: (id) => dnsApi.batchRetry(props.provider, id),
@@ -551,17 +633,19 @@ async function handleImportSubmit(parsedRecords: ParsedImportRecord[]) {
 }
 
 function handleExport(format: 'json' | 'csv' | 'zone') {
-  if (!records.value.length) {
+  // 导出当前筛选结果，避免与界面显示不一致
+  const rows = filteredRecords.value
+  if (!rows.length) {
     toast.warning('当前暂无可导出的 DNS 记录')
     return
   }
   const name = zoneName.value || 'zone'
   if (format === 'json') {
-    exportRecordsAsJson(records.value, name)
+    exportRecordsAsJson(rows, name)
   } else if (format === 'csv') {
-    exportRecordsAsCsv(records.value, name)
+    exportRecordsAsCsv(rows, name)
   } else if (format === 'zone') {
-    exportRecordsAsZone(records.value, name)
+    exportRecordsAsZone(rows, name)
   }
   toast.success(`已导出 ${records.value.length} 条记录 (${format.toUpperCase()})`)
 }
@@ -592,7 +676,7 @@ function handleExport(format: 'json' | 'csv' | 'zone') {
       :loading="loading"
       :refreshing="refreshing"
       @search="onSearch"
-      @refresh="onRefresh"
+      @refresh="handleRefresh"
       @update:type-filter="setTypeFilter"
       @export="handleExport"
       @import="importOpen = true"

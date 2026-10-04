@@ -40,8 +40,16 @@ const emit = defineEmits<{
           <TableCell colspan="4" class="text-muted-foreground py-10 text-center">
             <div class="flex flex-col items-center justify-center gap-1.5 py-4">
               <Settings2 class="size-8 text-muted-foreground/40 stroke-1" />
-              <div class="font-medium text-foreground/80 text-sm">暂无服务商</div>
-              <div class="text-xs text-muted-foreground">点击右上角「新增服务商」开始配置 DNS / 隧道凭据</div>
+              <div class="font-medium text-foreground/80 text-sm">
+                {{ allProviders.length ? '该类型暂无服务商' : '暂无服务商' }}
+              </div>
+              <div class="text-xs text-muted-foreground">
+                {{
+                  allProviders.length
+                    ? '切换到其它类型，或点击右上角「新增服务商」添加该类型的配置'
+                    : '点击右上角「新增服务商」开始配置 DNS / 隧道凭据'
+                }}
+              </div>
             </div>
           </TableCell>
         </TableRow>

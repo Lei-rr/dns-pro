@@ -1,20 +1,24 @@
 import { ApiError } from '../../shared/http/api-error.js'
-import type { JobRecord } from '../../platform/jobs/job.types.js'
 import type { JobService } from '../../platform/jobs/job.service.js'
-import type { CloudflareCustomHostname } from '../../modules/saas/saas-custom-hostname.client.js'
+import type { JobRecord } from '../../platform/jobs/job.types.js'
 import {
-  type BatchJobViewBase,
-  findActiveBatchJob,
+  BatchJobKind,
+  dnsEffectNote,
+  dnsEffectOf,
   finishBatchJob,
-  presentBatchJobBase,
-  requeueFailedBatchItems,
   runBatchItems,
-} from '../../platform/jobs/batch-helpers.js'
-import { PREFERRED_APPLY_JOB_TYPE, SAAS_ZONE_JOB_TYPES } from './saas-dns-sync-job.types.js'
-import { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
-import { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
+  type BatchJobViewBase,
+} from '../../platform/jobs/batch-job.js'
+import type { CloudflareCustomHostname } from '../../modules/saas/saas-custom-hostname.client.js'
+import type { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
+import {
+  PREFERRED_APPLY_JOB,
+  SAAS_ZONE_LOCK_MESSAGE,
+  ZONE_WRITE_JOB_TYPES,
+  readResourceKeys,
+} from '../../platform/jobs/job-types.js'
+import type { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 
-/** API-facing job shape (keeps frontend fields stable). */
 type PreferredApplyJob = BatchJobViewBase & {
   provider_id: string
   zone_name: string
@@ -23,159 +27,136 @@ type PreferredApplyJob = BatchJobViewBase & {
   dry_run: boolean
 }
 
-/**
- * SaaS preferred-domain apply on JobService (same zone lock as SaaS batch).
- */
+type ApplyInput = {
+  providerId: string
+  zoneName: string
+  preferredDomain: string
+  hostnames?: string[]
+  onlyAutoPreferred?: boolean
+  dryRun?: boolean
+}
+
+const currentPreferred = (item: CloudflareCustomHostname) =>
+  String(item.preferred_domain ?? item.custom_metadata?.preferred_domain ?? '')
+
+/** 优选域名一键切换（与 SaaS 批量共用站点互斥锁） */
 export class SaaSPreferredApplyWorkflow {
+  private readonly kind: BatchJobKind<PreferredApplyJob>
+
   constructor(
     private readonly jobs: JobService,
     private readonly workflow: SaaSDnsSyncWorkflow,
     private readonly hostnames: SaaSHostnameService
   ) {
-    this.jobs.registerRunner(PREFERRED_APPLY_JOB_TYPE, (job) => this.runJob(job))
+    this.kind = new BatchJobKind(jobs, {
+      types: [PREFERRED_APPLY_JOB],
+      lockTypes: ZONE_WRITE_JOB_TYPES,
+      scopeKeys: ['provider_id', 'zone_name'],
+      resourceKeys: readResourceKeys,
+      lockMessage: SAAS_ZONE_LOCK_MESSAGE,
+      notFoundCode: 'preferred_apply_not_found',
+      present: (job, base) => ({
+        ...base,
+        provider_id: String(job.payload.provider_id ?? ''),
+        zone_name: String(job.payload.zone_name ?? ''),
+        preferred_domain: String(job.payload.preferred_domain ?? ''),
+        only_auto_preferred: Boolean(job.payload.only_auto_preferred),
+        dry_run: Boolean(job.payload.dry_run),
+      }),
+    })
+    jobs.registerRunner(PREFERRED_APPLY_JOB, (job) => this.runJob(job))
   }
 
-  async preview(input: {
-    providerId: string
-    zoneName: string
-    preferredDomain: string
-    hostnames?: string[]
-    onlyAutoPreferred?: boolean
-  }) {
-    const preferred = String(input.preferredDomain || '').trim()
-    if (!preferred) throw new ApiError('preferred_domain_invalid', 'Preferred domain is required', 422)
-
-    const list = await this.resolveTargets(input.providerId, input.zoneName, input.hostnames, !!input.onlyAutoPreferred)
+  async preview(input: ApplyInput) {
+    const preferred = requirePreferred(input.preferredDomain)
+    const targets = await this.resolveTargets(input)
+    const items = targets.map((item) => ({
+      hostname: item.hostname,
+      current_preferred: currentPreferred(item),
+      auto_preferred: Boolean(item.auto_preferred),
+      will_change: currentPreferred(item) !== preferred,
+    }))
     return {
       preferred_domain: preferred,
-      only_auto_preferred: !!input.onlyAutoPreferred,
-      total: list.length,
-      items: list.map((item) => {
-        const current = this.currentPreferred(item)
-        return {
-          hostname: item.hostname,
-          current_preferred: current,
-          auto_preferred: !!(item as CloudflareCustomHostname).auto_preferred,
-          will_change: current !== preferred,
-        }
-      }),
+      only_auto_preferred: Boolean(input.onlyAutoPreferred),
+      total: targets.length,
+      // 前端展示的“将变更”数量：只有真正需要切换的主机名才计入
+      will_change: items.filter((item) => item.will_change).length,
+      items,
     }
   }
 
-  async create(input: {
-    providerId: string
-    zoneName: string
-    preferredDomain: string
-    hostnames?: string[]
-    onlyAutoPreferred?: boolean
-    dryRun?: boolean
-  }): Promise<PreferredApplyJob> {
-    const preferred = String(input.preferredDomain || '').trim()
-    if (!preferred) throw new ApiError('preferred_domain_invalid', 'Preferred domain is required', 422)
-
-    const targets = await this.resolveTargets(
-      input.providerId,
-      input.zoneName,
-      input.hostnames,
-      !!input.onlyAutoPreferred
-    )
-    if (!targets.length) {
+  /** 创建切换任务；dryRun 直接生成已完成的预览任务 */
+  async create(input: ApplyInput): Promise<PreferredApplyJob> {
+    const preferred = requirePreferred(input.preferredDomain)
+    const targets = await this.resolveTargets(input)
+    if (!targets.length)
       throw new ApiError('preferred_apply_empty', 'No hostnames matched for preferred-domain apply', 422)
-    }
 
     const payload = {
       provider_id: input.providerId,
       zone_name: input.zoneName,
+      resource_keys: await this.workflow.resourceKeys(input.providerId, input.zoneName),
       preferred_domain: preferred,
-      only_auto_preferred: !!input.onlyAutoPreferred,
-      dry_run: !!input.dryRun,
+      only_auto_preferred: Boolean(input.onlyAutoPreferred),
+      dry_run: Boolean(input.dryRun),
     }
-
-    const items = targets.map((t) => ({
-      hostname: t.hostname,
+    const items = targets.map((item) => ({
+      hostname: item.hostname,
       preferred_domain: preferred,
-      current_preferred: this.currentPreferred(t),
-      auto_preferred: !!(t as CloudflareCustomHostname).auto_preferred,
+      current_preferred: currentPreferred(item),
+      auto_preferred: Boolean(item.auto_preferred),
     }))
+    const lock = this.kind.lock(payload)
 
-    if (input.dryRun) {
-      const dryItems = items.map((item) => {
-        const willChange = String(item.current_preferred || '') !== preferred
-        return {
-          ...item,
-          status: willChange ? 'success' : 'skipped',
-          message: willChange ? `将切换为 ${preferred}` : '已是目标优选域名',
-        }
-      })
-      const success = dryItems.filter((item) => item.status === 'success').length
-      const skipped = dryItems.filter((item) => item.status === 'skipped').length
-      const job = await this.jobs.createTerminalExclusive(
-        PREFERRED_APPLY_JOB_TYPE,
-        payload,
-        dryItems,
-        {
-          types: [...SAAS_ZONE_JOB_TYPES],
-          scope: { provider_id: input.providerId, zone_name: input.zoneName },
-          message: 'A SaaS batch or preferred-domain apply job is already running for this zone',
-        },
-        {
-          status: 'completed',
-          success,
-          skipped,
-          failed: 0,
-          message: `预览完成：将切换 ${success} 个，跳过 ${skipped} 个`,
-        }
+    if (!input.dryRun) {
+      return this.kind.present(
+        await this.jobs.createExclusive(PREFERRED_APPLY_JOB, payload, items, lock, {
+          message: '任务已创建，等待后台执行',
+        })
       )
-      return this.present(job)
     }
 
-    const job = await this.jobs.createExclusive(
-      PREFERRED_APPLY_JOB_TYPE,
-      payload,
-      items,
-      {
-        types: [...SAAS_ZONE_JOB_TYPES],
-        scope: { provider_id: input.providerId, zone_name: input.zoneName },
-        message: 'A SaaS batch or preferred-domain apply job is already running for this zone',
-      },
-      { message: '任务已创建，等待后台执行' }
-    )
-    return this.present(job)
-  }
-
-  async find(id: string): Promise<PreferredApplyJob | null> {
-    const job = await this.jobs.get(id)
-    if (!job || job.type !== PREFERRED_APPLY_JOB_TYPE) return null
-    return this.present(job)
-  }
-
-  async active(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
-    return this.findActive(providerId, zoneName)
-  }
-
-  async retryFailed(jobId: string): Promise<PreferredApplyJob> {
-    await this.require(jobId)
-    const raw = await this.jobs.get(jobId)
-    if (!raw) throw new ApiError('preferred_apply_not_found', 'Preferred apply job not found', 404, { job_id: jobId })
-    const payload = raw.payload || {}
-    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
-      types: [...SAAS_ZONE_JOB_TYPES],
-      scope: { provider_id: String(payload.provider_id || ''), zone_name: String(payload.zone_name || '') },
-      message: 'A SaaS batch or preferred-domain apply job is already running for this zone',
+    const previewItems = items.map((item) => {
+      const willChange = item.current_preferred !== preferred
+      return {
+        ...item,
+        status: willChange ? 'success' : 'skipped',
+        message: willChange ? `将切换为 ${preferred}` : '已是目标优选域名',
+      }
     })
-    return this.present(requeued)
+    const success = previewItems.filter((item) => item.status === 'success').length
+    const skipped = previewItems.length - success
+    const job = await this.jobs.createTerminalExclusive(PREFERRED_APPLY_JOB, payload, previewItems, lock, {
+      status: 'completed',
+      success,
+      skipped,
+      failed: 0,
+      message: `预览完成：将切换 ${success} 个，跳过 ${skipped} 个`,
+    })
+    return this.kind.present(job)
+  }
+
+  find(id: string, providerId?: string) {
+    return this.kind.find(id, { provider_id: providerId })
+  }
+
+  active(providerId: string, zoneName: string) {
+    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
+  }
+
+  retryFailed(id: string, providerId?: string) {
+    return this.kind.retryFailed(id, { provider_id: providerId })
   }
 
   private async runJob(job: JobRecord): Promise<void> {
-    const payload = (job.payload || {}) as Record<string, unknown>
-    if (payload.dry_run) return
-
-    const providerId = String(payload.provider_id || '')
-    const zoneName = String(payload.zone_name || '')
-    const preferred = String(payload.preferred_domain || '')
+    if (job.payload.dry_run) return
+    const providerId = String(job.payload.provider_id ?? '')
+    const zoneName = String(job.payload.zone_name ?? '')
+    const preferred = String(job.payload.preferred_domain ?? '')
 
     await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.hostname || ''),
+      itemKey: (item) => String(item.hostname ?? ''),
       runningMessage: '处理中',
       progressMessage: '后台执行中',
       execute: async (_item, hostname) => {
@@ -183,89 +164,39 @@ export class SaaSPreferredApplyWorkflow {
           providerId,
           zoneName,
           hostname,
-          {
-            preferred_domain: preferred,
-            auto_preferred: true,
-          },
+          { preferred_domain: preferred, auto_preferred: true },
           true
         )
-
-        const dnsSync = (updated as { side_effects?: { dns?: { sync?: { status?: string; message?: string } } } })
-          ?.side_effects?.dns?.sync
-        if (dnsSync && dnsSync.status === 'failed') {
+        const sync = dnsEffectOf(updated, 'sync')
+        if (sync?.status === 'failed') {
           return {
             status: 'failed',
-            message: `优选已保存，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
+            message: `优选已保存，但 DNS 写回失败：${sync.message || '未知错误'}`,
             extra: { preferred_domain: preferred, dns_sync_status: 'failed' },
           }
         }
-
-        const dnsNote =
-          dnsSync?.status === 'skipped'
-            ? `（DNS 跳过：${dnsSync.message || '已跳过'}）`
-            : dnsSync?.status === 'completed'
-              ? '（DNS 已写回）'
-              : ''
-
         return {
           status: 'success',
-          message: `已切换为 ${preferred}${dnsNote}`,
-          extra: {
-            preferred_domain: preferred,
-            dns_sync_status: dnsSync?.status || 'unknown',
-          },
+          message: `已切换为 ${preferred}${dnsEffectNote(sync, 'DNS 已写回')}`,
+          extra: { preferred_domain: preferred, dns_sync_status: sync?.status ?? 'unknown' },
         }
       },
     })
-
     await finishBatchJob(this.jobs, job.id, '优选应用')
   }
 
-  private async resolveTargets(
-    providerId: string,
-    zoneName: string,
-    hostnames?: string[],
-    onlyAutoPreferred = false
-  ): Promise<CloudflareCustomHostname[]> {
-    let items = await this.hostnames.allHostnames(providerId, zoneName)
-    if (hostnames?.length) {
-      const set = new Set(hostnames.map((h) => h.toLowerCase().trim()))
-      items = items.filter((item) => set.has(String(item.hostname || '').toLowerCase()))
+  private async resolveTargets(input: ApplyInput): Promise<CloudflareCustomHostname[]> {
+    let items = (await this.hostnames.hostnames(input.providerId, input.zoneName)).items
+    if (input.hostnames?.length) {
+      const selected = new Set(input.hostnames.map((hostname) => hostname.toLowerCase().trim()))
+      items = items.filter((item) => selected.has(item.hostname.toLowerCase()))
     }
-    if (onlyAutoPreferred) {
-      items = items.filter((item) => !!item.auto_preferred)
-    }
-    return items
+    return input.onlyAutoPreferred ? items.filter((item) => item.auto_preferred) : items
   }
+}
 
-  private currentPreferred(item: CloudflareCustomHostname): string {
-    return String(item.preferred_domain ?? item.custom_metadata?.preferred_domain ?? '')
-  }
-
-  private async findActive(providerId: string, zoneName: string): Promise<PreferredApplyJob | null> {
-    const hit = await findActiveBatchJob(this.jobs, [...SAAS_ZONE_JOB_TYPES], {
-      provider_id: providerId,
-      zone_name: zoneName,
-    })
-    return hit ? this.present(hit) : null
-  }
-
-  private async require(id: string): Promise<PreferredApplyJob> {
-    const job = await this.find(id)
-    if (!job) throw new ApiError('preferred_apply_not_found', 'Preferred apply job not found', 404, { job_id: id })
-    return job
-  }
-
-  private present(job: JobRecord): PreferredApplyJob {
-    const base = presentBatchJobBase(job)
-    const payload = (job.payload || {}) as Record<string, unknown>
-    return {
-      ...base,
-      provider_id: String(payload.provider_id || ''),
-      zone_name: String(payload.zone_name || ''),
-      preferred_domain: String(payload.preferred_domain || ''),
-      only_auto_preferred: Boolean(payload.only_auto_preferred),
-      dry_run: Boolean(payload.dry_run),
-    }
-  }
+function requirePreferred(value: string): string {
+  const preferred = String(value ?? '').trim()
+  if (!preferred) throw new ApiError('preferred_domain_invalid', 'Preferred domain is required', 422)
+  return preferred
 }

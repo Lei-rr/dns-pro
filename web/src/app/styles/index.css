@@ -134,13 +134,3 @@
   white-space: nowrap;
   vertical-align: bottom;
 }
-
-/* fallback spinner if tw-animate-css animate-spin is missing */
-@keyframes dns-pro-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-.animate-spin {
-  animation: dns-pro-spin 0.75s linear infinite;
-}

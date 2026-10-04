@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DnsLineOption } from '@/features/dns/model/types'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -20,7 +21,7 @@ const patch = defineModel<BatchPatchModel>('patch', { required: true })
 defineProps<{
   selectedCount: number
   isCloudflare: boolean
-  lineOptions: Array<{ label: string; value: string }>
+  lineOptions: DnsLineOption[]
   error: string
 }>()
 

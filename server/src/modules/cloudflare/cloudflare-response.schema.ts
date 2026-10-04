@@ -5,22 +5,32 @@ import { asArray, asRecord, asRecordArray } from '../../shared/providers/respons
 export type CloudflareTunnel = Record<string, any>
 export type CloudflareRouteConfig = Record<string, any>
 
-type CloudflareResultInfo = Record<string, any>
 export type CloudflareFallbackOrigin = Record<string, any>
 
-export function parseCloudflareListResponse<T = Record<string, any>>(
-  response: unknown
-): { result: T[]; result_info: CloudflareResultInfo | undefined; source_count: number } {
+/** Cloudflare 单页列表结果 */
+export interface CloudflarePage<T> {
+  items: T[]
+  /** 上游本页原始条数（含被过滤的非法项），用于判断是否还有下一页 */
+  sourceCount: number
+  totalPages: number | null
+  totalCount: number | null
+}
+
+export function parseCloudflareListResponse<T>(
+  response: unknown,
+  present: (item: Record<string, any>) => T
+): CloudflarePage<T> {
   const parsed = asRecord(response)
   if (!Array.isArray(parsed.result)) {
     throw new ApiError('cloudflare_invalid_response', 'Cloudflare returned an invalid list response', 502)
   }
-  const resultInfo = parsed.result_info ? asRecord(parsed.result_info) : undefined
-  const source = parsed.result
+  const info = asRecord(parsed.result_info)
+  const toNumber = (value: unknown) => (value == null || !Number.isFinite(Number(value)) ? null : Number(value))
   return {
-    result: asRecordArray(source) as T[],
-    result_info: resultInfo,
-    source_count: source.length,
+    items: asRecordArray(parsed.result).map(present),
+    sourceCount: parsed.result.length,
+    totalPages: toNumber(info.total_pages),
+    totalCount: toNumber(info.total_count),
   }
 }
 
@@ -62,4 +72,3 @@ export const cloudflareCustomHostnameSchema = {
     }
   },
 }
-export const cloudflareResultInfoSchema = { parse: (v: unknown): Record<string, any> => asRecord(v) }

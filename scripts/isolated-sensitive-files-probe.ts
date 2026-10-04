@@ -39,7 +39,16 @@ try {
   const coldRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-sensitive-cold-'))
   try {
     const files = [
-      ['config.json', { auth: { username: 'existing', password: 'existing' } }],
+      // 预置哈希（无明文），冷启动不应改写该文件
+      [
+        'config.json',
+        {
+          auth: {
+            username: 'existing',
+            password_hash: 'scrypt$16384$8$1$Y2FsaWJyYXRpb24tc2FsdA==$Y2FsaWJyYXRpb24taGFzaA==',
+          },
+        },
+      ],
       ['providers.json', { items: [] }],
       ['saas/preferred-domains.json', { items: ['example.com'] }],
       ['saas/preferences.json', { items: {} }],

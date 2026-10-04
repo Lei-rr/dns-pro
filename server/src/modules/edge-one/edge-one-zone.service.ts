@@ -1,13 +1,24 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
-import type { DnsPodProvider, EdgeOneProvider } from '../providers/provider.types.js'
-import { ApiError } from '../../shared/http/api-error.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
 import { edgeoneZonesCacheTag, providerCacheTag, withProviderCache } from '../../platform/cache/provider-cache.js'
-import { EdgeOneGateway } from './edge-one.client.js'
-import { edgeOneZoneSchema, edgeoneZoneListResponseSchema } from './edge-one-response.schema.js'
-import { resolveEdgeOneApiCredentials } from './edge-one-credentials.js'
-import { parseBool } from '../../shared/lib/parse-bool.js'
+import { ApiError } from '../../shared/http/api-error.js'
+import { parseBool } from '../../shared/lib/values.js'
+import {
+  callProvider,
+  collectOffsetPages,
+  parseUpstreamTotal,
+  toFullListResult,
+  type FullListPagination,
+} from '../../shared/providers/provider-call.js'
 import { providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
+import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
+import {
+  edgeOneZoneSchema,
+  edgeoneZoneListResponseSchema,
+  type EdgeOneZone as RawZone,
+} from './edge-one-response.schema.js'
+
+// 不支持加速域名管理的站点类型
+const HIDDEN_ZONE_TYPES = new Set(['pages', 'ai'])
 
 interface EdgeOneZone {
   id: string
@@ -22,111 +33,69 @@ interface EdgeOneZone {
   modified_on?: string
 }
 
+interface ZoneListResult {
+  items: EdgeOneZone[]
+  pagination: FullListPagination
+  meta: FullListPagination
+  request_id?: string
+}
+
+/** EdgeOne 站点查询（站点数量少，全量拉取） */
 export class EdgeOneZoneService {
   constructor(private readonly providers: ProviderRepository) {}
 
-  // 站点通常不多，直接全量拉取返回。
-  async zones(
-    providerId: string,
-    refresh = false
-  ): Promise<{ items: EdgeOneZone[]; pagination: Record<string, unknown>; meta: Record<string, unknown> }> {
-    const edgeoneProvider = await this.providers.requireType<EdgeOneProvider>(providerId, 'edgeone')
-    const linkedProviderId = edgeoneProvider.dnspod_provider.trim()
-    const cached = await withProviderCache<{
-      items: EdgeOneZone[]
-      pagination: Record<string, unknown>
-      meta: Record<string, unknown>
-      request_id?: string
-    }>({
+  async zones(providerId: string, refresh = false): Promise<ZoneListResult> {
+    const { dnspodProviderId } = await resolveEdgeOneProvider(this.providers, providerId)
+    const cached = await withProviderCache<ZoneListResult>({
       key: `edgeone:zones:${providerId}:all`,
-      tags: [providerCacheTag(providerId), providerCacheTag(linkedProviderId), edgeoneZonesCacheTag(providerId)],
+      tags: [providerCacheTag(providerId), providerCacheTag(dnspodProviderId), edgeoneZonesCacheTag(providerId)],
       refresh,
-      loader: async () => {
-        const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
-        const gateway = this.gatewayFor(provider)
-
-        let pageOffset = 0
-        const pageLimit = 100
-        const items: EdgeOneZone[] = []
-        let requestId: string | undefined
-        let hasMore = true
-
-        while (hasMore) {
-          let response
-          try {
-            response = await gateway.call('DescribeZones', {
-              Offset: Number(pageOffset),
-              Limit: Number(pageLimit),
-            })
-          } catch (error) {
-            throw wrapProviderError('edgeone_zone_list_failed', 'EdgeOne zone list failed', providerId, error)
-          }
-          const parsed = edgeoneZoneListResponseSchema.parse(response)
-          requestId = parsed.RequestId ?? requestId
-          const vendorPageItems = Array.isArray(parsed.Zones) ? parsed.Zones : []
-          const sourceCount = Number(parsed.SourceCount ?? 0)
-          const pageItems = vendorPageItems
-            .map((zone) => this.presentZone(edgeOneZoneSchema.parse(zone)))
-            .filter((zone) => !['pages', 'ai'].includes(String(zone.type ?? '').toLowerCase()))
-          items.push(...pageItems)
-
-          pageOffset += sourceCount
-          const totalRaw = parsed.TotalCount
-          const totalValue = Number(totalRaw)
-          const total =
-            totalRaw != null && totalRaw !== '' && Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
-          hasMore = sourceCount >= pageLimit && (total === null || pageOffset < total)
-          if (hasMore && pageOffset / pageLimit >= 1000)
-            throw new ApiError('edgeone_pagination_limit', 'EdgeOne pagination limit reached', 502)
-        }
-
-        const total = items.length
-        return {
-          items,
-          pagination: { offset: 0, limit: total, total },
-          meta: {
-            page: 1,
-            per_page: total,
-            offset: 0,
-            limit: total,
-            total,
-            total_pages: 1,
-          },
-          request_id: requestId,
-        }
-      },
+      loader: () => this.fetchAll(providerId),
     })
     return cached.value
   }
 
   async zoneById(providerId: string, zoneId: string, refresh = false): Promise<EdgeOneZone> {
-    const zones = await this.zones(providerId, refresh)
-    const zone = zones.items.find((item) => item.id === zoneId)
-    if (!zone) {
-      throw new ApiError('edgeone_zone_not_found', `EdgeOne zone ${zoneId} not found`, 404)
-    }
+    const zone = (await this.zones(providerId, refresh)).items.find((item) => item.id === zoneId)
+    if (!zone) throw new ApiError('edgeone_zone_not_found', `EdgeOne zone ${zoneId} not found`, 404)
     return zone
   }
 
-  private presentZone(zone: import('./edge-one-response.schema.js').EdgeOneZone): EdgeOneZone {
-    return {
-      id: providerString(zone.ZoneId),
-      name: providerString(zone.ZoneName),
-      area: providerOptionalString(zone.Area),
-      type: providerOptionalString(zone.Type),
-      status: providerOptionalString(zone.Status),
-      active_status: providerOptionalString(zone.ActiveStatus),
-      lock_status: providerOptionalString(zone.LockStatus),
-      paused: zone.Paused == null ? undefined : parseBool(zone.Paused),
-      created_on: providerOptionalString(zone.CreatedOn),
-      modified_on: providerOptionalString(zone.ModifiedOn),
-    }
+  private async fetchAll(providerId: string): Promise<ZoneListResult> {
+    const client = await edgeOneClientFor(this.providers, providerId)
+    const { items, requestId } = await collectOffsetPages(
+      async (offset, limit) => {
+        const response = await callProvider(
+          { code: 'edgeone_zone_list_failed', message: 'EdgeOne zone list failed', providerId },
+          () => client.call('DescribeZones', { Offset: offset, Limit: limit })
+        )
+        const parsed = edgeoneZoneListResponseSchema.parse(response)
+        return {
+          items: (parsed.Zones as unknown[])
+            .map((zone) => presentZone(edgeOneZoneSchema.parse(zone)))
+            .filter((zone) => !HIDDEN_ZONE_TYPES.has(String(zone.type ?? '').toLowerCase())),
+          sourceCount: Number(parsed.SourceCount ?? 0),
+          total: parseUpstreamTotal(parsed.TotalCount),
+          requestId: parsed.RequestId ?? undefined,
+        }
+      },
+      { limitCode: 'edgeone_pagination_limit', limitMessage: 'EdgeOne pagination limit reached' }
+    )
+    return toFullListResult(items, requestId)
   }
+}
 
-  private gatewayFor(provider: DnsPodProvider): EdgeOneGateway {
-    return EdgeOneGateway.forCredentials({
-      secretId: provider.secret_id,
-      secretKey: provider.secret_key,
-    })
+function presentZone(zone: RawZone): EdgeOneZone {
+  return {
+    id: providerString(zone.ZoneId),
+    name: providerString(zone.ZoneName),
+    area: providerOptionalString(zone.Area),
+    type: providerOptionalString(zone.Type),
+    status: providerOptionalString(zone.Status),
+    active_status: providerOptionalString(zone.ActiveStatus),
+    lock_status: providerOptionalString(zone.LockStatus),
+    paused: zone.Paused == null ? undefined : parseBool(zone.Paused),
+    created_on: providerOptionalString(zone.CreatedOn),
+    modified_on: providerOptionalString(zone.ModifiedOn),
   }
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -17,6 +18,9 @@ type ProviderFormModel = {
 
 const open = defineModel<boolean>('open', { required: true })
 const form = defineModel<ProviderFormModel>('form', { required: true })
+
+/** 当前表单类型对应的服务商定义：密钥字段判定以内置定义为准 */
+const currentDefinition = computed(() => props.definitions.find((item) => item.type === form.value.type))
 
 const props = defineProps<{
   editing: Provider | null
@@ -59,8 +63,7 @@ function selectFieldPlaceholder(field: string) {
 
 function dialogFields(): string[] {
   if (props.editing?.editable_fields?.length) return props.editing.editable_fields
-  const def = props.definitions.find((item) => item.type === form.value.type)
-  return def?.fields || []
+  return currentDefinition.value?.fields || []
 }
 </script>
 
@@ -108,7 +111,7 @@ function dialogFields(): string[] {
           </SelectContent>
         </Select>
         <Input
-          v-else-if="isProviderSecretField(field)"
+          v-else-if="isProviderSecretField(field, currentDefinition)"
           v-model="form.fields[field]"
           type="password"
           autocomplete="new-password"

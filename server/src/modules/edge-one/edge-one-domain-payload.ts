@@ -11,9 +11,8 @@ export interface AccelerationDomainPayload {
   ipv6_status: string
 }
 
-export function normalizeAccelerationDomainPayload(
-  data: Record<string, unknown>
-): AccelerationDomainPayload & { domain_name: string } {
+/** 规范化加速域名表单 */
+export function normalizeAccelerationDomainPayload(data: Record<string, unknown>): AccelerationDomainPayload {
   const domainName = String(data.domain_name ?? '')
     .toLowerCase()
     .trim()
@@ -32,8 +31,21 @@ export function normalizeAccelerationDomainPayload(
   }
 }
 
-export function buildEdgeOneOriginInfo(data: AccelerationDomainPayload): Record<string, unknown> {
-  const origin: Record<string, unknown> = { OriginType: data.origin_type, Origin: data.origin }
-  if (data.host_header) origin.HostHeader = data.host_header
-  return origin
+/** 构建 Create/ModifyAccelerationDomain 公共参数；端口仅按回源协议传递 */
+export function buildAccelerationDomainRequest(
+  zoneId: string,
+  data: AccelerationDomainPayload
+): Record<string, unknown> {
+  const originInfo: Record<string, unknown> = { OriginType: data.origin_type, Origin: data.origin }
+  if (data.host_header) originInfo.HostHeader = data.host_header
+  const request: Record<string, unknown> = {
+    ZoneId: zoneId,
+    DomainName: data.domain_name,
+    OriginInfo: originInfo,
+    OriginProtocol: data.origin_protocol,
+    IPv6Status: data.ipv6_status,
+  }
+  if (data.origin_protocol !== 'HTTPS') request.HttpOriginPort = data.http_origin_port
+  if (data.origin_protocol !== 'HTTP') request.HttpsOriginPort = data.https_origin_port
+  return request
 }

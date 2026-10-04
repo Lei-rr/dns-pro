@@ -32,6 +32,7 @@ export const useSessionStore = defineStore('session', () => {
     if (!pendingSession) {
       const token = ++requestToken
       loading.value = true
+      // 请求失败不写入登录态：checked 保持 false，后续导航会重试
       const request = authApi.me().then((response) => response.data)
       pendingSession = request
       try {
@@ -41,13 +42,6 @@ export const useSessionStore = defineStore('session', () => {
         checked.value = true
         if (!nextSession.authenticated) revision.value += 1
         return nextSession
-      } catch (error) {
-        if (token === requestToken) {
-          session.value = anonymousSession
-          checked.value = true
-          revision.value += 1
-        }
-        throw error
       } finally {
         if (token === requestToken && pendingSession === request) {
           pendingSession = null

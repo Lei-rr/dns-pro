@@ -1,5 +1,11 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
-import { CloudflareGateway } from '../cloudflare/cloudflare.client.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
+import { cloudflareClientFor } from '../cloudflare/cloudflare.client.js'
+import {
+  cloudflareCustomHostnameSchema,
+  parseCloudflareItemResponse,
+  parseCloudflareListResponse,
+  type CloudflarePage,
+} from '../cloudflare/cloudflare-response.schema.js'
 import {
   customHostnameDetailsCacheTag,
   customHostnameListCacheTag,
@@ -7,29 +13,25 @@ import {
   withProviderCache,
 } from '../../platform/cache/provider-cache.js'
 import { ApiError } from '../../shared/http/api-error.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import {
-  cloudflareCustomHostnameSchema,
-  cloudflareResultInfoSchema,
-  parseCloudflareItemResponse,
-  parseCloudflareListResponse,
-} from '../cloudflare/cloudflare-response.schema.js'
-import type { CloudflareProvider } from '../providers/provider.types.js'
+import { normalizeFqdn } from '../../shared/lib/values.js'
+import { callProvider, collectNumberedPages } from '../../shared/providers/provider-call.js'
 import { providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
-import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
+import { asRecord, asRecordArray } from '../../shared/providers/response-guards.js'
 
-interface CloudflareCustomHostnameSslDcvDelegationRecord {
+const PAGE_LIMIT = { limitCode: 'cloudflare_pagination_limit', limitMessage: 'Cloudflare pagination limit reached' }
+
+interface DcvDelegationRecord {
   cname: string
   cname_target: string
   [key: string]: unknown
 }
 
-export interface CloudflareCustomHostnameSsl {
+interface CustomHostnameSsl {
   type?: string
   method?: string
   status?: string
   dcv_delegation_uuid?: string
-  dcv_delegation_records?: CloudflareCustomHostnameSslDcvDelegationRecord[]
+  dcv_delegation_records?: DcvDelegationRecord[]
   certificates?: Record<string, unknown>[]
   expires_on?: string
   issuer?: string
@@ -37,7 +39,7 @@ export interface CloudflareCustomHostnameSsl {
   [key: string]: unknown
 }
 
-export interface CloudflareCustomHostnameOwnership {
+interface CustomHostnameOwnership {
   type?: string
   name?: string
   value?: string
@@ -49,92 +51,26 @@ export interface CloudflareCustomHostname {
   hostname: string
   status?: string
   custom_origin_server?: string | null
-  ssl?: CloudflareCustomHostnameSsl
-  ownership_verification?: CloudflareCustomHostnameOwnership | null
+  ssl?: CustomHostnameSsl
+  ownership_verification?: CustomHostnameOwnership | null
   custom_metadata?: Record<string, unknown> | null
   preferred_domain?: string
   auto_preferred?: boolean
   [key: string]: unknown
 }
 
-export class CloudflareCustomHostnameGateway {
+const hostnamesPath = (zoneId: string, hostnameId?: string) =>
+  `zones/${encodeURIComponent(zoneId)}/custom_hostnames${hostnameId ? `/${encodeURIComponent(hostnameId)}` : ''}`
+
+/** Cloudflare for SaaS 自定义主机名 API */
+export class SaaSCustomHostnameClient {
   constructor(private readonly providers: ProviderRepository) {}
 
-  async list(
-    cloudflareProviderId: string,
-    zoneId: string,
-    page = 1,
-    perPage = 100,
-    refresh = false
-  ): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }> {
-    const tag = customHostnameListCacheTag(cloudflareProviderId, zoneId)
-    // refresh flag on withProviderCache already bypasses memory; no pre-invalidate needed.
-
-    const cached = await withProviderCache<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }>({
-      key: `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`,
-      tags: [providerCacheTag(cloudflareProviderId), tag],
-      refresh,
-      loader: async () => {
-        const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-        const gateway = this.gatewayFor(provider)
-
-        let response
-        try {
-          response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/custom_hostnames`, {
-            page,
-            per_page: perPage,
-          })
-        } catch (error) {
-          throw wrapProviderError(
-            'saas_hostname_list_failed',
-            'Cloudflare custom hostname list failed',
-            cloudflareProviderId,
-            error,
-            { zone: zoneId }
-          )
-        }
-
-        const parsed = parseCloudflareListResponse(response)
-        const resultInfo = parsed.result_info ?? cloudflareResultInfoSchema.parse({})
-        const items = parsed.result.map((hostname) => this.present(hostname))
-        return {
-          items,
-          pagination: {
-            page: resultInfo.page ?? page,
-            per_page: resultInfo.per_page ?? perPage,
-            source_count: parsed.source_count,
-            total_count: resultInfo.total_count,
-            total_pages: resultInfo.total_pages,
-          },
-        }
-      },
-    })
-    return cached.value
-  }
-
-  async listAll(
-    cloudflareProviderId: string,
-    zoneId: string,
-    refresh = false
-  ): Promise<{ items: CloudflareCustomHostname[]; pagination: Record<string, unknown> }> {
-    const pageSize = 100
-    const items: CloudflareCustomHostname[] = []
-    let page = 1
-
-    while (true) {
-      const result = await this.list(cloudflareProviderId, zoneId, page, pageSize, refresh)
-      items.push(...result.items)
-      const totalPages = Number(result.pagination.total_pages ?? 0)
-      const sourceCount = Number(result.pagination.source_count ?? result.items.length)
-      if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
-      if (page >= MAX_PROVIDER_PAGES)
-        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
-      page++
-    }
-    return {
-      items,
-      pagination: { page: 1, per_page: items.length, total_count: items.length, total_pages: 1 },
-    }
+  async listAll(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<CloudflareCustomHostname[]> {
+    return collectNumberedPages(
+      (page, perPage) => this.page(cloudflareProviderId, zoneId, page, perPage, refresh),
+      PAGE_LIMIT
+    )
   }
 
   async show(
@@ -148,235 +84,159 @@ export class CloudflareCustomHostnameGateway {
       tags: [providerCacheTag(cloudflareProviderId), customHostnameDetailsCacheTag(cloudflareProviderId, zoneId)],
       refresh,
       loader: async () => {
-        const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-        const gateway = this.gatewayFor(provider)
-
-        let response
-        try {
-          response = await gateway.get(
-            `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`
-          )
-        } catch (error) {
-          throw wrapProviderError(
-            'saas_hostname_show_failed',
-            'Cloudflare custom hostname show failed',
-            cloudflareProviderId,
-            error,
-            { zone: zoneId, hostname_id: hostnameId }
-          )
-        }
-        return this.present(parseCloudflareItemResponse(response).result)
+        const response = await this.call(
+          cloudflareProviderId,
+          'show',
+          { zone: zoneId, hostname_id: hostnameId },
+          (client) => client.get(hostnamesPath(zoneId, hostnameId))
+        )
+        return presentHostname(parseCloudflareItemResponse(response).result)
       },
     })
     return cached.value
   }
 
-  async idByHostname(
-    cloudflareProviderId: string,
-    zoneId: string,
-    hostnameFqdn: string,
-    refresh = false
-  ): Promise<string> {
-    const normalized = hostnameFqdn.toLowerCase().trim()
-
-    const found = await this.findIdInList(cloudflareProviderId, zoneId, normalized, refresh)
+  /** FQDN → 主机名 ID；缓存未命中时强制刷新再查一次 */
+  async idByHostname(cloudflareProviderId: string, zoneId: string, hostnameFqdn: string, refresh = false) {
+    const fqdn = normalizeFqdn(hostnameFqdn)
+    const found =
+      (await this.findId(cloudflareProviderId, zoneId, fqdn, refresh)) ||
+      (!refresh ? await this.findId(cloudflareProviderId, zoneId, fqdn, true) : '')
     if (found) return found
-
-    if (!refresh) {
-      const refreshed = await this.findIdInList(cloudflareProviderId, zoneId, normalized, true)
-      if (refreshed) return refreshed
-    }
-
     throw new ApiError('saas_hostname_not_found', `Hostname ${hostnameFqdn} not found`, 404)
   }
 
-  async create(
-    cloudflareProviderId: string,
-    zoneId: string,
-    data: Record<string, unknown>
-  ): Promise<CloudflareCustomHostname> {
-    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = this.gatewayFor(provider)
-
-    const payload: Record<string, unknown> = { hostname: String(data.hostname ?? '').trim() }
-    const ssl: Record<string, unknown> = { type: 'dv' }
-    if (data.method) ssl.method = String(data.method)
-    if (data.min_tls_version) ssl.settings = { min_tls_version: String(data.min_tls_version) }
-    payload.ssl = ssl
-
+  async create(cloudflareProviderId: string, zoneId: string, data: Record<string, unknown>) {
+    const payload: Record<string, unknown> = {
+      hostname: String(data.hostname ?? '').trim(),
+      ssl: { type: 'dv', ...sslPatch(data) },
+    }
     const customOrigin = String(data.custom_origin_server ?? '').trim()
     if (customOrigin) payload.custom_origin_server = customOrigin
 
-    let response
-    try {
-      response = await gateway.post(`zones/${encodeURIComponent(zoneId)}/custom_hostnames`, payload)
-    } catch (error) {
-      throw wrapProviderError(
-        'saas_hostname_create_failed',
-        'Cloudflare custom hostname create failed',
-        cloudflareProviderId,
-        error,
-        { zone: zoneId }
-      )
-    }
-
-    return this.present(parseCloudflareItemResponse(response).result)
+    const response = await this.call(cloudflareProviderId, 'create', { zone: zoneId }, (client) =>
+      client.post(hostnamesPath(zoneId), payload)
+    )
+    return presentHostname(parseCloudflareItemResponse(response).result)
   }
 
-  async update(
-    cloudflareProviderId: string,
-    zoneId: string,
-    hostnameId: string,
-    data: Record<string, unknown>
-  ): Promise<CloudflareCustomHostname> {
-    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = this.gatewayFor(provider)
-
+  async update(cloudflareProviderId: string, zoneId: string, hostnameId: string, data: Record<string, unknown>) {
     const payload: Record<string, unknown> = {}
-    if (Object.prototype.hasOwnProperty.call(data, 'custom_origin_server')) {
-      const customOrigin = String(data.custom_origin_server ?? '').trim()
-      payload.custom_origin_server = customOrigin !== '' ? customOrigin : null
+    if (Object.hasOwn(data, 'custom_origin_server')) {
+      // 空串表示清除自定义回源
+      payload.custom_origin_server = String(data.custom_origin_server ?? '').trim() || null
     }
+    const ssl = sslPatch(data)
+    if (Object.keys(ssl).length > 0) payload.ssl = { type: 'dv', ...ssl }
 
-    const ssl: Record<string, unknown> = {}
-    if (data.method) ssl.method = String(data.method)
-    if (data.min_tls_version) ssl.settings = { min_tls_version: String(data.min_tls_version) }
-    if (Object.keys(ssl).length > 0) {
-      ssl.type = 'dv'
-      payload.ssl = ssl
-    }
-
-    let response
-    try {
-      response = await gateway.patch(
-        `zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`,
-        payload
-      )
-    } catch (error) {
-      throw wrapProviderError(
-        'saas_hostname_update_failed',
-        'Cloudflare custom hostname update failed',
-        cloudflareProviderId,
-        error,
-        { zone: zoneId, hostname_id: hostnameId }
-      )
-    }
-
-    return this.present(parseCloudflareItemResponse(response).result)
+    const response = await this.call(
+      cloudflareProviderId,
+      'update',
+      { zone: zoneId, hostname_id: hostnameId },
+      (client) => client.patch(hostnamesPath(zoneId, hostnameId), payload)
+    )
+    return presentHostname(parseCloudflareItemResponse(response).result)
   }
 
   async delete(cloudflareProviderId: string, zoneId: string, hostnameId: string): Promise<{ id: string }> {
-    const provider = await this.providers.requireType<CloudflareProvider>(cloudflareProviderId, 'cloudflare')
-    const gateway = this.gatewayFor(provider)
-
-    try {
-      await gateway.delete(`zones/${encodeURIComponent(zoneId)}/custom_hostnames/${encodeURIComponent(hostnameId)}`)
-    } catch (error) {
-      throw wrapProviderError(
-        'saas_hostname_delete_failed',
-        'Cloudflare custom hostname delete failed',
-        cloudflareProviderId,
-        error,
-        { zone: zoneId, hostname_id: hostnameId }
-      )
-    }
-
+    await this.call(cloudflareProviderId, 'delete', { zone: zoneId, hostname_id: hostnameId }, (client) =>
+      client.delete(hostnamesPath(zoneId, hostnameId))
+    )
     return { id: hostnameId }
   }
 
-  private async findIdInList(
+  private async page(
     cloudflareProviderId: string,
     zoneId: string,
-    fqdn: string,
+    page: number,
+    perPage: number,
     refresh: boolean
-  ): Promise<string | null> {
-    let page = 1
-    let hasMore = true
-    while (hasMore) {
-      const result = await this.list(cloudflareProviderId, zoneId, page, 100, refresh)
-      for (const item of result.items) {
-        if (item.hostname.toLowerCase() === fqdn && item.id) {
-          return item.id
-        }
-      }
-      const totalPages = Number(result.pagination.total_pages ?? 1)
-      hasMore = page < totalPages
-      page++
-      if (page >= MAX_PROVIDER_PAGES)
-        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
-    }
-    return null
+  ): Promise<CloudflarePage<CloudflareCustomHostname>> {
+    const cached = await withProviderCache<CloudflarePage<CloudflareCustomHostname>>({
+      key: `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`,
+      tags: [providerCacheTag(cloudflareProviderId), customHostnameListCacheTag(cloudflareProviderId, zoneId)],
+      refresh,
+      loader: async () => {
+        const response = await this.call(cloudflareProviderId, 'list', { zone: zoneId }, (client) =>
+          client.get(hostnamesPath(zoneId), { page, per_page: perPage })
+        )
+        return parseCloudflareListResponse(response, presentHostname)
+      },
+    })
+    return cached.value
   }
 
-  private present(hostname: unknown): CloudflareCustomHostname {
-    const parsed = cloudflareCustomHostnameSchema.parse(hostname)
-    const sslInput =
-      parsed.ssl && typeof parsed.ssl === 'object' && !Array.isArray(parsed.ssl)
-        ? (parsed.ssl as Record<string, unknown>)
-        : {}
-    const certificates = Array.isArray(sslInput.certificates) ? sslInput.certificates : []
-    const firstCertificate = certificates[0]
-    const firstCert =
-      firstCertificate && typeof firstCertificate === 'object' && !Array.isArray(firstCertificate)
-        ? (firstCertificate as Record<string, unknown>)
-        : {}
-    const ownershipInput = parsed.ownership_verification
-    const ownership =
-      ownershipInput && typeof ownershipInput === 'object' && !Array.isArray(ownershipInput)
-        ? (ownershipInput as Record<string, unknown>)
-        : {}
+  private async findId(cloudflareProviderId: string, zoneId: string, fqdn: string, refresh: boolean) {
+    let found = ''
+    await collectNumberedPages((page, perPage) => this.page(cloudflareProviderId, zoneId, page, perPage, refresh), {
+      ...PAGE_LIMIT,
+      stop: (items) => {
+        found = items.find((item) => normalizeFqdn(item.hostname) === fqdn && item.id)?.id ?? ''
+        return found !== ''
+      },
+    })
+    return found
+  }
 
-    const ssl: CloudflareCustomHostnameSsl = {
-      ...sslInput,
-      settings:
-        sslInput.settings && typeof sslInput.settings === 'object' && !Array.isArray(sslInput.settings)
-          ? (sslInput.settings as Record<string, unknown>)
-          : {},
-      dcv_delegation_records: this.recordArray(sslInput.dcv_delegation_records).map((record) => ({
+  private async call<T>(
+    cloudflareProviderId: string,
+    action: 'list' | 'show' | 'create' | 'update' | 'delete',
+    details: Record<string, unknown>,
+    fn: (client: Awaited<ReturnType<typeof cloudflareClientFor>>['client']) => Promise<T>
+  ): Promise<T> {
+    const { client } = await cloudflareClientFor(this.providers, cloudflareProviderId)
+    return callProvider(
+      {
+        code: `saas_hostname_${action}_failed`,
+        message: `Cloudflare custom hostname ${action} failed`,
+        providerId: cloudflareProviderId,
+        details,
+      },
+      () => fn(client)
+    )
+  }
+}
+
+function sslPatch(data: Record<string, unknown>): Record<string, unknown> {
+  const ssl: Record<string, unknown> = {}
+  if (data.method) ssl.method = String(data.method)
+  if (data.min_tls_version) ssl.settings = { min_tls_version: String(data.min_tls_version) }
+  return ssl
+}
+
+function presentHostname(hostname: unknown): CloudflareCustomHostname {
+  const parsed = cloudflareCustomHostnameSchema.parse(hostname)
+  const ssl = asRecord(parsed.ssl)
+  const certificates = asRecordArray(ssl.certificates)
+  const firstCert = certificates[0] ?? {}
+  const ownership = asRecord(parsed.ownership_verification)
+  const metadata = parsed.custom_metadata
+
+  return {
+    ...parsed,
+    id: providerString(parsed.id),
+    hostname: providerString(parsed.hostname),
+    status: providerOptionalString(parsed.status),
+    custom_origin_server: providerOptionalString(parsed.custom_origin_server),
+    ssl: {
+      ...ssl,
+      settings: asRecord(ssl.settings),
+      dcv_delegation_records: asRecordArray(ssl.dcv_delegation_records).map((record) => ({
         ...record,
         cname: providerString(record.cname),
         cname_target: providerString(record.cname_target),
       })),
-      validation_records: this.recordArray(sslInput.validation_records),
-      certificates: this.recordArray(certificates),
-      expires_on:
-        firstCert.expires_on == null && sslInput.expires_on == null
-          ? undefined
-          : providerOptionalString(firstCert.expires_on ?? sslInput.expires_on),
-      issuer:
-        firstCert.issuer == null && sslInput.issuer == null
-          ? undefined
-          : providerOptionalString(firstCert.issuer ?? sslInput.issuer),
-    }
-
-    return {
-      ...parsed,
-      id: providerString(parsed.id),
-      hostname: providerString(parsed.hostname),
-      status: providerOptionalString(parsed.status),
-      custom_origin_server: providerOptionalString(parsed.custom_origin_server),
-      ssl,
-      ownership_verification: {
-        ...ownership,
-        type: providerOptionalString(ownership.type),
-        name: providerOptionalString(ownership.name),
-        value: providerOptionalString(ownership.value),
-      },
-      custom_metadata:
-        parsed.custom_metadata && typeof parsed.custom_metadata === 'object' && !Array.isArray(parsed.custom_metadata)
-          ? parsed.custom_metadata
-          : null,
-    }
-  }
-
-  private recordArray(value: unknown): Array<Record<string, unknown>> {
-    if (!Array.isArray(value)) return []
-    return value.filter(
-      (item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item)
-    )
-  }
-
-  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
-    return CloudflareGateway.forToken(provider.api_token)
+      validation_records: asRecordArray(ssl.validation_records),
+      certificates,
+      expires_on: providerOptionalString(firstCert.expires_on ?? ssl.expires_on ?? undefined),
+      issuer: providerOptionalString(firstCert.issuer ?? ssl.issuer ?? undefined),
+    },
+    ownership_verification: {
+      ...ownership,
+      type: providerOptionalString(ownership.type),
+      name: providerOptionalString(ownership.name),
+      value: providerOptionalString(ownership.value),
+    },
+    custom_metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : null,
   }
 }

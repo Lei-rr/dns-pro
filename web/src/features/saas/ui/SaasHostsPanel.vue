@@ -2,6 +2,7 @@
 import { Plus, RefreshCw, Search, X } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
+import { Input } from '@/shared/ui/input'
 import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
@@ -48,7 +49,7 @@ const {
   showFallback,
   openPreferred,
   decodedZone,
-  filtered,
+  hostTotal,
   loading,
   refreshing,
   pageSize,
@@ -106,7 +107,7 @@ function clearSearch() {
     </PageHeader>
 
     <JobProgressAlert
-      :running="jobProgress.running.value || applyingPreferred"
+      :running="jobProgress.running.value"
       :text="jobProgress.text.value"
       title="SaaS 任务"
       :status="jobProgress.job.value?.status"
@@ -256,7 +257,7 @@ function clearSearch() {
     />
     <PreferredDomainsDialog
       v-model:open="showPreferred"
-      :host-count="filtered.length"
+      :host-count="hostTotal"
       :applying="applyingPreferred || jobProgress.running.value"
       @apply="applyPreferred"
     />

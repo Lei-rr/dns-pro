@@ -1,6 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "exclude": [],
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,ts}"],
@@ -8,7 +7,7 @@
     },
     "web": {
       "entry": ["src/app/styles/index.css"],
-      "project": ["src/**/*.{ts,vue}"]
+      "project": ["src/**/*.{ts,vue,css}"]
     }
   },
   "ignoreIssues": {

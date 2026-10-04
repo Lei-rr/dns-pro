@@ -15,6 +15,19 @@ export interface Zone {
   [key: string]: unknown
 }
 
+/** DNSPod 可选解析线路（随域名套餐变化） */
+export interface DnsLine {
+  name: string
+  line_id: string
+}
+
+/** 线路下拉项：value 为线路名，lineId 存在时提交给上游更精确 */
+export interface DnsLineOption {
+  label: string
+  value: string
+  lineId?: string
+}
+
 export interface DnsRecord {
   id?: string
   name?: string

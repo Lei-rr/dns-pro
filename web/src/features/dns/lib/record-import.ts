@@ -56,40 +56,57 @@ function parseJsonRecords(text: string): ParsedImportRecord[] {
   return results
 }
 
-function parseCsvLine(line: string): string[] {
-  const cells: string[] = []
+/** 解析整段 CSV：引号内的逗号、换行、转义引号都按 RFC4180 处理 */
+function parseCsvRows(text: string): string[][] {
+  const rows: string[][] = []
+  let cells: string[] = []
   let current = ''
   let inQuotes = false
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i]
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
+      if (inQuotes && text[i + 1] === '"') {
         current += '"'
         i++
       } else {
         inQuotes = !inQuotes
       }
-    } else if (char === ',' && !inQuotes) {
+      continue
+    }
+    if (!inQuotes && char === ',') {
       cells.push(current.trim())
       current = ''
-    } else {
-      current += char
+      continue
     }
+    if (!inQuotes && (char === '\n' || char === '\r')) {
+      if (char === '\r' && text[i + 1] === '\n') i++
+      cells.push(current.trim())
+      current = ''
+      if (cells.some((cell) => cell !== '')) rows.push(cells)
+      cells = []
+      continue
+    }
+    current += char
   }
   cells.push(current.trim())
-  return cells
+  if (cells.some((cell) => cell !== '')) rows.push(cells)
+  return rows
+}
+
+const CSV_HEADER_KEYS = ['name', 'type', 'value', 'content', 'ttl', 'line', 'proxied', 'remark', 'comment', 'mx']
+
+function isCsvHeader(cells: string[]): boolean {
+  return cells.some((cell) => CSV_HEADER_KEYS.some((key) => cell.toLowerCase().includes(key)))
 }
 
 function parseCsvRecords(text: string): ParsedImportRecord[] {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean)
+  const rows = parseCsvRows(text)
+  if (!rows.length) return []
 
-  if (!lines.length) return []
-
-  const header = parseCsvLine(lines[0] as string).map((h) => h.toLowerCase())
+  const first = rows[0] as string[]
+  const hasHeader = isCsvHeader(first)
+  const header = hasHeader ? first.map((h) => h.toLowerCase()) : []
   const nameIdx = header.findIndex((h) => h.includes('name') || h.includes('名称') || h.includes('主机'))
   const typeIdx = header.findIndex((h) => h.includes('type') || h.includes('类型'))
   const valIdx = header.findIndex(
@@ -102,28 +119,29 @@ function parseCsvRecords(text: string): ParsedImportRecord[] {
   const priorityIdx = header.findIndex((h) => h.includes('priority') || h.includes('mx') || h.includes('优先级'))
 
   const results: ParsedImportRecord[] = []
-
-  for (let i = 1; i < lines.length; i++) {
-    const cells = parseCsvLine(lines[i] as string)
+  // 无表头时首行即数据，不能吞掉
+  for (let i = hasHeader ? 1 : 0; i < rows.length; i++) {
+    const cells = rows[i] as string[]
     if (!cells.length) continue
 
     const name = (nameIdx >= 0 ? cells[nameIdx] : cells[0]) || '@'
-    const type = ((typeIdx >= 0 ? cells[typeIdx] : cells[1]) || 'A').toUpperCase()
+    const type = ((typeIdx >= 0 ? cells[typeIdx] : cells[1]) || 'A').trim().toUpperCase()
     const value = (valIdx >= 0 ? cells[valIdx] : cells[2]) || ''
     if (!value) continue
 
-    const rec: ParsedImportRecord = { name, type, value }
+    const rec: ParsedImportRecord = { name: name.trim() || '@', type, value }
     if (ttlIdx >= 0 && cells[ttlIdx]) {
-      const ttl = Number(cells[ttlIdx])
-      if (Number.isFinite(ttl) && ttl > 0) rec.ttl = ttl
+      const ttl = parseTtl(cells[ttlIdx] as string)
+      if (ttl !== undefined) rec.ttl = ttl
     }
     if (lineIdx >= 0 && cells[lineIdx]) rec.line = cells[lineIdx]
-    if (proxiedIdx >= 0 && cells[proxiedIdx])
-      rec.proxied = ['true', '1', 'yes', '是'].includes(cells[proxiedIdx].toLowerCase())
     if (remarkIdx >= 0 && cells[remarkIdx]) rec.remark = cells[remarkIdx]
     if (priorityIdx >= 0 && cells[priorityIdx]) {
       const p = Number(cells[priorityIdx])
       if (Number.isFinite(p)) rec.priority = p
+    }
+    if (proxiedIdx >= 0 && cells[proxiedIdx]) {
+      rec.proxied = ['true', '1', 'yes', '是', 'on'].includes((cells[proxiedIdx] as string).toLowerCase())
     }
 
     results.push(rec)
@@ -132,49 +150,105 @@ function parseCsvRecords(text: string): ParsedImportRecord[] {
   return results
 }
 
+/** TTL 支持 1h / 30m / 1d / 1w 等写法 */
+function parseTtl(value: string): number | undefined {
+  const text = value.trim().toLowerCase()
+  if (text === '') return undefined
+  if (/^\d+$/.test(text)) {
+    const ttl = Number(text)
+    return ttl > 0 ? ttl : undefined
+  }
+  const match = /^(\d+)\s*([smhdw])$/.exec(text)
+  if (!match) return undefined
+  const amount = Number(match[1])
+  const unit = { s: 1, m: 60, h: 3600, d: 86400, w: 604800 }[match[2] as 's' | 'm' | 'h' | 'd' | 'w']
+  return amount > 0 ? amount * unit : undefined
+}
+
+/** 去掉引号外的注释（`;` 与 `#`），引号内的分号必须保留（如 TXT "v=DMARC1; p=none"） */
+function stripZoneComment(line: string): string {
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i]
+    if (char === '"') inQuotes = !inQuotes
+    else if (!inQuotes && (char === ';' || char === '#')) return line.slice(0, i)
+  }
+  return line
+}
+
+/** 合并 `( ... )` 续行，并把续行内容接到上一行 */
+function joinZoneLines(text: string): string[] {
+  const joined: string[] = []
+  let buffer = ''
+  let depth = 0
+  for (const raw of text.split(/\r?\n/)) {
+    const line = stripZoneComment(raw)
+    buffer = buffer === '' ? line : `${buffer} ${line.trim()}`
+    depth += (line.match(/\(/g) ?? []).length - (line.match(/\)/g) ?? []).length
+    if (depth > 0) continue
+    joined.push(buffer.replace(/[()]/g, ' '))
+    buffer = ''
+  }
+  if (buffer.trim()) joined.push(buffer)
+  return joined
+}
+
 function parseZoneRecords(text: string, currentZone = ''): ParsedImportRecord[] {
-  const lines = text.split(/\r?\n/)
   const results: ParsedImportRecord[] = []
   let origin = currentZone.toLowerCase().replace(/\.$/, '')
   let defaultTtl = 600
+  let lastOwner = ''
 
   const validTypes = new Set(['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'NS', 'SRV', 'CAA', 'PTR'])
 
-  for (const rawLine of lines) {
-    const cleanLine = ((rawLine.split(';')[0] as string).split('#')[0] as string).trim()
+  for (const rawLine of joinZoneLines(text)) {
+    const cleanLine = rawLine.trim()
     if (!cleanLine) continue
+    // RFC1035：以空白开头的行沿用上一条记录的 owner
+    const inheritsOwner = /^\s/.test(rawLine) && lastOwner !== ''
 
     if (cleanLine.startsWith('$ORIGIN')) {
       const parts = cleanLine.split(/\s+/)
-      if (parts[1]) origin = parts[1].replace(/\.$/, '').toLowerCase()
+      if (parts[1]) origin = (parts[1] as string).replace(/\.$/, '').toLowerCase()
       continue
     }
 
     if (cleanLine.startsWith('$TTL')) {
       const parts = cleanLine.split(/\s+/)
-      const t = Number(parts[1])
-      if (Number.isFinite(t) && t > 0) defaultTtl = t
+      const ttl = parseTtl(parts[1] ?? '')
+      if (ttl !== undefined) defaultTtl = ttl
       continue
     }
 
     const tokens = cleanLine.split(/\s+/)
-    if (tokens.length < 3) continue
+    let name: string
+    let remaining: string[]
 
-    let name = tokens[0] as string
-    let remaining = tokens.slice(1)
+    if (inheritsOwner) {
+      name = lastOwner
+      remaining = tokens
+    } else {
+      if (tokens.length < 3) continue
+      name = tokens[0] as string
+      remaining = tokens.slice(1)
+      lastOwner = name
+    }
 
-    if (origin && name.endsWith(`.${origin}.`)) {
-      name = name.slice(0, -(origin.length + 2)) || '@'
-    } else if (origin && name === `${origin}.`) {
+    if (origin && name.toLowerCase() === `${origin}.`) {
       name = '@'
+    } else if (origin && name.toLowerCase().endsWith(`.${origin}.`)) {
+      name = name.slice(0, -(origin.length + 2)) || '@'
     } else if (name.endsWith('.')) {
       name = name.slice(0, -1)
     }
 
     let ttl = defaultTtl
-    if (remaining.length > 0 && /^\d+$/.test(remaining[0] as string)) {
-      ttl = Number(remaining[0])
-      remaining = remaining.slice(1)
+    if (remaining.length > 0) {
+      const parsedTtl = parseTtl(remaining[0] as string)
+      if (parsedTtl !== undefined) {
+        ttl = parsedTtl
+        remaining = remaining.slice(1)
+      }
     }
 
     if (remaining.length > 0 && (remaining[0] as string).toUpperCase() === 'IN') {
@@ -194,19 +268,16 @@ function parseZoneRecords(text: string, currentZone = ''): ParsedImportRecord[] 
     }
 
     let value = remaining.join(' ').trim()
-    if (type === 'TXT' && value.startsWith('"') && value.endsWith('"')) {
-      value = value.slice(1, -1)
+    // 去掉包裹引号（多段引号拼接按 RFC1035 直接相连）
+    if (value.includes('"')) {
+      value = (value.match(/"[^"]*"/g) ?? [value]).map((part) => part.replace(/^"|"$/g, '')).join('')
     }
 
-    if (value) {
-      results.push({
-        name: name || '@',
-        type,
-        value,
-        ttl,
-        priority,
-      })
-    }
+    if (!value) continue
+
+    const rec: ParsedImportRecord = { name: name || '@', type, value, ttl }
+    if (priority !== undefined) rec.priority = priority
+    results.push(rec)
   }
 
   return results

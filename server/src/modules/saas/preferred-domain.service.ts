@@ -1,8 +1,18 @@
-import { PreferredDomainRepository, type PreferredDomain } from './preferred-domain.repository.js'
+import type { JsonStore } from '../../platform/storage/json-store.js'
+
+export interface PreferredDomain {
+  domain: string
+  sort: number
+}
+
+/** data/saas/preferred-domains.json：有序域名列表 */
+export interface PreferredDomainsFile {
+  items: string[]
+}
 import { ApiError } from '../../shared/http/api-error.js'
 
 export class PreferredDomainService {
-  constructor(private readonly store: PreferredDomainRepository) {}
+  constructor(private readonly store: JsonStore<PreferredDomainsFile>) {}
 
   async list(): Promise<PreferredDomain[]> {
     const domains = await this.readDomains()

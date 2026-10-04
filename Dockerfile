@@ -71,9 +71,14 @@ RUN rm -rf \
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY --chmod=0755 docker/entrypoint.sh /entrypoint.sh
 
-RUN mkdir -p /app/data/saas /app/data/jobs
+# 以非 root 用户运行；程序文件只读，仅数据目录可写
+RUN mkdir -p /app/data/saas /app/data/jobs \
+  && chown -R node:node /app/data \
+  && chmod 700 /app/data
+
+USER node
 
 VOLUME ["/app/data"]
 

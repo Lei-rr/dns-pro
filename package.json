@@ -1,7 +1,7 @@
 {
   "name": "dns-pro",
   "version": "1.1.0",
-  "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / 腾讯云 EdgeOne 一体的 DNS 与隧道管理面板（Node.js 版）",
+  "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / \u817e\u8baf\u4e91 EdgeOne \u4e00\u4f53\u7684 DNS \u4e0e\u96a7\u9053\u7ba1\u7406\u9762\u677f\uff08Node.js \u7248\uff09",
   "type": "module",
   "workspaces": [
     "web"
@@ -11,7 +11,8 @@
   },
   "overrides": {
     "nanoid": ">=3.3.17",
-    "brace-expansion": ">=5.0.9",
+    "brace-expansion": ">=5.0.12",
+    "ip-address": ">=10.7.3",
     "fast-uri": ">=4.2.1",
     "image-size": ">=1.2.1",
     "less": ">=4.8.1"
@@ -40,13 +41,17 @@
     "routes:check": "tsx scripts/generate-route-manifest.ts --check",
     "probe:api": "tsx scripts/isolated-api-probe.ts",
     "probe:job": "tsx --tsconfig web/tsconfig.json scripts/isolated-job-progress-probe.ts",
-    "probe:platform": "tsx scripts/isolated-platform-concurrency-probe.ts && tsx scripts/isolated-sensitive-files-probe.ts && tsx scripts/isolated-maintenance-contract-probe.ts",
-    "probe:workflow": "tsx scripts/isolated-workflow-recovery-probe.ts && tsx scripts/isolated-tunnel-route-probe.ts && tsx scripts/isolated-request-param-probe.ts && tsx scripts/isolated-edgeone-payload-probe.ts && tsx scripts/isolated-backend-safe-probe.ts && tsx scripts/isolated-backend-careful-probe.ts && tsx scripts/isolated-default-config-probe.ts",
+    "probe:platform": "tsx scripts/isolated-platform-concurrency-probe.ts && tsx scripts/isolated-sensitive-files-probe.ts && tsx scripts/isolated-maintenance-contract-probe.ts && npm run probe:cache",
+    "probe:workflow": "tsx scripts/isolated-workflow-recovery-probe.ts && tsx scripts/isolated-tunnel-route-probe.ts && tsx scripts/isolated-request-param-probe.ts && tsx scripts/isolated-edgeone-payload-probe.ts && tsx scripts/isolated-backend-safe-probe.ts && tsx scripts/isolated-backend-careful-probe.ts && tsx scripts/isolated-default-config-probe.ts && npm run probe:requests && npm run probe:retry",
     "probe:functional": "tsx scripts/isolated-functional-surface-probe.ts && tsx scripts/isolated-frontend-audit-probe.ts && tsx scripts/isolated-edgeone-https-status-probe.ts && tsx scripts/isolated-saas-dns-repair-probe.ts && tsx scripts/isolated-stability-readability-probe.ts",
     "probe:static": "tsx scripts/isolated-static-probe.ts",
+    "probe:security": "tsx scripts/isolated-security-probe.ts && tsx scripts/isolated-password-probe.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "npm --workspace dns-pro-web run typecheck",
-    "verify": "npm run format:check && npm run version:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:platform && npm run probe:workflow && npm run probe:functional && npm run build && npm run probe:static"
+    "verify": "npm run format:check && npm run version:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:platform && npm run probe:workflow && npm run probe:functional && npm run probe:security && npm run build && npm run probe:static",
+    "probe:requests": "tsx scripts/isolated-batch-request-probe.ts",
+    "probe:retry": "tsx scripts/isolated-provider-retry-probe.ts",
+    "probe:cache": "tsx scripts/isolated-cache-probe.ts"
   },
   "dependencies": {
     "@fastify/compress": "^9.1.0",
@@ -67,7 +72,7 @@
     "eslint": "^10.8.0",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.8.0",
-    "knip": "^5.88.1",
+    "knip": "^6.39.0",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",

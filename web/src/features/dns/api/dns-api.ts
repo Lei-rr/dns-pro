@@ -1,9 +1,9 @@
 import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse } from '@/shared/api/types'
-import type { DnsRecord, Zone } from '@/features/dns/model/types'
+import type { DnsLine, DnsRecord, Zone } from '@/features/dns/model/types'
 import { encodePath } from '@/shared/lib/path'
 
-export type DnsProviderType = 'dnspod' | 'cloudflare'
+type DnsProviderType = 'dnspod' | 'cloudflare'
 export type DnsProviderRef = { id: string; type: DnsProviderType; name?: string }
 
 const providerBase = (provider: DnsProviderRef) => `/${provider.type}/providers/${encodePath(provider.id)}`
@@ -12,6 +12,7 @@ const endpoints = {
   zones: (provider: DnsProviderRef) => `${providerBase(provider)}/zones`,
   zone: (provider: DnsProviderRef, zone: string) => zoneBase(provider, zone),
   records: (provider: DnsProviderRef, zone: string) => `${zoneBase(provider, zone)}/records`,
+  lines: (provider: DnsProviderRef, zone: string) => `${zoneBase(provider, zone)}/lines`,
   record: (provider: DnsProviderRef, zone: string, record: string) =>
     `${zoneBase(provider, zone)}/records/${encodePath(record)}`,
   recordsBatchCreate: (provider: DnsProviderRef, zone: string) => `${zoneBase(provider, zone)}/records/batch-create`,
@@ -128,6 +129,17 @@ export const dnsApi = {
   createZone: (provider: DnsProviderRef, data: Record<string, unknown>): Promise<ApiResponse<Zone>> =>
     http.post(endpoints.zones(provider), provider.type === 'cloudflare' ? { name: data.domain ?? data.name } : data),
   deleteZone: (provider: DnsProviderRef, zone: string) => http.delete(endpoints.zone(provider, zone)),
+  /** DNSPod 解析线路（Cloudflare 无线路概念，直接返回空） */
+  lines: async (
+    provider: DnsProviderRef,
+    zone: string,
+    options: Record<string, unknown> = {}
+  ): Promise<ApiResponse<{ items: DnsLine[]; groups: DnsLine[] }>> => {
+    if (provider.type !== 'dnspod') return { code: 0, message: 'success', data: { items: [], groups: [] } }
+    const response = await http.get(endpoints.lines(provider, zone), withRefresh({ refresh: options?.refresh }))
+    const data = (response.data ?? {}) as { items?: DnsLine[]; groups?: DnsLine[] }
+    return { ...response, data: { items: data.items ?? [], groups: data.groups ?? [] } }
+  },
   records: async (
     provider: DnsProviderRef,
     domain: string,

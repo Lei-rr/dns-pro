@@ -2,6 +2,8 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   // 鉴权
   unauthenticated: '请先登录',
   invalid_credentials: '用户名或密码不正确',
+  password_change_required: '仍在使用默认账号密码，请先修改密码',
+  password_too_weak: '新密码强度不足',
   auth_rate_limited: '登录失败次数过多，请稍后重试',
 
   // 通用
@@ -12,6 +14,9 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   sync_skipped: '同步已跳过',
   internal_error: '服务内部错误',
   request_error: '请求错误',
+  invalid_upstream_path: '请求参数包含非法路径字符',
+  provider_rate_limited: '服务商接口限流，请稍后重试',
+  csrf_rejected: '请求来源校验失败，请刷新页面后重试',
   validation_error: '参数校验失败',
   service_unavailable: '服务暂时不可用，请稍后重试',
   health_check_failed: '健康检查失败',
@@ -56,6 +61,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   dnspod_record_update_failed: 'DNSPod 记录更新失败',
   dnspod_record_delete_failed: 'DNSPod 记录删除失败',
   dnspod_record_list_failed: 'DNSPod 记录列表获取失败',
+  dnspod_line_list_failed: 'DNSPod 线路列表获取失败',
   dnspod_zone_create_failed: 'DNSPod 域名添加失败',
   dnspod_zone_delete_failed: 'DNSPod 域名删除失败',
   dnspod_zone_list_failed: 'DNSPod 域名列表获取失败',

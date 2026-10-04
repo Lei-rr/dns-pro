@@ -11,7 +11,7 @@ import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/features/edge-one/model/types'
 import { toast } from '@/shared/lib/toast'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
-import { dnsSideEffectFromData } from '@/shared/lib/dns-side-effects'
+import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useListPage } from '@/shared/lib/use-list-page'
@@ -60,6 +60,8 @@ const filtered = computed(() => {
   })
 })
 const pageTitle = computed(() => zoneMeta.value?.name || decodeURIComponent(props.zoneId))
+/** 站点元数据是否就绪：未就绪时不允许新增（否则会拿 zoneId 当域名拼出错误的主机名） */
+const zoneMetaReady = computed(() => Boolean(zoneMeta.value?.name))
 
 const {
   loading,
@@ -157,8 +159,12 @@ function openCert(record: EdgeOneAccelerationDomain) {
 
 async function save(payload: Record<string, unknown>) {
   if (saving.value) return
-  const owner = mutationGeneration.claim({ providerId: props.providerId, zoneId: props.zoneId })
   const editingName = editingDomain.value ? domainName(editingDomain.value) : ''
+  if (!editingName && !zoneMetaReady.value) {
+    toast.error('站点信息尚未加载完成，请稍后重试')
+    return
+  }
+  const owner = mutationGeneration.claim({ providerId: props.providerId, zoneId: props.zoneId })
   saving.value = true
   try {
     const data: Record<string, unknown> = {
@@ -167,8 +173,13 @@ async function save(payload: Record<string, unknown>) {
     }
     if (!editingName) data.domain_name = payload.fullDomain as string
     if (payload.origin_protocol) data.origin_protocol = payload.origin_protocol
-    if (payload.http_origin_port) data.http_origin_port = payload.http_origin_port
-    if (payload.https_origin_port) data.https_origin_port = payload.https_origin_port
+    // 端口按数值提交（0/空值不再被静默忽略，交给后端 schema 统一校验）
+    if (Number.isFinite(Number(payload.http_origin_port))) {
+      data.http_origin_port = Number(payload.http_origin_port)
+    }
+    if (Number.isFinite(Number(payload.https_origin_port))) {
+      data.https_origin_port = Number(payload.https_origin_port)
+    }
     if (payload.ipv6_status) data.ipv6_status = payload.ipv6_status
     if (payload.host_header) data.host_header = payload.host_header
 
@@ -222,6 +233,8 @@ async function saveCertificate(payload: Record<string, unknown>) {
 
 async function setStatus(record: EdgeOneAccelerationDomain, status: string) {
   const key = domainName(record)
+  const scope = captureMutationOwner()
+  const previous = String(record.status || '')
   await runBusy(key, async (owner) => {
     try {
       await edgeOneApi.updateAccelerationDomainStatus(props.providerId, props.zoneId, key, status)
@@ -237,6 +250,14 @@ async function setStatus(record: EdgeOneAccelerationDomain, status: string) {
       )
       toast.success('状态已更新')
     } catch (error) {
+      // 失败回滚乐观更新，避免界面显示未生效的状态
+      if (scope.active()) {
+        patchListItem(
+          domains,
+          (item) => domainName(item) === key,
+          (item) => ({ ...item, status: previous, active_status: previous })
+        )
+      }
       if (owner.active()) toast.error(errorMessage(error))
     }
   })
@@ -373,7 +394,7 @@ async function resumeJobs() {
     () => edgeOneApi.batchActive(scopeOwner.value.providerId, scopeOwner.value.zoneId),
     {
       label: 'EdgeOne 批量',
-      fetchJob: async (id) => ((await edgeOneApi.batchJob(props.providerId, id)).data as JobLike) || {},
+      fetchJob: async (id) => ((await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data as JobLike) || {},
     }
   )
   if (finished) {
@@ -398,6 +419,8 @@ async function resumeJobs() {
           isActive: () => scopeOwner.active(),
         }
       )
+    } else if (scopeOwner.active()) {
+      toast.success(finished.message || 'EdgeOne 批量已完成')
     }
     await runLoad()
   }

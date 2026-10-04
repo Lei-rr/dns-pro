@@ -22,7 +22,8 @@ export function useJobProgress() {
   const resumeError = ref('')
   let clearTimer: ReturnType<typeof setTimeout> | null = null
   const ownership = createScopeGeneration()
-  let resumeProbe = 0
+  // 探测标志（非计数器）：reset 后必须能重新探测后端进行中的任务
+  let probing = false
 
   function isActiveStatus(status?: string) {
     return status === 'pending' || status === 'running'
@@ -114,9 +115,9 @@ export function useJobProgress() {
     fetchActive: () => Promise<{ data?: unknown } | unknown>,
     options: PollJobOptions
   ): Promise<JobLike | null> {
-    if (running.value || resumeProbe) return job.value
+    if (running.value || probing) return job.value
     const owner = ownership.claim()
-    const probe = ++resumeProbe
+    probing = true
     resumeError.value = ''
     try {
       const response = await fetchActive()
@@ -148,7 +149,7 @@ export function useJobProgress() {
       }
       return null
     } finally {
-      if (probe === resumeProbe) resumeProbe = 0
+      probing = false
     }
   }
 
@@ -165,7 +166,7 @@ export function useJobProgress() {
 
   function reset() {
     ownership.invalidate()
-    resumeProbe++
+    probing = false
     cancelAutoClear()
     running.value = false
     text.value = ''

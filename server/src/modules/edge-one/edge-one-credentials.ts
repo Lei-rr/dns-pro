@@ -1,29 +1,36 @@
 import { ApiError } from '../../shared/http/api-error.js'
 import type { ProviderRepository } from '../providers/provider.repository.js'
 import type { DnsPodProvider, EdgeOneProvider } from '../providers/provider.types.js'
+import { EdgeOneClient } from './edge-one.client.js'
 
-/** EdgeOne API credentials are read from the linked durable DNSPod provider each time. */
-
-export async function resolveEdgeOneApiCredentials(
+/** EdgeOne 服务商及其关联 DNSPod（提供腾讯云密钥） */
+export async function resolveEdgeOneProvider(
   providers: ProviderRepository,
   edgeoneProviderId: string
-): Promise<DnsPodProvider> {
-  const edgeoneProvider = await providers.requireType<EdgeOneProvider>(
+): Promise<{ provider: EdgeOneProvider; dnspodProviderId: string }> {
+  const provider = await providers.requireType<EdgeOneProvider>(
     edgeoneProviderId,
     'edgeone',
     'EdgeOne provider not found',
     'edgeone_provider_not_found'
   )
-  const dnspodProviderId = edgeoneProvider.dnspod_provider.trim()
+  return { provider, dnspodProviderId: provider.dnspod_provider.trim() }
+}
+
+/** 每次调用都从持久化配置读取关联 DNSPod 密钥并创建客户端 */
+export async function edgeOneClientFor(
+  providers: ProviderRepository,
+  edgeoneProviderId: string
+): Promise<EdgeOneClient> {
+  const { dnspodProviderId } = await resolveEdgeOneProvider(providers, edgeoneProviderId)
   if (dnspodProviderId === '') {
     throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne provider is not linked to a DNSPod provider', 422)
   }
-
-  const dnspodProvider = await providers.requireType<DnsPodProvider>(
+  const dnspod = await providers.requireType<DnsPodProvider>(
     dnspodProviderId,
     'dnspod',
     'DNSPod provider not found',
     'dnspod_provider_not_found'
   )
-  return dnspodProvider
+  return EdgeOneClient.forProvider(dnspod)
 }

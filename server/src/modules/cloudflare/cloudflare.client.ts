@@ -1,18 +1,20 @@
-import { BaseGateway, type GatewayRequestConfig } from '../../shared/providers/base.client.js'
 import { ApiError } from '../../shared/http/api-error.js'
+import { BaseHttpClient, type HttpRequestConfig } from '../../shared/providers/http.client.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
+import type { CloudflareProvider } from '../providers/provider.types.js'
 
-interface CloudflareApiResponse<T = unknown> {
+export interface CloudflareApiResponse {
   success?: boolean
   errors?: unknown[]
   messages?: unknown[]
-  result?: T
+  result?: unknown
   result_info?: Record<string, unknown>
 }
 
-export class CloudflareGateway extends BaseGateway {
-  /** Create a short-lived gateway so replaced credentials are not retained in a process-global map. */
-  static forToken(apiToken: string): CloudflareGateway {
-    return new CloudflareGateway(apiToken.trim())
+/** Cloudflare v4 API 客户端（按次创建，避免进程内长期持有已替换的 Token） */
+export class CloudflareClient extends BaseHttpClient {
+  static forProvider(provider: Pick<CloudflareProvider, 'api_token'>): CloudflareClient {
+    return new CloudflareClient(provider.api_token.trim())
   }
 
   constructor(apiToken: string) {
@@ -26,34 +28,33 @@ export class CloudflareGateway extends BaseGateway {
     })
   }
 
-  async get(path: string, params?: Record<string, unknown>): Promise<CloudflareApiResponse<unknown>> {
-    return this.call({ method: 'GET', url: path, params })
+  get(path: string, params?: Record<string, unknown>): Promise<CloudflareApiResponse> {
+    return this.send({ method: 'GET', url: path, params })
   }
 
-  async post(path: string, data?: unknown): Promise<CloudflareApiResponse<unknown>> {
-    return this.call({ method: 'POST', url: path, data })
+  post(path: string, data?: unknown): Promise<CloudflareApiResponse> {
+    return this.send({ method: 'POST', url: path, data })
   }
 
-  async put(path: string, data?: unknown): Promise<CloudflareApiResponse<unknown>> {
-    return this.call({ method: 'PUT', url: path, data })
+  put(path: string, data?: unknown): Promise<CloudflareApiResponse> {
+    return this.send({ method: 'PUT', url: path, data })
   }
 
-  async patch(path: string, data?: unknown): Promise<CloudflareApiResponse<unknown>> {
-    return this.call({ method: 'PATCH', url: path, data })
+  patch(path: string, data?: unknown): Promise<CloudflareApiResponse> {
+    return this.send({ method: 'PATCH', url: path, data })
   }
 
-  async delete(path: string): Promise<CloudflareApiResponse<unknown>> {
-    return this.call({ method: 'DELETE', url: path })
+  delete(path: string): Promise<CloudflareApiResponse> {
+    return this.send({ method: 'DELETE', url: path })
   }
 
-  private async call(config: GatewayRequestConfig): Promise<CloudflareApiResponse<unknown>> {
+  private async send(config: HttpRequestConfig): Promise<CloudflareApiResponse> {
     try {
-      const response = (await this.request(config)) as CloudflareApiResponse<unknown>
-      if (response && response.success === false) {
-        this.throwCloudflareError(response)
-      }
+      const response = (await this.request(config)) as CloudflareApiResponse | null
+      if (response?.success === false) throw cloudflareError(response)
       return response ?? {}
     } catch (error) {
+      // 网络层失败（无上游响应体）统一为连接失败
       if (error instanceof ApiError && error.code === 'http_error' && error.statusCode === 502 && !error.details) {
         throw new ApiError('cloudflare_connection_failed', 'Cloudflare connection failed', 502, {
           original_error: error.message,
@@ -62,14 +63,30 @@ export class CloudflareGateway extends BaseGateway {
       throw error
     }
   }
+}
 
-  private throwCloudflareError(response: CloudflareApiResponse<unknown>): never {
-    const first = Array.isArray(response.errors) && response.errors.length > 0 ? response.errors[0] : null
-    const message =
-      first && typeof first === 'object' && first !== null && 'message' in first
-        ? String((first as { message?: unknown }).message ?? '')
-        : ''
-    const detail = message !== '' ? `Cloudflare request failed: ${message}` : 'Cloudflare request failed'
-    throw new ApiError('cloudflare_request_failed', detail, 502, { errors: response.errors })
-  }
+function cloudflareError(response: CloudflareApiResponse): ApiError {
+  const first = Array.isArray(response.errors) ? response.errors[0] : null
+  const message =
+    first && typeof first === 'object' && 'message' in first ? String((first as { message?: unknown }).message) : ''
+  return new ApiError(
+    'cloudflare_request_failed',
+    message ? `Cloudflare request failed: ${message}` : 'Cloudflare request failed',
+    502,
+    { errors: response.errors }
+  )
+}
+
+/** 读取 Cloudflare 服务商并构建客户端 */
+export async function cloudflareClientFor(
+  providers: ProviderRepository,
+  providerId: string
+): Promise<{ provider: CloudflareProvider; client: CloudflareClient }> {
+  const provider = await providers.requireType<CloudflareProvider>(
+    providerId,
+    'cloudflare',
+    'Cloudflare provider not found',
+    'cloudflare_provider_not_found'
+  )
+  return { provider, client: CloudflareClient.forProvider(provider) }
 }

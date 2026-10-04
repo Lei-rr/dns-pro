@@ -1,119 +1,111 @@
-import type { JobRecord } from '../../platform/jobs/job.types.js'
-import type { JobService } from '../../platform/jobs/job.service.js'
-import {
-  type BatchJobViewBase,
-  dedupeStrings,
-  findActiveBatchJob,
-  finishBatchJob,
-  presentBatchJobBase,
-  requeueFailedBatchItems,
-  runBatchItems,
-} from '../../platform/jobs/batch-helpers.js'
 import { ApiError } from '../../shared/http/api-error.js'
-import { EdgeOneDomainService } from '../../modules/edge-one/edge-one-domain.service.js'
-import { invalidateEdgeOneDomainCache } from '../../modules/edge-one/edge-one.cache.js'
+import type { JobService } from '../../platform/jobs/job.service.js'
+import type { JobRecord } from '../../platform/jobs/job.types.js'
+import {
+  BatchJobKind,
+  dedupeStrings,
+  dnsEffectNote,
+  dnsEffectOf,
+  finishBatchJob,
+  persistItemStage,
+  runBatchItems,
+  type BatchJobViewBase,
+} from '../../platform/jobs/batch-job.js'
+import type { EdgeOneDomainService } from '../../modules/edge-one/edge-one-domain.service.js'
 import {
   EDGEONE_BATCH_DELETE_JOB,
   EDGEONE_BATCH_DISABLE_JOB,
   EDGEONE_ZONE_JOB_TYPES,
-} from './edge-one-dns-sync-job.types.js'
-import { EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
+  ZONE_WRITE_JOB_TYPES,
+  readResourceKeys,
+} from '../../platform/jobs/job-types.js'
+import type { EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
 
-type EdgeOneBatchJobView = BatchJobViewBase & {
-  provider_id: string
-  zone_id: string
-}
+type EdgeOneBatchJobView = BatchJobViewBase & { provider_id: string; zone_id: string }
+type ZoneScope = { providerId: string; zoneId: string }
 
-/** EdgeOne acceleration-domain batch operations on JobService. */
-export class EdgeOneBatchJobWorkflow {
+const byDomain = (domain: string) => (row: Record<string, unknown>) => String(row.domain ?? '') === domain
+
+/** EdgeOne 加速域名批量 停用/删除，同一站点内互斥 */
+export class EdgeOneBatchWorkflow {
+  private readonly kind: BatchJobKind<EdgeOneBatchJobView>
+
   constructor(
     private readonly jobs: JobService,
     private readonly domains: EdgeOneDomainService,
     private readonly dnsSync: EdgeOneDnsSyncWorkflow
   ) {
-    this.jobs.registerRunner(EDGEONE_BATCH_DISABLE_JOB, (job) => this.runDisable(job))
-    this.jobs.registerRunner(EDGEONE_BATCH_DELETE_JOB, (job) => this.runDelete(job))
-  }
-
-  async createDisable(input: { providerId: string; zoneId: string; domains: string[] }): Promise<EdgeOneBatchJobView> {
-    const domains = dedupeStrings(input.domains)
-    if (!domains.length) throw new ApiError('batch_empty', 'No domains selected', 422)
-
-    const job = await this.jobs.createExclusive(
-      EDGEONE_BATCH_DISABLE_JOB,
-      { provider_id: input.providerId, zone_id: input.zoneId, status: 'offline' },
-      domains.map((domain) => ({ domain, status: 'pending' })),
-      { types: [...EDGEONE_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_id: input.zoneId } },
-      { message: '批量停用任务已创建' }
-    )
-    return this.present(job)
-  }
-
-  async createDelete(input: {
-    providerId: string
-    zoneId: string
-    domains: string[]
-    autoCleanup?: boolean
-  }): Promise<EdgeOneBatchJobView> {
-    const domains = dedupeStrings(input.domains)
-    if (!domains.length) throw new ApiError('batch_empty', 'No domains selected', 422)
-
-    const job = await this.jobs.createExclusive(
-      EDGEONE_BATCH_DELETE_JOB,
-      {
-        provider_id: input.providerId,
-        zone_id: input.zoneId,
-        auto_cleanup: input.autoCleanup !== false,
-      },
-      domains.map((domain) => ({
-        domain,
-        status: 'pending',
-        primary_deleted: false,
-        dns_cleanup_status: input.autoCleanup === false ? 'not_required' : 'pending',
-      })),
-      { types: [...EDGEONE_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_id: input.zoneId } },
-      { message: '批量删除任务已创建' }
-    )
-    return this.present(job)
-  }
-
-  async find(id: string, providerId?: string): Promise<EdgeOneBatchJobView | null> {
-    const job = await this.jobs.get(id)
-    if (!job) return null
-    if (job.type !== EDGEONE_BATCH_DISABLE_JOB && job.type !== EDGEONE_BATCH_DELETE_JOB) return null
-    if (providerId !== undefined && String(job.payload?.provider_id ?? '') !== providerId) return null
-    return this.present(job)
-  }
-
-  async active(providerId: string, zoneId: string): Promise<EdgeOneBatchJobView | null> {
-    const hit = await findActiveBatchJob(this.jobs, [...EDGEONE_ZONE_JOB_TYPES], {
-      provider_id: providerId,
-      zone_id: zoneId,
+    this.kind = new BatchJobKind(jobs, {
+      types: EDGEONE_ZONE_JOB_TYPES,
+      lockTypes: ZONE_WRITE_JOB_TYPES,
+      scopeKeys: ['provider_id', 'zone_id'],
+      resourceKeys: readResourceKeys,
+      present: (job, base) => ({
+        ...base,
+        provider_id: String(job.payload.provider_id ?? ''),
+        zone_id: String(job.payload.zone_id ?? ''),
+      }),
     })
-    return hit ? this.present(hit) : null
+    jobs.registerRunner(EDGEONE_BATCH_DISABLE_JOB, (job) => this.runDisable(job))
+    jobs.registerRunner(EDGEONE_BATCH_DELETE_JOB, (job) => this.runDelete(job))
   }
 
-  async retryFailed(jobId: string, providerId?: string): Promise<EdgeOneBatchJobView> {
-    const existing = await this.find(jobId, providerId)
-    if (!existing) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const raw = await this.jobs.get(jobId)
-    if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const payload = raw.payload || {}
-    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
-      types: [...EDGEONE_ZONE_JOB_TYPES],
-      scope: { provider_id: String(payload.provider_id || ''), zone_id: String(payload.zone_id || '') },
-    })
-    return this.present(requeued)
+  createDisable(input: ZoneScope & { domains: string[] }) {
+    const items = this.items(input.domains, () => ({}))
+    return this.enqueue(EDGEONE_BATCH_DISABLE_JOB, input, { status: 'offline' }, items, '批量停用任务已创建')
+  }
+
+  createDelete(input: ZoneScope & { domains: string[]; autoCleanup?: boolean }) {
+    const autoCleanup = input.autoCleanup !== false
+    const items = this.items(input.domains, () => ({
+      primary_deleted: false,
+      dns_cleanup_status: autoCleanup ? 'pending' : 'not_required',
+    }))
+    return this.enqueue(EDGEONE_BATCH_DELETE_JOB, input, { auto_cleanup: autoCleanup }, items, '批量删除任务已创建')
+  }
+
+  find(id: string, providerId?: string) {
+    return this.kind.find(id, { provider_id: providerId })
+  }
+
+  active(providerId: string, zoneId: string) {
+    return this.kind.active({ provider_id: providerId, zone_id: zoneId })
+  }
+
+  retryFailed(id: string, providerId?: string) {
+    return this.kind.retryFailed(id, { provider_id: providerId })
+  }
+
+  private items(domains: string[], extra: () => Record<string, unknown>) {
+    const unique = dedupeStrings(domains)
+    if (!unique.length) throw new ApiError('batch_empty', 'No domains selected', 422)
+    return unique.map((domain) => ({ domain, ...extra() }))
+  }
+
+  private async enqueue(
+    type: string,
+    scope: ZoneScope,
+    extra: Record<string, unknown>,
+    items: Array<Record<string, unknown>>,
+    message: string
+  ) {
+    const itemDomains = items.map((item) => String(item.domain ?? '')).filter(Boolean)
+    const payload = {
+      provider_id: scope.providerId,
+      zone_id: scope.zoneId,
+      resource_keys: await this.dnsSync.resourceKeys(scope.providerId, scope.zoneId, itemDomains),
+      ...extra,
+    }
+    return this.kind.present(
+      await this.jobs.createExclusive(type, payload, items, this.kind.lock(payload), { message })
+    )
   }
 
   private async runDisable(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerId = String(payload.provider_id || '')
-    const zoneId = String(payload.zone_id || '')
-    const status = String(payload.status || 'offline')
-
+    const { providerId, zoneId } = scopeOf(job)
+    const status = String(job.payload.status ?? 'offline')
     await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.domain || ''),
+      itemKey: (item) => String(item.domain ?? ''),
       runningMessage: '停用中',
       progressMessage: '批量停用执行中',
       execute: async (_item, domain) => {
@@ -121,37 +113,30 @@ export class EdgeOneBatchJobWorkflow {
         return { status: 'success', message: '已停用' }
       },
     })
-
     await finishBatchJob(this.jobs, job.id, '批量停用')
-    invalidateEdgeOneDomainCache(providerId, zoneId)
   }
 
+  /** 分阶段删除：主资源删除成功先落盘，重试时只补做 DNS 清理 */
   private async runDelete(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerId = String(payload.provider_id || '')
-    const zoneId = String(payload.zone_id || '')
-    const autoCleanup = payload.auto_cleanup !== false
-
+    const { providerId, zoneId } = scopeOf(job)
+    const autoCleanup = job.payload.auto_cleanup !== false
+    // CNAME 快照只取一次，避免每条目都全量拉取加速域名列表
+    const cnames = autoCleanup ? await this.cnameSnapshot(providerId, zoneId) : new Map<string, string>()
     await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.domain || ''),
+      itemKey: (item) => String(item.domain ?? ''),
       runningMessage: '删除中',
       progressMessage: '批量删除执行中',
       execute: async (item, domain) => {
         const primaryDeleted = item.primary_deleted === true
         const result = await this.dnsSync.deleteAccelerationDomain(providerId, zoneId, domain, autoCleanup, {
           primaryDeleted,
+          // 仅在首次删除时使用快照 CNAME；重试时主机名已删除，快照可能过期，回退到按名称+类型清理
+          cname: autoCleanup && !primaryDeleted ? (cnames.get(domain) ?? '') : undefined,
           onPrimaryDeleted: primaryDeleted
             ? undefined
-            : async () => {
-                await this.jobs.patchItem(job.id, (row) => String(row.domain || '') === domain, {
-                  primary_deleted: true,
-                })
-                // Persist the completed primary stage before starting DNS cleanup.
-                await this.jobs.get(job.id)
-              },
+            : () => persistItemStage(this.jobs, job.id, byDomain(domain), { primary_deleted: true }),
         })
-        const cleanup = (result as { side_effects?: { dns?: { cleanup?: { status?: string; message?: string } } } })
-          .side_effects?.dns?.cleanup
+        const cleanup = dnsEffectOf(result, 'cleanup')
         if (autoCleanup && cleanup?.status === 'failed') {
           return {
             status: 'failed',
@@ -159,15 +144,9 @@ export class EdgeOneBatchJobWorkflow {
             extra: { primary_deleted: true, dns_cleanup_status: 'failed' },
           }
         }
-        const note =
-          autoCleanup && cleanup?.status === 'completed'
-            ? '已删除（DNS 已清理）'
-            : autoCleanup && cleanup?.status === 'skipped'
-              ? `已删除（DNS 跳过：${cleanup.message || '—'}）`
-              : '已删除'
         return {
           status: 'success',
-          message: note,
+          message: `已删除${autoCleanup ? dnsEffectNote(cleanup, 'DNS 已清理') : ''}`,
           extra: {
             primary_deleted: true,
             dns_cleanup_status: autoCleanup ? (cleanup?.status ?? 'skipped') : 'not_required',
@@ -175,18 +154,16 @@ export class EdgeOneBatchJobWorkflow {
         }
       },
     })
-
     await finishBatchJob(this.jobs, job.id, '批量删除')
-    invalidateEdgeOneDomainCache(providerId, zoneId)
   }
 
-  private present(job: JobRecord): EdgeOneBatchJobView {
-    const base = presentBatchJobBase(job)
-    const payload = job.payload || {}
-    return {
-      ...base,
-      provider_id: String(payload.provider_id || ''),
-      zone_id: String(payload.zone_id || ''),
-    }
+  /** 任务开始时一次性读取 域名 → CNAME */
+  private async cnameSnapshot(providerId: string, zoneId: string): Promise<Map<string, string>> {
+    const listing = await this.domains.accelerationDomains(providerId, zoneId, true)
+    return new Map(listing.items.map((item) => [item.name, item.cname ?? '']))
   }
+}
+
+function scopeOf(job: JobRecord): ZoneScope {
+  return { providerId: String(job.payload.provider_id ?? ''), zoneId: String(job.payload.zone_id ?? '') }
 }

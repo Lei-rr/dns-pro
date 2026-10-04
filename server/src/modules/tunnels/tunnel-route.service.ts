@@ -1,101 +1,99 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
-import { ApiError } from '../../shared/http/api-error.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import {
-  buildDnsSideEffects,
-  fromDnsOperationResult,
-  type DnsOperationResult,
-} from '../../shared/providers/side-effect-result.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
+import type { CloudflareZoneService } from '../cloudflare/cloudflare-zone.service.js'
+import { parseCloudflareItemResponse, type CloudflareRouteConfig } from '../cloudflare/cloudflare-response.schema.js'
 import {
   cloudflaredTunnelConfigCacheTag,
   providerCacheTag,
   withProviderCache,
 } from '../../platform/cache/provider-cache.js'
+import { ApiError } from '../../shared/http/api-error.js'
+import { normalizeFqdn } from '../../shared/lib/values.js'
+import { callProvider } from '../../shared/providers/provider-call.js'
+import { asRecord, asRecordArray } from '../../shared/providers/response-guards.js'
+import {
+  buildDnsSideEffects,
+  fromDnsOperationResult,
+  type DnsOperationResult,
+} from '../../shared/providers/side-effect-result.js'
 import { invalidateTunnelRouteCache } from './tunnel.cache.js'
-import { CloudflareGateway } from '../cloudflare/cloudflare.client.js'
-import { parseCloudflareItemResponse } from '../cloudflare/cloudflare-response.schema.js'
-import { CloudflareZoneService } from '../cloudflare/cloudflare-zone.service.js'
-import { CloudflaredDnsService } from './tunnel-dns.service.js'
-import type { CloudflareProvider, CloudflaredProvider } from '../providers/provider.types.js'
-import { normalizeFqdn } from '../../shared/lib/fqdn.js'
+import { runSerial } from '../../shared/lib/serial-queue.js'
+import { linkedCloudflareProviderId, resolveTunnelAccount, tunnelPath } from './tunnel-account.js'
+import type { TunnelDnsService } from './tunnel-dns.service.js'
 
-interface CloudflaredRoute {
+export interface TunnelRoute {
   hostname: string
   service: string
   path: string
+  /** 上游规则里的其它字段（如 originRequest），写回时原样保留 */
+  [key: string]: unknown
 }
 
-export class CloudflaredRouteService {
+interface TunnelConfig {
+  routes: TunnelRoute[]
+  /** 兜底规则：写回时沿用原有配置，不强制重置 */
+  catch_all: string
+  version: number
+}
+
+const CATCH_ALL_SERVICE = 'http_status:404'
+
+const sameRouteKey = (a: TunnelRoute, b: { hostname: string; path: string }) =>
+  a.hostname === b.hostname && a.path === b.path
+
+/** 同一隧道的 Ingress 写入必须串行，否则后写者会整体覆盖先写者 */
+const ingressKey = (providerId: string, tunnelId: string) => `tunnel-ingress:${providerId}:${tunnelId}`
+
+/** 隧道 Ingress 路由管理；写入路由后同步 Cloudflare CNAME */
+export class TunnelRouteService {
   constructor(
     private readonly providers: ProviderRepository,
-    private readonly cfZones: CloudflareZoneService,
-    private readonly dnsService: CloudflaredDnsService
+    private readonly zones: CloudflareZoneService,
+    private readonly dns: TunnelDnsService
   ) {}
 
-  async getConfig(
-    providerId: string,
-    tunnelId: string,
-    refresh = false
-  ): Promise<{ routes: CloudflaredRoute[]; catch_all: string; version: number }> {
-    const [provider, accountId] = await this.requireProvider(providerId)
-    const cached = await withProviderCache<{ routes: CloudflaredRoute[]; catch_all: string; version: number }>({
+  async getConfig(providerId: string, tunnelId: string, refresh = false): Promise<TunnelConfig> {
+    const account = await resolveTunnelAccount(this.providers, providerId)
+    const cached = await withProviderCache<TunnelConfig>({
       key: `cloudflared:tunnel_config:${providerId}:${tunnelId}`,
       tags: [
         providerCacheTag(providerId),
-        providerCacheTag(provider.id),
+        providerCacheTag(account.cloudflare.id),
         cloudflaredTunnelConfigCacheTag(providerId, tunnelId),
       ],
       refresh,
       loader: async () => {
-        const gateway = this.gatewayFor(provider)
-
-        let response
-        try {
-          response = await gateway.get(`${this.tunnelPath(accountId, tunnelId)}/configurations`)
-        } catch (error) {
-          throw wrapProviderError(
-            'cloudflared_route_list_failed',
-            'Cloudflare Tunnel route list failed',
+        const response = await callProvider(
+          {
+            code: 'cloudflared_route_list_failed',
+            message: 'Cloudflare Tunnel route list failed',
             providerId,
-            error,
-            { tunnel_id: tunnelId }
-          )
-        }
-        const result = this.presentConfig(parseCloudflareItemResponse(response).result)
-        return result
+            details: { tunnel_id: tunnelId },
+          },
+          () => account.client.get(`${tunnelPath(account.accountId, tunnelId)}/configurations`)
+        )
+        return presentConfig(parseCloudflareItemResponse(response).result)
       },
     })
     return cached.value
   }
 
-  async addRoute(providerId: string, tunnelId: string, route: CloudflaredRoute): Promise<Record<string, unknown>> {
+  async addRoute(providerId: string, tunnelId: string, route: TunnelRoute): Promise<Record<string, unknown>> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
-    const normalized = this.normalizeRoute(route)
+    const normalized = normalizeRoute(route)
     const zoneId = await this.requireZoneId(cfProviderId, normalized.hostname)
-    const current = await this.fetchRoutes(providerId, tunnelId)
+    return runSerial(ingressKey(providerId, tunnelId), async () => {
+      const config = await this.fetchConfig(providerId, tunnelId)
+      if (config.routes.some((existing) => sameRouteKey(existing, normalized))) throw routeExists(normalized)
 
-    for (const existing of current) {
-      if (this.isSameRouteKey(existing, normalized)) {
-        throw new ApiError(
-          'cloudflared_route_exists',
-          `Route ${normalized.hostname}${normalized.path} already exists`,
-          409
-        )
+      await this.writeIngress(providerId, tunnelId, [...config.routes, normalized], config.catch_all)
+      invalidateTunnelRouteCache(providerId, tunnelId)
+
+      const sync = await this.dns.ensureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
+      return {
+        ...normalized,
+        side_effects: buildDnsSideEffects({ sync: fromDnsOperationResult(sync, '已执行 Cloudflare DNS 同步') }),
       }
-    }
-
-    const newRoutes = [...current, normalized]
-    await this.writeIngress(providerId, tunnelId, newRoutes)
-
-    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
-    invalidateTunnelRouteCache(providerId, tunnelId)
-
-    return {
-      hostname: normalized.hostname,
-      service: normalized.service,
-      path: normalized.path,
-      side_effects: buildDnsSideEffects({ sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步') }),
-    }
+    })
   }
 
   async updateRoute(
@@ -103,60 +101,40 @@ export class CloudflaredRouteService {
     tunnelId: string,
     originalHostname: string,
     originalPath: string,
-    route: CloudflaredRoute
+    route: TunnelRoute
   ): Promise<Record<string, unknown>> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
-    const normalized = this.normalizeRoute(route)
+    const normalized = normalizeRoute(route)
+    const original = { hostname: normalizeFqdn(originalHostname), path: originalPath.trim() }
     const zoneId = await this.requireZoneId(cfProviderId, normalized.hostname)
-    const current = await this.fetchRoutes(providerId, tunnelId)
-
-    let found = false
-    const newRoutes: CloudflaredRoute[] = []
-    for (const existing of current) {
-      if (!found && existing.hostname === originalHostname.toLowerCase() && existing.path === originalPath) {
-        newRoutes.push(normalized)
-        found = true
-      } else {
-        newRoutes.push(existing)
+    return runSerial(ingressKey(providerId, tunnelId), async () => {
+      const config = await this.fetchConfig(providerId, tunnelId)
+      const current = config.routes
+      const index = current.findIndex((existing) => sameRouteKey(existing, original))
+      if (index === -1) {
+        throw new ApiError('cloudflared_route_not_found', `Route ${originalHostname}${originalPath} not found`, 404)
       }
-    }
+      // 保留原规则的扩展字段
+      const next = current.map((existing, i) => (i === index ? { ...existing, ...normalized } : existing))
+      if (next.filter((existing) => sameRouteKey(existing, normalized)).length > 1) throw routeExists(normalized)
 
-    if (!found) {
-      throw new ApiError('cloudflared_route_not_found', `Route ${originalHostname}${originalPath} not found`, 404)
-    }
+      await this.writeIngress(providerId, tunnelId, next, config.catch_all)
+      // Ingress 已提交：先失效缓存，避免 DNS 副作用期间返回旧配置
+      invalidateTunnelRouteCache(providerId, tunnelId)
 
-    const sameKeyCount = newRoutes.filter((r) => this.isSameRouteKey(r, normalized)).length
-    if (sameKeyCount > 1) {
-      throw new ApiError(
-        'cloudflared_route_exists',
-        `Route ${normalized.hostname}${normalized.path} already exists`,
-        409
-      )
-    }
-
-    await this.writeIngress(providerId, tunnelId, newRoutes)
-    // Ingress is committed. Never serve the pre-mutation config while DNS side effects finish.
-    invalidateTunnelRouteCache(providerId, tunnelId)
-
-    const dnsResult = await this.dnsService.safeEnsureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
-    const hostnameChanged = originalHostname.toLowerCase() !== normalized.hostname
-    let cleanupResult: DnsOperationResult | undefined
-    if (hostnameChanged) {
-      const stillUsed = newRoutes.filter((r) => r.hostname === originalHostname.toLowerCase())
-      if (stillUsed.length === 0) {
-        cleanupResult = await this.dnsService.removeCnameBestEffort(cfProviderId, originalHostname, tunnelId)
+      const sync = await this.dns.ensureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
+      let cleanup: DnsOperationResult | undefined
+      if (original.hostname !== normalized.hostname && !next.some((r) => r.hostname === original.hostname)) {
+        cleanup = await this.dns.removeCname(cfProviderId, original.hostname, tunnelId)
       }
-    }
-
-    return {
-      hostname: normalized.hostname,
-      service: normalized.service,
-      path: normalized.path,
-      side_effects: buildDnsSideEffects({
-        sync: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 同步'),
-        cleanup: cleanupResult ? fromDnsOperationResult(cleanupResult, '已执行旧 Cloudflare DNS 清理') : undefined,
-      }),
-    }
+      return {
+        ...normalized,
+        side_effects: buildDnsSideEffects({
+          sync: fromDnsOperationResult(sync, '已执行 Cloudflare DNS 同步'),
+          cleanup: cleanup ? fromDnsOperationResult(cleanup, '已执行旧 Cloudflare DNS 清理') : undefined,
+        }),
+      }
+    })
   }
 
   async deleteRoute(
@@ -166,168 +144,99 @@ export class CloudflaredRouteService {
     path: string
   ): Promise<Record<string, unknown>> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
-    const current = await this.fetchRoutes(providerId, tunnelId)
-    const normalizedHostname = hostname.toLowerCase().trim()
+    const target = { hostname: normalizeFqdn(hostname), path: path.trim() }
+    return runSerial(ingressKey(providerId, tunnelId), async () => {
+      const config = await this.fetchConfig(providerId, tunnelId)
+      const current = config.routes
+      const index = current.findIndex((existing) => sameRouteKey(existing, target))
+      if (index === -1) throw new ApiError('cloudflared_route_not_found', `Route ${hostname}${path} not found`, 404)
 
-    let found = false
-    const newRoutes: CloudflaredRoute[] = []
-    for (const existing of current) {
-      if (!found && existing.hostname === normalizedHostname && existing.path === path) {
-        found = true
-        continue
+      const next = current.filter((_, i) => i !== index)
+      await this.writeIngress(providerId, tunnelId, next, config.catch_all)
+      invalidateTunnelRouteCache(providerId, tunnelId)
+
+      // 同主机名仍有其它路径路由时保留 CNAME
+      const cleanup: DnsOperationResult = next.some((r) => r.hostname === target.hostname)
+        ? { action: 'kept', reason: 'hostname_still_used' }
+        : await this.dns.removeCname(cfProviderId, target.hostname, tunnelId)
+      return {
+        ...target,
+        side_effects: buildDnsSideEffects({ cleanup: fromDnsOperationResult(cleanup, '已执行 Cloudflare DNS 清理') }),
       }
-      newRoutes.push(existing)
-    }
-
-    if (!found) {
-      throw new ApiError('cloudflared_route_not_found', `Route ${hostname}${path} not found`, 404)
-    }
-
-    await this.writeIngress(providerId, tunnelId, newRoutes)
-
-    const stillUsed = newRoutes.filter((r) => r.hostname === normalizedHostname)
-    let dnsResult: DnsOperationResult
-    if (stillUsed.length > 0) {
-      dnsResult = { action: 'kept', reason: 'hostname_still_used' }
-    } else {
-      dnsResult = await this.dnsService.safeRemoveCname(cfProviderId, '', normalizedHostname, tunnelId)
-    }
-
-    invalidateTunnelRouteCache(providerId, tunnelId)
-
-    return {
-      hostname: normalizedHostname,
-      path,
-      side_effects: buildDnsSideEffects({ cleanup: fromDnsOperationResult(dnsResult, '已执行 Cloudflare DNS 清理') }),
-    }
-  }
-
-  private async fetchRoutes(providerId: string, tunnelId: string): Promise<CloudflaredRoute[]> {
-    return (await this.getConfig(providerId, tunnelId, true)).routes
-  }
-
-  private async writeIngress(providerId: string, tunnelId: string, routes: CloudflaredRoute[]): Promise<void> {
-    const [provider, accountId] = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    try {
-      await gateway.put(`${this.tunnelPath(accountId, tunnelId)}/configurations`, this.buildIngress(routes))
-    } catch (error) {
-      throw wrapProviderError(
-        'cloudflared_route_write_failed',
-        'Cloudflare Tunnel route update failed',
-        providerId,
-        error,
-        { tunnel_id: tunnelId }
-      )
-    }
-  }
-
-  private normalizeRoute(route: CloudflaredRoute): CloudflaredRoute {
-    const hostname = normalizeFqdn(route.hostname)
-    const service = route.service.trim()
-    const path = (route.path ?? '').trim()
-    if (hostname === '' || service === '') {
-      throw new ApiError('cloudflared_route_invalid', 'hostname and service are required', 422)
-    }
-    return { hostname, service, path }
-  }
-
-  private isSameRouteKey(a: CloudflaredRoute, b: CloudflaredRoute): boolean {
-    return a.hostname === b.hostname && a.path === b.path
-  }
-
-  private buildIngress(routes: CloudflaredRoute[]): Record<string, unknown> {
-    const ingress: Array<Record<string, unknown>> = routes.map((route) => {
-      const entry: Record<string, unknown> = { hostname: route.hostname, service: route.service }
-      if (route.path !== '') entry.path = route.path
-      return entry
     })
-    ingress.push({ service: 'http_status:404' })
-    return { config: { ingress } }
   }
 
-  private presentConfig(config: import('../cloudflare/cloudflare-response.schema.js').CloudflareRouteConfig): {
-    routes: CloudflaredRoute[]
-    catch_all: string
-    version: number
-  } {
-    const configData =
-      config.config && typeof config.config === 'object' && !Array.isArray(config.config)
-        ? (config.config as Record<string, unknown>)
-        : {}
-    const ingress = Array.isArray(configData.ingress) ? configData.ingress : []
-    const routes: CloudflaredRoute[] = []
-    let catchAll = 'http_status:404'
+  private cfProviderIdOf(providerId: string): Promise<string> {
+    return linkedCloudflareProviderId(this.providers, providerId)
+  }
 
-    for (const value of ingress) {
-      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
-      const rule = value as Record<string, unknown>
-      if (!rule.hostname) {
-        if (typeof rule.service === 'string') catchAll = rule.service
-      } else {
-        if (typeof rule.hostname !== 'string' || typeof rule.service !== 'string') continue
-        routes.push({
-          hostname: rule.hostname,
-          service: rule.service,
-          path: typeof rule.path === 'string' ? rule.path : '',
-        })
-      }
-    }
+  // 变更前总是读取最新配置（含 catch_all），避免覆盖他处修改
+  private fetchConfig(providerId: string, tunnelId: string): Promise<TunnelConfig> {
+    return this.getConfig(providerId, tunnelId, true)
+  }
 
-    return { routes, catch_all: catchAll, version: Number(config.version ?? 0) || 0 }
+  private async writeIngress(
+    providerId: string,
+    tunnelId: string,
+    routes: TunnelRoute[],
+    catchAll = CATCH_ALL_SERVICE
+  ): Promise<void> {
+    const account = await resolveTunnelAccount(this.providers, providerId)
+    // 原样保留规则里的扩展字段（originRequest 等），只更新本服务管理的字段
+    const ingress = [
+      ...routes.map((route) => {
+        const { path, ...rest } = route
+        return { ...rest, ...(path ? { path } : {}) }
+      }),
+      { service: catchAll },
+    ]
+    await callProvider(
+      {
+        code: 'cloudflared_route_write_failed',
+        message: 'Cloudflare Tunnel route update failed',
+        providerId,
+        details: { tunnel_id: tunnelId },
+      },
+      () => account.client.put(`${tunnelPath(account.accountId, tunnelId)}/configurations`, { config: { ingress } })
+    )
   }
 
   private async requireZoneId(cfProviderId: string, hostname: string): Promise<string> {
-    const zoneId = await this.cfZones.bestMatchId(cfProviderId, hostname)
-    if (zoneId === '') {
-      throw new ApiError('cloudflared_zone_not_found', `No Cloudflare zone matches ${hostname}`, 422)
-    }
+    const zoneId = await this.zones.bestMatchId(cfProviderId, hostname)
+    if (zoneId === '') throw new ApiError('cloudflared_zone_not_found', `No Cloudflare zone matches ${hostname}`, 422)
     return zoneId
   }
+}
 
-  private async requireProvider(providerId: string): Promise<[CloudflareProvider, string]> {
-    const cfProviderId = await this.cfProviderIdOf(providerId)
-    const cfProvider = await this.providers.requireType<CloudflareProvider>(
-      cfProviderId,
-      'cloudflare',
-      'Cloudflare provider not found',
-      'cloudflare_provider_not_found'
-    )
-    const accountId = cfProvider.account_id.trim()
-    if (accountId === '') {
-      throw new ApiError(
-        'cloudflared_account_id_required',
-        'Cloudflare account_id is required for tunnel operations',
-        422
-      )
+function normalizeRoute(route: TunnelRoute): TunnelRoute {
+  const hostname = normalizeFqdn(route.hostname)
+  const service = route.service.trim()
+  if (hostname === '' || service === '') {
+    throw new ApiError('cloudflared_route_invalid', 'hostname and service are required', 422)
+  }
+  return { hostname, service, path: (route.path ?? '').trim() }
+}
+
+function routeExists(route: TunnelRoute): ApiError {
+  return new ApiError('cloudflared_route_exists', `Route ${route.hostname}${route.path} already exists`, 409)
+}
+
+function presentConfig(config: CloudflareRouteConfig): TunnelConfig {
+  const routes: TunnelRoute[] = []
+  let catchAll = CATCH_ALL_SERVICE
+  for (const rule of asRecordArray(asRecord(config.config).ingress)) {
+    if (!rule.hostname) {
+      if (typeof rule.service === 'string') catchAll = rule.service
+      continue
     }
-    return [cfProvider, accountId]
+    if (typeof rule.hostname !== 'string' || typeof rule.service !== 'string') continue
+    // 保留整条规则：写回时不能丢掉 originRequest 等扩展字段
+    routes.push({
+      ...rule,
+      hostname: normalizeFqdn(rule.hostname),
+      service: rule.service,
+      path: typeof rule.path === 'string' ? rule.path.trim() : '',
+    })
   }
-
-  private async cfProviderIdOf(providerId: string): Promise<string> {
-    const cloudflaredProvider = await this.providers.requireType<CloudflaredProvider>(
-      providerId,
-      'cloudflared',
-      'Cloudflare Tunnel provider not found',
-      'cloudflared_provider_not_found'
-    )
-    const cfProviderId = cloudflaredProvider.cloudflare_provider.trim()
-    if (cfProviderId === '') {
-      throw new ApiError(
-        'cloudflared_cloudflare_provider_missing',
-        'Cloudflare Tunnel provider is not linked to a Cloudflare provider',
-        422
-      )
-    }
-    return cfProviderId
-  }
-
-  private tunnelPath(accountId: string, tunnelId: string): string {
-    return `accounts/${encodeURIComponent(accountId)}/cfd_tunnel/${encodeURIComponent(tunnelId)}`
-  }
-
-  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
-    return CloudflareGateway.forToken(provider.api_token)
-  }
+  return { routes, catch_all: catchAll, version: Number(config.version ?? 0) || 0 }
 }

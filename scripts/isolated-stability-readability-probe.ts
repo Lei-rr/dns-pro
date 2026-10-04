@@ -5,9 +5,9 @@ import { ApiError } from '../server/src/shared/http/api-error.js'
 import { isExplicitNotFound } from '../server/src/shared/providers/provider-error.js'
 import { dnspodDomainListResponseSchema } from '../server/src/modules/dns-pod/dns-pod-response.schema.js'
 import { edgeoneZoneListResponseSchema } from '../server/src/modules/edge-one/edge-one-response.schema.js'
-import { DnsPodSaaSDriver } from '../server/src/workflows/saas-dns-sync/dns-pod-sync.adapter.js'
-import { CloudflareDnsSaaSDriver } from '../server/src/workflows/saas-dns-sync/cloudflare-dns-sync.adapter.js'
-import { cloudflareDnsCleanupRecipe } from '../server/src/workflows/saas-dns-sync/saas-dns-cleanup.js'
+import { DnsPodSaaSSyncAdapter } from '../server/src/workflows/saas-dns-sync/dns-pod-saas-sync.adapter.js'
+import { CloudflareDnsSaaSSyncAdapter } from '../server/src/workflows/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
+import { cloudflareDnsCleanupRecipe } from '../server/src/workflows/saas-dns-sync/saas-sync-records.js'
 import { SaaSDnsSyncWorkflow } from '../server/src/workflows/saas-dns-sync/saas-dns-sync.workflow.js'
 
 assert.equal(isExplicitNotFound(new Error('token service not found')), false)
@@ -63,15 +63,17 @@ const recipeHostnames = {
     status: 'pending',
     ssl: {},
   }),
-  syncConfig: async () => ({}),
+  syncConfig: async () => ({ sync_zone: '' }),
+  fallbackOrigin: async () => null,
 }
 let recipeZoneError: ApiError = new ApiError('dnspod_request_failed', 'temporary network failure', 502)
 const recipeSupport = {
+  lookupDnsPodProviderId: async () => 'dns-target',
   resolveDnsPodZone: async () => {
     throw recipeZoneError
   },
 }
-const recipeDriver = new DnsPodSaaSDriver(recipeHostnames as never, recipeSupport as never)
+const recipeDriver = new DnsPodSaaSSyncAdapter(recipeHostnames as never, recipeSupport as never)
 await assert.rejects(
   recipeDriver.collectRecordsFor('saas-owner', 'example.com', 'www.example.com'),
   (error: unknown) => error === recipeZoneError
@@ -97,15 +99,14 @@ const updateWorkflow = new SaaSDnsSyncWorkflow(
   } as never,
   {} as never,
   {
-    collectSaaSRecords: async () => {
+    collect: async () => {
       updateCollectCalls++
       return { hostname_fqdn: 'www.example.com', records: [] }
     },
-    resyncSaaSHostname: async (_provider: string, _zone: string, _hostname: string, records: unknown[]) => {
+    resync: async (_provider: string, _zone: string, _hostname: string, records: unknown[]) => {
       resyncBeforeRecords = records
       return { status: 'completed', records: [] }
     },
-    normalizeSyncSideEffect: (value: unknown) => value,
   } as never
 )
 await updateWorkflow.updateHostname('saas-owner', 'example.com', 'www.example.com', { auto_preferred: false }, true, {
@@ -116,7 +117,7 @@ assert.equal(updateCollectCalls, 0, 'retry recollected post-update DNS state')
 assert.deepEqual(resyncBeforeRecords, oldPreferredRecords, 'retry lost pre-update DNS snapshot')
 
 let wildcardDeletes = 0
-const cloudflareCleanup = new CloudflareDnsSaaSDriver(
+const cloudflareCleanup = new CloudflareDnsSaaSSyncAdapter(
   {} as never,
   {} as never,
   { idByName: async () => 'dns-zone-1' } as never,
@@ -145,10 +146,8 @@ assert.doesNotMatch(dnsBatch, /not\\s\*found|\\b404\\b/)
 
 const saasHostnames = await readFile(new URL('server/src/modules/saas/saas-hostname.service.ts', root), 'utf8')
 const byFqdn =
-  saasHostnames.match(
-    /private async resolveHostnameByFqdn[\s\S]*?\n  }\n\n  private async extractPreferredDomain/
-  )?.[0] || ''
-assert.match(byFqdn, /isExplicitNotFound\(error,\s*\{\s*localCodes:/)
+  saasHostnames.match(/private async resolveHostnameByFqdn[\s\S]*?\n  }\n\n  \/\*\* 校验优选域名/)?.[0] || ''
+assert.match(byFqdn, /isExplicitNotFound\(error,\s*NOT_FOUND\)/)
 assert.doesNotMatch(byFqdn, /catch\s*\{\s*continue/)
 
 const listPage = await readFile(new URL('web/src/shared/lib/use-list-page.ts', root), 'utf8')

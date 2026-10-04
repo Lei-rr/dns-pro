@@ -5,8 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { JsonStore } from '../server/src/platform/storage/json-store.js'
 import { JobService, type JobRecord } from '../server/src/platform/jobs/job.service.js'
-import { runBatchItems } from '../server/src/platform/jobs/batch-helpers.js'
-import { summarizeJobItems } from '../server/src/platform/jobs/job-summary.js'
+import { runBatchItems } from '../server/src/platform/jobs/batch-job.js'
+import { summarizeJobItems } from '../server/src/platform/jobs/job.types.js'
 import { invalidateProviderCache, withProviderCache } from '../server/src/platform/cache/provider-cache.js'
 
 function deferred<T>() {
@@ -136,8 +136,9 @@ try {
     await release.promise
   })
   const once = await jobs.create('once', {}, [{ key: 'x' }], { start: false })
-  jobs.ensure(once.id)
-  jobs.ensure(once.id)
+  // get() 会触发后台启动：重复调用必须被 inflight 去重
+  void jobs.get(once.id)
+  void jobs.get(once.id)
   await runnerStarted.promise
   assert.equal(runnerCalls, 1, 'inflight map allowed duplicate execution')
   release.resolve()
@@ -176,7 +177,7 @@ try {
     'recover',
     {},
     [
-      { key: 'uncertain', status: 'running', operation_id: 'kept-operation' },
+      { key: 'uncertain', status: 'running' },
       { key: 'pending', status: 'pending' },
     ],
     { start: false }
@@ -200,7 +201,6 @@ try {
   assert.deepEqual(effects, ['pending'])
   assert.equal(recovered?.status, 'failed')
   assert.equal(recovered?.items[0]?.status, 'failed')
-  assert.equal(recovered?.items[0]?.operation_id, 'kept-operation')
 
   const terminal = await jobs.createTerminalExclusive('terminal', {}, [{ key: 'x', status: 'success' }], undefined, {
     status: 'completed',
@@ -214,9 +214,12 @@ try {
   await jobs.drain()
   assert.equal((await jobs.get(terminal.id))?.status, 'completed')
 
-  const pending = await jobs.create('summary', {}, [{ status: 'failed' }, { status: 'success' }], { start: false })
-  const completed = await jobs.completePending(pending.id, { status: 'failed', ...summarizeJobItems(pending.items) })
-  assert.equal(completed?.failed, 1)
+  assert.deepEqual(summarizeJobItems([{ status: 'failed' }, { status: 'success' }]), {
+    done: 2,
+    success: 1,
+    failed: 1,
+    skipped: 0,
+  })
 
   assert.throws(() => new JsonStore('../escaped.json', {}, dataDir), /data root/)
   assert.throws(() => new JsonStore(path.join(dataDir, 'absolute.json'), {}, dataDir), /relative to data root/)

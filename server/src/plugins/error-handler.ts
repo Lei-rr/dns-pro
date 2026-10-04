@@ -3,91 +3,97 @@ import fp from 'fastify-plugin'
 import { ApiError } from '../shared/http/api-error.js'
 import { error } from '../shared/http/api-response.js'
 
+/** 对外暴露的 details 字段白名单；上游原始响应、文件路径等只写日志 */
+const PUBLIC_DETAIL_KEYS = new Set([
+  'errors',
+  'dependencies',
+  'job_id',
+  'retry_after',
+  'provider_id',
+  'expected_type',
+  'actual_type',
+  'chain',
+  'hostname',
+  'sync_zone',
+  'code',
+  'upstream_status',
+])
+
+function publicDetails(details: unknown): Record<string, unknown> | undefined {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return undefined
+  const picked = Object.entries(details).filter(([key]) => PUBLIC_DETAIL_KEYS.has(key))
+  return picked.length ? Object.fromEntries(picked) : undefined
+}
+
 function validationFieldErrors(validation: FastifySchemaValidationError[]): Record<string, string> {
   const fields: Record<string, string> = {}
   for (const item of validation) {
-    const missing = String(item.params?.missingProperty ?? '').trim()
-    const additional = String(item.params?.additionalProperty ?? '').trim()
-    const path =
+    const field =
+      String(item.params?.missingProperty ?? '').trim() ||
+      String(item.params?.additionalProperty ?? '').trim() ||
       String(item.instancePath ?? '')
         .split('/')
         .filter(Boolean)
-        .at(-1) ?? ''
-    const field = missing || additional || path || 'request'
-    if (!(field in fields)) fields[field] = item.message || '字段格式不正确'
+        .at(-1) ||
+      'request'
+    fields[field] ??= item.message || '字段格式不正确'
   }
   return fields
 }
 
-/**
- * Global not-found + error handlers.
- * Depends on `static` so reply.sendFile works for SPA fallback when web/dist exists.
- */
+const isPath = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+
+/** 全局 404 与错误处理；依赖 static 插件以便 SPA 回退 */
 const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
   app.setNotFoundHandler(async (request, reply) => {
     const pathname = new URL(request.url, 'http://local').pathname
-    const apiPath = pathname === '/api' || pathname.startsWith('/api/')
-    const assetPath = pathname === '/assets' || pathname.startsWith('/assets/')
-    const jsonNotFound = () =>
-      reply
-        .status(404)
-        .header('Cache-Control', 'no-store')
-        .send(error('not_found', 404, 'not_found'))
-
-    if (apiPath || assetPath) return jsonNotFound()
-
-    const acceptsHtml = String(request.headers.accept || '')
+    const acceptsHtml = String(request.headers.accept ?? '')
       .toLowerCase()
       .split(',')
       .some((value) => value.trim().startsWith('text/html'))
-    const spaRequest = (request.method === 'GET' || request.method === 'HEAD') && acceptsHtml
-    if (!spaRequest) return jsonNotFound()
+    const spaNavigation =
+      (request.method === 'GET' || request.method === 'HEAD') &&
+      acceptsHtml &&
+      !isPath(pathname, '/api') &&
+      !isPath(pathname, '/assets')
 
-    // SPA fallback — only for browser navigation when sendFile is available.
-    const sendFile = (reply as { sendFile?: (file: string) => unknown }).sendFile
-    if (typeof sendFile === 'function') {
+    if (spaNavigation && typeof reply.sendFile === 'function') {
       try {
-        return await sendFile.call(reply, 'index.html')
+        return await reply.sendFile('index.html')
       } catch {
-        // fall through
+        // 前端未构建时回落到 JSON 404
       }
     }
-    return jsonNotFound()
+    return reply
+      .status(404)
+      .header('Cache-Control', 'no-store')
+      .send(error('not_found', 404, 'not_found'))
   })
 
   app.setErrorHandler(async (err: FastifyError, request, reply) => {
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
-      request.log.warn(err)
-    } else {
-      request.log.error(err)
-    }
+    const status = err.statusCode && err.statusCode >= 400 && err.statusCode < 600 ? err.statusCode : 500
+    if (status >= 500) request.log.error(err)
+    else request.log.warn(err)
 
     if (err instanceof ApiError) {
-      return reply.status(err.statusCode).send(error(err.message, err.statusCode, err.code, err.details))
+      // 5xx 的内部细节（文件路径、上游响应）不返回给客户端
+      const message = status >= 500 && err.code === 'server_error' ? 'server_error' : err.message
+      return reply.status(status).send(error(message, status, err.code, publicDetails(err.details)))
     }
-
-    if (err.statusCode === 429 || (err as unknown as { status?: number }).status === 429) {
-      const errObj = err as unknown as { code?: string; message?: string; details?: unknown }
+    if (err.code === 'FST_ERR_VALIDATION') {
+      return reply
+        .status(400)
+        .send(error('参数校验未通过', 400, 'validation_error', { errors: validationFieldErrors(err.validation ?? []) }))
+    }
+    if (status === 429) {
+      const limited = err as unknown as { code?: string; message?: string; details?: unknown }
       return reply
         .status(429)
         .send(
-          error(errObj.message || '请求过于频繁，请稍后重试', 429, errObj.code || 'auth_rate_limited', errObj.details)
+          error(limited.message || '请求过于频繁，请稍后重试', 429, 'auth_rate_limited', publicDetails(limited.details))
         )
     }
-
-    if (err.code === 'FST_ERR_VALIDATION') {
-      const errors = validationFieldErrors(err.validation ?? [])
-      return reply.status(400).send(error('参数校验未通过', 400, 'validation_error', { errors }))
-    }
-
-    if (err.statusCode === 400) {
-      return reply.status(400).send(error(err.message, 400, 'request_error'))
-    }
-
-    if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
-      return reply.status(err.statusCode).send(error(err.message, err.statusCode, 'request_error'))
-    }
-
+    if (status < 500) return reply.status(status).send(error(err.message, status, 'request_error'))
     return reply.status(500).send(error('internal_error', 500, 'internal_error'))
   })
 }

@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../shared/http/api-response.js'
+import { trimmedParam } from '../../shared/http/route-params.js'
 import type { RequestOf } from '../../shared/http/request-schema.js'
-import { zoneNameParam } from '../../modules/saas/saas-request-params.js'
 import {
   saasBatchDeleteSchema,
   saasBatchUpdateSchema,
@@ -15,7 +15,7 @@ export async function createSaaSBatchDeleteHandler(
 ) {
   const result = await request.server.ctx.workflows.saasBatch.createDelete({
     providerId: request.params.providerId,
-    zoneName: zoneNameParam(request),
+    zoneName: trimmedParam(request, 'zoneName'),
     hostnames: request.body.hostnames,
     autoCleanup: request.body.auto_cleanup ?? true,
   })
@@ -28,7 +28,7 @@ export async function createSaaSBatchUpdateHandler(
 ) {
   const result = await request.server.ctx.workflows.saasBatch.createUpdate({
     providerId: request.params.providerId,
-    zoneName: zoneNameParam(request),
+    zoneName: trimmedParam(request, 'zoneName'),
     hostnames: request.body.hostnames,
     patch: request.body.patch,
     autoSync: request.body.auto_sync ?? true,
@@ -40,20 +40,20 @@ export async function getSaaSBatchJobHandler(
   request: FastifyRequest<RequestOf<typeof saasJobParamsSchema>>,
   reply: FastifyReply
 ) {
-  const result =
-    (await request.server.ctx.workflows.saasBatch.find(request.params.jobId)) ||
-    (await request.server.ctx.workflows.saasPreferredApply.find(request.params.jobId))
-  return reply.send(success(result))
+  const { saasBatch, saasPreferredApply } = request.server.ctx.workflows
+  const id = request.params.jobId
+  return reply.send(success((await saasBatch.find(id)) ?? (await saasPreferredApply.find(id))))
 }
 
 export async function getActiveSaaSBatchJobHandler(
   request: FastifyRequest<RequestOf<typeof saasZoneParamsSchema>>,
   reply: FastifyReply
 ) {
-  const zone = zoneNameParam(request)
+  const { saasBatch, saasPreferredApply } = request.server.ctx.workflows
+  const zone = trimmedParam(request, 'zoneName')
   const result =
-    (await request.server.ctx.workflows.saasBatch.active(request.params.providerId, zone)) ||
-    (await request.server.ctx.workflows.saasPreferredApply.active(request.params.providerId, zone))
+    (await saasBatch.active(request.params.providerId, zone)) ??
+    (await saasPreferredApply.active(request.params.providerId, zone))
   return reply.send(success(result))
 }
 
@@ -61,9 +61,8 @@ export async function retrySaaSBatchJobHandler(
   request: FastifyRequest<RequestOf<typeof saasJobParamsSchema>>,
   reply: FastifyReply
 ) {
-  const existing = await request.server.ctx.workflows.saasBatch.find(request.params.jobId)
-  const result = existing
-    ? await request.server.ctx.workflows.saasBatch.retryFailed(request.params.jobId)
-    : await request.server.ctx.workflows.saasPreferredApply.retryFailed(request.params.jobId)
+  const { saasBatch, saasPreferredApply } = request.server.ctx.workflows
+  const id = request.params.jobId
+  const result = (await saasBatch.find(id)) ? await saasBatch.retryFailed(id) : await saasPreferredApply.retryFailed(id)
   return reply.send(success(result))
 }

@@ -23,7 +23,6 @@ async function submit() {
   errors.value = {}
   if (!user) errors.value.username = '请输入用户名'
   if (!pass) errors.value.password = '请输入密码'
-  else if (/\s/.test(pass)) errors.value.password = '密码不能包含空格'
   if (Object.keys(errors.value).length || loading.value) return
   loading.value = true
   try {

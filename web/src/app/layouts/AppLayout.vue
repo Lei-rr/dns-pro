@@ -2,7 +2,6 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import {
-  AlertTriangle,
   ChevronDown,
   Cloud,
   Globe2,
@@ -18,7 +17,7 @@ import {
   UserRound,
 } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
-import { AppDialog } from '@/shared/ui/dialog'
+import { ChangePasswordDialog } from '@/features/auth'
 import { Badge } from '@/shared/ui/badge'
 import { AppTooltip } from '@/shared/ui/tooltip'
 import { CommandDialog, type CommandItem } from '@/shared/ui/command'
@@ -41,7 +40,9 @@ const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
 const providerStore = useProviderStore()
-const securityAlertOpen = ref(false)
+// 仍在使用默认密码时强制弹出（后端会拦截其它业务接口）
+const passwordRequired = ref(false)
+const passwordDialogOpen = ref(false)
 
 const commandOpen = ref(false)
 const isDark = ref(false)
@@ -147,6 +148,17 @@ const commandItems = computed<CommandItem[]>(() => {
       },
     },
     {
+      id: 'action-change-password',
+      title: '修改密码',
+      category: '快捷操作',
+      icon: Shield,
+      action: () => {
+        commandOpen.value = false
+        passwordRequired.value = false
+        passwordDialogOpen.value = true
+      },
+    },
+    {
       id: 'action-logout',
       title: '退出登录',
       category: '快捷操作',
@@ -179,18 +191,14 @@ function handleGlobalKeydown(e: KeyboardEvent) {
   }
 }
 
-function closeSecurityAlert() {
-  securityAlertOpen.value = false
-  sessionStorage.setItem('dismiss_default_credential_alert', '1')
-}
-
 onMounted(async () => {
   initTheme()
   window.addEventListener('keydown', handleGlobalKeydown)
   try {
     const s = await session.load()
-    if (s.is_default_credential && !sessionStorage.getItem('dismiss_default_credential_alert')) {
-      securityAlertOpen.value = true
+    if (s.is_default_credential) {
+      passwordRequired.value = true
+      passwordDialogOpen.value = true
     }
     await loadProviders()
   } catch (error) {
@@ -202,8 +210,13 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleGlobalKeydown)
 })
 
+async function onPasswordChanged() {
+  passwordRequired.value = false
+  await session.load()
+  await loadProviders({ force: true }).catch(() => undefined)
+}
+
 async function logout() {
-  sessionStorage.removeItem('dismiss_default_credential_alert')
   await session.logout()
   router.replace('/login')
 }
@@ -336,31 +349,8 @@ function toggleDark() {
     <!-- 全局快捷跳转对话框 (Command Palette) -->
     <CommandDialog v-model:open="commandOpen" :items="commandItems" />
 
-    <!-- 默认密码安全提示弹窗 (Modal) -->
-    <AppDialog v-model:open="securityAlertOpen" title="安全提示" content-class="sm:max-w-md">
-      <div class="flex items-start gap-3 py-1">
-        <div
-          class="size-9 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0 mt-0.5"
-        >
-          <AlertTriangle class="size-5" />
-        </div>
-        <div class="space-y-2 text-sm">
-          <div class="font-medium text-foreground">当前仍在使用默认初始密码</div>
-          <p class="text-xs text-muted-foreground leading-relaxed">
-            系统检测到当前账户密码仍为初始默认凭据
-            <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground font-semibold">admin / admin</code>。
-          </p>
-          <p class="text-xs text-muted-foreground leading-relaxed">
-            如已将面板部署至公网环境，为防止被未授权扫描和访问，请尽快在服务器
-            <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">data/config.json</code>
-            中修改密码并重启服务。
-          </p>
-        </div>
-      </div>
-      <template #footer>
-        <Button class="w-full sm:w-auto" @click="closeSecurityAlert"> 我知道了 </Button>
-      </template>
-    </AppDialog>
+    <!-- 修改密码：仍在使用默认密码时为强制弹窗 -->
+    <ChangePasswordDialog v-model:open="passwordDialogOpen" :required="passwordRequired" @changed="onPasswordChanged" />
 
     <main class="flex flex-1 flex-col">
       <div class="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">

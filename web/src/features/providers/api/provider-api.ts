@@ -1,5 +1,4 @@
 import http, { unwrapItems } from '@/shared/api/http'
-import { presentProvider } from '../model/presenter'
 import type { Provider, ProviderDefinition, ProviderDefinitions } from '../model/types'
 import type { ApiResponse } from '@/shared/api/types'
 import { encodePath } from '@/shared/lib/path'
@@ -19,12 +18,12 @@ export const providersApi = {
     const response = unwrapItems<Provider[]>(await http.get('/providers'))
     return {
       ...response,
-      data: response.data.map(presentProvider).filter((provider) => provider.configured),
+      data: response.data.filter((provider) => provider.configured),
     }
   },
   list: async (): Promise<ApiResponse<Provider[]>> => {
     const response = unwrapItems<Provider[]>(await http.get('/providers'))
-    return { ...response, data: response.data.map(presentProvider) }
+    return response
   },
   definitions: async (): Promise<ApiResponse<ProviderDefinitions>> =>
     presentDefinitions(unwrapItems<ProviderDefinition[]>(await http.get('/providers/definitions')).data),
@@ -32,8 +31,4 @@ export const providersApi = {
   update: (provider: string, data: Record<string, unknown>) => http.put(`/providers/${encodePath(provider)}`, data),
   remove: (provider: string) => http.delete(`/providers/${encodePath(provider)}`),
   test: (provider: string) => http.post(`/providers/${encodePath(provider)}/test`),
-  reorder: async (order: string[]): Promise<ApiResponse<Provider[]>> => {
-    const response = unwrapItems<Provider[]>(await http.put('/providers/sort-order', { order }))
-    return { ...response, data: response.data.map(presentProvider) }
-  },
 }

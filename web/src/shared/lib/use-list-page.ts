@@ -47,6 +47,10 @@ export function useListPage(options: { pageSizeScope: string; defaultPageSize?: 
     loading.value = true
     try {
       return { succeeded: (await load.response) !== false, isLatest: load.isLatest }
+    } catch (error) {
+      // load 抛错时给出反馈，避免刷新按钮点了没反应（未处理的 rejection）
+      if (load.isLatest()) fail(error)
+      return { succeeded: false, isLatest: load.isLatest }
     } finally {
       if (load.isLatest()) loading.value = false
     }

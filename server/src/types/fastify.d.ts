@@ -1,8 +1,9 @@
-import type { AppSession } from '../shared/auth/app-session.js'
+/** 路由级配置扩展 */
 
 declare module 'fastify' {
-  interface FastifyRequest {
-    session: AppSession
+  interface FastifyContextConfig {
+    /** 允许在仍使用默认账号密码时访问（仅改密码接口） */
+    allowDefaultCredential?: boolean
   }
 }
 

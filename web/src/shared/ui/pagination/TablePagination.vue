@@ -33,9 +33,12 @@ const emit = defineEmits<{
   'update:pageSize': [number]
 }>()
 
-const sizeOptions = computed(() =>
-  (props.pageSizeOptions?.length ? props.pageSizeOptions : [...PAGE_SIZE_OPTIONS]).slice()
-)
+const sizeOptions = computed(() => {
+  const base = (props.pageSizeOptions?.length ? props.pageSizeOptions : [...PAGE_SIZE_OPTIONS]).slice()
+  // 历史 localStorage 里的 pageSize 可能不在选项内，合并后避免下拉显示空白
+  if (!base.includes(props.pageSize)) base.push(props.pageSize)
+  return [...new Set(base)].sort((a, b) => a - b)
+})
 
 const totalPages = computed(() => Math.max(1, Math.ceil(Math.max(0, props.total) / Math.max(1, props.pageSize))))
 const showPager = computed(() => props.total > 0)

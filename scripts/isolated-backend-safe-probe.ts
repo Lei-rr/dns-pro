@@ -8,8 +8,8 @@ import { setDataRoot } from '../server/src/platform/storage/json-store.js'
 import { normalizeCreateRecords } from '../server/src/workflows/dns-batch/dns-record-payload.js'
 import { ProviderPresenter } from '../server/src/modules/providers/provider-presenter.js'
 import type { Provider } from '../server/src/modules/providers/provider.types.js'
-import { DNS_BATCH_DELETE_JOB } from '../server/src/workflows/dns-batch/dns-batch-job.types.js'
-import { EDGEONE_BATCH_DISABLE_JOB } from '../server/src/workflows/edge-one-dns-sync/edge-one-dns-sync-job.types.js'
+import { DNS_BATCH_DELETE_JOB } from '../server/src/platform/jobs/job-types.js'
+import { EDGEONE_BATCH_DISABLE_JOB } from '../server/src/platform/jobs/job-types.js'
 
 assert.equal(
   normalizeCreateRecords([
@@ -109,22 +109,6 @@ try {
     headers: { cookie },
   })
   assert.equal(invalidTunnel.statusCode, 400)
-
-  // Verify Job cancel and prune
-  const pendingJob = await app.ctx.platform.jobs.create(
-    'test_job',
-    { test: true },
-    [
-      { name: 'item1', status: 'pending' },
-      { name: 'item2', status: 'pending' },
-    ],
-    { start: false }
-  )
-  const cancelled = await app.ctx.platform.jobs.cancel(pendingJob.id)
-  assert.equal(cancelled?.status, 'cancelled')
-  assert.equal(cancelled?.items[0].status, 'skipped')
-  const pruned = await app.ctx.platform.jobs.prune({ maxAgeMs: 0, keep: 0 })
-  assert.ok(pruned >= 1)
 
   // Verify orphan prune
   const pruneRes = await app.ctx.modules.saas.preferences.pruneOrphans(new Set(), new Set())

@@ -1,18 +1,47 @@
 type CacheEntry<T> = {
   value: T
   tags: string[]
+  expiresAt: number
 }
 
-/** Permanent process-memory cache. Entries leave only through explicit invalidation. */
-class MemoryCache {
+/** 默认存活时间：外部（控制台/其它工具）改动最多滞后这么久；显式 refresh 与变更失效不受影响 */
+export const CACHE_TTL_MS = 5 * 60 * 1000
+/** 默认容量：超出后按最久未使用淘汰，避免 key 含用户输入时无限增长 */
+export const CACHE_MAX_ENTRIES = 500
+
+/**
+ * 进程内缓存：带存活时间与容量上限。
+ * - 读取命中过期条目时按未命中处理并删除（惰性过期，无定时器）
+ * - 命中即刷新使用顺序，超出容量时淘汰最久未使用的条目
+ * - 只读约定：调用方不得原地修改取出的值（大列表不做克隆，避免无谓开销）
+ */
+export class MemoryCache {
   private readonly entries = new Map<string, CacheEntry<unknown>>()
+  private readonly ttlMs: number
+  private readonly maxEntries: number
+
+  constructor(options: { ttlMs?: number; maxEntries?: number } = {}) {
+    this.ttlMs = options.ttlMs ?? CACHE_TTL_MS
+    this.maxEntries = options.maxEntries ?? CACHE_MAX_ENTRIES
+  }
 
   get<T>(key: string): T | undefined {
-    return this.entries.get(key)?.value as T | undefined
+    const entry = this.entries.get(key)
+    if (!entry) return undefined
+    if (entry.expiresAt <= Date.now()) {
+      this.entries.delete(key)
+      return undefined
+    }
+    // Map 保持插入顺序：命中后移到末尾即为 LRU 顺序
+    this.entries.delete(key)
+    this.entries.set(key, entry)
+    return entry.value as T
   }
 
   set<T>(key: string, value: T, tags: string[] = []): void {
-    this.entries.set(key, { value, tags })
+    this.entries.delete(key)
+    this.entries.set(key, { value, tags, expiresAt: Date.now() + this.ttlMs })
+    this.prune()
   }
 
   delete(key: string): void {
@@ -33,6 +62,19 @@ class MemoryCache {
 
   stats(): { size: number } {
     return { size: this.entries.size }
+  }
+
+  /** 清理过期条目并维持容量上限（写入时顺带执行，避免后台定时器） */
+  private prune(): void {
+    const now = Date.now()
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) this.entries.delete(key)
+    }
+    while (this.entries.size > this.maxEntries) {
+      const oldest = this.entries.keys().next().value
+      if (oldest === undefined) break
+      this.entries.delete(oldest)
+    }
   }
 }
 

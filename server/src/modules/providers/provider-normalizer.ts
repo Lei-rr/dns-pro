@@ -28,8 +28,8 @@ export class ProviderNormalizer {
       const value = String(data[field] ?? '').trim()
 
       if (definition.required.includes(field) && value === '') {
-        throw new ApiError('validation_failed', `Provider field is required: ${field}`, 422, {
-          errors: { [field]: 'Provider field is required' },
+        throw new ApiError('validation_failed', `服务商字段不能为空：${field}`, 422, {
+          errors: { [field]: '该字段不能为空' },
         })
       }
 
@@ -47,8 +47,8 @@ export class ProviderNormalizer {
     const value = String(id).trim()
 
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(value)) {
-      throw new ApiError('validation_failed', 'Invalid provider id', 422, {
-        errors: { id: 'Invalid provider id' },
+      throw new ApiError('validation_failed', '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）', 422, {
+        errors: { id: '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）' },
       })
     }
 
@@ -69,8 +69,8 @@ export class ProviderNormalizer {
     const maxLength = FIELD_MAX_LENGTHS[field] ?? 255
 
     if (value.length > maxLength) {
-      throw new ApiError('validation_failed', `Provider field is too long (max: ${maxLength})`, 422, {
-        errors: { [field]: `Provider field is too long (max: ${maxLength})` },
+      throw new ApiError('validation_failed', `字段过长（最多 ${maxLength} 个字符）`, 422, {
+        errors: { [field]: `字段过长（最多 ${maxLength} 个字符）` },
       })
     }
 
@@ -79,7 +79,7 @@ export class ProviderNormalizer {
       !/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(value)
     ) {
       throw new ApiError('validation_failed', 'Invalid referenced provider id', 422, {
-        errors: { [field]: 'Invalid provider id' },
+        errors: { [field]: '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）' },
       })
     }
   }

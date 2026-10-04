@@ -5,6 +5,7 @@ export class ProviderPresenter {
   present(provider: Provider, allProviders?: Provider[]): PresentedProvider {
     const definition = getProviderDefinition(provider.type)
     if (!definition) {
+      // 未知类型：只输出最小安全字段，绝不展开原始对象（可能含密钥）
       return {
         id: provider.id,
         type: provider.type,

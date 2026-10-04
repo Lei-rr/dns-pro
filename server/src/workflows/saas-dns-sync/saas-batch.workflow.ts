@@ -1,317 +1,245 @@
 import { ApiError } from '../../shared/http/api-error.js'
-import type { JobRecord } from '../../platform/jobs/job.types.js'
 import type { JobService } from '../../platform/jobs/job.service.js'
+import type { JobRecord } from '../../platform/jobs/job.types.js'
 import {
-  type BatchJobViewBase,
+  BatchJobKind,
   dedupeStrings,
-  findActiveBatchJob,
+  dnsEffectNote,
+  dnsEffectOf,
   finishBatchJob,
-  presentBatchJobBase,
-  requeueFailedBatchItems,
+  persistItemStage,
   runBatchItems,
-} from '../../platform/jobs/batch-helpers.js'
+  type BatchJobViewBase,
+} from '../../platform/jobs/batch-job.js'
+import type { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
 import { invalidateSaaSHostnameCache } from '../../modules/saas/saas.cache.js'
-import { SAAS_BATCH_DELETE_JOB, SAAS_BATCH_UPDATE_JOB, SAAS_ZONE_JOB_TYPES } from './saas-dns-sync-job.types.js'
-import { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
-import { SaaSDnsSyncWorkflow, type SaaSDeleteCleanupRecipe } from './saas-dns-sync.workflow.js'
+import {
+  SAAS_BATCH_DELETE_JOB,
+  SAAS_BATCH_UPDATE_JOB,
+  SAAS_ZONE_LOCK_MESSAGE,
+  ZONE_WRITE_JOB_TYPES,
+  readResourceKeys,
+} from '../../platform/jobs/job-types.js'
+import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
+import type { SyncRecord } from './saas-sync-records.js'
 
-type SaaSBatchJobView = BatchJobViewBase & {
-  provider_id: string
-  zone_name: string
-}
+type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
+type ZoneScope = { providerId: string; zoneName: string }
 
-/**
- * Generic SaaS hostname batch operations on JobService.
- * - batch delete hostnames
- * - batch update fields (currently preferred_domain / auto_preferred / origin)
- */
-export class SaaSBatchJobWorkflow {
+// 批量修改允许的字段
+const PATCH_STRING_FIELDS = ['preferred_domain', 'custom_origin_server', 'method', 'min_tls_version'] as const
+
+const byHostname = (hostname: string) => (row: Record<string, unknown>) => String(row.hostname ?? '') === hostname
+
+/** SaaS 主机名批量 删除/修改；与优选应用共用站点互斥锁 */
+export class SaaSBatchWorkflow {
+  private readonly kind: BatchJobKind<SaaSBatchJobView>
+
   constructor(
     private readonly jobs: JobService,
     private readonly workflow: SaaSDnsSyncWorkflow,
     private readonly hostnames: SaaSHostnameService
   ) {
-    this.jobs.registerRunner(SAAS_BATCH_DELETE_JOB, (job) => this.runDelete(job))
-    this.jobs.registerRunner(SAAS_BATCH_UPDATE_JOB, (job) => this.runUpdate(job))
-  }
-
-  async createDelete(input: {
-    providerId: string
-    zoneName: string
-    hostnames: string[]
-    autoCleanup?: boolean
-  }): Promise<SaaSBatchJobView> {
-    const hostnames = dedupeStrings(input.hostnames)
-    if (!hostnames.length) throw new ApiError('batch_empty', 'No hostnames selected', 422)
-
-    const job = await this.jobs.createExclusive(
-      SAAS_BATCH_DELETE_JOB,
-      {
-        provider_id: input.providerId,
-        zone_name: input.zoneName,
-        auto_cleanup: input.autoCleanup !== false,
-      },
-      hostnames.map((hostname) => ({
-        hostname,
-        status: 'pending',
-        primary_deleted: false,
-        dns_cleanup_status: input.autoCleanup === false ? 'not_required' : 'pending',
-      })),
-      { types: [...SAAS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_name: input.zoneName } },
-      { message: '批量删除任务已创建' }
-    )
-    return this.present(job)
-  }
-
-  async createUpdate(input: {
-    providerId: string
-    zoneName: string
-    hostnames: string[]
-    patch: Record<string, unknown>
-    autoSync?: boolean
-  }): Promise<SaaSBatchJobView> {
-    const hostnames = dedupeStrings(input.hostnames)
-    if (!hostnames.length) throw new ApiError('batch_empty', 'No hostnames selected', 422)
-
-    const patch = this.normalizePatch(input.patch)
-    if (!Object.keys(patch).length) {
-      throw new ApiError('batch_patch_empty', 'No fields to update', 422)
-    }
-
-    const job = await this.jobs.createExclusive(
-      SAAS_BATCH_UPDATE_JOB,
-      {
-        provider_id: input.providerId,
-        zone_name: input.zoneName,
-        patch,
-        auto_sync: input.autoSync !== false,
-      },
-      hostnames.map((hostname) => ({ hostname, status: 'pending', primary_applied: false })),
-      { types: [...SAAS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone_name: input.zoneName } },
-      { message: '批量修改任务已创建' }
-    )
-    return this.present(job)
-  }
-
-  async find(id: string): Promise<SaaSBatchJobView | null> {
-    const job = await this.jobs.get(id)
-    if (!job) return null
-    if (job.type !== SAAS_BATCH_DELETE_JOB && job.type !== SAAS_BATCH_UPDATE_JOB) return null
-    return this.present(job)
-  }
-
-  async active(providerId: string, zoneName: string): Promise<SaaSBatchJobView | null> {
-    return this.findActive(providerId, zoneName)
-  }
-
-  async retryFailed(jobId: string): Promise<SaaSBatchJobView> {
-    await this.require(jobId)
-    const raw = await this.jobs.get(jobId)
-    if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const payload = raw.payload || {}
-    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
-      types: [...SAAS_ZONE_JOB_TYPES],
-      scope: { provider_id: String(payload.provider_id || ''), zone_name: String(payload.zone_name || '') },
+    this.kind = new BatchJobKind(jobs, {
+      types: [SAAS_BATCH_DELETE_JOB, SAAS_BATCH_UPDATE_JOB],
+      lockTypes: ZONE_WRITE_JOB_TYPES,
+      scopeKeys: ['provider_id', 'zone_name'],
+      resourceKeys: readResourceKeys,
+      lockMessage: SAAS_ZONE_LOCK_MESSAGE,
+      present: (job, base) => ({
+        ...base,
+        provider_id: String(job.payload.provider_id ?? ''),
+        zone_name: String(job.payload.zone_name ?? ''),
+      }),
     })
-    return this.present(requeued)
+    jobs.registerRunner(SAAS_BATCH_DELETE_JOB, (job) => this.runDelete(job))
+    jobs.registerRunner(SAAS_BATCH_UPDATE_JOB, (job) => this.runUpdate(job))
   }
 
-  private async runDelete(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerId = String(payload.provider_id || '')
-    const zoneName = String(payload.zone_name || '')
-    const autoCleanup = payload.auto_cleanup !== false
+  createDelete(input: ZoneScope & { hostnames: string[]; autoCleanup?: boolean }) {
+    const autoCleanup = input.autoCleanup !== false
+    const items = this.items(input.hostnames, {
+      primary_deleted: false,
+      dns_cleanup_status: autoCleanup ? 'pending' : 'not_required',
+    })
+    return this.enqueue(SAAS_BATCH_DELETE_JOB, input, { auto_cleanup: autoCleanup }, items, '批量删除任务已创建')
+  }
 
+  createUpdate(input: ZoneScope & { hostnames: string[]; patch: Record<string, unknown>; autoSync?: boolean }) {
+    const items = this.items(input.hostnames, { primary_applied: false })
+    const patch = normalizePatch(input.patch)
+    if (!Object.keys(patch).length) throw new ApiError('batch_patch_empty', 'No fields to update', 422)
+    return this.enqueue(
+      SAAS_BATCH_UPDATE_JOB,
+      input,
+      { patch, auto_sync: input.autoSync !== false },
+      items,
+      '批量修改任务已创建'
+    )
+  }
+
+  find(id: string, providerId?: string) {
+    return this.kind.find(id, { provider_id: providerId })
+  }
+
+  active(providerId: string, zoneName: string) {
+    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
+  }
+
+  retryFailed(id: string, providerId?: string) {
+    return this.kind.retryFailed(id, { provider_id: providerId })
+  }
+
+  private items(hostnames: string[], extra: Record<string, unknown>) {
+    const unique = dedupeStrings(hostnames)
+    if (!unique.length) throw new ApiError('batch_empty', 'No hostnames selected', 422)
+    return unique.map((hostname) => ({ hostname, ...extra }))
+  }
+
+  private async enqueue(
+    type: string,
+    scope: ZoneScope,
+    extra: Record<string, unknown>,
+    items: Array<Record<string, unknown>>,
+    message: string
+  ) {
+    const payload = {
+      provider_id: scope.providerId,
+      zone_name: scope.zoneName,
+      resource_keys: await this.workflow.resourceKeys(scope.providerId, scope.zoneName),
+      ...extra,
+    }
+    return this.kind.present(
+      await this.jobs.createExclusive(type, payload, items, this.kind.lock(payload), { message })
+    )
+  }
+
+  /** 分阶段删除：清理配方 → 删除主机名 → 清理 DNS；每阶段落盘后才进入下一阶段 */
+  private async runDelete(job: JobRecord): Promise<void> {
+    const { providerId, zoneName } = scopeOf(job)
+    const autoCleanup = job.payload.auto_cleanup !== false
     await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.hostname || ''),
+      itemKey: (item) => String(item.hostname ?? ''),
       runningMessage: '删除中',
       progressMessage: '批量删除执行中',
       execute: async (item, hostname) => {
         const primaryDeleted = item.primary_deleted === true
-        let cleanupRecipe = this.cleanupRecipe(item.cleanup_recipe)
+        let recipe = cleanupRecipeOf(item.cleanup_recipe)
+        const stage = (patch: Record<string, unknown>) =>
+          persistItemStage(this.jobs, job.id, byHostname(hostname), patch)
         const result = await this.workflow.deleteHostname(providerId, zoneName, hostname, autoCleanup, {
           primaryDeleted,
-          cleanup: cleanupRecipe,
-          onCleanupPrepared: cleanupRecipe
+          deferListInvalidation: true,
+          cleanup: recipe,
+          onCleanupPrepared: recipe
             ? undefined
-            : async (recipe) => {
-                cleanupRecipe = recipe
-                await this.persistDeleteStage(job.id, hostname, { cleanup_recipe: recipe })
+            : async (prepared) => {
+                recipe = prepared
+                await stage({ cleanup_recipe: prepared })
               },
-          onPrimaryDeleted: primaryDeleted
-            ? undefined
-            : async () => {
-                await this.persistDeleteStage(job.id, hostname, { primary_deleted: true })
-              },
+          onPrimaryDeleted: primaryDeleted ? undefined : () => stage({ primary_deleted: true }),
         })
-        const cleanup = (result as { side_effects?: { dns?: { cleanup?: { status?: string; message?: string } } } })
-          ?.side_effects?.dns?.cleanup
+        const cleanup = dnsEffectOf(result, 'cleanup')
+        const extra = { primary_deleted: true, cleanup_recipe: recipe ?? item.cleanup_recipe }
         if (autoCleanup && cleanup?.status === 'failed') {
           return {
             status: 'failed',
             message: `主机名已删除，但 DNS 清理失败：${cleanup.message || '未知错误'}`,
-            extra: {
-              primary_deleted: true,
-              cleanup_recipe: cleanupRecipe ?? item.cleanup_recipe,
-              dns_cleanup_status: 'failed',
-            },
+            extra: { ...extra, dns_cleanup_status: 'failed' },
           }
         }
-        const message = !autoCleanup
-          ? '已删除'
-          : cleanup?.status === 'completed'
-            ? '已删除（DNS 已清理）'
-            : cleanup?.status === 'skipped'
-              ? `已删除（DNS 跳过：${cleanup.message || '已跳过'}）`
-              : '已删除（无 DNS 记录需清理）'
+        const note = !autoCleanup ? '' : cleanup ? dnsEffectNote(cleanup, 'DNS 已清理') : '（无 DNS 记录需清理）'
         return {
           status: 'success',
-          message,
-          extra: {
-            primary_deleted: true,
-            cleanup_recipe: cleanupRecipe ?? item.cleanup_recipe,
-            dns_cleanup_status: autoCleanup ? cleanup?.status || 'none' : 'not_required',
-          },
+          message: `已删除${note}`,
+          // 取值与 EdgeOne 保持一致：completed | skipped | failed | not_required
+          extra: { ...extra, dns_cleanup_status: autoCleanup ? (cleanup?.status ?? 'skipped') : 'not_required' },
         }
       },
     })
-
     await finishBatchJob(this.jobs, job.id, '批量删除')
     await this.invalidateZoneCache(providerId, zoneName)
   }
 
+  /** 修改前保存 DNS 快照并落盘，重试时远端已应用则不重复 PATCH */
   private async runUpdate(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerId = String(payload.provider_id || '')
-    const zoneName = String(payload.zone_name || '')
-    const patch = (payload.patch || {}) as Record<string, unknown>
-    const autoSync = payload.auto_sync !== false
-
+    const { providerId, zoneName } = scopeOf(job)
+    const autoSync = job.payload.auto_sync !== false
     await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.hostname || ''),
+      itemKey: (item) => String(item.hostname ?? ''),
       runningMessage: '更新中',
       progressMessage: '批量修改执行中',
       execute: async (item, hostname) => {
-        let beforeRecords = this.syncRecords(item.dns_before_records)
+        const beforeRecords = Array.isArray(item.dns_before_records)
+          ? (item.dns_before_records as SyncRecord[])
+          : undefined
+        // 补丁对象每条目复制一份，防止下游修改污染后续条目
+        const patch = { ...(job.payload.patch as Record<string, unknown>) }
         const updated = await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync, {
           remoteApplied: item.primary_applied === true,
+          deferListInvalidation: true,
           beforeRecords,
-          onBeforeRecordsPrepared:
-            beforeRecords === undefined
-              ? async (records) => {
-                  beforeRecords = records
-                  await this.persistUpdateStage(job.id, hostname, { dns_before_records: records })
-                }
-              : undefined,
+          onBeforeRecordsPrepared: beforeRecords
+            ? undefined
+            : (records) => persistItemStage(this.jobs, job.id, byHostname(hostname), { dns_before_records: records }),
         })
-        const localPreference = (
-          updated as { side_effects?: { local?: { preference?: { status?: string; message?: string } } } }
-        ).side_effects?.local?.preference
-        if (localPreference?.status === 'failed') {
+
+        const local = (updated as { side_effects?: { local?: { preference?: { status?: string; message?: string } } } })
+          .side_effects?.local?.preference
+        if (local?.status === 'failed') {
           return {
             status: 'failed',
-            message: `远端配置已更新，但本地偏好保存失败：${localPreference.message || '未知错误'}`,
+            message: `远端配置已更新，但本地偏好保存失败：${local.message || '未知错误'}`,
             extra: { primary_applied: true, local_preference_status: 'failed' },
           }
         }
+        if (!autoSync) return { status: 'success', message: '已更新', extra: { primary_applied: true } }
 
-        if (autoSync) {
-          const dnsSync = (updated as { side_effects?: { dns?: { sync?: { status?: string; message?: string } } } })
-            ?.side_effects?.dns?.sync
-          if (dnsSync?.status === 'failed') {
-            return {
-              status: 'failed',
-              message: `配置已更新，但 DNS 写回失败：${dnsSync.message || '未知错误'}`,
-              extra: { primary_applied: true, dns_sync_status: 'failed' },
-            }
-          }
-          const dnsNote =
-            dnsSync?.status === 'skipped'
-              ? `（DNS 跳过：${dnsSync.message || '已跳过'}）`
-              : dnsSync?.status === 'completed'
-                ? '（DNS 已写回）'
-                : ''
+        const sync = dnsEffectOf(updated, 'sync')
+        if (sync?.status === 'failed') {
           return {
-            status: 'success',
-            message: `已更新${dnsNote}`,
-            extra: { primary_applied: true, dns_sync_status: dnsSync?.status || 'unknown' },
+            status: 'failed',
+            message: `配置已更新，但 DNS 写回失败：${sync.message || '未知错误'}`,
+            extra: { primary_applied: true, dns_sync_status: 'failed' },
           }
         }
-
-        return { status: 'success', message: '已更新', extra: { primary_applied: true } }
+        return {
+          status: 'success',
+          message: `已更新${dnsEffectNote(sync, 'DNS 已写回')}`,
+          extra: { primary_applied: true, dns_sync_status: sync?.status ?? 'unknown' },
+        }
       },
     })
-
     await finishBatchJob(this.jobs, job.id, '批量修改')
     await this.invalidateZoneCache(providerId, zoneName)
-  }
-
-  private cleanupRecipe(value: unknown): SaaSDeleteCleanupRecipe | undefined {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-    const recipe = value as Record<string, unknown>
-    const hostnameFqdn = String(recipe.hostname_fqdn ?? '').trim()
-    if (hostnameFqdn === '' || !Array.isArray(recipe.records)) return undefined
-    return { hostname_fqdn: hostnameFqdn, records: recipe.records as SaaSDeleteCleanupRecipe['records'] }
-  }
-
-  private async persistDeleteStage(jobId: string, hostname: string, patch: Record<string, unknown>): Promise<void> {
-    await this.jobs.patchItem(jobId, (row) => String(row.hostname || '') === hostname, patch)
-    // Flush the durable stage marker before starting the next external side effect.
-    await this.jobs.get(jobId)
-  }
-
-  private async persistUpdateStage(jobId: string, hostname: string, patch: Record<string, unknown>): Promise<void> {
-    await this.jobs.patchItem(jobId, (row) => String(row.hostname || '') === hostname, patch)
-    // Flush the pre-mutation DNS snapshot before the irreversible provider update.
-    await this.jobs.get(jobId)
-  }
-
-  private syncRecords(value: unknown): SaaSDeleteCleanupRecipe['records'] | undefined {
-    return Array.isArray(value) ? (value as SaaSDeleteCleanupRecipe['records']) : undefined
   }
 
   private async invalidateZoneCache(providerId: string, zoneName: string): Promise<void> {
     try {
       const zone = await this.hostnames.resolveZoneRef(providerId, zoneName)
-      invalidateSaaSHostnameCache(zone.cloudflareProviderId, zone.zoneId, false)
+      invalidateSaaSHostnameCache(zone.cloudflareProviderId, zone.zoneId, true)
     } catch {
-      // Best-effort cache invalidation after a durable provider mutation.
+      // 远端变更已完成，缓存失效尽力而为
     }
   }
+}
 
-  private normalizePatch(patch: Record<string, unknown>): Record<string, unknown> {
-    const out: Record<string, unknown> = {}
-    if ('preferred_domain' in patch) out.preferred_domain = String(patch.preferred_domain ?? '').trim()
-    if ('auto_preferred' in patch) out.auto_preferred = Boolean(patch.auto_preferred)
-    if ('custom_origin_server' in patch) out.custom_origin_server = String(patch.custom_origin_server ?? '').trim()
-    if ('method' in patch) out.method = String(patch.method ?? '').trim()
-    if ('min_tls_version' in patch) out.min_tls_version = String(patch.min_tls_version ?? '').trim()
-    return out
-  }
+function scopeOf(job: JobRecord): ZoneScope {
+  return { providerId: String(job.payload.provider_id ?? ''), zoneName: String(job.payload.zone_name ?? '') }
+}
 
-  /** Any SaaS batch / preferred-apply job for the same zone blocks new work. */
-  private async findActive(providerId: string, zoneName: string): Promise<SaaSBatchJobView | null> {
-    const hit = await findActiveBatchJob(this.jobs, [...SAAS_ZONE_JOB_TYPES], {
-      provider_id: providerId,
-      zone_name: zoneName,
-    })
-    return hit ? this.present(hit) : null
-  }
+function normalizePatch(patch: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const field of PATCH_STRING_FIELDS) if (field in patch) out[field] = String(patch[field] ?? '').trim()
+  if ('auto_preferred' in patch) out.auto_preferred = Boolean(patch.auto_preferred)
+  return out
+}
 
-  private async require(id: string): Promise<SaaSBatchJobView> {
-    const job = await this.find(id)
-    if (!job) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: id })
-    return job
-  }
-
-  private present(job: JobRecord): SaaSBatchJobView {
-    const base = presentBatchJobBase(job)
-    const payload = job.payload || {}
-    return {
-      ...base,
-      provider_id: String(payload.provider_id || ''),
-      zone_name: String(payload.zone_name || ''),
-      items: base.items.map(({ dns_before_records: _dnsBeforeRecords, ...item }) => item),
-    }
-  }
+function cleanupRecipeOf(value: unknown): SaaSDeleteCleanupRecipe | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const recipe = value as Record<string, unknown>
+  const fqdn = String(recipe.hostname_fqdn ?? '').trim()
+  return fqdn && Array.isArray(recipe.records)
+    ? { hostname_fqdn: fqdn, records: recipe.records as SyncRecord[] }
+    : undefined
 }

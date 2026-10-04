@@ -1,82 +1,60 @@
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from './app.js'
-import { loadAppConfig, type AppConfig } from './bootstrap/app-config.js'
+import { loadAppConfig, parseCliOverrides, type AppConfig } from './bootstrap/app-config.js'
 import { resolveSessionSecret } from './shared/auth/session-secret.js'
-import { setDataRoot } from './platform/storage/json-store.js'
-import { setDefaultHttpTimeout } from './shared/providers/base.client.js'
+import { setDefaultHttpTimeout } from './shared/providers/http.client.js'
 import { ensureDataDirs } from './platform/storage/ensure-data-dirs.js'
+import { setDataRoot } from './platform/storage/data-root.js'
 
-function parseCliOverrides(): Partial<AppConfig> {
-  const overrides: Partial<AppConfig> = {}
-  const args = process.argv.slice(2)
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--log-level' && args[i + 1]) {
-      overrides.logLevel = args[i + 1]
-      i++
-      continue
-    }
-    if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
-      const port = Number(args[i + 1])
-      if (Number.isFinite(port) && port > 0) {
-        overrides.port = port
-      }
-      i++
-    }
-  }
-  return overrides
+const SHUTDOWN_TIMEOUT_MS = 10000
+
+async function prepareConfig(): Promise<AppConfig> {
+  const base = loadAppConfig(parseCliOverrides(process.argv.slice(2)))
+  setDataRoot(base.dataDir)
+  await ensureDataDirs(base.dataDir)
+  setDefaultHttpTimeout(base.httpTimeoutMs)
+  return { ...base, sessionSecret: await resolveSessionSecret(base.dataDir, base.sessionSecret) }
 }
 
-function printConfigError(err: unknown): never {
-  console.error('加载配置失败：', err)
-  process.exit(1)
-}
-
-const SHUTDOWN_SIGNALS = ['SIGTERM', 'SIGINT'] as const
-
-function registerShutdownHooks(app: FastifyInstance) {
-  for (const signal of SHUTDOWN_SIGNALS) {
-    process.once(signal, () => {
-      app.log.info({ signal }, 'received shutdown signal, closing server...')
-      const forceExitTimer = setTimeout(() => {
-        app.log.error('Forced shutdown due to timeout')
+/** 优雅退出：停止接收请求 → 等待任务落盘 → 超时强制退出 */
+function registerShutdown(app: FastifyInstance): void {
+  let shuttingDown = false
+  const shutdown = (reason: string, exitCode: number) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    app.log.info({ reason }, 'shutting down')
+    setTimeout(() => {
+      app.log.error('forced shutdown after timeout')
+      process.exit(1)
+    }, SHUTDOWN_TIMEOUT_MS).unref()
+    app.close().then(
+      () => process.exit(exitCode),
+      (err) => {
+        app.log.error(err)
         process.exit(1)
-      }, 10000)
-      forceExitTimer.unref()
-
-      app.close().then(
-        () => process.exit(0),
-        (err) => {
-          app.log.error(err)
-          process.exit(1)
-        }
-      )
-    })
+      }
+    )
   }
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) process.once(signal, () => shutdown(signal, 0))
+  // 未捕获异常后进程状态不可信：记录并有序退出，由容器/守护进程重启
+  process.on('uncaughtException', (err) => {
+    app.log.fatal(err, 'uncaught exception')
+    shutdown('uncaughtException', 1)
+  })
+  process.on('unhandledRejection', (reason) => {
+    app.log.error({ err: reason }, 'unhandled rejection')
+  })
 }
 
-const baseConfig = (() => {
-  try {
-    return loadAppConfig(parseCliOverrides())
-  } catch (err) {
-    printConfigError(err)
-  }
-})()
-setDataRoot(baseConfig.dataDir)
-await ensureDataDirs(baseConfig.dataDir)
-const config: AppConfig = {
-  ...baseConfig,
-  sessionSecret: await resolveSessionSecret(baseConfig.dataDir, baseConfig.sessionSecret),
-}
-setDefaultHttpTimeout(config.httpTimeoutMs)
-
-const app = await buildApp(config)
-
-registerShutdownHooks(app)
-
-try {
+async function main(): Promise<void> {
+  const config = await prepareConfig()
+  const app = await buildApp(config)
+  registerShutdown(app)
   await app.listen({ host: config.host, port: config.port })
-  app.log.info(`dns-pro server listening at http://${config.host}:${config.port}`)
-} catch (err) {
-  app.log.error(err)
-  process.exit(1)
+  console.log(`dns-pro listening at http://${config.host}:${config.port}`)
 }
+
+main().catch((err) => {
+  console.error('启动失败：', err instanceof Error ? err.message : err)
+  process.exit(1)
+})

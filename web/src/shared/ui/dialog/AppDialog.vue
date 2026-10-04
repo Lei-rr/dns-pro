@@ -16,14 +16,19 @@ const props = withDefaults(
     description?: string
     class?: HTMLAttributes['class']
     contentClass?: HTMLAttributes['class']
+    /** 禁止 Esc / 点击遮罩 / 关闭按钮关闭（用于必须完成的操作，如修改初始密码） */
+    preventClose?: boolean
   }>(),
-  {}
+  { preventClose: false }
 )
 </script>
 
 <template>
   <DialogRoot v-model:open="open">
     <DialogContent
+      :show-close-button="!props.preventClose"
+      @escape-key-down="props.preventClose && $event.preventDefault()"
+      @pointer-down-outside="props.preventClose && $event.preventDefault()"
       :class="
         cn(
           'max-h-[calc(100svh-1rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:max-h-[calc(100svh-2rem)] sm:max-w-lg sm:p-6',

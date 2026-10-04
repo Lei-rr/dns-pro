@@ -1,4 +1,4 @@
-export interface TunnelConnection {
+interface TunnelConnection {
   id?: string
   client_id?: string
   client_version?: string

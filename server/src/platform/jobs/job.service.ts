@@ -1,20 +1,29 @@
 import * as crypto from 'node:crypto'
 import { JsonStore } from '../storage/json-store.js'
-import type { JobRecord, JobStatus } from './job.types.js'
 import { ApiError } from '../../shared/http/api-error.js'
-import { summarizeJobItems } from './job-summary.js'
+import { errorMessage } from '../../shared/lib/values.js'
+import { summarizeJobItems, type JobItem, type JobLock, type JobRecord, type JobStatus } from './job.types.js'
 
 export type { JobRecord } from './job.types.js'
 
 type StoreShape = { items: JobRecord[] }
 const ACTIVE: JobStatus[] = ['pending', 'running']
-const TERMINAL: JobStatus[] = ['completed', 'failed', 'cancelled']
+const TERMINAL: JobStatus[] = ['completed', 'failed']
 const FINISHED_RETENTION = 100
 const PROGRESS_FLUSH_MS = 250
+/**
+ * 仅用于执行期恢复的内部快照字段。
+ * 已完成任务不可能再重试，剥离以控制任务文件体积；
+ * 失败任务保留（重试需要更新前的 DNS 快照）。
+ */
+const EXECUTION_SNAPSHOT_FIELDS = ['dns_before_records', 'cleanup_recipe'] as const
 
 type ItemExecutionClaim = { state: 'execute'; item: Record<string, unknown> } | { state: 'skip' | 'uncertain' }
 
-/** Durable jobs for the single application process which owns the data directory. */
+/**
+ * 单进程持久化任务：创建 / 恢复 / 重试 / 进度 / 终态。
+ * 进度写入合并节流（PROGRESS_FLUSH_MS），条目终态立即落盘。
+ */
 export class JobService {
   private readonly runners = new Map<string, (job: JobRecord) => Promise<void>>()
   private readonly inflight = new Map<string, Promise<void>>()
@@ -51,7 +60,7 @@ export class JobService {
     type: string,
     payload: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
-    lock: { types: string[]; scope: Record<string, string>; message?: string } | undefined,
+    lock: JobLock | undefined,
     options: {
       status: 'completed' | 'failed'
       message: string
@@ -88,7 +97,7 @@ export class JobService {
     type: string,
     payload: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
-    lock: { types: string[]; scope: Record<string, string>; message?: string } | undefined,
+    lock: JobLock | undefined,
     options: { start?: boolean; message?: string } = {}
   ): Promise<JobRecord> {
     const now = Date.now()
@@ -126,17 +135,14 @@ export class JobService {
     return (await this.all()).filter((job) => ACTIVE.includes(job.status) && (!type || job.type === type))
   }
 
-  async listByType(type: string, limit = 50): Promise<JobRecord[]> {
-    return (await this.all())
-      .filter((job) => job.type === type)
-      .sort((a, b) => b.created_at - a.created_at)
-      .slice(0, limit)
-  }
-
   async resumeActiveJobs(): Promise<number> {
     if (this.resumeStarted) return 0
     this.resumeStarted = true
-    await this.store.transaction((current) => ({ next: { items: this.compactList(current.items ?? []) } }))
+    // 无内容需要压缩时不写盘，避免每次启动都重写任务文件
+    const stored = (await this.store.read()).items ?? []
+    if (this.compactList(stored) !== stored) {
+      await this.store.transaction((current) => ({ next: { items: this.compactList(current.items ?? []) } }))
+    }
     let resumed = 0
     for (const job of await this.listActive()) if (await this.start(job.id)) resumed++
     return resumed
@@ -172,11 +178,7 @@ export class JobService {
     return this.previewWithPending(id)
   }
 
-  async requeue(
-    id: string,
-    patch: Partial<JobRecord> = {},
-    lock?: { types: string[]; scope: Record<string, string>; message?: string }
-  ): Promise<JobRecord> {
+  async requeue(id: string, patch: Partial<JobRecord> = {}, lock?: JobLock): Promise<JobRecord> {
     await this.flushProgress(id)
     let updated: JobRecord | null = null
     await this.store.transaction((current) => {
@@ -222,12 +224,7 @@ export class JobService {
             claim = { state: 'uncertain' }
             return { ...item, status: 'failed', message: '上次执行结果待确认，未自动重放，请核实后重试' }
           }
-          const next = {
-            ...item,
-            status: 'running',
-            operation_id: String(item.operation_id || crypto.randomBytes(16).toString('hex')),
-            message: runningMessage,
-          }
+          const next = { ...item, status: 'running', message: runningMessage }
           claim = { state: 'execute', item: next }
           return next
         })
@@ -238,81 +235,6 @@ export class JobService {
       return { next: { items } }
     })
     return claim
-  }
-
-  async cancel(id: string): Promise<JobRecord | null> {
-    await this.flushProgress(id)
-    let updated: JobRecord | null = null
-    await this.store.transaction((current) => {
-      const items = (current.items ?? []).map((job) => {
-        if (job.id !== id || TERMINAL.includes(job.status)) return job
-        const pendingItems = job.items.map((item) =>
-          item.status === 'pending' || item.status === 'running'
-            ? { ...item, status: 'skipped', message: '任务已被取消' }
-            : item
-        )
-        updated = {
-          ...job,
-          status: 'cancelled',
-          items: pendingItems,
-          ...summarizeJobItems(pendingItems),
-          finished_at: Date.now(),
-          updated_at: Date.now(),
-          message: '任务已被取消',
-        }
-        return updated
-      })
-      return { next: { items: this.compactList(items) } }
-    })
-    return updated
-  }
-
-  async prune(options: { maxAgeMs?: number; keep?: number } = {}): Promise<number> {
-    const keep = Math.max(0, options.keep ?? 20)
-    const now = Date.now()
-    const maxAgeMs = options.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000
-    let removedCount = 0
-
-    await this.store.transaction((current) => {
-      const items = current.items ?? []
-      const active = items.filter((job) => ACTIVE.includes(job.status))
-      const finished = items.filter((job) => !ACTIVE.includes(job.status))
-
-      const keptFinished = finished.filter((job, index) => {
-        const finishedAt = job.finished_at || job.updated_at || job.created_at
-        const isTooOld = now - finishedAt > maxAgeMs
-        if (isTooOld && index < finished.length - keep) {
-          removedCount++
-          return false
-        }
-        return true
-      })
-
-      return { next: { items: [...keptFinished, ...active] } }
-    })
-
-    return removedCount
-  }
-
-  async completePending(
-    id: string,
-    patch: Partial<JobRecord> & { status: 'completed' | 'failed' }
-  ): Promise<JobRecord | null> {
-    await this.flushProgress(id)
-    let updated: JobRecord | null = null
-    await this.store.transaction((current) => {
-      const items = (current.items ?? []).map((job) => {
-        if (job.id !== id || job.status !== 'pending') return job
-        updated = { ...job, ...patch, finished_at: patch.finished_at ?? Date.now(), updated_at: Date.now() }
-        return updated
-      })
-      return { next: { items: updated ? this.compactList(items) : items } }
-    })
-    return updated
-  }
-
-  ensure(id: string): void {
-    this.requestStart(id)
   }
 
   async close(): Promise<void> {
@@ -402,7 +324,7 @@ export class JobService {
       await this.flushProgress(jobId)
       await this.patch(jobId, {
         status: 'failed',
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
         finished_at: Date.now(),
       })
     }
@@ -483,14 +405,13 @@ export class JobService {
     return status && TERMINAL.includes(status as JobStatus) ? this.compactList(items) : items
   }
 
-  private assertNoActiveConflict(
-    jobs: JobRecord[],
-    lock: { types: string[]; scope: Record<string, string>; message?: string } | undefined
-  ): void {
+  private assertNoActiveConflict(jobs: JobRecord[], lock: JobLock | undefined): void {
     if (!lock) return
     const active = jobs.find((job) => {
       if (!ACTIVE.includes(job.status) || !lock.types.includes(job.type)) return false
-      return Object.entries(lock.scope).every(([key, value]) => String(job.payload?.[key] ?? '') === value)
+      // 资源键优先：跨工作流按底层写入目标是否重叠判定
+      if (lock.resourceKeys?.length) return hasResourceConflict(job, lock.resourceKeys)
+      return Object.entries(lock.scope ?? {}).every(([key, value]) => String(job.payload?.[key] ?? '') === value)
     })
     if (active) {
       throw new ApiError('batch_job_running', lock.message || 'A batch job is already running for this scope', 409, {
@@ -499,17 +420,50 @@ export class JobService {
     }
   }
 
+  /**
+   * 压缩任务列表：剥离已完成任务的执行期快照、只保留最近 FINISHED_RETENTION 个已结束任务。
+   * 无变化时返回原数组（调用方据此跳过写盘）。
+   */
   private compactList(items: JobRecord[]): JobRecord[] {
-    const active = items.filter((job) => ACTIVE.includes(job.status))
-    const finished = items
+    const compacted = items.map((job) => (job.status === 'completed' ? stripExecutionSnapshots(job) : job))
+    const active = compacted.filter((job) => ACTIVE.includes(job.status))
+    const finished = compacted
       .filter((job) => !ACTIVE.includes(job.status))
       .sort((a, b) => (b.finished_at || b.updated_at || b.created_at) - (a.finished_at || a.updated_at || a.created_at))
       .slice(0, FINISHED_RETENTION)
       .sort((a, b) => (a.finished_at || a.updated_at || a.created_at) - (b.finished_at || b.updated_at || b.created_at))
-    return [...finished, ...active]
+    const result = [...finished, ...active]
+    return isSameList(result, items) ? items : result
   }
 
   private async all(): Promise<JobRecord[]> {
     return (await this.store.read()).items ?? []
+  }
+}
+
+/** 资源键是否有交集：payload.resource_keys 与目标键集合交叉即冲突 */
+function hasResourceConflict(job: JobRecord, resourceKeys: string[]): boolean {
+  const existing = job.payload?.resource_keys
+  if (!Array.isArray(existing)) return false
+  const wanted = new Set(resourceKeys)
+  return existing.some((key) => wanted.has(String(key)))
+}
+
+/** 两个列表逐项相同时视为无变化 */
+function isSameList(left: JobRecord[], right: JobRecord[]): boolean {
+  return left.length === right.length && left.every((job, index) => job === right[index])
+}
+
+/** 剥离已完成任务的执行期快照字段（无字段时原样返回，避免无谓的对象重建） */
+function stripExecutionSnapshots(job: JobRecord): JobRecord {
+  const hasSnapshot = job.items.some((item) => EXECUTION_SNAPSHOT_FIELDS.some((field) => field in item))
+  if (!hasSnapshot) return job
+  return {
+    ...job,
+    items: job.items.map((item) => {
+      const next: JobItem = { ...item }
+      for (const field of EXECUTION_SNAPSHOT_FIELDS) delete next[field]
+      return next
+    }),
   }
 }

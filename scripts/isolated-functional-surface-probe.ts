@@ -25,6 +25,7 @@ for (const type of ['dnspod', 'cloudflare', 'saas', 'edgeone', 'cloudflared']) {
 }
 
 const capabilities: Record<string, string[]> = {
+  // 说明：服务商排序接口仅保留后端（路由目录为 append-only），前端暂无排序入口
   'web/src/features/providers/api/provider-api.ts': [
     'configured',
     'list',
@@ -33,7 +34,6 @@ const capabilities: Record<string, string[]> = {
     'update',
     'remove',
     'test',
-    'reorder',
   ],
   'web/src/features/dns/api/dns-api.ts': [
     'zones',
@@ -113,10 +113,10 @@ const routeSurface = `${routes
   .map((route) => `${route.method} ${route.path}`)
   .sort()
   .join('\n')}\n`
-assert.equal(routes.length, 88, 'backend API route count changed')
+assert.equal(routes.length, 90, 'backend API route count changed')
 assert.equal(
   crypto.createHash('sha256').update(routeSurface).digest('hex'),
-  '8ffde8b155bd78087b0dfbcd3d00fd47f477f79c1e3bf8f5902f0ba36780d2f1',
+  'aa135590b8fb336eb0754a176e552f816f47574c8c5a8e4e3a60ef256c899426',
   'backend API method/path surface changed'
 )
-console.log('functional-surface-probe=ok providers=5 api_methods=66 routes=88')
+console.log('functional-surface-probe=ok providers=5 api_methods=66 routes=90')

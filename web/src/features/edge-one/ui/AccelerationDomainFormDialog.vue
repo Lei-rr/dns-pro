@@ -52,10 +52,22 @@ watch(open, (value) => {
   if (value) Object.assign(form, edgeOneDomainFormValues(props.domain, props.zoneName))
 })
 
+function isValidPort(value: unknown) {
+  const port = Number(value)
+  return Number.isInteger(port) && port >= 1 && port <= 65535
+}
+
 function submit() {
   if (props.saving) return
   localErrors.value = {}
   if (!form.origin.trim()) localErrors.value.origin = '请填写源站地址'
+  // 端口显式校验：空值/越界此前会被静默丢弃并回退默认端口
+  if (showHttpPort.value && !isValidPort(form.http_origin_port)) {
+    localErrors.value.http_origin_port = '端口需为 1-65535'
+  }
+  if (showHttpsPort.value && !isValidPort(form.https_origin_port)) {
+    localErrors.value.https_origin_port = '端口需为 1-65535'
+  }
   if (Object.keys(localErrors.value).length) return
   emit('save', {
     ...edgeOneDomainSubmitValues(form),
@@ -176,7 +188,7 @@ function submit() {
     </FieldGroup>
 
     <template #footer>
-      <Button variant="outline" @click="open = false">取消</Button>
+      <Button variant="outline" :disabled="saving" @click="open = false">取消</Button>
       <LoadingButton :loading="saving" @click="submit">保存</LoadingButton>
     </template>
   </AppDialog>

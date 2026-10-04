@@ -1,289 +1,144 @@
 import { ApiError } from '../../shared/http/api-error.js'
-import { hasFailedSideEffectItem, type DnsSideEffect } from '../../shared/providers/side-effect-result.js'
-import { ProviderRepository } from '../../modules/providers/provider.repository.js'
-import { CloudflareDnsRecordService } from '../../modules/cloudflare/cloudflare-dns-record.service.js'
-import { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-zone.service.js'
-import { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
-import { CloudflareDnsSaaSDriver } from './cloudflare-dns-sync.adapter.js'
-import { DnsPodSaaSDriver } from './dns-pod-sync.adapter.js'
-import { DnsPodRecordOps } from '../../modules/dns-pod/dns-pod-record-sync.service.js'
-import type { SyncDriver, SyncRecord } from './saas-dns-sync.types.js'
-import { cloudflareDnsCleanupRecipe, dnspodSaaSCleanupRecipe } from './saas-dns-cleanup.js'
-import { zoneOwnsHostname } from '../../modules/saas/saas-hostname.js'
-import { normalizeFqdn } from '../../shared/lib/fqdn.js'
+import { normalizeFqdn } from '../../shared/lib/values.js'
+import { runDnsSideEffect } from '../../shared/providers/side-effect-result.js'
+import type { CloudflareDnsRecordService } from '../../modules/cloudflare/cloudflare-dns-record.service.js'
+import type { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-zone.service.js'
+import { DNSPOD_DEFAULT_LINE } from '../../modules/dns-pod/dns-pod-record.service.js'
+import type { DnsPodRecordSyncService } from '../../modules/dns-pod/dns-pod-record-sync.service.js'
+import { zoneOwnsHostname } from '../../modules/saas/saas-hostname-rules.js'
+import type { SaaSHostnameService } from '../../modules/saas/saas-hostname.service.js'
+import type { SaaSSyncConfigService } from '../../modules/saas/saas-sync-config.service.js'
+import { CloudflareDnsSaaSSyncAdapter } from './cloudflare-dns-saas-sync.adapter.js'
+import { dnsZoneKey } from '../../platform/jobs/job-types.js'
+import { DNSPOD_PREFERRED_LINE, DnsPodSaaSSyncAdapter } from './dns-pod-saas-sync.adapter.js'
+import {
+  cloudflareDnsCleanupRecipe,
+  dnspodSaaSCleanupRecipe,
+  type SaaSSyncAdapter,
+  type SyncCollectedRecords,
+  type SyncRecord,
+} from './saas-sync-records.js'
 
-/**
- * SaaS DNS sync coordinator.
- */
+/** SaaS DNS 同步调度：按主机名生效配置选择 DNSPod / Cloudflare DNS 适配器 */
 export class SaaSDnsSyncCoordinator {
-  private dnspodDriverInstance: SyncDriver | null = null
-  private cloudflareDnsDriverInstance: SyncDriver | null = null
+  private readonly dnspod: SaaSSyncAdapter
+  private readonly cloudflareDns: SaaSSyncAdapter
 
   constructor(
-    private readonly providers: ProviderRepository,
     private readonly hostnames: SaaSHostnameService,
-    private readonly support: DnsPodRecordOps,
-    private readonly cloudflareZones: CloudflareZoneService,
-    private readonly cloudflareDns: CloudflareDnsRecordService
-  ) {}
-
-  driverForTarget(target: string): SyncDriver {
-    return target === 'cloudflare_dns' ? this.cloudflareDnsDriver() : this.dnspodDriver()
+    syncConfigs: SaaSSyncConfigService,
+    private readonly dnspodRecords: DnsPodRecordSyncService,
+    cloudflareZones: CloudflareZoneService,
+    cloudflareRecords: CloudflareDnsRecordService
+  ) {
+    this.dnspod = new DnsPodSaaSSyncAdapter(hostnames, dnspodRecords)
+    this.cloudflareDns = new CloudflareDnsSaaSSyncAdapter(hostnames, syncConfigs, cloudflareZones, cloudflareRecords)
   }
 
-  async driverForSaaSInput(providerId: string, data: Record<string, unknown>): Promise<SyncDriver> {
-    let target = String(data.sync_target ?? '').trim()
-    if (target === '') target = await this.hostnames.defaultSyncTarget(providerId)
-    return this.driverForTarget(target)
+  /** 创建前预检同步目标 */
+  async preflight(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}) {
+    const target = String(data.sync_target ?? '').trim() || (await this.hostnames.defaultSyncTarget(providerId))
+    return this.adapterFor(target).preflight(providerId, hostnameFqdn, data)
   }
 
-  async driverForSaaSHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<SyncDriver> {
-    const config = await this.hostnames.effectiveSyncConfig(providerId, hostnameFqdn, zoneName)
-    const target = String(config.sync_target ?? '').trim()
-    return this.driverForTarget(target)
+  async sync(providerId: string, zoneName: string, hostnameFqdn: string) {
+    const adapter = await this.adapterForHostname(providerId, zoneName, hostnameFqdn)
+    return runDnsSideEffect(() => adapter.sync(providerId, zoneName, hostnameFqdn))
   }
 
-  async collectSaaSRecords(providerId: string, zoneName: string, hostnameFqdn: string) {
+  async resync(providerId: string, zoneName: string, hostnameFqdn: string, beforeRecords: SyncRecord[]) {
+    const adapter = await this.adapterForHostname(providerId, zoneName, hostnameFqdn)
+    return runDnsSideEffect(() => adapter.resyncAfterUpdate(providerId, zoneName, hostnameFqdn, beforeRecords))
+  }
+
+  async cleanupStale(providerId: string, zoneName: string, hostnameFqdn: string) {
+    const adapter = await this.adapterForHostname(providerId, zoneName, hostnameFqdn)
+    return runDnsSideEffect(() => adapter.cleanupStaleRecords(providerId, zoneName, hostnameFqdn))
+  }
+
+  /** 清理不要求 Cloudflare 主机名仍存在（删除流程先删主机名再清 DNS） */
+  async cleanup(providerId: string, zoneName: string, hostnameFqdn: string, records: SyncRecord[]) {
+    return runDnsSideEffect(async () => {
+      const adapter = this.adapterFor(await this.cleanupTarget(providerId, zoneName, hostnameFqdn, records))
+      return adapter.cleanup(providerId, hostnameFqdn, records)
+    })
+  }
+
+  /** 收集当前记录快照；主机名已被删除时按本地偏好重建清理配方 */
+  async collect(providerId: string, zoneName: string, hostnameFqdn: string): Promise<SyncCollectedRecords> {
     try {
-      const driver = await this.driverForSaaSHostname(providerId, zoneName, hostnameFqdn)
-      return await driver.collectRecordsFor(providerId, zoneName, hostnameFqdn)
+      const adapter = await this.adapterForHostname(providerId, zoneName, hostnameFqdn)
+      return await adapter.collectRecordsFor(providerId, zoneName, hostnameFqdn)
     } catch (error) {
       if (!(error instanceof ApiError && error.code === 'saas_hostname_not_found')) throw error
-      // CF custom hostname is already gone: rebuild the cleanup set from durable local preference.
-      return this.collectSaaSRecordsFallback(providerId, hostnameFqdn)
+      return this.fallbackRecipe(providerId, hostnameFqdn)
     }
   }
 
   /**
-   * When CF hostname is already deleted, invent DNS cleanup set from local preference / defaults.
-   * Record values are empty so deletes match by type+name(+line) only.
+   * 该 SaaS 任务会写入的底层 DNS 目标：关联的 Cloudflare DNS 与 DNSPod 服务商 + 站点。
+   * 用于跨工作流互斥（与 DNS 批量、EdgeOne 批量共享同一资源）。
    */
-  async collectSaaSRecordsFallback(
-    providerId: string,
-    hostnameFqdn: string
-  ): Promise<{ hostname_fqdn: string; records: SyncRecord[] }> {
-    const fqdn = normalizeFqdn(hostnameFqdn)
-    if (fqdn === '') return { hostname_fqdn: '', records: [] }
+  async resourceKeys(providerId: string, zoneName: string): Promise<string[]> {
+    const zone = zoneName.trim().toLowerCase()
+    const keys: string[] = []
+    const cloudflareId = await this.hostnames.cloudflareProviderId(providerId).catch(() => '')
+    if (cloudflareId) keys.push(dnsZoneKey('cloudflare', cloudflareId, zone))
+    const dnspodId = await this.dnspodRecords.lookupDnsPodProviderId(providerId, 'saas', 'SaaS').catch(() => '')
+    if (dnspodId) keys.push(dnsZoneKey('dnspod', dnspodId, zone))
+    return keys
+  }
 
-    const config = await this.resolveFallbackSyncConfig(providerId, fqdn)
-    const target = String(config.sync_target ?? '').trim() || (await this.hostnames.defaultSyncTarget(providerId))
+  private adapterFor(target: string): SaaSSyncAdapter {
+    return target === 'cloudflare_dns' ? this.cloudflareDns : this.dnspod
+  }
+
+  private async adapterForHostname(providerId: string, zoneName: string, hostnameFqdn: string) {
+    const config = await this.hostnames.effectiveSyncConfig(providerId, hostnameFqdn, zoneName)
+    return this.adapterFor(config.sync_target)
+  }
+
+  /** 由记录特征推断清理目标：DNSPod 记录带线路/域名，Cloudflare 记录带站点名 */
+  private async cleanupTarget(providerId: string, zoneName: string, hostnameFqdn: string, records: SyncRecord[]) {
+    if (records.some((r) => String(r.dnspod_zone ?? '').trim() || String(r.line ?? '').trim())) return 'dnspod'
+    if (records.some((r) => String(r.zone_name ?? '').trim())) return 'cloudflare_dns'
+    const config = await this.hostnames.effectiveSyncConfig(providerId, hostnameFqdn, zoneName).catch(() => null)
+    return config?.sync_target || (await this.hostnames.defaultSyncTarget(providerId)) || 'dnspod'
+  }
+
+  /** 主机名已删除时的清理配方：值为空，按 名称+类型(+线路) 删除 */
+  private async fallbackRecipe(providerId: string, hostnameFqdn: string): Promise<SyncCollectedRecords> {
+    const fqdn = normalizeFqdn(hostnameFqdn)
+    const empty = { hostname_fqdn: fqdn, records: [] }
+    if (fqdn === '') return empty
+
+    const config = await this.hostnames.effectiveSyncConfig(providerId, fqdn).catch(() => null)
+    const target = config?.sync_target || (await this.hostnames.defaultSyncTarget(providerId))
 
     if (target === 'cloudflare_dns') {
-      return this.fallbackCloudflareDns(providerId, fqdn, config)
+      const zone = config?.sync_zone ?? ''
+      const provider =
+        config?.sync_provider_id || (await this.hostnames.cloudflareProviderId(providerId).catch(() => ''))
+      if (!provider || !zone || !zoneOwnsHostname(zone, fqdn)) return empty
+      return { hostname_fqdn: fqdn, records: cloudflareDnsCleanupRecipe(fqdn, provider, zone) }
     }
-    return this.fallbackDnsPod(providerId, fqdn, config)
-  }
 
-  private async resolveFallbackSyncConfig(providerId: string, fqdn: string): Promise<Record<string, unknown>> {
     try {
-      return await this.hostnames.effectiveSyncConfig(providerId, fqdn, '')
-    } catch {
+      const dnspodProviderId =
+        config?.sync_provider_id || (await this.dnspodRecords.requireDnsPodProviderId(providerId, 'saas', 'SaaS'))
+      const dnspodZone = config?.sync_zone
+        ? await this.dnspodRecords.requireExplicitDnsPodZone(dnspodProviderId, config.sync_zone, 'saas')
+        : await this.dnspodRecords.resolveDnsPodZone(dnspodProviderId, fqdn, 'saas')
       return {
-        sync_target: await this.hostnames.defaultSyncTarget(providerId),
-        sync_provider_id: '',
-        sync_zone: '',
-      }
-    }
-  }
-
-  private async fallbackCloudflareDns(
-    providerId: string,
-    fqdn: string,
-    config: Record<string, unknown>
-  ): Promise<{ hostname_fqdn: string; records: SyncRecord[] }> {
-    const zoneName = String(config.sync_zone ?? '')
-      .trim()
-      .toLowerCase()
-    let provider = String(config.sync_provider_id ?? '').trim()
-    if (provider === '') {
-      try {
-        provider = await this.hostnames.cloudflareProviderIdFor(providerId)
-      } catch {
-        provider = ''
-      }
-    }
-    if (provider === '' || zoneName === '' || !zoneOwnsHostname(zoneName, fqdn)) {
-      return { hostname_fqdn: fqdn, records: [] }
-    }
-    return {
-      hostname_fqdn: fqdn,
-      records: cloudflareDnsCleanupRecipe(fqdn, provider, zoneName),
-    }
-  }
-
-  private async fallbackDnsPod(
-    providerId: string,
-    fqdn: string,
-    config: Record<string, unknown>
-  ): Promise<{ hostname_fqdn: string; records: SyncRecord[] }> {
-    let dnspodProviderId = String(config.sync_provider_id ?? '').trim()
-    if (dnspodProviderId === '') {
-      try {
-        dnspodProviderId = await this.support.requireDnsPodProviderId(providerId, 'saas', 'SaaS')
-      } catch {
-        return { hostname_fqdn: fqdn, records: [] }
-      }
-    }
-
-    let dnspodZone = String(config.sync_zone ?? '')
-      .trim()
-      .toLowerCase()
-    try {
-      if (dnspodZone !== '') {
-        dnspodZone = await this.support.requireExplicitDnsPodZone(dnspodProviderId, dnspodZone, 'saas')
-      } else {
-        dnspodZone = await this.support.resolveDnsPodZone(dnspodProviderId, fqdn, 'saas')
+        hostname_fqdn: fqdn,
+        records: dnspodSaaSCleanupRecipe(fqdn, dnspodProviderId, dnspodZone, {
+          default: DNSPOD_DEFAULT_LINE,
+          preferred: DNSPOD_PREFERRED_LINE,
+        }),
       }
     } catch {
-      return { hostname_fqdn: fqdn, records: [] }
+      // 关联或域名已不可用：无可清理记录
+      return empty
     }
-
-    return {
-      hostname_fqdn: fqdn,
-      records: dnspodSaaSCleanupRecipe(fqdn, dnspodProviderId, dnspodZone),
-    }
-  }
-
-  async cleanupSaaSRecords(providerId: string, zoneName: string, hostnameFqdn: string, records: SyncRecord[]) {
-    // Must not require CF hostname still exists — delete flow removes CF first, then cleans DNS.
-    const target = await this.targetForCleanup(providerId, zoneName, hostnameFqdn, records)
-    const driver = this.driverForTarget(target)
-    return this.safe(() => driver.cleanup(providerId, hostnameFqdn, records))
-  }
-
-  private async targetForCleanup(
-    providerId: string,
-    zoneName: string,
-    hostnameFqdn: string,
-    records: SyncRecord[]
-  ): Promise<string> {
-    if (records.some((r) => String(r.dnspod_zone ?? '').trim() !== '' || String(r.line ?? '').trim() !== '')) {
-      return 'dnspod'
-    }
-    if (records.some((r) => String(r.zone_name ?? '').trim() !== '')) {
-      return 'cloudflare_dns'
-    }
-    try {
-      const config = await this.hostnames.effectiveSyncConfig(providerId, hostnameFqdn, zoneName)
-      const target = String(config.sync_target ?? '').trim()
-      if (target !== '') return target
-    } catch {
-      // ignore
-    }
-    return (await this.hostnames.defaultSyncTarget(providerId)) || 'dnspod'
-  }
-
-  async preflightSaaS(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}) {
-    const driver = await this.driverForSaaSInput(providerId, data)
-    return driver.preflight(providerId, hostnameFqdn, data)
-  }
-
-  async syncSaaSHostname(providerId: string, zoneName: string, hostnameFqdn: string) {
-    const driver = await this.driverForSaaSHostname(providerId, zoneName, hostnameFqdn)
-    return this.safe(() => driver.sync(providerId, zoneName, hostnameFqdn))
-  }
-
-  async resyncSaaSHostname(providerId: string, zoneName: string, hostnameFqdn: string, beforeRecords: SyncRecord[]) {
-    const driver = await this.driverForSaaSHostname(providerId, zoneName, hostnameFqdn)
-    return this.safe(() => driver.resyncAfterUpdate(providerId, zoneName, hostnameFqdn, beforeRecords))
-  }
-
-  async cleanupSaaSStaleRecords(providerId: string, zoneName: string, hostnameFqdn: string) {
-    const driver = await this.driverForSaaSHostname(providerId, zoneName, hostnameFqdn)
-    return this.safe(() => driver.cleanupStaleRecords(providerId, zoneName, hostnameFqdn))
-  }
-
-  normalizeSyncSideEffect(result: unknown, defaultMessage: string): DnsSideEffect {
-    const r = (result ?? {}) as Record<string, unknown>
-    let status = String(r.status ?? '')
-    if (status === '') status = this.deriveSyncStatus(r)
-    // Some adapters return nested record.status.
-    const record = (r.record as Record<string, unknown>) ?? {}
-    if (status === '' || status === 'completed') {
-      const action = String(record.status ?? '')
-      if (action === 'failed') status = 'failed'
-      else if (action !== '') status = 'completed'
-    }
-    return {
-      status: status as DnsSideEffect['status'],
-      message: String(r.message ?? defaultMessage),
-      details: [r],
-    }
-  }
-
-  normalizeCleanupSideEffect(result: unknown, defaultMessage: string): DnsSideEffect {
-    const r = (result ?? {}) as Record<string, unknown>
-    // safe() failures must surface as failed (never collapse to skipped)
-    if (hasFailedSideEffectItem(r) || String(r.code ?? '') === 'dns_sync_failed') {
-      return {
-        status: 'failed',
-        message: String(r.message ?? (defaultMessage || 'DNS 清理失败')),
-        details: [r],
-      }
-    }
-    const cleaned = Number(r.cleaned ?? 0)
-    const status = r.status === 'skipped' || r.reason ? 'skipped' : cleaned > 0 ? 'completed' : 'skipped'
-    let message = String(r.message ?? '')
-    if (message === '') {
-      message =
-        status === 'completed'
-          ? defaultMessage
-          : String(r.reason ?? '') !== ''
-            ? 'DNS 清理已跳过'
-            : '未找到需要清理的 DNS 记录'
-    }
-    return {
-      status: status as DnsSideEffect['status'],
-      message,
-      details: [r],
-    }
-  }
-
-  async safe<T>(fn: () => Promise<T>): Promise<T | Record<string, unknown>> {
-    try {
-      return await fn()
-    } catch (error) {
-      // Must be `failed` so callers (preferred apply / batch) can surface DNS write errors.
-      // Historically this returned `skipped`, which made preferred-domain changes look successful
-      // even when DNSPod/Cloudflare CNAME was not updated.
-      return {
-        status: 'failed',
-        code: error instanceof ApiError ? error.code : 'dns_sync_failed',
-        message: error instanceof Error ? error.message : String(error),
-      }
-    }
-  }
-
-  private deriveSyncStatus(result: Record<string, unknown>): DnsSideEffect['status'] {
-    if (hasFailedSideEffectItem(result)) return 'failed'
-    const records = Array.isArray(result.records) ? result.records : []
-    if (records.length === 0) {
-      return String(result.reason ?? '') !== '' || String(result.code ?? '') !== '' ? 'skipped' : 'completed'
-    }
-    for (const record of records) {
-      if (typeof record === 'object' && record !== null && (record as Record<string, unknown>).status === 'failed') {
-        return 'failed'
-      }
-    }
-    return 'completed'
-  }
-
-  private dnspodDriver(): SyncDriver {
-    if (!this.dnspodDriverInstance) {
-      this.dnspodDriverInstance = new DnsPodSaaSDriver(this.hostnames, this.support)
-    }
-    return this.dnspodDriverInstance
-  }
-
-  private cloudflareDnsDriver(): SyncDriver {
-    if (!this.cloudflareDnsDriverInstance) {
-      this.cloudflareDnsDriverInstance = new CloudflareDnsSaaSDriver(
-        this.providers,
-        this.hostnames,
-        this.cloudflareZones,
-        this.cloudflareDns
-      )
-    }
-    return this.cloudflareDnsDriverInstance
   }
 }

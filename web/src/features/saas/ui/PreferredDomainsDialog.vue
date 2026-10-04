@@ -14,7 +14,7 @@ import { confirmDelete } from '@/shared/ui/confirm'
 import { createScopeGeneration } from '@/shared/lib/scope-generation'
 
 const open = defineModel<boolean>('open', { default: false })
-withDefaults(
+const props = withDefaults(
   defineProps<{
     hostCount?: number
     applying?: boolean
@@ -32,7 +32,14 @@ const saving = ref(false)
 const newDomain = ref('')
 const editingDomain = ref<string | null>(null)
 const editingValue = ref('')
+// 立即防重复点击；父级 applying 结束后自动解除
 const applyingDomain = ref('')
+watch(
+  () => props.applying,
+  (busy) => {
+    if (!busy) applyingDomain.value = ''
+  }
+)
 const newDomainError = ref('')
 const editingError = ref('')
 const loadGeneration = createScopeGeneration()
@@ -124,9 +131,6 @@ function applyDomain(record: { domain: string }, options: { onlyAutoPreferred?: 
   // 正式切换会跑 Job：先关弹窗，露出页顶进度条；预览保留弹窗
   if (!options.dryRun) open.value = false
   emit('apply', { domain: record.domain, ...options })
-  setTimeout(() => {
-    applyingDomain.value = ''
-  }, 800)
 }
 
 async function move(index: number, delta: number) {

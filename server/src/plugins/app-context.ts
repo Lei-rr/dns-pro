@@ -2,27 +2,15 @@ import type { FastifyPluginAsync } from 'fastify'
 import fp from 'fastify-plugin'
 import type { AppContext } from '../bootstrap/create-context.js'
 
-type AppContextPluginOptions = {
-  ctx: AppContext
-}
-
 declare module 'fastify' {
   interface FastifyInstance {
     ctx: AppContext
   }
 }
 
-/**
- * Root decoration for application context.
- * Uses fastify-plugin so `app.ctx` is available in every encapsulation context
- * (API scopes, module plugins, hooks).
- */
-const appContextPluginImpl: FastifyPluginAsync<AppContextPluginOptions> = async (app, opts) => {
-  if (app.hasDecorator('ctx')) return
+/** 根级注入应用上下文，所有作用域可通过 app.ctx / request.server.ctx 访问 */
+const appContextPluginImpl: FastifyPluginAsync<{ ctx: AppContext }> = async (app, opts) => {
   app.decorate('ctx', opts.ctx)
 }
 
-export const appContextPlugin = fp(appContextPluginImpl, {
-  name: 'app-context',
-  fastify: '5.x',
-})
+export const appContextPlugin = fp(appContextPluginImpl, { name: 'app-context', fastify: '5.x' })

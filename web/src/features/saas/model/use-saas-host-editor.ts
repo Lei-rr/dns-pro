@@ -7,7 +7,7 @@ import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { localPreferenceSideEffectFromData, notifyDnsSideEffect } from '@/shared/lib/side-effects'
-import { dnsSideEffectFromData } from '@/shared/lib/dns-side-effects'
+import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
 import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
 
 export function preferredDomainOf(record: SaaSHostname | null | undefined): string {
@@ -53,7 +53,8 @@ export function useSaasHostEditor(options: {
   const ownership = createScopeGeneration()
 
   function captureOwner() {
-    return ownership.capture({})
+    // claim 会作废上一个 owner：保存中重新打开弹窗时，旧请求不得再改写新表单
+    return ownership.claim({})
   }
 
   function active(owner: GenerationOwner) {
@@ -75,6 +76,9 @@ export function useSaasHostEditor(options: {
     return prefix ? `${prefix}.${form.sync_zone}` : form.sync_zone
   })
 
+  // 已加载过的服务商不重复请求（resetForm 会主动加载一次）
+  let loadedSyncProvider = ''
+
   async function loadSyncZones() {
     const owner = syncZonesOwnership.claim()
     const providerId = form.sync_provider_id
@@ -91,6 +95,7 @@ export function useSaasHostEditor(options: {
       const zones = await options.loadDnsZones(providerId)
       if (!owner.active() || providerId !== form.sync_provider_id) return
       syncZones.value = zones
+      loadedSyncProvider = form.sync_provider_id
       if (!form.sync_zone && syncZones.value[0]?.name) form.sync_zone = String(syncZones.value[0].name)
     } catch {
       if (owner.active()) syncZonesError.value = '同步域名加载失败。'
@@ -101,8 +106,8 @@ export function useSaasHostEditor(options: {
 
   watch(
     () => form.sync_provider_id,
-    (next, previous) => {
-      if (!next || next === previous || editing.value) return
+    (next) => {
+      if (!next || next === loadedSyncProvider || editing.value) return
       form.sync_zone = ''
       void loadSyncZones()
     }
@@ -190,14 +195,13 @@ export function useSaasHostEditor(options: {
     saving.value = true
     try {
       const preferred = form.preferred_domain === '__none' ? '' : form.preferred_domain
+      // 只提交后端实际消费的字段：min_tls/hostname_prefix 属于本地表单状态，ssl 由后端按 method+min_tls_version 组装
       const payload: Record<string, unknown> = {
         method: form.method,
-        min_tls: form.min_tls,
         min_tls_version: form.min_tls,
         auto_preferred: form.auto_preferred,
-        preferred_domain: preferred || undefined,
+        preferred_domain: preferred,
         custom_origin_server: form.use_custom_origin_server ? form.custom_origin_server.trim() : '',
-        ssl: { method: form.method, settings: { min_tls_version: form.min_tls } },
       }
       if (editing.value) {
         const response = await saasApi.updateHostname(
@@ -215,14 +219,18 @@ export function useSaasHostEditor(options: {
           notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '主机名已更新')
         }
         dialogOpen.value = false
-        if (response.data && localPreference?.status !== 'failed') options.patchHostname(response.data)
-        else await options.reload()
-      } else {
-        if (form.sync_provider_id) {
-          payload.sync_provider_id = form.sync_provider_id
-          payload.sync_zone = form.sync_zone
-          payload.sync_target = selectedSyncTarget.value
+        if (response.data && localPreference?.status !== 'failed') {
+          options.patchHostname(response.data)
+          // 更新响应不含 effective_sync_* 等派生字段，静默重载保证行数据完整
+          void options.reload()
+        } else {
+          await options.reload()
         }
+      } else {
+        // 显式提交同步配置（含清空）：provider 为空表示不启用自动同步
+        payload.sync_provider_id = form.sync_provider_id
+        payload.sync_zone = form.sync_provider_id ? form.sync_zone : ''
+        payload.sync_target = form.sync_provider_id ? selectedSyncTarget.value : ''
         payload.hostname = hostname
         const response = await saasApi.createHostname(options.providerId(), options.zoneName(), payload, {
           autoSync: form.auto_sync && !!payload.sync_target,

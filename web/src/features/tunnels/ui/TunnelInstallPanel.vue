@@ -43,7 +43,9 @@ const steps = computed(() => {
       },
       {
         text: '方式 B：手动下载 MSI 安装后注册服务：',
-        command: `cloudflared.exe service install ${token}`,
+        command:
+          `# 下载 https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-${arch.value}.msi\n` +
+          `cloudflared.exe service install ${token}`,
       },
       {
         text: '方式 C：临时前台调试运行：',

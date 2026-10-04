@@ -1,5 +1,9 @@
 [
   {
+    "method": "POST",
+    "path": "/api/auth/password"
+  },
+  {
     "method": "GET",
     "path": "/api/cloudflare/providers/:providerId/records/batch/:jobId"
   },
@@ -110,6 +114,10 @@
   {
     "method": "DELETE",
     "path": "/api/dnspod/providers/:providerId/zones/:zone"
+  },
+  {
+    "method": "GET",
+    "path": "/api/dnspod/providers/:providerId/zones/:zone/lines"
   },
   {
     "method": "GET",

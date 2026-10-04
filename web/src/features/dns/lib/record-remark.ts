@@ -208,11 +208,10 @@ function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaasRemark
   const line = String(record.line || '').trim()
   const remark = String(record.remark || record.comment || '').trim()
   const val = recordValue(record)
+  // 非邮箱记录不会带邮箱前缀，无需再判断
   const baseKey = isEmailRecord(record, zoneName)
     ? emailBaseHostForRecord(record, zoneName)
-    : recordHostKey(record, zoneName).startsWith(MAIL_KEY_PREFIX)
-      ? emailBaseHost(rel)
-      : recordHostKey(record, zoneName).replace(MAIL_KEY_PREFIX, '')
+    : recordHostKey(record, zoneName)
   const fqdn = !baseKey || baseKey === '@' ? zoneName || '' : zoneName ? `${baseKey}.${zoneName}` : baseKey
 
   // —— 邮箱 ——

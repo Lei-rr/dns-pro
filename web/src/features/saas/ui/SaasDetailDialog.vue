@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isHostnameSettled, isSslSettled } from '@/features/saas/lib/status'
 import { computed } from 'vue'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/shared/ui/collapsible'
@@ -34,14 +35,12 @@ const ownership = computed(() => record.value.ownership_verification || {})
 
 const needsDcvHelp = computed(() => {
   const status = String(ssl.value.status || '')
-  const finalStates = ['active', 'deleted', 'deactivated', 'pending_deletion']
-  return !!status && !finalStates.includes(status)
+  return !!status && !isSslSettled(status)
 })
 
 const needsOwnershipHelp = computed(() => {
   const status = String(record.value.status || '')
-  const finalStates = ['active', 'active_renewing', 'moved', 'deleted', 'blocked', 'pending_deletion']
-  return !!status && !finalStates.includes(status)
+  return !!status && !isHostnameSettled(status)
 })
 
 const errorMessages = computed(() => {

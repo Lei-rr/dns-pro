@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../shared/http/api-response.js'
+import { trimmedParam } from '../../shared/http/route-params.js'
 import type { RequestOf } from '../../shared/http/request-schema.js'
-import { zoneNameParam } from '../../modules/saas/saas-request-params.js'
 import { saasJobParamsSchema, saasPreferredApplySchema, saasZoneParamsSchema } from '../../modules/saas/saas.schema.js'
 
 export async function previewPreferredApplyHandler(
@@ -10,7 +10,7 @@ export async function previewPreferredApplyHandler(
 ) {
   const result = await request.server.ctx.workflows.saasPreferredApply.preview({
     providerId: request.params.providerId,
-    zoneName: zoneNameParam(request),
+    zoneName: trimmedParam(request, 'zoneName'),
     preferredDomain: request.body.preferred_domain,
     hostnames: request.body.hostnames,
     onlyAutoPreferred: request.body.only_auto_preferred ?? false,
@@ -24,7 +24,7 @@ export async function createPreferredApplyHandler(
 ) {
   const result = await request.server.ctx.workflows.saasPreferredApply.create({
     providerId: request.params.providerId,
-    zoneName: zoneNameParam(request),
+    zoneName: trimmedParam(request, 'zoneName'),
     preferredDomain: request.body.preferred_domain,
     hostnames: request.body.hostnames,
     onlyAutoPreferred: request.body.only_auto_preferred ?? false,
@@ -46,7 +46,10 @@ export async function getActivePreferredApplyJobHandler(
 ) {
   return reply.send(
     success(
-      await request.server.ctx.workflows.saasPreferredApply.active(request.params.providerId, zoneNameParam(request))
+      await request.server.ctx.workflows.saasPreferredApply.active(
+        request.params.providerId,
+        trimmedParam(request, 'zoneName')
+      )
     )
   )
 }

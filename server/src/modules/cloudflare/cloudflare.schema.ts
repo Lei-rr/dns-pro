@@ -1,6 +1,7 @@
 import {
   bool,
   booleanQuerySchema,
+  domainName,
   objectSchema,
   optionalText,
   paramsSchema,
@@ -16,7 +17,7 @@ export const cloudflareZonesIndexSchema = requestSchema({
 })
 export const cloudflareZoneStoreSchema = requestSchema({
   params: paramsSchema('providerId'),
-  body: Type.Object({ name: text(253) }, { additionalProperties: false }),
+  body: Type.Object({ name: domainName() }, { additionalProperties: false }),
 })
 export const cloudflareZoneParamsSchema = requestSchema({ params: paramsSchema('providerId', 'zone') })
 export const cloudflareRecordsIndexSchema = requestSchema({

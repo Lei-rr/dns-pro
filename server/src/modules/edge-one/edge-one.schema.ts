@@ -8,13 +8,14 @@ import {
   requestSchema,
   stringList,
   text,
+  domainName,
 } from '../../shared/http/request-schema.js'
 
 const providerParams = paramsSchema('providerId')
 const zoneParams = paramsSchema('providerId', 'zoneId')
 const domainParams = paramsSchema('providerId', 'zoneId', 'domainName')
 const domainFields = {
-  domain_name: text(253),
+  domain_name: domainName(),
   origin_type: Type.Union([
     Type.Literal('IP_DOMAIN'),
     Type.Literal('COS'),
@@ -62,7 +63,7 @@ export const edgeoneCertificateSchema = requestSchema({
   body: objectSchema(
     {
       https_mode: Type.Union([Type.Literal('disable'), Type.Literal('eofreecert'), Type.Literal('sslcert')]),
-      cert_id: optionalText(255),
+      cert_id: Type.String({ maxLength: 128, pattern: '^[A-Za-z0-9_-]*$' }),
     },
     ['https_mode']
   ),

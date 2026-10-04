@@ -1,27 +1,30 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
-import { CloudflareGateway } from './cloudflare.client.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
 import {
   buildCacheKey,
-  pagePaginationMeta,
   providerCacheTag,
   withProviderCache,
   zoneCacheTag,
 } from '../../platform/cache/provider-cache.js'
-import { invalidateCloudflareZoneCache } from './cloudflare.cache.js'
 import { ApiError } from '../../shared/http/api-error.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import type { CloudflareProvider } from '../providers/provider.types.js'
+import { normalizeFqdn, parseBool } from '../../shared/lib/values.js'
+import {
+  callProvider,
+  collectNumberedPages,
+  toFullListResult,
+  type FullListPagination,
+} from '../../shared/providers/provider-call.js'
+import { providerNullableString } from '../../shared/providers/provider-values.js'
+import { invalidateCloudflareZoneCache } from './cloudflare.cache.js'
+import { cloudflareClientFor } from './cloudflare.client.js'
 import {
   cloudflareZoneSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
+  type CloudflarePage,
 } from './cloudflare-response.schema.js'
-import { parseBool } from '../../shared/lib/parse-bool.js'
-import { providerNullableString } from '../../shared/providers/provider-values.js'
-import { normalizeFqdn } from '../../shared/lib/fqdn.js'
-import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'cloudflare'
+const PAGE_LIMIT = { limitCode: 'cloudflare_pagination_limit', limitMessage: 'Cloudflare pagination limit reached' }
 
 interface ZonePresentation {
   [key: string]: unknown
@@ -40,272 +43,146 @@ interface ZonePresentation {
 
 export interface ZoneListResult {
   items: ZonePresentation[]
-  pagination: {
-    page: number
-    per_page: number
-    count: number | null
-    total_count: number | null
-    total_pages: number | null
-  }
-  meta: {
-    page: number
-    per_page: number
-    offset: number
-    limit: number
-    count: number | null
-    total: number | null
-    total_pages: number | null
-  }
+  pagination: FullListPagination
+  meta: FullListPagination
 }
 
-interface CreateZonePayload {
-  name: string
-  account: { id: string }
-  type: string
-}
-
-function bestMatchingCloudflareZoneId(zones: Array<{ id?: unknown; name?: unknown }>, fqdn: string): string {
-  const normalized = normalizeFqdn(fqdn)
-  let bestName = ''
-  let bestId = ''
-  for (const zone of zones) {
-    const name = String(zone.name ?? '')
-      .toLowerCase()
-      .trim()
-      .replace(/\.$/, '')
-    const id = String(zone.id ?? '')
-    if (name === '' || id === '') continue
-    if ((normalized === name || normalized.endsWith(`.${name}`)) && name.length > bestName.length) {
-      bestName = name
-      bestId = id
-    }
-  }
-  return bestId
-}
-
+/** Cloudflare 站点（Zone）管理 */
 export class CloudflareZoneService {
   constructor(private readonly providers: ProviderRepository) {}
 
-  async list(providerId: string, page: number, perPage: number, name = '', refresh = false): Promise<ZoneListResult> {
-    const cached = await withProviderCache<ZoneListResult>({
-      key: buildCacheKey(`${PROVIDER_TYPE}:zones`, {
-        provider_id: providerId,
-        page,
-        per_page: perPage,
-        name,
-      }),
+  /** 单页查询（带缓存），name 为精确站点名过滤 */
+  async page(providerId: string, page: number, perPage: number, name = '', refresh = false) {
+    const cached = await withProviderCache<CloudflarePage<ZonePresentation>>({
+      key: buildCacheKey(`${PROVIDER_TYPE}:zones`, { provider_id: providerId, page, per_page: perPage, name }),
       tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
       refresh,
       loader: async () => {
-        const provider = await this.requireProvider(providerId)
-        const gateway = this.gatewayFor(provider)
-
-        const query: Record<string, unknown> = { page, per_page: perPage }
-        if (name !== '') {
-          query.name = name
-        }
-
-        let response
-        try {
-          response = await gateway.get('zones', query)
-        } catch (error) {
-          throw wrapProviderError('cloudflare_zone_list_failed', 'Cloudflare zone list failed', providerId, error)
-        }
-        const parsed = parseCloudflareListResponse(response)
-        const resultInfo = parsed.result_info
-        const result: ZoneListResult = {
-          items: parsed.result.map((zone) => this.presentZone(zone)),
-          pagination: {
-            page: Number(resultInfo?.page ?? page),
-            per_page: Number(resultInfo?.per_page ?? perPage),
-            count: resultInfo?.count ?? parsed.source_count,
-            total_count: resultInfo?.total_count ?? null,
-            total_pages: resultInfo?.total_pages ?? null,
-          },
-          meta: pagePaginationMeta(resultInfo, page, perPage),
-        }
-        return result
+        const { client } = await cloudflareClientFor(this.providers, providerId)
+        const response = await callProvider(
+          { code: 'cloudflare_zone_list_failed', message: 'Cloudflare zone list failed', providerId },
+          () => client.get('zones', { page, per_page: perPage, name: name || undefined })
+        )
+        return parseCloudflareListResponse(response, (zone) => presentZone(zone))
       },
     })
-
     return cached.value
   }
 
+  /** 全量站点列表 */
   async listAll(providerId: string, refresh = false): Promise<ZoneListResult> {
-    const pageSize = 100
-    const items: ZonePresentation[] = []
-    let page = 1
-
-    while (true) {
-      const result = await this.list(providerId, page, pageSize, '', refresh)
-      items.push(...result.items)
-      const totalPages = Number(result.pagination.total_pages ?? 0)
-      const sourceCount = Number(result.pagination.count ?? result.items.length)
-      if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
-      if (page >= MAX_PROVIDER_PAGES) {
-        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
-      }
-      page++
-    }
-
-    return {
-      items,
-      pagination: {
-        page: 1,
-        per_page: items.length,
-        count: items.length,
-        total_count: items.length,
-        total_pages: 1,
-      },
-      meta: {
-        page: 1,
-        per_page: items.length,
-        offset: 0,
-        limit: items.length,
-        count: items.length,
-        total: items.length,
-        total_pages: 1,
-      },
-    }
+    const items = await collectNumberedPages(
+      (page, perPage) => this.page(providerId, page, perPage, '', refresh),
+      PAGE_LIMIT
+    )
+    return toFullListResult(items)
   }
 
   async create(providerId: string, name: string): Promise<ZonePresentation> {
-    const provider = await this.requireProvider(providerId)
+    const { provider, client } = await cloudflareClientFor(this.providers, providerId)
     const accountId = provider.account_id.trim()
-
     if (accountId === '') {
       throw new ApiError('cloudflare_account_id_required', 'Cloudflare account_id is required', 422)
     }
-
-    const gateway = this.gatewayFor(provider)
-    const body: CreateZonePayload = {
-      name,
-      account: { id: accountId },
-      type: 'full',
-    }
-
-    let response
-    try {
-      response = await gateway.post('zones', body)
-    } catch (error) {
-      throw wrapProviderError('cloudflare_zone_create_failed', 'Cloudflare zone create failed', providerId, error, {
-        zone: name,
-      })
-    }
-    const zone = this.presentZone(parseCloudflareItemResponse(response).result)
-    await invalidateCloudflareZoneCache(providerId, name)
+    const response = await callProvider(
+      {
+        code: 'cloudflare_zone_create_failed',
+        message: 'Cloudflare zone create failed',
+        providerId,
+        details: { zone: name },
+      },
+      () => client.post('zones', { name, account: { id: accountId }, type: 'full' })
+    )
+    const zone = presentZone(parseCloudflareItemResponse(response).result)
+    invalidateCloudflareZoneCache(providerId)
     return zone
   }
 
   async delete(providerId: string, zoneId: string): Promise<{ id: string }> {
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response
-    try {
-      response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}`)
-    } catch (error) {
-      throw wrapProviderError('cloudflare_zone_delete_failed', 'Cloudflare zone delete failed', providerId, error, {
-        zone: zoneId,
-      })
-    }
-    const parsed = parseCloudflareItemResponse(response)
-    const id =
-      typeof parsed.result.id === 'string' || typeof parsed.result.id === 'number' ? String(parsed.result.id) : zoneId
-    await invalidateCloudflareZoneCache(providerId, zoneId)
-    return { id }
+    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const response = await callProvider(
+      {
+        code: 'cloudflare_zone_delete_failed',
+        message: 'Cloudflare zone delete failed',
+        providerId,
+        details: { zone: zoneId },
+      },
+      () => client.delete(`zones/${encodeURIComponent(zoneId)}`)
+    )
+    const result = parseCloudflareItemResponse(response).result
+    invalidateCloudflareZoneCache(providerId, zoneId)
+    return { id: providerNullableString(result.id) ?? zoneId }
   }
 
+  /** 站点名 → 站点 ID */
   async idByName(providerId: string, name: string, refresh = false): Promise<string> {
-    const normalizedName = name.toLowerCase().trim()
-    let page = 1
-    let totalPages: number
-
-    do {
-      const zones = await this.list(providerId, page, 100, normalizedName, refresh)
-      totalPages = zones.meta.total_pages ?? 1
-
-      for (const zone of zones.items) {
-        if (String(zone.name ?? '').toLowerCase() === normalizedName && zone.id) {
-          return zone.id
-        }
-      }
-
-      page++
-      if (page >= MAX_PROVIDER_PAGES) {
-        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
-      }
-    } while (page <= totalPages)
-
+    const normalized = normalizeFqdn(name)
+    let found = ''
+    await collectNumberedPages((page, perPage) => this.page(providerId, page, perPage, normalized, refresh), {
+      ...PAGE_LIMIT,
+      stop: (items) => {
+        found = items.find((zone) => normalizeFqdn(zone.name) === normalized && zone.id)?.id ?? ''
+        return found !== ''
+      },
+    })
+    if (found) return found
     throw new ApiError('cloudflare_zone_not_found', 'Cloudflare zone not found', 404, {
       provider_id: providerId,
-      name: normalizedName,
+      name: normalized,
     })
   }
 
+  /** 按最长后缀匹配 FQDN 所属站点；未匹配返回空串 */
   async bestMatchId(providerId: string, fqdn: string, refresh = false): Promise<string> {
-    return bestMatchingCloudflareZoneId((await this.listAll(providerId, refresh)).items, fqdn)
+    const normalized = normalizeFqdn(fqdn)
+    let best = { name: '', id: '' }
+    for (const zone of (await this.listAll(providerId, refresh)).items) {
+      const name = normalizeFqdn(zone.name)
+      if (!name || !zone.id) continue
+      if ((normalized === name || normalized.endsWith(`.${name}`)) && name.length > best.name.length) {
+        best = { name, id: zone.id }
+      }
+    }
+    return best.id
   }
 
+  /** 站点级 DCV 委派 UUID（SaaS 证书委派用） */
   async dcvDelegationUuid(providerId: string, zoneId: string, refresh = false): Promise<string> {
     const cached = await withProviderCache<{ uuid: string }>({
-      key: {
-        prefix: `${PROVIDER_TYPE}:dcv_delegation`,
-        parts: { provider_id: providerId, zone_id: zoneId },
-      },
+      key: { prefix: `${PROVIDER_TYPE}:dcv_delegation`, parts: { provider_id: providerId, zone_id: zoneId } },
       tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
       refresh,
       loader: async () => {
-        const provider = await this.requireProvider(providerId)
-        const gateway = this.gatewayFor(provider)
-        let response
-        try {
-          response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
-        } catch (error) {
-          throw wrapProviderError(
-            'cloudflare_dcv_failed',
-            'Cloudflare DCV delegation fetch failed',
+        const { client } = await cloudflareClientFor(this.providers, providerId)
+        const response = await callProvider(
+          {
+            code: 'cloudflare_dcv_failed',
+            message: 'Cloudflare DCV delegation fetch failed',
             providerId,
-            error,
-            {
-              zone: zoneId,
-            }
-          )
-        }
-        const uuid = parseCloudflareItemResponse(response).result.uuid ?? ''
-        return { uuid }
+            details: { zone: zoneId },
+          },
+          () => client.get(`zones/${encodeURIComponent(zoneId)}/dcv_delegation/uuid`)
+        )
+        return { uuid: String(parseCloudflareItemResponse(response).result.uuid ?? '') }
       },
     })
     return cached.value.uuid
   }
+}
 
-  private async requireProvider(providerId: string): Promise<CloudflareProvider> {
-    return this.providers.requireType<CloudflareProvider>(
-      providerId,
-      'cloudflare',
-      'Cloudflare provider not found',
-      'cloudflare_provider_not_found'
-    )
-  }
-
-  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
-    return CloudflareGateway.forToken(provider.api_token)
-  }
-
-  private presentZone(zone: unknown): ZonePresentation {
-    const z = cloudflareZoneSchema.parse(zone)
-    return {
-      id: providerNullableString(z.id),
-      name: providerNullableString(z.name),
-      status: providerNullableString(z.status),
-      type: providerNullableString(z.type),
-      paused: z.paused == null ? null : parseBool(z.paused),
-      account: z.account && typeof z.account === 'object' && !Array.isArray(z.account) ? z.account : null,
-      name_servers: Array.isArray(z.name_servers) ? z.name_servers.map(String) : [],
-      original_name_servers: Array.isArray(z.original_name_servers) ? z.original_name_servers.map(String) : [],
-      created_on: providerNullableString(z.created_on),
-      modified_on: providerNullableString(z.modified_on),
-      activated_on: providerNullableString(z.activated_on),
-    }
+function presentZone(zone: unknown): ZonePresentation {
+  const z = cloudflareZoneSchema.parse(zone)
+  return {
+    id: providerNullableString(z.id),
+    name: providerNullableString(z.name),
+    status: providerNullableString(z.status),
+    type: providerNullableString(z.type),
+    paused: z.paused == null ? null : parseBool(z.paused),
+    account: z.account && typeof z.account === 'object' && !Array.isArray(z.account) ? z.account : null,
+    name_servers: z.name_servers.map(String),
+    original_name_servers: z.original_name_servers.map(String),
+    created_on: providerNullableString(z.created_on),
+    modified_on: providerNullableString(z.modified_on),
+    activated_on: providerNullableString(z.activated_on),
   }
 }

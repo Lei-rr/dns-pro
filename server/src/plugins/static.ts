@@ -7,13 +7,13 @@ import fastifyCompress from '@fastify/compress'
 const distDir = path.resolve(process.cwd(), 'web/dist')
 
 /**
- * Official: @fastify/compress + @fastify/static.
- * fp so reply.sendFile is visible to error-handler SPA fallback.
+ * 静态资源：@fastify/compress + @fastify/static（根目录固定为 web/dist，库内置目录穿越防护，拒绝点文件）。
+ * 使用 fp 以便错误处理插件的 SPA 回退可调用 reply.sendFile。
  */
 const staticPluginImpl: FastifyPluginAsync = async (app) => {
   await app.register(fastifyCompress)
 
-  // Hashed Vite assets — long cache + disk wildcard (rebuild without restart)
+  // 带哈希的构建产物：长缓存
   await app.register(fastifyStatic, {
     root: path.join(distDir, 'assets'),
     prefix: '/assets/',
@@ -21,14 +21,16 @@ const staticPluginImpl: FastifyPluginAsync = async (app) => {
     decorateReply: false,
     maxAge: '1y',
     immutable: true,
+    dotfiles: 'deny',
   })
 
-  // App shell files — decorateReply once for sendFile; index.html never long-cached
+  // 应用外壳：index.html 禁止缓存
   await app.register(fastifyStatic, {
     root: distDir,
     prefix: '/',
     wildcard: false,
     index: false,
+    dotfiles: 'deny',
     decorateReply: true,
     setHeaders(reply, filePath) {
       if (filePath.endsWith('index.html')) {
@@ -36,7 +38,6 @@ const staticPluginImpl: FastifyPluginAsync = async (app) => {
       } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
         reply.header('Cache-Control', 'public, max-age=31536000, immutable')
       } else {
-        // favicon / manifest etc.
         reply.header('Cache-Control', 'public, max-age=3600')
       }
     },

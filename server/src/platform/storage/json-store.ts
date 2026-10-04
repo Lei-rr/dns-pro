@@ -1,41 +1,47 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ApiError } from '../../shared/http/api-error.js'
+import { errorMessage } from '../../shared/lib/values.js'
 import { getDataRoot, onDataRootChanged, resolveDataPath, setDataRoot } from './data-root.js'
 
-export { getDataRoot, setDataRoot }
+export { setDataRoot }
 
 const memoryStore = new Map<string, unknown>()
 const queues = new Map<string, Promise<void>>()
 onDataRootChanged(() => memoryStore.clear())
 
-/** JSON file storage for the single application process which owns the data directory. */
-export class JsonStore<T extends object = Record<string, unknown>> {
-  private readonly relativePath: string
-  private readonly dataRoot: string | undefined
+const isMissing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT'
 
+/**
+ * JSON 文件存储（单进程独占数据目录）。
+ * - 同一路径的读写串行执行
+ * - 写入：临时文件 + fsync + rename 原子替换，权限 0600
+ * - 读取：进程内内存缓存，transaction 总是基于磁盘最新内容
+ */
+export class JsonStore<T extends object = Record<string, unknown>> {
   constructor(
-    relativePath: string,
+    private readonly relativePath: string,
     private readonly defaultValue: T = {} as T,
-    dataRoot?: string
+    private readonly dataRoot?: string,
+    /** pretty=false 时紧凑写入：任务等机器读写的大文件可显著减小体积 */
+    private readonly options: { pretty?: boolean } = {}
   ) {
-    this.relativePath = relativePath
-    this.dataRoot = dataRoot
-    resolveDataPath(this.dataRoot ?? getDataRoot(), this.relativePath)
+    // 构造时即校验路径不越界
+    this.absolutePath()
   }
 
   async read(): Promise<T> {
     const filePath = this.absolutePath()
-    if (memoryStore.has(filePath)) return this.clone(memoryStore.get(filePath) as T)
+    if (memoryStore.has(filePath)) return structuredClone(memoryStore.get(filePath) as T)
     return this.readFresh()
   }
 
-  /** Read disk truth after prior writes to this absolute path have completed. */
+  /** 等待此前写入完成后读取磁盘内容 */
   async readFresh(): Promise<T> {
     return this.serialized(async () => {
       const data = await this.readFromDisk()
-      memoryStore.set(this.absolutePath(), this.clone(data))
-      return this.clone(data)
+      memoryStore.set(this.absolutePath(), structuredClone(data))
+      return data
     })
   }
 
@@ -43,10 +49,10 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     await this.serialized(() => this.writeUnlocked(data))
   }
 
+  /** 读-改-写事务；mutator 抛异常时不写入 */
   async transaction<U>(mutator: (current: T) => { next: T; result?: U }): Promise<U | undefined> {
     return this.serialized(async () => {
-      const current = await this.readFromDisk()
-      const { next, result } = mutator(current)
+      const { next, result } = mutator(await this.readFromDisk())
       await this.writeUnlocked(next)
       return result
     })
@@ -56,22 +62,13 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     memoryStore.delete(this.absolutePath())
   }
 
-  getPath(): string {
-    return this.absolutePath()
-  }
-
   private absolutePath(): string {
     return resolveDataPath(this.dataRoot ?? getDataRoot(), this.relativePath)
   }
 
-  private clone(value: T): T {
-    return structuredClone(value)
-  }
-
   private async serialized<U>(task: () => Promise<U>): Promise<U> {
     const key = this.absolutePath()
-    const previous = queues.get(key) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(task)
+    const current = (queues.get(key) ?? Promise.resolve()).then(task)
     const settled = current.then(
       () => undefined,
       () => undefined
@@ -91,34 +88,36 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     try {
       const handle = await fs.open(temporary, 'wx', 0o600)
       try {
-        await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
+        await handle.writeFile(`${JSON.stringify(data, null, this.options.pretty === false ? 0 : 2)}\n`, 'utf8')
         await handle.sync()
       } finally {
         await handle.close()
       }
       await fs.rename(temporary, filePath)
-      await fs.chmod(filePath, 0o600)
     } catch (error) {
       await fs.rm(temporary, { force: true }).catch(() => undefined)
-      throw error
+      throw new ApiError('server_error', `Failed to write ${this.relativePath}: ${errorMessage(error)}`, 500)
     }
-    memoryStore.set(filePath, this.clone(data))
+    memoryStore.set(filePath, structuredClone(data))
   }
 
   private async readFromDisk(): Promise<T> {
     const filePath = this.absolutePath()
+    let content: string
     try {
-      await fs.chmod(filePath, 0o600)
-      const content = await fs.readFile(filePath, 'utf8')
-      if (content.trim() === '') return this.clone(this.defaultValue)
-      return this.clone((JSON.parse(content) as T) ?? this.defaultValue)
+      content = await fs.readFile(filePath, 'utf8')
     } catch (error) {
-      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return this.clone(this.defaultValue)
-      throw new ApiError(
-        'server_error',
-        `Failed to read ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
-        500
-      )
+      if (isMissing(error)) return structuredClone(this.defaultValue)
+      throw new ApiError('server_error', `Failed to read ${this.relativePath}: ${errorMessage(error)}`, 500)
+    }
+    // 收紧历史文件权限；失败（如只读挂载）不影响读取
+    await fs.chmod(filePath, 0o600).catch(() => undefined)
+    if (content.trim() === '') return structuredClone(this.defaultValue)
+    try {
+      return (JSON.parse(content) as T) ?? structuredClone(this.defaultValue)
+    } catch (error) {
+      // 损坏文件不自动覆盖，避免数据丢失；提示人工修复
+      throw new ApiError('server_error', `Corrupted JSON in ${this.relativePath}: ${errorMessage(error)}`, 500)
     }
   }
 }

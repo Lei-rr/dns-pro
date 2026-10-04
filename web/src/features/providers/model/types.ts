@@ -1,4 +1,4 @@
-export type ProviderType = 'dnspod' | 'cloudflare' | 'saas' | 'edgeone' | 'cloudflared'
+type ProviderType = 'dnspod' | 'cloudflare' | 'saas' | 'edgeone' | 'cloudflared'
 
 export interface Provider {
   id: string
@@ -21,6 +21,8 @@ export interface ProviderDefinition {
   name: string
   fields: string[]
   required: string[]
+  /** 后端声明为密钥的字段：仅这些字段隐藏原值 */
+  secret_fields: string[]
   labels?: Record<string, string>
 }
 

@@ -226,7 +226,7 @@ function onOriginBlur() {
       </Field>
     </FieldGroup>
     <template #footer>
-      <Button variant="outline" @click="open = false">取消</Button>
+      <Button variant="outline" :disabled="saving" @click="open = false">取消</Button>
       <LoadingButton :loading="saving" @click="emit('save')">保存</LoadingButton>
     </template>
   </AppDialog>

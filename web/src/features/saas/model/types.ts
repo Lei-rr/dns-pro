@@ -1,6 +1,6 @@
 import type { SideEffects } from '@/shared/api/types'
 
-export interface SaaSValidationRecord {
+interface SaaSValidationRecord {
   txt_name?: string
   txt_value?: string
   http_url?: string

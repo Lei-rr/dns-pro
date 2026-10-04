@@ -1,18 +1,17 @@
-import { ProviderRepository } from './provider.repository.js'
+import type { ProviderRepository } from './provider.repository.js'
 import { ApiError } from '../../shared/http/api-error.js'
 import type { PresentedProvider, Provider, ProviderInput } from './provider.types.js'
 import { getProviderDefinition, getProviderDefinitionsList } from './provider-definitions.js'
 import { ProviderNormalizer } from './provider-normalizer.js'
 import { ProviderPresenter } from './provider-presenter.js'
-import { invalidateProviderConfigurationCache } from './provider.cache.js'
-import { validateProviderReferences } from './provider-reference.js'
+import { invalidateProviderConfigCache } from './provider.cache.js'
+import { PROVIDER_LINK_RULES, validateProviderReferences } from './provider-reference.js'
 
 export class ProviderService {
-  constructor(
-    private readonly providers: ProviderRepository,
-    private readonly normalizer: ProviderNormalizer,
-    private readonly presenter: ProviderPresenter
-  ) {}
+  private readonly normalizer = new ProviderNormalizer()
+  private readonly presenter = new ProviderPresenter()
+
+  constructor(private readonly providers: ProviderRepository) {}
 
   definitions() {
     return getProviderDefinitionsList()
@@ -41,7 +40,7 @@ export class ProviderService {
     })
 
     const presented = this.presenter.present(normalized as Provider, savedProviders)
-    await invalidateProviderConfigurationCache(presented.id)
+    invalidateProviderConfigCache(presented.id)
     return presented
   }
 
@@ -62,7 +61,7 @@ export class ProviderService {
 
     if (!updated) throw new ApiError('server_error', 'Provider update failed', 500)
     const presented = this.presenter.present(updated as Provider, savedProviders)
-    await invalidateProviderConfigurationCache(presented.id)
+    invalidateProviderConfigCache(presented.id)
     return presented
   }
 
@@ -70,9 +69,16 @@ export class ProviderService {
     await this.providers.mutateAll((current) => {
       const next = current.filter((provider) => provider.id !== id)
       if (next.length === current.length) throw new ApiError('provider_not_found', 'Provider not found', 404)
+      // 模块内兜底：仍被其它服务商引用时禁止删除（跨模块用法由 workflow 层另行校验）
+      const referrers = findProviderReferrers(id, next)
+      if (referrers.length > 0) {
+        throw new ApiError('provider_in_use', 'Provider is still referenced by other providers', 409, {
+          dependencies: referrers,
+        })
+      }
       return next
     })
-    await invalidateProviderConfigurationCache(id)
+    invalidateProviderConfigCache(id)
   }
 
   async sort(ids: string[]): Promise<PresentedProvider[]> {
@@ -156,4 +162,15 @@ export class ProviderService {
 
     return merged
   }
+}
+
+/** 找出仍在引用该服务商的服务商 */
+function findProviderReferrers(id: string, providers: Provider[]) {
+  return providers
+    .filter((provider) =>
+      PROVIDER_LINK_RULES.some(
+        (rule) => rule.appliesTo.includes(provider.type) && String(provider[rule.field] ?? '').trim() === id
+      )
+    )
+    .map((provider) => ({ kind: 'provider', type: provider.type, id: provider.id, name: provider.name || provider.id }))
 }

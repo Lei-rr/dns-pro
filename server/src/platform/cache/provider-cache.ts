@@ -21,17 +21,31 @@ type ProviderCacheOptions<T> = {
   loader: () => Promise<T>
 }
 
-const keyGenerations = new Map<string, number>()
+// 代次仅用于拦截「失效后才完成的在途加载」。映射有容量上限：
+// 超限淘汰后比较结果不相等，只会放弃写入（失败方向是安全的）。
+const GENERATION_LIMIT = 4096
 const tagGenerations = new Map<string, number>()
 const loadGenerations = new Map<string, number>()
+
+/** 有上限的写入：超出后淘汰最早插入的键 */
+function bumpGeneration(map: Map<string, number>, key: string): void {
+  map.set(key, (map.get(key) ?? 0) + 1)
+  while (map.size > GENERATION_LIMIT) {
+    const oldest = map.keys().next().value
+    if (oldest === undefined) break
+    map.delete(oldest)
+  }
+}
 type InflightEntry = {
   promise: Promise<CachedResult<unknown>>
-  keyGeneration: number
   tagGenerations: ReadonlyArray<readonly [string, number]>
 }
 const inflight = new Map<string, InflightEntry>()
 
-/** Cache-first provider read. A cold miss loads; refresh bypasses and replaces the entry. */
+/**
+ * 供应商查询：缓存优先。冷缺失回填，refresh 绕过并覆盖。
+ * 条目带存活时间与容量上限，见 memory-cache。
+ */
 export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Promise<CachedResult<T>> {
   const key = resolveKey(options.key)
   const tags = options.tags ?? []
@@ -42,36 +56,26 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
       return { value: hit, hit: true, meta: { cache: true, cached: true, source: 'cache' } }
     }
     const pending = inflight.get(key)
-    if (
-      pending &&
-      pending.keyGeneration === (keyGenerations.get(key) ?? 0) &&
-      pending.tagGenerations.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))
-    ) {
+    if (pending && pending.tagGenerations.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))) {
       return pending.promise as Promise<CachedResult<T>>
     }
   }
 
   const fence = {
-    key: keyGenerations.get(key) ?? 0,
     tags: tags.map((tag) => [tag, tagGenerations.get(tag) ?? 0] as const),
     load: (loadGenerations.get(key) ?? 0) + 1,
   }
-  loadGenerations.set(key, fence.load)
+  bumpGeneration(loadGenerations, key)
   const loading = (async (): Promise<CachedResult<T>> => {
     const value = await options.loader()
     const current =
-      fence.key === (keyGenerations.get(key) ?? 0) &&
       fence.load === (loadGenerations.get(key) ?? 0) &&
       fence.tags.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))
     if (current) memoryCache.set(key, value, tags)
 
     return { value, hit: false, meta: { cache: false, cached: false, source: 'provider' } }
   })()
-  const inflightEntry: InflightEntry = {
-    promise: loading,
-    keyGeneration: fence.key,
-    tagGenerations: fence.tags,
-  }
+  const inflightEntry: InflightEntry = { promise: loading, tagGenerations: fence.tags }
   if (!options.refresh) inflight.set(key, inflightEntry)
   try {
     return await loading
@@ -80,13 +84,11 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
   }
 }
 
-export function invalidateProviderCache(options: { tags?: string[]; keys?: CacheKey[] }): void {
+/** 按标签失效：标签覆盖 provider/zone/record 等维度，同时拦截在途加载的写入 */
+export function invalidateProviderCache(options: { tags?: string[] }): void {
   const tags = options.tags ?? []
-  const keys = (options.keys ?? []).map(resolveKey)
-  for (const tag of tags) tagGenerations.set(tag, (tagGenerations.get(tag) ?? 0) + 1)
-  for (const key of keys) keyGenerations.set(key, (keyGenerations.get(key) ?? 0) + 1)
+  for (const tag of tags) bumpGeneration(tagGenerations, tag)
   memoryCache.invalidateTags(tags)
-  for (const key of keys) memoryCache.delete(key)
 }
 
 export function providerCacheStats(): { size: number } {
@@ -124,62 +126,17 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
-export function offsetPaginationMeta(pagination: { offset: number; limit: number; total: number }) {
-  const { offset, limit, total } = pagination
-  return {
-    page: limit > 0 ? Math.floor(offset / limit) + 1 : 1,
-    per_page: limit,
-    offset,
-    limit,
-    total,
-    total_pages: limit > 0 ? Math.ceil(total / limit) : 1,
-  }
-}
-
-export function pagePaginationMeta(
-  resultInfo:
-    | {
-        page?: number | null
-        per_page?: number | null
-        count?: number | null
-        total_count?: number | null
-        total_pages?: number | null
-      }
-    | undefined,
-  page: number,
-  perPage: number
-): {
-  page: number
-  per_page: number
-  offset: number
-  limit: number
-  count: number | null
-  total: number | null
-  total_pages: number | null
-} {
-  const resolvedPage = Number(resultInfo?.page ?? page)
-  const resolvedPerPage = Number(resultInfo?.per_page ?? perPage)
-  const count = resultInfo?.count !== undefined && resultInfo.count !== null ? Number(resultInfo.count) : null
-  const total =
-    resultInfo?.total_count !== undefined && resultInfo.total_count !== null ? Number(resultInfo.total_count) : null
-  return {
-    page: resolvedPage,
-    per_page: resolvedPerPage,
-    offset: Math.max(0, (resolvedPage - 1) * resolvedPerPage),
-    limit: resolvedPerPage,
-    count,
-    total,
-    total_pages:
-      resultInfo?.total_pages !== undefined && resultInfo.total_pages !== null ? Number(resultInfo.total_pages) : null,
-  }
-}
-
 export function providerCacheTag(providerId: string): string {
   return `provider:${providerId}`
 }
 
 export function zoneCacheTag(providerType: string, providerId: string): string {
   return `${providerType}:zones:${providerId}`
+}
+
+/** 解析线路按域名套餐变化，标签需带域名 */
+export function recordLineCacheTag(providerType: string, providerId: string, zone: string): string {
+  return `${providerType}:lines:${providerId}:${zone}`
 }
 
 export function recordCacheTag(providerType: string, providerId: string, zone: string): string {

@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../shared/http/api-response.js'
+import { trimmedParam } from '../../shared/http/route-params.js'
 import type { RequestOf } from '../../shared/http/request-schema.js'
-import { hostnameFqdnParam, zoneNameParam } from './saas-request-params.js'
 import {
   saasFallbackShowSchema,
   saasFallbackWriteSchema,
@@ -28,7 +28,7 @@ export async function listSaaSHostnamesHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.hostnames(
     request.params.providerId,
-    zoneNameParam(request),
+    trimmedParam(request, 'zoneName'),
     request.query.refresh === 'true'
   )
   return reply.send(success(result))
@@ -40,8 +40,8 @@ export async function getSaaSHostnameHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.showHostname(
     request.params.providerId,
-    zoneNameParam(request),
-    hostnameFqdnParam(request),
+    trimmedParam(request, 'zoneName'),
+    trimmedParam(request, 'hostnameFqdn'),
     request.query.refresh === 'true'
   )
   return reply.send(success(result))
@@ -53,7 +53,7 @@ export async function getFallbackOriginHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.fallbackOriginInfo(
     request.params.providerId,
-    zoneNameParam(request),
+    trimmedParam(request, 'zoneName'),
     request.query.refresh === 'true'
   )
   return reply.send(success(result))
@@ -65,7 +65,7 @@ export async function updateFallbackOriginHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.setFallbackOrigin(
     request.params.providerId,
-    zoneNameParam(request),
+    trimmedParam(request, 'zoneName'),
     request.body.origin
   )
   return reply.send(success(result))
@@ -77,7 +77,7 @@ export async function deleteFallbackOriginHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.deleteFallbackOrigin(
     request.params.providerId,
-    zoneNameParam(request)
+    trimmedParam(request, 'zoneName')
   )
   return reply.send(success(result))
 }

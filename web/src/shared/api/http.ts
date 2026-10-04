@@ -70,9 +70,14 @@ function toRequestError(
 async function request<T = unknown>(method: string, url: string, config: RequestConfig = {}): Promise<ApiResponse<T>> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeout ?? DEFAULT_TIMEOUT_MS)
+  let detachSignal: (() => void) | null = null
   if (config.signal) {
+    const onAbort = () => controller.abort()
     if (config.signal.aborted) controller.abort()
-    else config.signal.addEventListener('abort', () => controller.abort(), { once: true })
+    else {
+      config.signal.addEventListener('abort', onAbort, { once: true })
+      detachSignal = () => config.signal?.removeEventListener('abort', onAbort)
+    }
   }
 
   const headers: Record<string, string> = {
@@ -129,6 +134,7 @@ async function request<T = unknown>(method: string, url: string, config: Request
     throw toRequestError((error as Error)?.message || '网络错误', { code: 'NETWORK_ERROR', status: 0 })
   } finally {
     clearTimeout(timer)
+    detachSignal?.()
   }
 }
 
@@ -177,13 +183,11 @@ export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
       ...pagination,
       // CF SaaS uses total_count; DNSPod/EdgeOne use total
       total: Number(
-        pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? data.items.length ?? 0
+        pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? data.items.length
       ),
-      count: Number(pagination.count ?? metaObj.count ?? data.items.length ?? 0),
+      count: Number(pagination.count ?? metaObj.count ?? data.items.length),
       offset: Number(pagination.offset ?? metaObj.offset ?? 0),
-      limit: Number(
-        pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? data.items.length ?? 0
-      ),
+      limit: Number(pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? data.items.length),
       page: Number(pagination.page ?? metaObj.page ?? 0) || undefined,
       per_page: Number(pagination.per_page ?? metaObj.per_page ?? pagination.limit ?? 0) || undefined,
       total_count: Number(pagination.total_count ?? metaObj.total_count ?? 0) || undefined,

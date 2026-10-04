@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { authRequired } from '../shared/auth/auth-required.js'
 import { routes as systemPublicRoutes } from '../modules/system/system.routes.js'
-import { routes as authRoutes } from '../modules/auth/auth.routes.js'
+import { protectedRoutes as authProtectedRoutes, routes as authRoutes } from '../modules/auth/auth.routes.js'
 import { routes as providerRoutes } from '../workflows/provider-management/provider-management.routes.js'
 import { routes as cloudflareRoutes } from '../modules/cloudflare/cloudflare.routes.js'
 import { routes as dnspodRoutes } from '../modules/dns-pod/dns-pod.routes.js'
@@ -13,23 +13,17 @@ import { routes as edgeOneDnsSyncRoutes } from '../workflows/edge-one-dns-sync/e
 import { routes as cloudflaredRoutes } from '../modules/tunnels/tunnel.routes.js'
 
 /**
- * HTTP route catalog (append-only).
- *
- * Module = business folder under server/src/modules/* with routes.ts
- * Plugin  = ONLY server/src/plugins/* (official Fastify shell)
- *
- * Auth model:
- * - public: health + session
- * - one authenticated envelope for all business APIs
+ * API 路由目录。
+ * 公开：健康检查 + 会话；其余业务接口统一挂在鉴权作用域内。
  */
 export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
-  // Public
   await app.register(systemPublicRoutes)
   await app.register(authRoutes)
 
-  // Authenticated envelope — single place for authRequired
   await app.register(async function authenticatedApi(scope) {
-    scope.addHook('preHandler', authRequired)
+    // onRequest 阶段鉴权：未登录请求不解析请求体
+    scope.addHook('onRequest', authRequired)
+    await scope.register(authProtectedRoutes, { prefix: '/auth' })
     await scope.register(providerRoutes, { prefix: '/providers' })
     await scope.register(cloudflareRoutes, { prefix: '/cloudflare/providers/:providerId' })
     await scope.register(createDnsBatchRoutes('cloudflare'), { prefix: '/cloudflare/providers/:providerId' })

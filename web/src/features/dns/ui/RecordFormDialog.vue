@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DnsLineOption } from '@/features/dns/model/types'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -26,7 +27,7 @@ defineProps<{
   saving: boolean
   isCloudflare: boolean
   typeOptions: string[]
-  lineOptions: Array<{ label: string; value: string }>
+  lineOptions: DnsLineOption[]
   errors: FieldErrors
 }>()
 

@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../shared/http/api-response.js'
 import type { RequestOf } from '../../shared/http/request-schema.js'
-import type { DnsProviderType } from './dns-batch.routes.js'
+import type { DnsProviderType } from './dns-batch.workflow.js'
 import type { BatchRecordInput } from './dns-record-payload.js'
 import {
   dnsBatchCreateSchema,

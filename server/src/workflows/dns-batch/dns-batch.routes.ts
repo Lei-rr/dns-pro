@@ -14,9 +14,9 @@ import {
   dnsJobParamsSchema,
   dnsZoneParamsSchema,
 } from './dns-batch.schema.js'
+import type { DnsProviderType } from './dns-batch.workflow.js'
 
-export type DnsProviderType = 'cloudflare' | 'dnspod'
-
+/** 同一套批量路由分别挂到 DNSPod / Cloudflare 前缀下 */
 export function createDnsBatchRoutes(providerType: DnsProviderType) {
   return async function dnsBatchRoutes(app: FastifyInstance): Promise<void> {
     app.post('/zones/:zone/records/batch-create', { schema: dnsBatchCreateSchema }, createDnsBatchHandler(providerType))

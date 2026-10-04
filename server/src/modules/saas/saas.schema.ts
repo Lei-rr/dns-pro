@@ -2,6 +2,8 @@ import { Type } from 'typebox'
 import {
   bool,
   booleanQuerySchema,
+  domainName,
+  identifier,
   objectSchema,
   optionalText,
   paramsSchema,
@@ -16,20 +18,17 @@ const hostnameParams = paramsSchema('providerId', 'zoneName', 'hostnameFqdn')
 const jobParams = paramsSchema('jobId')
 const method = Type.Union([Type.Literal('txt'), Type.Literal('http')])
 const tlsVersion = Type.Union([Type.Literal('1.0'), Type.Literal('1.1'), Type.Literal('1.2'), Type.Literal('1.3')])
-const ssl = objectSchema({ method, settings: objectSchema({ min_tls_version: tlsVersion }) })
 const hostnameFields = {
-  hostname: text(253),
-  hostname_prefix: optionalText(253),
-  sync_target: Type.Union([Type.Literal('dnspod'), Type.Literal('cloudflare_dns')]),
-  sync_provider_id: optionalText(64),
+  hostname: domainName(),
+  // 空串表示关闭自动同步（与 sync_provider_id 空串一致）
+  sync_target: Type.Union([Type.Literal('dnspod'), Type.Literal('cloudflare_dns'), Type.Literal('')]),
+  sync_provider_id: Type.Union([Type.Literal(''), identifier(64)]),
   sync_zone: optionalText(253),
   custom_origin_server: optionalText(253),
   preferred_domain: optionalText(253),
   auto_preferred: bool,
   method,
-  min_tls: tlsVersion,
   min_tls_version: tlsVersion,
-  ssl,
 }
 const batchPatch = objectSchema({
   preferred_domain: optionalText(253),

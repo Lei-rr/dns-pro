@@ -1,41 +1,51 @@
 import { ApiError } from '../../shared/http/api-error.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
+import { normalizeFqdn } from '../../shared/lib/values.js'
+import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
 import {
   buildDnsSideEffects,
-  hasFailedSideEffectItem,
-  type DnsSideEffect,
+  runDnsSideEffect,
+  toCleanupSideEffect,
+  toSyncSideEffect,
 } from '../../shared/providers/side-effect-result.js'
-import { providerOptionalString } from '../../shared/providers/provider-values.js'
-import { DnsPodRecordOps } from '../../modules/dns-pod/dns-pod-record-sync.service.js'
-import { EdgeOneGateway } from '../../modules/edge-one/edge-one.client.js'
-import { resolveEdgeOneApiCredentials } from '../../modules/edge-one/edge-one-credentials.js'
-import { EdgeOneDomainService } from '../../modules/edge-one/edge-one-domain.service.js'
-import {
-  buildEdgeOneOriginInfo,
-  normalizeAccelerationDomainPayload,
-  type AccelerationDomainPayload,
-} from '../../modules/edge-one/edge-one-domain-payload.js'
+import { DNSPOD_DEFAULT_LINE } from '../../modules/dns-pod/dns-pod-record.service.js'
+import type { DnsPodRecordSyncService } from '../../modules/dns-pod/dns-pod-record-sync.service.js'
+import type { EdgeOneDomainService } from '../../modules/edge-one/edge-one-domain.service.js'
+import { normalizeAccelerationDomainPayload } from '../../modules/edge-one/edge-one-domain-payload.js'
 import { invalidateEdgeOneDomainCache } from '../../modules/edge-one/edge-one.cache.js'
-import {
-  edgeoneAccelerationDomainCreateResponseSchema,
-  edgeoneMutationResponseSchema,
-} from '../../modules/edge-one/edge-one-response.schema.js'
-import { ProviderRepository } from '../../modules/providers/provider.repository.js'
-import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
+import { dnsZoneKey, edgeOneZoneKey } from '../../platform/jobs/job-types.js'
+
+type DeleteOptions = {
+  primaryDeleted?: boolean
+  onPrimaryDeleted?: () => Promise<void>
+  /** 任务级快照中的 CNAME；提供后不再逐条查询（批量场景避免重复全量拉取） */
+  cname?: string
+}
 
 /**
- * EdgeOne acceleration-domain lifecycle and its DNSPod side effects.
- *
- * List/update/status/certificate operations remain in the EdgeOne module. Create,
- * delete, explicit CNAME sync, and DNS cleanup are coordinated here so the
- * EdgeOne module never depends on the shared SaaS sync implementation.
+ * EdgeOne 加速域名生命周期 + DNSPod CNAME 副作用。
+ * 创建/删除/修复解析在此编排；纯 EdgeOne 调用留在模块内。
  */
 export class EdgeOneDnsSyncWorkflow {
   constructor(
-    private readonly providers: ProviderRepository,
     private readonly domains: EdgeOneDomainService,
-    private readonly dns: DnsPodRecordOps
+    private readonly dns: DnsPodRecordSyncService
   ) {}
+
+  /**
+   * 本工作流会写入的底层资源：EdgeOne 站点 + 各加速域名对应的 DNSPod 域名。
+   * 用于与 DNS 批量等任务做跨工作流互斥。
+   */
+  async resourceKeys(providerId: string, zoneId: string, domains: string[]): Promise<string[]> {
+    const keys = [edgeOneZoneKey(providerId, zoneId)]
+    const dnspodProviderId = await this.dns.lookupDnsPodProviderId(providerId, 'edgeone', 'EdgeOne').catch(() => '')
+    if (!dnspodProviderId) return keys
+    for (const domain of new Set(domains.map((item) => normalizeFqdn(item)))) {
+      if (domain === '') continue
+      const zone = await this.dns.matchZone(dnspodProviderId, domain).catch(() => '')
+      if (zone) keys.push(dnsZoneKey('dnspod', dnspodProviderId, zone))
+    }
+    return keys
+  }
 
   async createAccelerationDomain(
     providerId: string,
@@ -43,21 +53,20 @@ export class EdgeOneDnsSyncWorkflow {
     data: Record<string, unknown>,
     autoSync = false
   ): Promise<Record<string, unknown>> {
-    const normalized = this.normalizeDomainData(data)
-    if (autoSync) await this.preflight(providerId, normalized.domain_name)
+    const { domain_name: domainName } = normalizeAccelerationDomainPayload(data)
+    // 自动同步时先校验 DNSPod 关联与域名归属，避免创建后才发现无法写回
+    if (autoSync) await this.resolveDnsTarget(providerId, domainName)
 
-    const result = await this.createDomain(providerId, zoneId, normalized)
-    if (!autoSync || !result.name) return result
+    const result = await this.domains.createAccelerationDomain(providerId, zoneId, data)
+    if (!autoSync) return result
 
-    const sync = await this.safe(async () => {
-      const cname = await this.assignedCname(providerId, zoneId, String(result.name))
-      return this.syncCnameRecord(providerId, String(result.name), cname)
+    const sync = await runDnsSideEffect(async () => {
+      const cname = await this.domains.assignedCname(providerId, zoneId, result.name)
+      return this.syncCname(providerId, result.name, cname)
     })
     return {
       ...result,
-      side_effects: buildDnsSideEffects({
-        sync: this.normalizeSyncSideEffect(sync, '已执行 DNSPod CNAME 同步'),
-      }),
+      side_effects: buildDnsSideEffects({ sync: toSyncSideEffect(sync, '已执行 DNSPod CNAME 同步') }),
     }
   }
 
@@ -66,277 +75,114 @@ export class EdgeOneDnsSyncWorkflow {
     zoneId: string,
     domainName: string,
     autoCleanup = false,
-    options: { primaryDeleted?: boolean; onPrimaryDeleted?: () => Promise<void> } = {}
+    options: DeleteOptions = {}
   ): Promise<Record<string, unknown>> {
-    let cname = ''
-    if (autoCleanup && !options.primaryDeleted) {
-      try {
-        cname = await this.assignedCname(providerId, zoneId, domainName)
-      } catch (error) {
-        if (!this.isExplicitProviderNotFound(error)) throw error
-        cname = ''
-      }
+    // 删除前记录 CNAME，清理时只删指向 EdgeOne 的记录
+    let cname = options.cname ?? ''
+    if (autoCleanup && !options.primaryDeleted && options.cname === undefined) {
+      cname = await this.domains.assignedCname(providerId, zoneId, domainName).catch((error: unknown) => {
+        if (!isEdgeOneNotFound(error)) throw error
+        return ''
+      })
     }
 
-    let primaryResult: Record<string, unknown> = { name: domainName }
+    let primary: Record<string, unknown> = { name: domainName }
     let primaryAlreadyMissing = false
     if (!options.primaryDeleted) {
       try {
-        primaryResult = await this.deleteDomain(providerId, zoneId, domainName)
+        primary = await this.domains.deleteAccelerationDomain(providerId, zoneId, domainName)
       } catch (error) {
-        if (!this.isExplicitProviderNotFound(error)) throw error
+        if (!isEdgeOneNotFound(error)) throw error
         primaryAlreadyMissing = true
         invalidateEdgeOneDomainCache(providerId, zoneId)
       }
     }
     await options.onPrimaryDeleted?.()
-    const result = { ...primaryResult, primary_deleted: true, primary_already_missing: primaryAlreadyMissing }
+
+    const result = { ...primary, primary_deleted: true, primary_already_missing: primaryAlreadyMissing }
     if (!autoCleanup) return result
 
-    const cleanup = await this.cleanupCnameRecord(providerId, domainName, cname)
+    const cleanup = await runDnsSideEffect(() => this.cleanupCname(providerId, domainName, cname))
     return {
       ...result,
-      side_effects: buildDnsSideEffects({
-        cleanup: this.normalizeCleanupSideEffect(cleanup, '已执行 DNS 清理'),
-      }),
+      side_effects: buildDnsSideEffects({ cleanup: toCleanupSideEffect(cleanup, '已执行 DNS 清理') }),
     }
   }
 
   async repairDomainDns(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
-    const cname = await this.assignedCname(providerId, zoneId, domainName, true)
-    if (cname === '') {
-      throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME not available yet', 422)
-    }
+    const cname = await this.domains.assignedCname(providerId, zoneId, domainName, true)
+    if (cname === '') throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME not available yet', 422)
 
-    const sync = await this.syncCnameRecord(providerId, domainName, cname)
-    const side = this.normalizeSyncSideEffect(sync, '已修复域名解析')
-    return { ...sync, side_effects: buildDnsSideEffects({ sync: side }) }
+    const sync = await runDnsSideEffect(() => this.syncCname(providerId, domainName, cname))
+    return { ...sync, side_effects: buildDnsSideEffects({ sync: toSyncSideEffect(sync, '已修复域名解析') }) }
   }
 
-  private async createDomain(
-    providerId: string,
-    zoneId: string,
-    data: AccelerationDomainPayload
-  ): Promise<Record<string, unknown>> {
-    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
-    const gateway = EdgeOneGateway.forCredentials({ secretId: provider.secret_id, secretKey: provider.secret_key })
-
-    let response
-    try {
-      response = await gateway.call('CreateAccelerationDomain', {
-        ZoneId: zoneId,
-        DomainName: data.domain_name,
-        OriginInfo: this.buildOriginInfo(data),
-        OriginProtocol: data.origin_protocol,
-        IPv6Status: data.ipv6_status,
-        ...(data.origin_protocol === 'FOLLOW' || data.origin_protocol === 'HTTP'
-          ? { HttpOriginPort: data.http_origin_port }
-          : {}),
-        ...(data.origin_protocol === 'FOLLOW' || data.origin_protocol === 'HTTPS'
-          ? { HttpsOriginPort: data.https_origin_port }
-          : {}),
-      })
-    } catch (error) {
-      throw wrapProviderError(
-        'edgeone_domain_create_failed',
-        'EdgeOne acceleration domain create failed',
-        providerId,
-        error,
-        { zone: zoneId, domain: data.domain_name }
-      )
-    }
-
-    const parsed = edgeoneAccelerationDomainCreateResponseSchema.parse(response)
-    const result = {
-      name: data.domain_name,
-      request_id: providerOptionalString(parsed.RequestId),
-      ownership_verification: parsed.OwnershipVerification ?? null,
-    }
-    invalidateEdgeOneDomainCache(providerId, zoneId)
-    return result
-  }
-
-  private async deleteDomain(providerId: string, zoneId: string, domainName: string): Promise<Record<string, unknown>> {
-    const provider = await resolveEdgeOneApiCredentials(this.providers, providerId)
-    const gateway = EdgeOneGateway.forCredentials({ secretId: provider.secret_id, secretKey: provider.secret_key })
-
-    let response
-    try {
-      response = await gateway.call('DeleteAccelerationDomains', {
-        ZoneId: zoneId,
-        DomainNames: [domainName],
-        Force: false,
-      })
-    } catch (error) {
-      throw wrapProviderError(
-        'edgeone_domain_delete_failed',
-        'EdgeOne acceleration domain delete failed',
-        providerId,
-        error,
-        { zone: zoneId, domain: domainName }
-      )
-    }
-
-    const parsed = edgeoneMutationResponseSchema.parse(response)
-    const result = { name: domainName, request_id: providerOptionalString(parsed.RequestId) }
-    invalidateEdgeOneDomainCache(providerId, zoneId)
-    return result
-  }
-
-  private async assignedCname(
-    providerId: string,
-    zoneId: string,
-    domainName: string,
-    refresh = false
-  ): Promise<string> {
-    const listing = await this.domains.accelerationDomains(providerId, zoneId, refresh)
-    const domain = listing.items.find((item) => item.name === domainName)
-    if (!domain) {
-      throw new ApiError(
-        'edgeone_acceleration_domain_not_found',
-        `EdgeOne acceleration domain ${domainName} not found`,
-        404
-      )
-    }
-    return String(domain.cname ?? '')
-  }
-
-  /** Upsert the default-line CNAME on the linked DNSPod provider. */
-  private async syncCnameRecord(edgeoneProviderId: string, domainName: string, cname: string) {
-    return this.safe(async () => {
-      const dnspodProviderId = await this.dns.requireDnsPodProviderId(edgeoneProviderId, 'edgeone', 'EdgeOne')
-      const fqdn = domainName.toLowerCase().trim()
-      const dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
-      if (cname === '') throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME is empty', 422)
-
-      const record = {
-        type: 'CNAME',
-        name: fqdn,
-        value: cname,
-        line: '默认',
-        purpose: 'edgeone_cname',
-        provider_id: dnspodProviderId,
-        remark: `EdgeOne 加速丨${fqdn}`,
-      }
-      const precleaned = await this.dns.precleanConflicts(dnspodProviderId, dnspodZone, fqdn)
-      const result = await this.dns.sync(dnspodProviderId, dnspodZone, record)
-      return { domain_name: fqdn, dnspod_zone: dnspodZone, precleaned, record: result }
-    })
-  }
-
-  /** Delete the default-line CNAME from the linked DNSPod provider. */
-  private async cleanupCnameRecord(edgeoneProviderId: string, domainName: string, cname = '') {
-    return this.safe(async () => {
-      const dnspodProviderId = await this.dns.lookupDnsPodProviderId(edgeoneProviderId, 'edgeone', 'EdgeOne')
-      if (dnspodProviderId === '') return { cleaned: 0, records: [], reason: 'dnspod_provider_missing' }
-
-      const fqdn = domainName.toLowerCase().trim()
-      let dnspodZone: string
-      try {
-        dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
-      } catch (error) {
-        if (!(error instanceof ApiError && error.code === 'edgeone_dnspod_zone_not_found')) throw error
-        return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
-      }
-
-      if (cname !== '') {
-        const record = {
-          type: 'CNAME',
-          name: fqdn,
-          value: cname,
-          line: '默认',
-          purpose: 'edgeone_cname',
-          provider_id: dnspodProviderId,
-          remark: `EdgeOne 加速丨${fqdn}`,
-        }
-        const result = await this.dns.delete(dnspodProviderId, dnspodZone, record)
-        return {
-          cleaned: result.status === 'deleted' ? 1 : 0,
-          dnspod_zone: dnspodZone,
-          records: [result],
-        }
-      }
-
-      const results = await this.dns.deleteRecordsByNameType(dnspodProviderId, dnspodZone, fqdn, 'CNAME', '默认')
-      return {
-        cleaned: results.filter((record) => record.status === 'deleted').length,
-        dnspod_zone: dnspodZone,
-        records: results,
-      }
-    })
-  }
-
-  private async preflight(edgeoneProviderId: string, domainName: string) {
-    const dnspodProviderId = await this.dns.requireDnsPodProviderId(edgeoneProviderId, 'edgeone', 'EdgeOne')
-    const fqdn = domainName.toLowerCase().trim()
+  private async resolveDnsTarget(providerId: string, domainName: string) {
+    const fqdn = normalizeFqdn(domainName)
     if (fqdn === '') throw new ApiError('validation_failed', 'Domain name is required', 422)
+    const dnspodProviderId = await this.dns.requireDnsPodProviderId(providerId, 'edgeone', 'EdgeOne')
     const dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
-    return { dnspod_provider_id: dnspodProviderId, dnspod_zone: dnspodZone, domain_name: fqdn }
+    return { fqdn, dnspodProviderId, dnspodZone }
   }
 
-  private normalizeSyncSideEffect(result: Record<string, unknown>, defaultMessage: string): DnsSideEffect {
-    let status = String(result.status ?? '')
-    const record = (result.record as Record<string, unknown>) ?? {}
-    if (status === '' || status === 'completed') {
-      const action = String(record.status ?? '')
-      if (action === 'failed') status = 'failed'
-      else if (action !== '') status = 'completed'
-    }
-    if (hasFailedSideEffectItem(result)) status = 'failed'
-    if (status === '') status = String(result.code ?? '') !== '' ? 'skipped' : 'completed'
-    return {
-      status: status as DnsSideEffect['status'],
-      message: String(result.message ?? defaultMessage),
-      details: [result],
-    }
+  /** 在关联 DNSPod 写入默认线路 CNAME */
+  private async syncCname(providerId: string, domainName: string, cname: string) {
+    if (cname === '') throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME is empty', 422)
+    const { fqdn, dnspodProviderId, dnspodZone } = await this.resolveDnsTarget(providerId, domainName)
+    const precleaned = await this.dns.precleanConflicts(dnspodProviderId, dnspodZone, fqdn)
+    const record = await this.dns.sync(dnspodProviderId, dnspodZone, edgeOneCnameRecord(fqdn, cname, dnspodProviderId))
+    return { domain_name: fqdn, dnspod_zone: dnspodZone, precleaned, record }
   }
 
-  private normalizeCleanupSideEffect(result: Record<string, unknown>, defaultMessage: string): DnsSideEffect {
-    if (hasFailedSideEffectItem(result) || String(result.code ?? '') === 'dns_sync_failed') {
-      return {
-        status: 'failed',
-        message: String(result.message ?? (defaultMessage || 'DNS 清理失败')),
-        details: [result],
-      }
-    }
-    const cleaned = Number(result.cleaned ?? 0)
-    const status = result.status === 'skipped' || result.reason ? 'skipped' : cleaned > 0 ? 'completed' : 'skipped'
-    let message = String(result.message ?? '')
-    if (message === '') {
-      message =
-        status === 'completed'
-          ? defaultMessage
-          : String(result.reason ?? '') !== ''
-            ? 'DNS 清理已跳过'
-            : '未找到需要清理的 DNS 记录'
-    }
-    return { status, message, details: [result] }
-  }
+  /** 删除关联 DNSPod 的默认线路 CNAME；未知目标时按名称删除 */
+  private async cleanupCname(providerId: string, domainName: string, cname: string) {
+    const dnspodProviderId = await this.dns.lookupDnsPodProviderId(providerId, 'edgeone', 'EdgeOne')
+    if (dnspodProviderId === '') return { cleaned: 0, records: [], reason: 'dnspod_provider_missing' }
 
-  private isExplicitProviderNotFound(error: unknown): boolean {
-    return isExplicitNotFound(error, {
-      localCodes: ['edgeone_acceleration_domain_not_found'],
-      providerCode: /^ResourceNotFound(?:\.|$)/i,
-    })
-  }
-
-  private async safe<T extends Record<string, unknown>>(fn: () => Promise<T>): Promise<Record<string, unknown>> {
+    const fqdn = normalizeFqdn(domainName)
+    let dnspodZone: string
     try {
-      return await fn()
+      dnspodZone = await this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'edgeone')
     } catch (error) {
-      return {
-        status: 'failed',
-        code: error instanceof ApiError ? error.code : 'dns_sync_failed',
-        message: error instanceof Error ? error.message : String(error),
-      }
+      if (!(error instanceof ApiError && error.code === 'edgeone_dnspod_zone_not_found')) throw error
+      return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
+    }
+
+    const records =
+      cname !== ''
+        ? [await this.dns.delete(dnspodProviderId, dnspodZone, edgeOneCnameRecord(fqdn, cname, dnspodProviderId))]
+        : await this.dns.deleteRecordsByNameType(
+            dnspodProviderId,
+            dnspodZone,
+            fqdn,
+            'CNAME',
+            DNSPOD_DEFAULT_LINE,
+            // 只清理本流程写入的记录，避免误删人工 CNAME
+            edgeOneCnameRecord(fqdn, cname, dnspodProviderId).remark
+          )
+    return {
+      cleaned: records.filter((record) => record.status === 'deleted').length,
+      dnspod_zone: dnspodZone,
+      records,
     }
   }
+}
 
-  private normalizeDomainData(data: Record<string, unknown>): AccelerationDomainPayload {
-    return normalizeAccelerationDomainPayload(data)
+function edgeOneCnameRecord(fqdn: string, cname: string, dnspodProviderId: string) {
+  return {
+    type: 'CNAME',
+    name: fqdn,
+    value: cname,
+    line: DNSPOD_DEFAULT_LINE,
+    purpose: 'edgeone_cname',
+    provider_id: dnspodProviderId,
+    remark: `EdgeOne 加速丨${fqdn}`,
   }
+}
 
-  private buildOriginInfo(data: AccelerationDomainPayload): Record<string, unknown> {
-    return buildEdgeOneOriginInfo(data)
-  }
+function isEdgeOneNotFound(error: unknown): boolean {
+  return isExplicitNotFound(error, {
+    localCodes: ['edgeone_acceleration_domain_not_found'],
+    providerCode: /^ResourceNotFound(?:\.|$)/i,
+  })
 }

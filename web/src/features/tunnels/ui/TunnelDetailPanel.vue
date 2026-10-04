@@ -77,7 +77,9 @@ const {
       if (options.isLatest && !options.isLatest()) return false
       tunnel.value = tunnelRes.data
       routes.value = routesRes.data?.routes || []
-      if (tokenOwner.active()) token.value = tokenRes?.data?.token || ''
+      // 失败不清空已展示的 token；轮换期间由轮换结果负责写入
+      const nextToken = tokenRes?.data?.token
+      if (tokenOwner.active() && nextToken) token.value = nextToken
       return true
     } catch (error) {
       if (!options.isLatest || options.isLatest()) fail(error)
@@ -175,12 +177,13 @@ async function removeRoute(record: CloudflaredRoute) {
 async function rotateToken() {
   if (rotating.value) return
   const owner = rotationGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
-  const tokenOwner = tokenGeneration.claim({ providerId: owner.value.providerId, tunnelId: owner.value.tunnelId })
   rotating.value = true
   try {
     const response = await cloudflaredApi.rotateToken(owner.value.providerId, owner.value.tunnelId)
-    if (!owner.active() || !tokenOwner.active()) return
-    token.value = response.data?.token || ''
+    if (!owner.active()) return
+    // 作废在途的读取，避免旧响应把轮换后的 token 覆盖回去
+    tokenGeneration.invalidate()
+    if (response.data?.token) token.value = response.data.token
     toast.success('Token 已轮换')
   } catch (error) {
     if (owner.active()) toast.error(errorMessage(error))

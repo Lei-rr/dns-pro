@@ -56,7 +56,10 @@ const canSave = computed(() => {
   return !!origin.value.trim()
 })
 
-async function load() {
+/** 是否曾经配置过默认回源：未配置过时「关闭」无需调用删除接口 */
+const hadOrigin = ref(false)
+
+async function loadOriginState() {
   const owner = claimScope()
   loading.value = true
   errors.value = []
@@ -66,6 +69,7 @@ async function load() {
     const data = response.data || {}
     currentOrigin.value = String(data.origin || '')
     status.value = String(data.status || '')
+    hadOrigin.value = currentOrigin.value !== ''
     enabled.value = !!currentOrigin.value
     origin.value = currentOrigin.value
     const list = Array.isArray(data.errors) ? data.errors : []
@@ -87,6 +91,11 @@ async function save() {
   saving.value = true
   try {
     if (!nextEnabled) {
+      // 未配置过就没有可删除的对象，直接关闭，避免无谓的 404
+      if (!hadOrigin.value) {
+        if (owner.active()) emit('updated', '')
+        return
+      }
       await saasApi.deleteFallbackOrigin(owner.value.providerId, owner.value.zoneName)
       if (!owner.active()) return
       toast.success('默认回源已关闭')
@@ -137,7 +146,7 @@ async function removeOrigin() {
 
 watch(open, (value) => {
   if (value) {
-    load()
+    void loadOriginState()
     return
   }
   scopeGeneration.invalidate()

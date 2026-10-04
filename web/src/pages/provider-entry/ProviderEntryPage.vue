@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCachedProvider, loadProviders, useProviderStore } from '@/features/providers'
+import { getCachedProvider, getCachedProviderAny, loadProviders, useProviderStore } from '@/features/providers'
 import { dnsApi, RecordsPanel, ZonesPanel } from '@/features/dns'
 import { SaasHostsPanel, type SaaSSyncProvider } from '@/features/saas'
 import { AccelerationDomainsPanel, EdgeOneZonesPanel } from '@/features/edge-one'
 import { TunnelDetailPanel, TunnelsPanel } from '@/features/tunnels'
+import { Button } from '@/shared/ui/button'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 
@@ -16,6 +17,8 @@ const router = useRouter()
 const providerId = computed(() => String(route.params.provider || ''))
 const second = computed(() => String(route.params.second || ''))
 const provider = computed(() => getCachedProvider(providerId.value))
+/** 存在但未配置完整的服务商：展示明确状态而不是空白页 */
+const unconfigured = computed(() => (provider.value ? null : getCachedProviderAny(providerId.value)))
 const providerType = computed(() => provider.value?.type || '')
 const edgeOneDnspodLinked = computed<boolean>(() => {
   const current = provider.value
@@ -75,9 +78,9 @@ const page = computed((): { component: Component | null; pageProps: Record<strin
 
 onMounted(async () => {
   try {
-    if (!getCachedProvider(providerId.value)) await loadProviders({ force: true })
-    if (!getCachedProvider(providerId.value)) {
-      toast.warning('服务商未配置')
+    if (!getCachedProviderAny(providerId.value)) await loadProviders({ force: true })
+    if (!getCachedProviderAny(providerId.value)) {
+      toast.warning('未找到该服务商')
       router.replace('/')
     }
   } catch (error) {
@@ -89,7 +92,12 @@ onMounted(async () => {
 <template>
   <component :is="page.component" v-if="page.component" v-bind="page.pageProps" />
   <div v-else class="py-16 text-center">
-    <div class="text-lg font-medium">{{ provider?.name || providerId }}</div>
-    <p class="text-muted-foreground mt-2 text-sm">当前服务商类型暂未接入。</p>
+    <div class="text-lg font-medium">{{ unconfigured?.name || providerId }}</div>
+    <p class="text-muted-foreground mt-2 text-sm">
+      {{ unconfigured ? '该服务商尚未配置完整，请先在服务商页补全关联与密钥。' : '当前服务商类型暂未接入。' }}
+    </p>
+    <Button v-if="unconfigured" variant="outline" size="sm" class="mt-4" @click="router.push('/providers')">
+      前往服务商设置
+    </Button>
   </div>
 </template>

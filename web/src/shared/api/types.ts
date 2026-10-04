@@ -1,5 +1,6 @@
 type MutationSideEffectStatus = 'completed' | 'skipped' | 'failed'
 
+/** @public 前端副作用契约，由审计探针校验 */
 export interface MutationSideEffect {
   status: MutationSideEffectStatus
   message: string
@@ -20,7 +21,7 @@ export interface SideEffects {
   [key: string]: unknown
 }
 
-export interface ApiSuccessResponse<T = unknown> {
+interface ApiSuccessResponse<T = unknown> {
   code: 0
   message: 'success'
   data: T

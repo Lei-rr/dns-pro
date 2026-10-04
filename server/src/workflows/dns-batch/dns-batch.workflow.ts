@@ -1,23 +1,21 @@
 import { ApiError } from '../../shared/http/api-error.js'
 import { isExplicitNotFound } from '../../shared/providers/provider-error.js'
-import type { JobRecord } from '../../platform/jobs/job.types.js'
 import type { JobService } from '../../platform/jobs/job.service.js'
+import type { JobRecord } from '../../platform/jobs/job.types.js'
+import {
+  BatchJobKind,
+  finishBatchJob,
+  runBatchItems,
+  type BatchJobViewBase,
+  type BatchItemResult,
+} from '../../platform/jobs/batch-job.js'
+import { ZONE_WRITE_JOB_TYPES, dnsZoneKey, readResourceKeys } from '../../platform/jobs/job-types.js'
 import {
   DNS_BATCH_CREATE_JOB,
   DNS_BATCH_DELETE_JOB,
   DNS_BATCH_UPDATE_JOB,
   DNS_ZONE_JOB_TYPES,
-} from './dns-batch-job.types.js'
-import { invalidateCloudflareRecordCache } from '../../modules/cloudflare/cloudflare.cache.js'
-import { invalidateDnsPodRecordCache } from '../../modules/dns-pod/dns-pod.cache.js'
-import {
-  type BatchJobViewBase,
-  findActiveBatchJob,
-  finishBatchJob,
-  presentBatchJobBase,
-  requeueFailedBatchItems,
-  runBatchItems,
-} from '../../platform/jobs/batch-helpers.js'
+} from '../../platform/jobs/job-types.js'
 import {
   buildCreateBody,
   buildUpdateBody,
@@ -27,227 +25,142 @@ import {
   type BatchRecordInput,
 } from './dns-record-payload.js'
 
-const DNS_BATCH_JOB_TYPES: Set<string> = new Set(DNS_ZONE_JOB_TYPES)
+export type DnsProviderType = 'cloudflare' | 'dnspod'
 
-type RecordCreator = {
-  create(providerId: string, zone: string, data: Record<string, unknown>): Promise<unknown>
-  findCreate(providerId: string, zone: string, data: Record<string, unknown>): Promise<unknown | null>
-}
-
-type RecordDeleter = {
+/** 统一 DNS 记录操作端口（按服务商适配） */
+export interface DnsBatchPort {
+  create(providerId: string, zone: string, data: Record<string, unknown>): Promise<{ id?: unknown }>
+  /** 重试时查找已创建的等价记录，避免重复添加 */
+  findCreated(providerId: string, zone: string, data: Record<string, unknown>): Promise<{ id?: unknown } | null>
+  update(providerId: string, zone: string, recordId: string, data: Record<string, unknown>): Promise<unknown>
   delete(providerId: string, zone: string, recordId: string): Promise<unknown>
 }
 
-type RecordUpdater = {
-  update(providerId: string, zone: string, recordId: string, data: Record<string, unknown>): Promise<unknown>
-}
+type DnsBatchJobView = BatchJobViewBase & { provider_type: string; provider_id: string; zone: string }
+type JobScope = { providerType: DnsProviderType; providerId: string; zone: string }
 
-type DnsBatchJobView = BatchJobViewBase & {
-  provider_type: string
-  provider_id: string
-  zone: string
-}
+/** DNS 记录批量 添加/删除/修改（DNSPod + Cloudflare），同一站点内互斥 */
+export class DnsBatchWorkflow {
+  private readonly kind: BatchJobKind<DnsBatchJobView>
 
-/**
- * DNS record batch ops on JobService (DNSPod + Cloudflare).
- * - batch delete
- * - batch update (patch: value/ttl/line/proxied/remark/priority…)
- */
-export class DnsBatchJobWorkflow {
   constructor(
     private readonly jobs: JobService,
-    private readonly services: Record<string, RecordCreator & RecordDeleter & RecordUpdater>
+    private readonly ports: Record<DnsProviderType, DnsBatchPort>
   ) {
-    this.jobs.registerRunner(DNS_BATCH_CREATE_JOB, (job) => this.runCreate(job))
-    this.jobs.registerRunner(DNS_BATCH_DELETE_JOB, (job) => this.runDelete(job))
-    this.jobs.registerRunner(DNS_BATCH_UPDATE_JOB, (job) => this.runUpdate(job))
+    this.kind = new BatchJobKind(jobs, {
+      types: DNS_ZONE_JOB_TYPES,
+      // 与 SaaS / EdgeOne 批量共享底层 DNS 写入锁
+      lockTypes: ZONE_WRITE_JOB_TYPES,
+      scopeKeys: ['provider_id', 'zone'],
+      resourceKeys: readResourceKeys,
+      present: (job, base) => ({
+        ...base,
+        provider_type: String(job.payload.provider_type ?? ''),
+        provider_id: String(job.payload.provider_id ?? ''),
+        zone: String(job.payload.zone ?? ''),
+      }),
+    })
+    jobs.registerRunner(DNS_BATCH_CREATE_JOB, (job) => this.runCreate(job))
+    jobs.registerRunner(DNS_BATCH_DELETE_JOB, (job) => this.runDelete(job))
+    jobs.registerRunner(DNS_BATCH_UPDATE_JOB, (job) => this.runUpdate(job))
   }
 
-  async createCreate(input: {
-    providerType: string
-    providerId: string
-    zone: string
-    records: BatchRecordInput[]
-  }): Promise<DnsBatchJobView> {
+  createCreate(input: JobScope & { records: BatchRecordInput[] }) {
     const records = normalizeCreateRecords(input.records)
     if (!records.length) throw new ApiError('batch_empty', 'No records to create', 422)
-    this.requireService(input.providerType)
-
-    const job = await this.jobs.createExclusive(
-      DNS_BATCH_CREATE_JOB,
-      {
-        provider_type: input.providerType,
-        provider_id: input.providerId,
-        zone: input.zone,
-      },
-      records.map((record) => ({ ...record, status: 'pending' })),
-      { types: [...DNS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone: input.zone } },
-      { message: '批量添加 DNS 记录任务已创建' }
-    )
-    return this.present(job)
+    return this.enqueue(DNS_BATCH_CREATE_JOB, input, {}, records, '批量添加 DNS 记录任务已创建')
   }
 
-  async createDelete(input: {
-    providerType: string
-    providerId: string
-    zone: string
-    records: Array<{ id: string; name?: string; type?: string }>
-  }): Promise<DnsBatchJobView> {
+  createDelete(input: JobScope & { records: Array<{ id: string; name?: string; type?: string }> }) {
     const records = normalizeRecords(input.records)
     if (!records.length) throw new ApiError('batch_empty', 'No records selected', 422)
-    this.requireService(input.providerType)
-
-    const job = await this.jobs.createExclusive(
-      DNS_BATCH_DELETE_JOB,
-      {
-        provider_type: input.providerType,
-        provider_id: input.providerId,
-        zone: input.zone,
-      },
-      records.map((record) => ({
-        record_id: record.id,
-        name: record.name || '',
-        type: record.type || '',
-        status: 'pending',
-      })),
-      { types: [...DNS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone: input.zone } },
-      { message: '批量删除 DNS 记录任务已创建' }
-    )
-    return this.present(job)
+    const items = records.map((record) => ({ record_id: record.id, name: record.name, type: record.type }))
+    return this.enqueue(DNS_BATCH_DELETE_JOB, input, {}, items, '批量删除 DNS 记录任务已创建')
   }
 
-  async createUpdate(input: {
-    providerType: string
-    providerId: string
-    zone: string
-    records: BatchRecordInput[]
-    patch: Record<string, unknown>
-  }): Promise<DnsBatchJobView> {
+  createUpdate(input: JobScope & { records: BatchRecordInput[]; patch: Record<string, unknown> }) {
     const records = normalizeRecords(input.records)
     if (!records.length) throw new ApiError('batch_empty', 'No records selected', 422)
-    this.requireService(input.providerType)
-
     const patch = normalizePatch(input.patch)
-    if (!Object.keys(patch).length) {
-      throw new ApiError('batch_patch_empty', 'No fields to update', 422)
+    if (!Object.keys(patch).length) throw new ApiError('batch_patch_empty', 'No fields to update', 422)
+    // 保存记录快照：服务商更新接口要求完整字段
+    const items = records.map(({ id, status, ...record }) => ({
+      ...record,
+      record_id: id,
+      record_status: status ?? '',
+    }))
+    return this.enqueue(DNS_BATCH_UPDATE_JOB, input, { patch }, items, '批量修改 DNS 记录任务已创建')
+  }
+
+  find(id: string, providerType?: string, providerId?: string) {
+    return this.kind.find(id, { provider_type: providerType, provider_id: providerId })
+  }
+
+  active(providerType: string, providerId: string, zone: string) {
+    return this.kind.active({ provider_type: providerType, provider_id: providerId, zone })
+  }
+
+  retryFailed(id: string, providerType?: string, providerId?: string) {
+    return this.kind.retryFailed(id, { provider_type: providerType, provider_id: providerId })
+  }
+
+  private async enqueue(
+    type: string,
+    scope: JobScope,
+    extra: Record<string, unknown>,
+    items: Array<Record<string, unknown>>,
+    message: string
+  ): Promise<DnsBatchJobView> {
+    if (!this.ports[scope.providerType]) {
+      throw new ApiError('batch_provider_unsupported', `Unsupported provider type: ${scope.providerType}`, 422)
     }
-
-    const job = await this.jobs.createExclusive(
-      DNS_BATCH_UPDATE_JOB,
-      {
-        provider_type: input.providerType,
-        provider_id: input.providerId,
-        zone: input.zone,
-        patch,
-      },
-      records.map((record) => ({
-        record_id: record.id,
-        name: record.name || '',
-        type: record.type || '',
-        value: record.value || '',
-        ttl: record.ttl ?? '',
-        line: record.line || '',
-        record_line_id: record.record_line_id || '',
-        priority: record.priority ?? '',
-        remark: record.remark || '',
-        proxied: record.proxied,
-        record_status: record.status || '',
-        weight: record.weight ?? '',
-        status: 'pending',
-      })),
-      { types: [...DNS_ZONE_JOB_TYPES], scope: { provider_id: input.providerId, zone: input.zone } },
-      { message: '批量修改 DNS 记录任务已创建' }
-    )
-    return this.present(job)
-  }
-
-  async find(id: string, providerType?: string, providerId?: string): Promise<DnsBatchJobView | null> {
-    const job = await this.jobs.get(id)
-    if (!job || !DNS_BATCH_JOB_TYPES.has(job.type)) return null
-    if (providerType !== undefined && String(job.payload?.provider_type ?? '') !== providerType) return null
-    if (providerId !== undefined && String(job.payload?.provider_id ?? '') !== providerId) return null
-    return this.present(job)
-  }
-
-  async active(providerType: string, providerId: string, zone: string): Promise<DnsBatchJobView | null> {
-    return this.findActive(providerType, providerId, zone)
-  }
-
-  async retryFailed(jobId: string, providerType?: string, providerId?: string): Promise<DnsBatchJobView> {
-    const existing = await this.find(jobId, providerType, providerId)
-    if (!existing) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const raw = await this.jobs.get(jobId)
-    if (!raw) throw new ApiError('batch_job_not_found', 'Batch job not found', 404, { job_id: jobId })
-    const payload = raw.payload || {}
-    const requeued = await requeueFailedBatchItems(this.jobs, raw, {
-      types: [...DNS_ZONE_JOB_TYPES],
-      scope: { provider_id: String(payload.provider_id || ''), zone: String(payload.zone || '') },
-    })
-    return this.present(requeued)
-  }
-
-  private async runCreate(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerType = String(payload.provider_type || '')
-    const providerId = String(payload.provider_id || '')
-    const zone = String(payload.zone || '')
-    const service = this.services[providerType]
-    if (!service) {
-      await this.failJob(job.id, `Unsupported provider type: ${providerType}`)
-      return
+    const payload = {
+      provider_type: scope.providerType,
+      provider_id: scope.providerId,
+      zone: scope.zone,
+      resource_keys: [dnsZoneKey(scope.providerType, scope.providerId, scope.zone)],
+      ...extra,
     }
+    const job = await this.jobs.createExclusive(type, payload, items, this.kind.lock(payload), { message })
+    return this.kind.present(job)
+  }
 
-    await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.item_key || ''),
+  private runCreate(job: JobRecord) {
+    return this.run(job, '批量添加', {
+      itemKey: (item) => String(item.item_key ?? ''),
       runningMessage: '添加中',
       progressMessage: '批量添加 DNS 记录执行中',
       progressCurrent: (item) => [item.name, item.type].filter(Boolean).join(' '),
-      execute: async (item) => {
-        if (!String(item.name || '')) return { status: 'failed', message: '缺少记录名' }
-        const body = buildCreateBody(providerType, zone, item)
+      execute: async ({ port, scope }, item) => {
+        const body = buildCreateBody(scope.providerType, scope.zone, item)
         if (Number(item.attempt || 0) > 0) {
-          const existing = await service.findCreate(providerId, zone, body)
+          const existing = await port.findCreated(scope.providerId, scope.zone, body)
           if (existing) {
-            const recordId =
-              typeof existing === 'object' && 'id' in existing
-                ? String((existing as Record<string, unknown>).id ?? '')
-                : ''
-            return { status: 'skipped', message: '目标记录已存在，未重复添加', extra: { record_id: recordId } }
+            return {
+              status: 'skipped',
+              message: '目标记录已存在，未重复添加',
+              extra: { record_id: String(existing.id ?? '') },
+            }
           }
         }
-        const created = await service.create(providerId, zone, body)
-        const recordId =
-          created && typeof created === 'object' && 'id' in created
-            ? String((created as Record<string, unknown>).id ?? '')
-            : ''
-        return { status: 'success', message: '已添加', extra: { record_id: recordId } }
+        const created = await port.create(scope.providerId, scope.zone, body)
+        return { status: 'success', message: '已添加', extra: { record_id: String(created.id ?? '') } }
       },
     })
-    await this.finish(job.id, '批量添加', providerType, providerId, zone)
   }
 
-  private async runDelete(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerType = String(payload.provider_type || '')
-    const providerId = String(payload.provider_id || '')
-    const zone = String(payload.zone || '')
-    const service = this.services[providerType]
-    if (!service) {
-      await this.failJob(job.id, `Unsupported provider type: ${providerType}`)
-      return
-    }
-
-    await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.record_id || ''),
+  private runDelete(job: JobRecord) {
+    return this.run(job, '批量删除', {
+      itemKey: (item) => String(item.record_id ?? ''),
       runningMessage: '删除中',
       progressMessage: '批量删除 DNS 记录执行中',
-      progressCurrent: (item, recordId) => [item.name, item.type, recordId].filter(Boolean).join(' '),
-      execute: async (_item, recordId) => {
+      progressCurrent: (item, id) => [item.name, item.type, id].filter(Boolean).join(' '),
+      execute: async ({ port, scope }, _item, recordId) => {
         try {
-          await service.delete(providerId, zone, recordId)
+          await port.delete(scope.providerId, scope.zone, recordId)
           return { status: 'success', message: '已删除' }
         } catch (error) {
-          // CF/DNSPod 记录已不存在时删会 404：目标态已达成，记为 skipped 而非 failed
+          // 记录已不存在：目标状态已达成
           if (isExplicitNotFound(error, { providerCode: /^ResourceNotFound\.NoDataOfRecord$/i })) {
             return { status: 'skipped', message: '记录已不存在（404）' }
           }
@@ -255,81 +168,57 @@ export class DnsBatchJobWorkflow {
         }
       },
     })
-
-    await this.finish(job.id, '批量删除', providerType, providerId, zone)
   }
 
-  private async runUpdate(job: JobRecord): Promise<void> {
-    const payload = job.payload || {}
-    const providerType = String(payload.provider_type || '')
-    const providerId = String(payload.provider_id || '')
-    const zone = String(payload.zone || '')
-    const patch = payload.patch && typeof payload.patch === 'object' ? (payload.patch as Record<string, unknown>) : {}
-    const service = this.services[providerType]
-    if (!service) {
-      await this.failJob(job.id, `Unsupported provider type: ${providerType}`)
-      return
-    }
-
-    await runBatchItems(this.jobs, job, {
-      itemKey: (item) => String(item.record_id || ''),
+  private runUpdate(job: JobRecord) {
+    const patch = (job.payload.patch ?? {}) as Record<string, unknown>
+    return this.run(job, '批量修改', {
+      itemKey: (item) => String(item.record_id ?? ''),
       runningMessage: '修改中',
       progressMessage: '批量修改 DNS 记录执行中',
-      progressCurrent: (item, recordId) => [item.name, item.type, recordId].filter(Boolean).join(' '),
-      execute: async (item, recordId) => {
-        const body = buildUpdateBody(providerType, zone, item, patch)
-        await service.update(providerId, zone, recordId, body)
+      progressCurrent: (item, id) => [item.name, item.type, id].filter(Boolean).join(' '),
+      execute: async ({ port, scope }, item, recordId) => {
+        await port.update(
+          scope.providerId,
+          scope.zone,
+          recordId,
+          buildUpdateBody(scope.providerType, scope.zone, item, patch)
+        )
         return { status: 'success', message: '已修改' }
       },
     })
-
-    await this.finish(job.id, '批量修改', providerType, providerId, zone)
   }
 
-  private requireService(providerType: string) {
-    if (!this.services[providerType]) {
-      throw new ApiError('batch_provider_unsupported', `Unsupported provider type: ${providerType}`, 422)
+  /** 公共执行骨架：解析 scope → 逐条执行 → 收尾（每次变更已由模块失效记录缓存） */
+  private async run(
+    job: JobRecord,
+    label: string,
+    options: Omit<Parameters<typeof runBatchItems>[2], 'execute'> & {
+      execute: (
+        ctx: { port: DnsBatchPort; scope: JobScope },
+        item: Record<string, unknown>,
+        key: string
+      ) => Promise<BatchItemResult>
     }
-  }
-
-  private async failJob(id: string, message: string) {
-    await this.jobs.patch(id, {
-      status: 'failed',
-      message,
-      finished_at: Date.now(),
-    })
-  }
-
-  private async finish(jobId: string, label: string, providerType: string, providerId: string, zone: string) {
-    await finishBatchJob(this.jobs, jobId, label)
-    if (providerType === 'cloudflare') {
-      await invalidateCloudflareRecordCache(providerId, zone)
+  ): Promise<void> {
+    const scope: JobScope = {
+      providerType: String(job.payload.provider_type ?? '') as DnsProviderType,
+      providerId: String(job.payload.provider_id ?? ''),
+      zone: String(job.payload.zone ?? ''),
+    }
+    const port = this.ports[scope.providerType]
+    if (!port) {
+      await this.jobs.patch(job.id, {
+        status: 'failed',
+        message: `Unsupported provider type: ${scope.providerType}`,
+        finished_at: Date.now(),
+      })
       return
     }
-    if (providerType === 'dnspod') {
-      await invalidateDnsPodRecordCache(providerId, zone)
-      return
-    }
-    throw new ApiError('batch_provider_unsupported', `Unsupported provider type for batch finish: ${providerType}`, 422)
-  }
-
-  private async findActive(providerType: string, providerId: string, zone: string): Promise<DnsBatchJobView | null> {
-    const hit = await findActiveBatchJob(this.jobs, [...DNS_ZONE_JOB_TYPES], {
-      provider_type: providerType,
-      provider_id: providerId,
-      zone,
+    await runBatchItems(this.jobs, job, {
+      ...options,
+      execute: (item, key) => options.execute({ port, scope }, item, key),
     })
-    return hit ? this.present(hit) : null
-  }
-
-  private present(job: JobRecord): DnsBatchJobView {
-    const base = presentBatchJobBase(job)
-    const payload = job.payload || {}
-    return {
-      ...base,
-      provider_type: String(payload.provider_type || ''),
-      provider_id: String(payload.provider_id || ''),
-      zone: String(payload.zone || ''),
-    }
+    await finishBatchJob(this.jobs, job.id, label)
   }
 }

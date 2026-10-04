@@ -1,38 +1,45 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
 import {
   buildCacheKey,
-  offsetPaginationMeta,
   providerCacheTag,
   recordCacheTag,
   withProviderCache,
 } from '../../platform/cache/provider-cache.js'
-import { invalidateDnsPodRecordCache } from './dns-pod.cache.js'
 import { ApiError } from '../../shared/http/api-error.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import { parseBool } from '../../shared/lib/parse-bool.js'
+import { parseBool } from '../../shared/lib/values.js'
+import {
+  callProvider,
+  collectOffsetPages,
+  parseUpstreamTotal,
+  TENCENT_PAGE_SIZE,
+  toFullListResult,
+  type FullListPagination,
+} from '../../shared/providers/provider-call.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../shared/providers/provider-values.js'
-import { DnsPodGateway } from './dns-pod.client.js'
+import { invalidateDnsPodRecordCache } from './dns-pod.cache.js'
+import { DnsPodClient, dnsPodClientFor } from './dns-pod.client.js'
 import {
   dnspodMutationResponseSchema,
   dnspodRecordListResponseSchema,
   dnspodRecordMutationResponseSchema,
   dnspodRecordSchema,
+  type DnsPodRecord,
 } from './dns-pod-response.schema.js'
-import type { DnsPodProvider } from '../providers/provider.types.js'
-import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'dnspod'
+export const DNSPOD_DEFAULT_LINE = '默认'
 
-interface RecordListFilters {
-  offset?: number
-  limit?: number
+/** 下推到 DNSPod 的查询过滤 */
+interface UpstreamFilter {
   subdomain?: string
   record_type?: string
-  keyword?: string
+}
+
+interface RecordListFilters {
   refresh?: boolean
 }
 
-interface RecordListItem {
+export interface DnsPodRecordItem {
   id: number
   name: string
   type: string
@@ -50,15 +57,10 @@ interface RecordListItem {
 }
 
 interface RecordListResult {
-  items: RecordListItem[]
-  pagination: {
-    offset: number
-    limit: number
-    count: number
-    total: number
-  }
+  items: DnsPodRecordItem[]
+  pagination: FullListPagination
+  meta: FullListPagination
   request_id?: string
-  meta: ReturnType<typeof offsetPaginationMeta>
 }
 
 export interface RecordCreateInput {
@@ -79,102 +81,54 @@ interface RecordMutationResult {
   request_id?: string
 }
 
+// 本地字段 → DNSPod API 字段
+const OPTIONAL_PAYLOAD_FIELDS: Array<[keyof RecordCreateInput, string]> = [
+  ['subdomain', 'SubDomain'],
+  ['record_line_id', 'RecordLineId'],
+  ['mx', 'MX'],
+  ['ttl', 'TTL'],
+  ['weight', 'Weight'],
+  ['status', 'Status'],
+  ['remark', 'Remark'],
+]
+
+/** DNSPod 解析记录 CRUD；列表全量缓存，过滤在本地完成 */
 export class DnsPodRecordService {
   constructor(private readonly providers: ProviderRepository) {}
 
   async list(providerId: string, domain: string, filters: RecordListFilters = {}): Promise<RecordListResult> {
-    const normalized = this.normalizeListFilters(filters)
-    const { subdomain, record_type, keyword, refresh } = normalized
     const cached = await withProviderCache<RecordListResult>({
       key: buildCacheKey(`${PROVIDER_TYPE}:records`, { provider_id: providerId, domain }),
       tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)],
-      refresh,
-      loader: async () => {
-        const provider = await this.requireProvider(providerId)
-        const gateway = this.gatewayFor(provider)
-        const pageSize = 100
-        const items: RecordListItem[] = []
-        let offset = 0
-        let pages = 0
-        let requestId: string | undefined
-
-        while (true) {
-          let response: unknown
-          try {
-            response = await gateway.call('DescribeRecordList', {
-              Domain: domain,
-              Offset: offset,
-              Limit: pageSize,
-              ErrorOnEmpty: 'no',
-            })
-          } catch (error) {
-            throw wrapProviderError('dnspod_record_list_failed', 'DNSPod record list failed', providerId, error, {
-              domain,
-            })
-          }
-          const parsed = dnspodRecordListResponseSchema.parse(response)
-          pages++
-          const sourceCount = Number(parsed.SourceCount ?? 0)
-          const pageItems = (Array.isArray(parsed.RecordList) ? parsed.RecordList : []).map((record) =>
-            presentRecord(dnspodRecordSchema.parse(record))
-          )
-          items.push(...pageItems)
-          const totalRaw = parsed.RecordCountInfo?.TotalCount
-          const totalValue = Number(totalRaw)
-          const total =
-            totalRaw != null && totalRaw !== '' && Number.isFinite(totalValue) && totalValue >= 0 ? totalValue : null
-          requestId = parsed.RequestId ?? requestId
-          offset += sourceCount
-          if (sourceCount < pageSize || (total !== null && offset >= total)) break
-          if (pages >= MAX_PROVIDER_PAGES)
-            throw new ApiError('dnspod_pagination_limit', 'DNSPod pagination limit reached', 502)
-        }
-
-        return {
-          items,
-          pagination: { offset: 0, limit: items.length, count: items.length, total: items.length },
-          request_id: requestId,
-          meta: offsetPaginationMeta({ offset: 0, limit: items.length || 1, total: items.length }),
-        }
-      },
+      refresh: filters.refresh ?? false,
+      loader: () => this.fetchAll(providerId, domain),
     })
-
-    const search = keyword.toLowerCase()
-    const items = cached.value.items.filter((record) => {
-      if (subdomain && !record.name.toLowerCase().includes(subdomain.toLowerCase())) return false
-      if (record_type && record.type.toUpperCase() !== record_type) return false
-      if (!search) return true
-      return [record.name, record.type, record.value, record.line, record.remark].some((value) =>
-        String(value).toLowerCase().includes(search)
-      )
-    })
-    return {
-      ...cached.value,
-      items,
-      pagination: { offset: 0, limit: items.length, count: items.length, total: items.length },
-      meta: offsetPaginationMeta({ offset: 0, limit: items.length || 1, total: items.length }),
-    }
+    return cached.value
   }
 
+  /**
+   * 按 主机记录(+类型) 查询：过滤下推到 DNSPod，供同步/删除前的匹配使用。
+   * 不走列表缓存（需要最新状态），也不写入缓存。
+   */
+  async query(providerId: string, domain: string, filter: UpstreamFilter): Promise<DnsPodRecordItem[]> {
+    return (await this.fetchAll(providerId, domain, filter)).items
+  }
+
+  /** 精确匹配 主机记录 + 类型 + 线路（过滤下推上游，不经列表缓存） */
   async findExact(
     providerId: string,
     domain: string,
-    input: RecordCreateInput | Record<string, unknown>,
-    refresh = false
-  ): Promise<RecordListItem[]> {
-    const normalized = this.normalizeRecordInput(input)
-    const result = await this.list(providerId, domain, {
-      subdomain: normalized.subdomain || '@',
-      record_type: normalized.record_type,
-      refresh,
-    })
-    const expectedLineId = String(normalized.record_line_id || '').trim()
-    const line = normalized.record_line || '默认'
-    return result.items.filter(
+    input: RecordCreateInput | Record<string, unknown>
+  ): Promise<DnsPodRecordItem[]> {
+    const normalized = normalizeRecordInput(input)
+    const subdomain = (normalized.subdomain || '@').toLowerCase()
+    const items = await this.query(providerId, domain, { subdomain, record_type: normalized.record_type })
+    const lineId = String(normalized.record_line_id || '').trim()
+    return items.filter(
       (record) =>
-        record.name.toLowerCase() === (normalized.subdomain || '@').toLowerCase() &&
-        record.type.toUpperCase() === normalized.record_type.toUpperCase() &&
-        (expectedLineId ? String(record.line_id || '') === expectedLineId : record.line === line)
+        record.name.toLowerCase() === subdomain &&
+        record.type.toUpperCase() === normalized.record_type &&
+        (lineId ? record.line_id === lineId : record.line === normalized.record_line)
     )
   }
 
@@ -183,26 +137,8 @@ export class DnsPodRecordService {
     domain: string,
     input: RecordCreateInput | Record<string, unknown>
   ): Promise<RecordMutationResult> {
-    const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response: unknown
-    try {
-      response = await gateway.call('CreateRecord', payload)
-    } catch (error) {
-      throw wrapProviderError('dnspod_record_create_failed', 'DNSPod record create failed', providerId, error, {
-        domain,
-      })
-    }
-
-    const parsed = dnspodRecordMutationResponseSchema.parse(response)
-    const result = {
-      id: providerFiniteNumber(parsed.RecordId),
-      request_id: providerOptionalString(parsed.RequestId),
-    }
-    await invalidateDnsPodRecordCache(providerId, domain)
-    return result
+    const payload = buildRecordPayload(domain, normalizeRecordInput(input))
+    return this.mutate(providerId, domain, 'CreateRecord', payload, 'dnspod_record_create_failed', 'create')
   }
 
   async update(
@@ -211,172 +147,148 @@ export class DnsPodRecordService {
     recordId: string,
     input: RecordCreateInput | Record<string, unknown>
   ): Promise<RecordMutationResult> {
-    const payload = this.buildRecordPayload(domain, this.normalizeRecordInput(input))
-    payload.RecordId = Number(recordId)
-
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response: unknown
-    try {
-      response = await gateway.call('ModifyRecord', payload)
-    } catch (error) {
-      throw wrapProviderError('dnspod_record_update_failed', 'DNSPod record update failed', providerId, error, {
-        domain,
-      })
-    }
-
-    const parsed = dnspodRecordMutationResponseSchema.parse(response)
-    const result = {
-      id: providerFiniteNumber(parsed.RecordId),
-      request_id: providerOptionalString(parsed.RequestId),
-    }
-    await invalidateDnsPodRecordCache(providerId, domain)
-    return result
+    const payload = { ...buildRecordPayload(domain, normalizeRecordInput(input)), RecordId: requireRecordId(recordId) }
+    return this.mutate(providerId, domain, 'ModifyRecord', payload, 'dnspod_record_update_failed', 'update')
   }
 
   async delete(providerId: string, domain: string, recordId: string): Promise<RecordMutationResult> {
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response: unknown
-    try {
-      response = await gateway.call('DeleteRecord', {
-        Domain: domain,
-        RecordId: Number(recordId),
-      })
-    } catch (error) {
-      throw wrapProviderError('dnspod_record_delete_failed', 'DNSPod record delete failed', providerId, error, {
-        domain,
-      })
-    }
-
-    const parsed = dnspodMutationResponseSchema.parse(response)
-    const result = {
-      id: providerFiniteNumber(recordId),
-      request_id: providerOptionalString(parsed.RequestId),
-    }
-    await invalidateDnsPodRecordCache(providerId, domain)
-    return result
-  }
-
-  private normalizeListFilters(filters: RecordListFilters) {
-    return {
-      offset: Math.max(0, filters.offset ?? 0),
-      limit: Math.min(100, Math.max(1, filters.limit ?? 100)),
-      subdomain: (filters.subdomain ?? '').trim(),
-      record_type: (filters.record_type ?? '').trim().toUpperCase(),
-      keyword: (filters.keyword ?? '').trim(),
-      refresh: filters.refresh ?? false,
-    }
-  }
-
-  private normalizeRecordInput(raw: RecordCreateInput | Record<string, unknown>): RecordCreateInput {
-    const input = (raw ?? {}) as Record<string, unknown>
-    const recordType = String(input.record_type ?? '')
-      .trim()
-      .toUpperCase()
-    const recordLine = String(input.record_line ?? '').trim() || '默认'
-    const value = String(input.value ?? '').trim()
-    if (!recordType || !value) {
-      throw new ApiError('validation_error', 'record_type and value are required', 422)
-    }
-
-    const normalized: RecordCreateInput = {
-      record_type: recordType,
-      record_line: recordLine,
-      value,
-    }
-
-    const subdomain = this.optionalString(input.subdomain)
-    if (subdomain !== undefined) normalized.subdomain = subdomain
-
-    const recordLineId = this.optionalString(input.record_line_id)
-    if (recordLineId !== undefined) normalized.record_line_id = recordLineId
-
-    const status = this.optionalString(input.status)
-    if (status === 'ENABLE' || status === 'DISABLE') normalized.status = status
-
-    const remark = this.optionalString(input.remark)
-    if (remark !== undefined) normalized.remark = remark
-
-    const ttl = this.optionalUint(input.ttl)
-    if (ttl !== undefined) normalized.ttl = ttl
-
-    const weight = this.optionalUint(input.weight)
-    if (weight !== undefined) normalized.weight = weight
-
-    // DNSPod: MX must be uint64 when present. Empty string from frontend must be omitted.
-    // Only send MX for MX records (or when a valid number is explicitly provided).
-    const mx = this.optionalUint(input.mx)
-    if (recordType === 'MX') {
-      normalized.mx = mx ?? 0
-    } else if (mx !== undefined) {
-      normalized.mx = mx
-    }
-
-    return normalized
-  }
-
-  private optionalString(value: unknown): string | undefined {
-    if (value === undefined || value === null) return undefined
-    const text = String(value).trim()
-    return text === '' ? undefined : text
-  }
-
-  private optionalUint(value: unknown): number | undefined {
-    if (value === undefined || value === null || value === '') return undefined
-    const num = typeof value === 'number' ? value : Number(String(value).trim())
-    if (!Number.isFinite(num) || num < 0) return undefined
-    return Math.floor(num)
-  }
-
-  private buildRecordPayload(domain: string, input: RecordCreateInput): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-      Domain: domain,
-      RecordType: input.record_type.trim().toUpperCase(),
-      RecordLine: input.record_line,
-      Value: input.value,
-    }
-
-    const optionalFields: Array<[keyof RecordCreateInput, string]> = [
-      ['subdomain', 'SubDomain'],
-      ['record_line_id', 'RecordLineId'],
-      ['mx', 'MX'],
-      ['ttl', 'TTL'],
-      ['weight', 'Weight'],
-      ['status', 'Status'],
-      ['remark', 'Remark'],
-    ]
-
-    for (const [key, property] of optionalFields) {
-      const value = input[key]
-      // Skip undefined/null/empty-string so DNSPod does not receive invalid typed params.
-      if (value === undefined || value === null || value === '') continue
-      payload[property] = value
-    }
-
-    return payload
-  }
-
-  private async requireProvider(providerId: string): Promise<DnsPodProvider> {
-    return this.providers.requireType<DnsPodProvider>(
-      providerId,
-      'dnspod',
-      'DNSPod provider not found',
-      'dnspod_provider_not_found'
+    const id = requireRecordId(recordId)
+    const client = await this.clientFor(providerId)
+    const response = await callProvider(
+      { code: 'dnspod_record_delete_failed', message: 'DNSPod record delete failed', providerId, details: { domain } },
+      () => client.call('DeleteRecord', { Domain: domain, RecordId: id })
     )
+    const parsed = dnspodMutationResponseSchema.parse(response)
+    invalidateDnsPodRecordCache(providerId, domain)
+    return { id, request_id: providerOptionalString(parsed.RequestId) }
   }
 
-  private gatewayFor(provider: DnsPodProvider): DnsPodGateway {
-    return DnsPodGateway.forCredentials({
-      secretId: provider.secret_id,
-      secretKey: provider.secret_key,
-    })
+  private async mutate(
+    providerId: string,
+    domain: string,
+    action: 'CreateRecord' | 'ModifyRecord',
+    payload: Record<string, unknown>,
+    code: string,
+    verb: string
+  ): Promise<RecordMutationResult> {
+    const client = await this.clientFor(providerId)
+    const response = await callProvider(
+      { code, message: `DNSPod record ${verb} failed`, providerId, details: { domain } },
+      () => client.call(action, payload)
+    )
+    const parsed = dnspodRecordMutationResponseSchema.parse(response)
+    invalidateDnsPodRecordCache(providerId, domain)
+    return { id: providerFiniteNumber(parsed.RecordId), request_id: providerOptionalString(parsed.RequestId) }
+  }
+
+  private async fetchAll(providerId: string, domain: string, filter: UpstreamFilter = {}): Promise<RecordListResult> {
+    const client = await this.clientFor(providerId)
+    const { items, requestId } = await collectOffsetPages(
+      async (offset, limit) => {
+        const response = await callProvider(
+          { code: 'dnspod_record_list_failed', message: 'DNSPod record list failed', providerId, details: { domain } },
+          () =>
+            client.call('DescribeRecordList', {
+              Domain: domain,
+              Offset: offset,
+              Limit: limit,
+              ErrorOnEmpty: 'no',
+              Subdomain: filter.subdomain || undefined,
+              RecordType: filter.record_type || undefined,
+            })
+        )
+        const parsed = dnspodRecordListResponseSchema.parse(response)
+        return {
+          items: (parsed.RecordList as unknown[]).map((record) => presentRecord(dnspodRecordSchema.parse(record))),
+          sourceCount: Number(parsed.SourceCount ?? 0),
+          total: parseUpstreamTotal(parsed.RecordCountInfo?.TotalCount),
+          requestId: parsed.RequestId,
+        }
+      },
+      {
+        pageSize: TENCENT_PAGE_SIZE,
+        limitCode: 'dnspod_pagination_limit',
+        limitMessage: 'DNSPod pagination limit reached',
+      }
+    )
+    return toFullListResult(items, requestId)
+  }
+
+  private clientFor(providerId: string): Promise<DnsPodClient> {
+    return dnsPodClientFor(this.providers, providerId)
   }
 }
 
-function presentRecord(record: import('./dns-pod-response.schema.js').DnsPodRecord): RecordListItem {
+/** 记录 ID 必须为正整数，避免 Number('abc') 产生 NaN 被发给上游 */
+function requireRecordId(recordId: string): number {
+  const id = Number(recordId)
+  if (!Number.isSafeInteger(id) || id <= 0) {
+    throw new ApiError('validation_error', 'DNSPod record id must be a positive integer', 422)
+  }
+  return id
+}
+
+function optionalString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  const text = String(value).trim()
+  return text === '' ? undefined : text
+}
+
+/** 解析非负整数；超出 [min, max] 视为非法（NaN/越界一律拒绝，避免上游 502） */
+function optionalUint(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const num = Number(value)
+  if (!Number.isFinite(num)) return undefined
+  const int = Math.floor(num)
+  if (int < min || int > max) {
+    throw new ApiError('validation_error', `Value out of range [${min}, ${max}]: ${value}`, 422)
+  }
+  return int
+}
+
+function normalizeRecordInput(raw: RecordCreateInput | Record<string, unknown>): RecordCreateInput {
+  const input = (raw ?? {}) as Record<string, unknown>
+  const recordType = String(input.record_type ?? '')
+    .trim()
+    .toUpperCase()
+  const value = String(input.value ?? '').trim()
+  if (!recordType || !value) {
+    throw new ApiError('validation_error', 'record_type and value are required', 422)
+  }
+
+  const status = optionalString(input.status)
+  const mx = optionalUint(input.mx, 0, 65535)
+  return {
+    record_type: recordType,
+    record_line: optionalString(input.record_line) ?? DNSPOD_DEFAULT_LINE,
+    value,
+    subdomain: optionalString(input.subdomain),
+    record_line_id: optionalString(input.record_line_id),
+    status: status === 'ENABLE' || status === 'DISABLE' ? status : undefined,
+    remark: optionalString(input.remark),
+    // DNSPod 约束：TTL 1-604800，Weight 0-100，MX 0-65535
+    ttl: optionalUint(input.ttl, 1, 604800),
+    weight: optionalUint(input.weight, 0, 100),
+    // MX 记录必须带优先级；其余类型仅在显式给出时传递
+    mx: recordType === 'MX' ? (mx ?? 0) : mx,
+  }
+}
+
+function buildRecordPayload(domain: string, input: RecordCreateInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    Domain: domain,
+    RecordType: input.record_type,
+    RecordLine: input.record_line,
+    Value: input.value,
+  }
+  for (const [key, property] of OPTIONAL_PAYLOAD_FIELDS) {
+    const value = input[key]
+    if (value !== undefined && value !== '') payload[property] = value
+  }
+  return payload
+}
+
+function presentRecord(record: DnsPodRecord): DnsPodRecordItem {
   return {
     id: providerFiniteNumber(record.RecordId),
     name: providerString(record.Name),

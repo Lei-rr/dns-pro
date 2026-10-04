@@ -63,8 +63,13 @@ platform/cache/memory-cache.ts
 platform/cache/provider-cache.ts
 ```
 
-Do not recreate forwarding layers such as `globalCache -> CacheManager -> withProviderCache`.
-Provider queries use process-memory cache; explicit refresh bypasses and replaces it; mutations invalidate exact keys/tags.
+Do not recreate forwarding layers such as `globalCache -> CacheManager -> withProviderCache`, and do not add background sweeper timers.
+
+Approved caching semantics (user requirement, supersedes the earlier "no TTL/capacity" clause):
+
+- Entries carry a TTL and the store has a capacity limit; expired/over-capacity entries are removed lazily on read/write, never by a timer.
+- Explicit refresh bypasses and replaces the entry; mutations still invalidate by tag.
+- Generation maps that fence in-flight loads must stay bounded; dropping a generation may only abandon a write, never publish stale data.
 
 ## Storage and jobs
 

@@ -1,28 +1,31 @@
-import { ProviderRepository } from '../providers/provider.repository.js'
-import { CloudflareGateway } from './cloudflare.client.js'
+import type { ProviderRepository } from '../providers/provider.repository.js'
 import {
-  pagePaginationMeta,
+  buildCacheKey,
   providerCacheTag,
   recordCacheTag,
   withProviderCache,
 } from '../../platform/cache/provider-cache.js'
+import { parseBool, toAsciiFqdn } from '../../shared/lib/values.js'
+import {
+  callProvider,
+  collectNumberedPages,
+  toFullListResult,
+  type FullListPagination,
+} from '../../shared/providers/provider-call.js'
+import { providerNullableNumber, providerNullableString } from '../../shared/providers/provider-values.js'
 import { invalidateCloudflareRecordCache } from './cloudflare.cache.js'
-import { wrapProviderError } from '../../shared/http/wrap-provider-error.js'
-import { ApiError } from '../../shared/http/api-error.js'
-import type { CloudflareProvider } from '../providers/provider.types.js'
+import { cloudflareClientFor } from './cloudflare.client.js'
 import {
   cloudflareDnsRecordSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
+  type CloudflarePage,
 } from './cloudflare-response.schema.js'
-import { parseBool } from '../../shared/lib/parse-bool.js'
-import { providerNullableNumber, providerNullableString } from '../../shared/providers/provider-values.js'
-import { normalizeFqdn } from '../../shared/lib/fqdn.js'
-import { MAX_PROVIDER_PAGES } from '../../shared/providers/pagination.js'
 
 const PROVIDER_TYPE = 'cloudflare'
+const PAGE_LIMIT = { limitCode: 'cloudflare_pagination_limit', limitMessage: 'Cloudflare pagination limit reached' }
 
-interface RecordPresentation {
+export interface CloudflareRecord {
   [key: string]: unknown
   id: string | null
   zone_id: string | null
@@ -41,23 +44,9 @@ interface RecordPresentation {
 }
 
 interface RecordListResult {
-  items: RecordPresentation[]
-  pagination: {
-    page: number
-    per_page: number
-    count: number | null
-    total_count: number | null
-    total_pages: number | null
-  }
-  meta: {
-    page: number
-    per_page: number
-    offset: number
-    limit: number
-    count: number | null
-    total: number | null
-    total_pages: number | null
-  }
+  items: CloudflareRecord[]
+  pagination: FullListPagination
+  meta: FullListPagination
 }
 
 export interface RecordPayload {
@@ -70,305 +59,170 @@ export interface RecordPayload {
   comment?: string
 }
 
-interface RecordFilters {
-  page?: number
-  per_page?: number
+interface PageFilters {
   type?: string
-  search?: string
+  /** 精确匹配记录名（Cloudflare name 参数），用于同步前的查找 */
+  name?: string
   refresh?: boolean
 }
 
-function exactCloudflareRecords<T extends { name?: unknown; type?: unknown }>(
-  records: T[],
-  name: string,
-  type: string
-): T[] {
-  const expectedName = normalizeFqdn(name)
-  const expectedType = type.toUpperCase().trim()
-  return records.filter((record) => {
-    const recordName = String(record.name ?? '')
-      .toLowerCase()
-      .trim()
-      .replace(/\.$/, '')
-    return (
-      recordName === expectedName &&
-      String(record.type ?? '')
-        .toUpperCase()
-        .trim() === expectedType
-    )
-  })
-}
+const recordPath = (zoneId: string, recordId?: string) =>
+  `zones/${encodeURIComponent(zoneId)}/dns_records${recordId ? `/${encodeURIComponent(recordId)}` : ''}`
 
+/** Cloudflare DNS 记录 CRUD（参数为 zoneId） */
 export class CloudflareDnsRecordService {
   constructor(private readonly providers: ProviderRepository) {}
 
-  async list(providerId: string, zoneId: string, filters: RecordFilters = {}): Promise<RecordListResult> {
-    const normalized = this.normalizeFilters(filters)
-    const cached = await withProviderCache<RecordListResult>({
-      key: {
-        prefix: `${PROVIDER_TYPE}:records`,
-        parts: {
-          provider_id: providerId,
-          zone_id: zoneId,
-          page: normalized.page,
-          per_page: normalized.per_page,
-          type: normalized.type,
-          search: normalized.search,
-        },
+  /** 全量记录列表 */
+  async listAll(providerId: string, zoneId: string, refresh = false): Promise<RecordListResult> {
+    const items = await collectNumberedPages(
+      (page, perPage) => this.page(providerId, zoneId, page, perPage, { refresh }),
+      PAGE_LIMIT
+    )
+    return toFullListResult(items)
+  }
+
+  /**
+   * 精确匹配 名称+类型：过滤下推到 Cloudflare（name + type），且不经过列表缓存，
+   * 保证同步/删除前读到的是最新状态。
+   */
+  async findExact(providerId: string, zoneId: string, name: string, type: string): Promise<CloudflareRecord[]> {
+    // Cloudflare 以 punycode 返回域名，含非 ASCII 时先转换再精确匹配
+    const expectedName = toAsciiFqdn(name)
+    const expectedType = type.trim().toUpperCase()
+    const items = await collectNumberedPages(
+      (page, perPage) => this.fetchPage(providerId, zoneId, page, perPage, { type: expectedType, name: expectedName }),
+      PAGE_LIMIT
+    )
+    return items.filter(
+      (record) => toAsciiFqdn(record.name) === expectedName && String(record.type ?? '').toUpperCase() === expectedType
+    )
+  }
+
+  async create(providerId: string, zoneId: string, data: RecordPayload | Record<string, unknown>) {
+    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const response = await callProvider(
+      {
+        code: 'cloudflare_record_create_failed',
+        message: 'Cloudflare record create failed',
+        providerId,
+        details: { zone: zoneId },
       },
+      () => client.post(recordPath(zoneId), toRecordPayload(data))
+    )
+    invalidateCloudflareRecordCache(providerId, zoneId)
+    return presentRecord(parseCloudflareItemResponse(response).result)
+  }
+
+  async update(providerId: string, zoneId: string, recordId: string, data: RecordPayload | Record<string, unknown>) {
+    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const response = await callProvider(
+      {
+        code: 'cloudflare_record_update_failed',
+        message: 'Cloudflare record update failed',
+        providerId,
+        details: { zone: zoneId, record_id: recordId },
+      },
+      () => client.put(recordPath(zoneId, recordId), toRecordPayload(data))
+    )
+    invalidateCloudflareRecordCache(providerId, zoneId)
+    return presentRecord(parseCloudflareItemResponse(response).result)
+  }
+
+  async delete(providerId: string, zoneId: string, recordId: string): Promise<{ id: string }> {
+    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const response = await callProvider(
+      {
+        code: 'cloudflare_record_delete_failed',
+        message: 'Cloudflare record delete failed',
+        providerId,
+        details: { zone: zoneId, record_id: recordId },
+      },
+      () => client.delete(recordPath(zoneId, recordId))
+    )
+    invalidateCloudflareRecordCache(providerId, zoneId)
+    return { id: providerNullableString(parseCloudflareItemResponse(response).result.id) ?? recordId }
+  }
+
+  /** 带缓存的整页查询（UI 全量列表用） */
+  private async page(
+    providerId: string,
+    zoneId: string,
+    page: number,
+    perPage: number,
+    filters: PageFilters
+  ): Promise<CloudflarePage<CloudflareRecord>> {
+    const cached = await withProviderCache<CloudflarePage<CloudflareRecord>>({
+      key: buildCacheKey(`${PROVIDER_TYPE}:records`, {
+        provider_id: providerId,
+        zone_id: zoneId,
+        page,
+        per_page: perPage,
+      }),
       tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)],
-      refresh: normalized.refresh,
-      loader: async () => {
-        const provider = await this.requireProvider(providerId)
-        const gateway = this.gatewayFor(provider)
-
-        const query: Record<string, unknown> = {
-          page: normalized.page,
-          per_page: normalized.per_page,
-        }
-        if (normalized.type !== '') {
-          query.type = normalized.type
-        }
-        if (normalized.search !== '') {
-          query.search = normalized.search
-        }
-
-        let response
-        try {
-          response = await gateway.get(`zones/${encodeURIComponent(zoneId)}/dns_records`, query)
-        } catch (error) {
-          throw wrapProviderError('cloudflare_record_list_failed', 'Cloudflare record list failed', providerId, error, {
-            zone: zoneId,
-          })
-        }
-        const parsed = parseCloudflareListResponse(response)
-        const resultInfo = parsed.result_info
-        return {
-          items: parsed.result.map((record) => this.presentRecord(record)),
-          pagination: {
-            page: Number(resultInfo?.page ?? normalized.page),
-            per_page: Number(resultInfo?.per_page ?? normalized.per_page),
-            count: resultInfo?.count ?? parsed.source_count,
-            total_count: resultInfo?.total_count ?? null,
-            total_pages: resultInfo?.total_pages ?? null,
-          },
-          meta: pagePaginationMeta(resultInfo, normalized.page, normalized.per_page),
-        }
-      },
+      refresh: filters.refresh ?? false,
+      loader: () => this.fetchPage(providerId, zoneId, page, perPage, filters),
     })
     return cached.value
   }
 
-  async listAll(providerId: string, zoneId: string, refresh = false): Promise<RecordListResult> {
-    const pageSize = 100
-    const items: RecordPresentation[] = []
-    let page = 1
-
-    while (true) {
-      const result = await this.list(providerId, zoneId, { page, per_page: pageSize, refresh })
-      items.push(...result.items)
-      const totalPages = Number(result.pagination.total_pages ?? 0)
-      const sourceCount = Number(result.pagination.count ?? result.items.length)
-      if (totalPages > 0 ? page >= totalPages : sourceCount < pageSize) break
-      if (page >= MAX_PROVIDER_PAGES) {
-        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
-      }
-      page++
-    }
-
-    return {
-      items,
-      pagination: {
-        page: 1,
-        per_page: items.length,
-        count: items.length,
-        total_count: items.length,
-        total_pages: 1,
+  /** 直连上游的单页查询（不读写缓存） */
+  private async fetchPage(
+    providerId: string,
+    zoneId: string,
+    page: number,
+    perPage: number,
+    filters: PageFilters
+  ): Promise<CloudflarePage<CloudflareRecord>> {
+    const { client } = await cloudflareClientFor(this.providers, providerId)
+    const response = await callProvider(
+      {
+        code: 'cloudflare_record_list_failed',
+        message: 'Cloudflare record list failed',
+        providerId,
+        details: { zone: zoneId },
       },
-      meta: {
-        page: 1,
-        per_page: items.length,
-        offset: 0,
-        limit: items.length,
-        count: items.length,
-        total: items.length,
-        total_pages: 1,
-      },
-    }
-  }
-
-  async findExact(
-    providerId: string,
-    zoneId: string,
-    name: string,
-    type: string,
-    refresh = false
-  ): Promise<RecordPresentation[]> {
-    const matches: RecordPresentation[] = []
-    let page = 1
-    while (true) {
-      const result = await this.list(providerId, zoneId, {
-        type,
-        search: name,
-        page,
-        per_page: 100,
-        refresh,
-      })
-      matches.push(...exactCloudflareRecords(result.items, name, type))
-      const totalPages = Number(result.pagination.total_pages ?? 0)
-      const sourceCount = Number(result.pagination.count ?? result.items.length)
-      if (totalPages > 0 ? page >= totalPages : sourceCount < 100) break
-      if (page >= MAX_PROVIDER_PAGES) {
-        throw new ApiError('cloudflare_pagination_limit', 'Cloudflare pagination limit reached', 502)
-      }
-      page++
-    }
-    return matches
-  }
-
-  async create(
-    providerId: string,
-    zoneId: string,
-    data: RecordPayload | Record<string, unknown>
-  ): Promise<RecordPresentation> {
-    const normalized = this.normalizeRecordData(data)
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response
-    try {
-      response = await gateway.post(`zones/${encodeURIComponent(zoneId)}/dns_records`, this.recordPayload(normalized))
-    } catch (error) {
-      throw wrapProviderError('cloudflare_record_create_failed', 'Cloudflare record create failed', providerId, error, {
-        zone: zoneId,
-      })
-    }
-
-    const record = this.presentRecord(parseCloudflareItemResponse(response).result)
-    await invalidateCloudflareRecordCache(providerId, zoneId)
-    return record
-  }
-
-  async update(
-    providerId: string,
-    zoneId: string,
-    recordId: string,
-    data: RecordPayload | Record<string, unknown>
-  ): Promise<RecordPresentation> {
-    const normalized = this.normalizeRecordData(data)
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response
-    try {
-      response = await gateway.put(
-        `zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`,
-        this.recordPayload(normalized)
-      )
-    } catch (error) {
-      throw wrapProviderError('cloudflare_record_update_failed', 'Cloudflare record update failed', providerId, error, {
-        zone: zoneId,
-        record_id: recordId,
-      })
-    }
-
-    const record = this.presentRecord(parseCloudflareItemResponse(response).result)
-    await invalidateCloudflareRecordCache(providerId, zoneId)
-    return record
-  }
-
-  async delete(providerId: string, zoneId: string, recordId: string): Promise<{ id: string }> {
-    const provider = await this.requireProvider(providerId)
-    const gateway = this.gatewayFor(provider)
-
-    let response
-    try {
-      response = await gateway.delete(`zones/${encodeURIComponent(zoneId)}/dns_records/${encodeURIComponent(recordId)}`)
-    } catch (error) {
-      throw wrapProviderError('cloudflare_record_delete_failed', 'Cloudflare record delete failed', providerId, error, {
-        zone: zoneId,
-        record_id: recordId,
-      })
-    }
-
-    const parsed = parseCloudflareItemResponse(response)
-    const id =
-      typeof parsed.result.id === 'string' || typeof parsed.result.id === 'number' ? String(parsed.result.id) : recordId
-    await invalidateCloudflareRecordCache(providerId, zoneId)
-    return { id }
-  }
-
-  private normalizeFilters(filters: RecordFilters): Required<RecordFilters> {
-    return {
-      page: Math.max(1, Number(filters.page ?? 1)),
-      per_page: Math.min(100, Math.max(1, Number(filters.per_page ?? 100))),
-      type: String(filters.type ?? '')
-        .toUpperCase()
-        .trim(),
-      search: String(filters.search ?? '').trim(),
-      refresh: Boolean(filters.refresh ?? false),
-    }
-  }
-
-  private normalizeRecordData(data: RecordPayload | Record<string, unknown>): RecordPayload {
-    return {
-      type: String(data.type).toUpperCase().trim(),
-      name: String(data.name),
-      content: String(data.content),
-      ttl: Number(data.ttl ?? 1),
-      proxied: data.proxied === undefined ? undefined : Boolean(data.proxied),
-      priority: data.priority !== undefined ? Number(data.priority) : undefined,
-      comment: data.comment === undefined ? undefined : String(data.comment),
-    }
-  }
-
-  private recordPayload(data: RecordPayload): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-      type: data.type,
-      name: data.name,
-      content: data.content,
-      ttl: data.ttl,
-    }
-
-    for (const field of ['proxied', 'priority', 'comment'] as const) {
-      if (data[field] !== undefined) {
-        payload[field] = data[field]
-      }
-    }
-
-    return payload
-  }
-
-  private presentRecord(record: unknown): RecordPresentation {
-    const r = cloudflareDnsRecordSchema.parse(record)
-    return {
-      id: providerNullableString(r.id),
-      zone_id: providerNullableString(r.zone_id),
-      zone_name: providerNullableString(r.zone_name),
-      name: providerNullableString(r.name),
-      type: providerNullableString(r.type),
-      content: providerNullableString(r.content),
-      ttl: providerNullableNumber(r.ttl),
-      proxied: r.proxied == null ? null : parseBool(r.proxied),
-      proxiable: r.proxiable == null ? null : parseBool(r.proxiable),
-      priority: providerNullableNumber(r.priority),
-      comment: providerNullableString(r.comment),
-      tags: Array.isArray(r.tags) ? r.tags.filter((value: unknown): value is string => typeof value === 'string') : [],
-      created_on: providerNullableString(r.created_on),
-      modified_on: providerNullableString(r.modified_on),
-    }
-  }
-
-  private async requireProvider(providerId: string): Promise<CloudflareProvider> {
-    return this.providers.requireType<CloudflareProvider>(
-      providerId,
-      'cloudflare',
-      'Cloudflare provider not found',
-      'cloudflare_provider_not_found'
+      () =>
+        client.get(recordPath(zoneId), {
+          page,
+          per_page: perPage,
+          type: (filters.type ?? '').trim().toUpperCase() || undefined,
+          name: filters.name || undefined,
+        })
     )
+    return parseCloudflareListResponse(response, presentRecord)
   }
+}
 
-  private gatewayFor(provider: CloudflareProvider): CloudflareGateway {
-    return CloudflareGateway.forToken(provider.api_token)
+function toRecordPayload(data: RecordPayload | Record<string, unknown>): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    type: String(data.type).trim().toUpperCase(),
+    name: String(data.name),
+    content: String(data.content),
+    ttl: Number(data.ttl ?? 1) || 1,
+  }
+  if (data.proxied !== undefined) payload.proxied = Boolean(data.proxied)
+  if (data.priority !== undefined) payload.priority = Number(data.priority)
+  if (data.comment !== undefined) payload.comment = String(data.comment)
+  return payload
+}
+
+function presentRecord(record: unknown): CloudflareRecord {
+  const r = cloudflareDnsRecordSchema.parse(record)
+  return {
+    id: providerNullableString(r.id),
+    zone_id: providerNullableString(r.zone_id),
+    zone_name: providerNullableString(r.zone_name),
+    name: providerNullableString(r.name),
+    type: providerNullableString(r.type),
+    content: providerNullableString(r.content),
+    ttl: providerNullableNumber(r.ttl),
+    proxied: r.proxied == null ? null : parseBool(r.proxied),
+    proxiable: r.proxiable == null ? null : parseBool(r.proxiable),
+    priority: providerNullableNumber(r.priority),
+    comment: providerNullableString(r.comment),
+    tags: r.tags,
+    created_on: providerNullableString(r.created_on),
+    modified_on: providerNullableString(r.modified_on),
   }
 }
