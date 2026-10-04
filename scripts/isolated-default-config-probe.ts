@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app/build.js'
-import { loadAppConfig, parseCliOverrides } from '../server/src/app/config.js'
+import { buildApp } from '../server/app/build.js'
+import { loadAppConfig, parseCliOverrides } from '../server/app/config.js'
 
 const secret = 'default-config-probe-secret-at-least-32-characters'
 const base = {

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { DnsWriter } from '../server/src/use-cases/derived-records/dns-writer.js'
-import { cloudflareRecordPort } from '../server/src/domains/cloudflare/dns/cloudflare-record.adapter.js'
+import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
+import { cloudflareRecordPort } from '../server/modules/cloudflare/dns/cloudflare-record.adapter.js'
 
-import { ApiError } from '../server/src/kernel/http/api-error.js'
-import { isExplicitNotFound } from '../server/src/kernel/providers/provider-error.js'
-import { dnspodDomainListResponseSchema } from '../server/src/domains/dnspod/dns-pod-response.schema.js'
-import { edgeoneZoneListResponseSchema } from '../server/src/domains/edgeone/edge-one-response.schema.js'
-import { DnsPodSaaSSyncAdapter } from '../server/src/use-cases/saas-dns-sync/dns-pod-saas-sync.adapter.js'
-import { CloudflareDnsSaaSSyncAdapter } from '../server/src/use-cases/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
-import { cloudflareDnsCleanupRecipe } from '../server/src/use-cases/derived-records/planners/saas.planner.js'
-import { SaaSDnsSyncWorkflow } from '../server/src/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
+import { ApiError } from '../server/core/http/api-error.js'
+import { isExplicitNotFound } from '../server/core/providers/provider-error.js'
+import { dnspodDomainListResponseSchema } from '../server/modules/dnspod/dns-pod-response.schema.js'
+import { edgeoneZoneListResponseSchema } from '../server/modules/edgeone/edge-one-response.schema.js'
+import { DnsPodSaaSSyncAdapter } from '../server/use-cases/saas-dns-sync/dns-pod-saas-sync.adapter.js'
+import { CloudflareDnsSaaSSyncAdapter } from '../server/use-cases/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
+import { cloudflareDnsCleanupRecipe } from '../server/use-cases/derived-records/planners/saas.planner.js'
+import { SaaSDnsSyncWorkflow } from '../server/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
 
 assert.equal(isExplicitNotFound(new Error('token service not found')), false)
 assert.equal(isExplicitNotFound(new Error('provider returned 404')), false)

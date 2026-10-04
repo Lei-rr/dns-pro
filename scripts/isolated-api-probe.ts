@@ -1,34 +1,23 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { DnsWriter } from '../server/src/use-cases/derived-records/dns-writer.js'
-import { dnsPodRecordPort } from '../server/src/domains/dnspod/dns/dnspod-record.adapter.js'
+import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
+import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app/build.js'
-import {
-  requestSchemaTypeContractSchema,
-  type RequestSchemaTypeContract,
-} from '../server/src/kernel/http/request-schema.js'
+import { buildApp } from '../server/app/build.js'
+import { requestSchemaTypeContractSchema, type RequestSchemaTypeContract } from '../server/core/http/request-schema.js'
 import routeManifest from './api-route-manifest.json' with { type: 'json' }
-import {
-  DNS_BATCH_CREATE_JOB,
-  DNS_BATCH_DELETE_JOB,
-  DNS_BATCH_UPDATE_JOB,
-} from '../server/src/kernel/jobs/job-types.js'
-import {
-  PREFERRED_APPLY_JOB,
-  SAAS_BATCH_DELETE_JOB,
-  SAAS_BATCH_UPDATE_JOB,
-} from '../server/src/kernel/jobs/job-types.js'
-import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/src/kernel/jobs/job-types.js'
-import { DnsPodClient } from '../server/src/domains/dnspod/dns-pod.client.js'
-import { DnsPodRecordService } from '../server/src/domains/dnspod/dns-pod-record.service.js'
-import { dnsPodRecordPort } from '../server/src/domains/dnspod/dns/dnspod-record.adapter.js'
-import { dnsRecordMatches } from '../server/src/kernel/contracts/dns-record.port.js'
-import { EdgeOneClient } from '../server/src/domains/edgeone/edge-one.client.js'
-import { CloudflareClient } from '../server/src/domains/cloudflare/cloudflare.client.js'
-import { ApiError } from '../server/src/kernel/http/api-error.js'
+import { DNS_BATCH_CREATE_JOB, DNS_BATCH_DELETE_JOB, DNS_BATCH_UPDATE_JOB } from '../server/core/jobs/job-types.js'
+import { PREFERRED_APPLY_JOB, SAAS_BATCH_DELETE_JOB, SAAS_BATCH_UPDATE_JOB } from '../server/core/jobs/job-types.js'
+import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/core/jobs/job-types.js'
+import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
+import { DnsPodRecordService } from '../server/modules/dnspod/dns-pod-record.service.js'
+import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
+import { dnsRecordMatches } from '../server/core/contracts/dns-record.port.js'
+import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
+import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
+import { ApiError } from '../server/core/http/api-error.js'
 
 const requestSchemaTypeContract: RequestSchemaTypeContract = true
 void requestSchemaTypeContract
@@ -401,7 +390,7 @@ try {
           { ZoneId: payload.ZoneId, DomainName: 'www.example.com', Cname: 'www.example.com.eo.dnse5.com' },
         ],
         TotalCount: 1,
-        RequestId: 'domains',
+        RequestId: 'modules',
       }
     }
     if (action === 'DeleteAccelerationDomains') {

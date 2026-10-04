@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { SaaSDnsSyncWorkflow } from '../server/src/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
+import { SaaSDnsSyncWorkflow } from '../server/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
 
 const calls: string[] = []
 const sync = {

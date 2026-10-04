@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { CURRENT_SCHEMA_VERSION, migrateDataRoot, type Migration } from '../server/src/kernel/store/migrations.js'
-import { backupDataRoot, backupLabel, pruneBackups } from '../server/src/kernel/backup/backup.service.js'
+import { CURRENT_SCHEMA_VERSION, migrateDataRoot, type Migration } from '../server/core/store/migrations.js'
+import { backupDataRoot, backupLabel, pruneBackups } from '../server/core/backup/backup.service.js'
 
 const log = { info: () => undefined }
 const exists = async (target: string) =>

@@ -3,12 +3,12 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app/build.js'
-import { normalizeCreateRecords } from '../server/src/use-cases/dns-batch/dns-record-payload.js'
-import { ProviderPresenter } from '../server/src/kernel/providers/provider-presenter.js'
-import type { Provider } from '../server/src/kernel/providers/provider.types.js'
-import { DNS_BATCH_DELETE_JOB } from '../server/src/kernel/jobs/job-types.js'
-import { EDGEONE_BATCH_DISABLE_JOB } from '../server/src/kernel/jobs/job-types.js'
+import { buildApp } from '../server/app/build.js'
+import { normalizeCreateRecords } from '../server/use-cases/dns-batch/dns-record-payload.js'
+import { ProviderPresenter } from '../server/core/providers/provider-presenter.js'
+import type { Provider } from '../server/core/providers/provider.types.js'
+import { DNS_BATCH_DELETE_JOB } from '../server/core/jobs/job-types.js'
+import { EDGEONE_BATCH_DISABLE_JOB } from '../server/core/jobs/job-types.js'
 
 assert.equal(
   normalizeCreateRecords([

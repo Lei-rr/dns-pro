@@ -3,13 +3,13 @@
 - 状态：Accepted（实现进行中，尚未落地）
 - 日期：2026-10-04
 - 依据：`dns-pro-target-architecture.md` §3 D7
-- 相关代码（现状）：`server/src/main.ts`、`server/src/app/context.ts`、`server/src/app/plugins/app-context.ts`
+- 相关代码（现状）：`server/main.ts`、`server/app/context.ts`、`server/app/plugins/app-context.ts`
 
 ## 背景
 
 启动顺序与依赖获取目前是隐式的：
 
-- 模块级全局注入：`main.ts:14-17` 依次调用 `setDataRoot` / `setDefaultHttpTimeout`，`JsonStore` 与 HTTP 客户端从模块级变量读取配置（`kernel/store/data-root.ts`、`kernel/http/base-http.client.ts`）。
+- 模块级全局注入：`main.ts:14-17` 依次调用 `setDataRoot` / `setDefaultHttpTimeout`，`JsonStore` 与 HTTP 客户端从模块级变量读取配置（`core/store/data-root.ts`、`core/http/base-http.client.ts`）。
 - 顺序靠注释约定：`app/context.ts` 中"迁移 → 凭据密钥 → 初始凭据 → 平台 → 模块 → 用例"是函数体顺序，`startAppContext` 里"清理完成后再恢复任务"是注释而非类型或断言约束。
 - 依赖靠魔法取用：`app-context.ts` 把整个 `AppContext` 装饰到 Fastify 实例上，handler 通过 `request.server.ctx` 取任意依赖，编译期无法知道某 handler 实际需要什么。
 

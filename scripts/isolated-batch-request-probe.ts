@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 // 请求量守卫：确认同步/批量路径把过滤下推上游，且不随条目数重复全量拉取
 import assert from 'node:assert/strict'
-import { DnsWriter } from '../server/src/use-cases/derived-records/dns-writer.js'
-import { dnsPodRecordPort } from '../server/src/domains/dnspod/dns/dnspod-record.adapter.js'
+import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
+import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app/build.js'
-import { CloudflareClient } from '../server/src/domains/cloudflare/cloudflare.client.js'
-import { DnsPodClient } from '../server/src/domains/dnspod/dns-pod.client.js'
-import { EdgeOneClient } from '../server/src/domains/edgeone/edge-one.client.js'
+import { buildApp } from '../server/app/build.js'
+import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
+import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
+import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-requests-'))
 await fs.writeFile(
@@ -213,7 +213,7 @@ try {
           { ZoneId: 'zone-1', DomainName: 'b.example.com', Cname: 'b.example.com.eo.dnse5.com' },
         ],
         TotalCount: 2,
-        RequestId: 'domains',
+        RequestId: 'modules',
       }
     }
     if (action === 'DeleteAccelerationDomains') return { RequestId: 'deleted' }

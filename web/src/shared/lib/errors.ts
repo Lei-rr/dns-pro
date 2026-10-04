@@ -1,5 +1,5 @@
 /**
- * 错误文案唯一来源是后端 `server/src/kernel/http/error-messages.ts`：
+ * 错误文案唯一来源是后端 `server/core/http/error-messages.ts`：
  * 错误响应体已带本地化 message，前端只做透传 + 本地网络层兜底，不再维护错误码对照表。
  */
 const LOCAL_CODE_HINTS: Record<string, string> = {

@@ -1,25 +1,25 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { ApiError } from '../server/src/kernel/http/api-error.js'
-import { BaseHttpClient } from '../server/src/kernel/http/base-http.client.js'
-import { fromDnsOperationResult } from '../server/src/kernel/providers/side-effect-result.js'
-import { hashPassword, verifyPassword } from '../server/src/kernel/security/password.js'
+import { ApiError } from '../server/core/http/api-error.js'
+import { BaseHttpClient } from '../server/core/http/base-http.client.js'
+import { fromDnsOperationResult } from '../server/core/providers/side-effect-result.js'
+import { hashPassword, verifyPassword } from '../server/core/security/password.js'
 import {
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
-} from '../server/src/domains/cloudflare/cloudflare-response.schema.js'
+} from '../server/modules/cloudflare/cloudflare-response.schema.js'
 import {
   dnspodDomainCreateResponseSchema,
   dnspodDomainListResponseSchema,
   dnspodRecordListResponseSchema,
   dnspodRecordMutationResponseSchema,
-} from '../server/src/domains/dnspod/dns-pod-response.schema.js'
+} from '../server/modules/dnspod/dns-pod-response.schema.js'
 import {
   edgeoneAccelerationDomainCreateResponseSchema,
   edgeoneAccelerationDomainListResponseSchema,
   edgeoneMutationResponseSchema,
   edgeoneZoneListResponseSchema,
-} from '../server/src/domains/edgeone/edge-one-response.schema.js'
+} from '../server/modules/edgeone/edge-one-response.schema.js'
 
 // 密码以 scrypt 自描述哈希存储，校验不接受错误密码
 const stored = hashPassword('correct horse battery staple')

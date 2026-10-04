@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app/build.js'
+import { buildApp } from '../server/app/build.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-static-probe-'))
 await fs.writeFile(

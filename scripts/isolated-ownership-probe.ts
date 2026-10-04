@@ -11,15 +11,15 @@ import {
   ownershipConflict,
   type DerivedOwner,
   type OwnershipPort,
-} from '../server/src/kernel/contracts/ownership.port.js'
+} from '../server/core/contracts/ownership.port.js'
 import {
   OwnershipService,
   edgeOneOwnershipSource,
   saasOwnershipSource,
   tunnelOwnershipSource,
-} from '../server/src/use-cases/derived-records/ownership.js'
-import { DnsWriter } from '../server/src/use-cases/derived-records/dns-writer.js'
-import type { DnsRecordPort, DnsRecordRef, DnsRecordValue } from '../server/src/kernel/contracts/dns-record.port.js'
+} from '../server/use-cases/derived-records/ownership.js'
+import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
+import type { DnsRecordPort, DnsRecordRef, DnsRecordValue } from '../server/core/contracts/dns-record.port.js'
 
 const zone = 'example.com'
 

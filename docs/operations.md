@@ -26,16 +26,16 @@ data/
 
 **批量任务不落盘**：任务只存在于服务进程内存（内存执行器），进程重启后任务记录清空；前端轮询、失败重试与跨工作流资源键互斥行为不变。旧版本遗留的 `jobs/jobs.json` 不再读取，可手动删除。
 
-**数据文件清单的单一来源**是 `server/src/kernel/store/store-registry.ts`：新增持久化文件必须在此登记，数据子目录由 `storeSubdirectories()` 派生（`server/src/main.ts` 启动时按注册表建目录）。`credential.key`、`session-secret`、`__meta.json`、`backups/` 属于运行时文件，不在 store 注册表内。
+**数据文件清单的单一来源**是 `server/core/store/store-registry.ts`：新增持久化文件必须在此登记，数据子目录由 `storeSubdirectories()` 派生（`server/main.ts` 启动时按注册表建目录）。`credential.key`、`session-secret`、`__meta.json`、`backups/` 属于运行时文件，不在 store 注册表内。
 
-**JsonStore 写入语义**（`server/src/kernel/store/json-store.ts`）：
+**JsonStore 写入语义**（`server/core/store/json-store.ts`）：
 
 - 同一路径的读写进入进程内串行队列，并发写不会交叉。
 - 写入 = 临时文件 `<file>.<pid>.<ts>.<rand>.tmp` → `fsync` → `rename` 原子替换（权限 `0600`）；不存在"写一半"的文件。
 - 读取走进程内内存缓存；`readFresh()` 与 `transaction()` 始终以磁盘最新内容为准（跨文件引用校验依赖这一点）。
 - 损坏的 JSON 抛 `server_error` 且**不覆盖原文件**；空文件按默认值处理。遇到该错误先备份再人工修复，不要直接删除文件。
 
-**数据结构迁移**（`server/src/kernel/store/migrations.ts`）：启动时比较 `__meta.json` 的 `schema_version` 与代码内 `CURRENT_SCHEMA_VERSION`，有缺口则先整目录备份到 `backups/pre-v<from>-<时间戳>/`（保留最近 5 份），再按版本顺序执行迁移。迁移必须幂等；失败时版本不推进，修好可重跑。
+**数据结构迁移**（`server/core/store/migrations.ts`）：启动时比较 `__meta.json` 的 `schema_version` 与代码内 `CURRENT_SCHEMA_VERSION`，有缺口则先整目录备份到 `backups/pre-v<from>-<时间戳>/`（保留最近 5 份），再按版本顺序执行迁移。迁移必须幂等；失败时版本不推进，修好可重跑。
 
 ---
 
@@ -45,12 +45,12 @@ data/
 
 | 步骤 | 作用 |
 | --- | --- |
-| `format:check` | Prettier 校验 `server/src`、`web/src`、`scripts` 与根配置 |
-| `version:check` | 根 `package.json` 版本 vs `web/package.json` vs `server/src/kernel/version.ts`，漂移即失败 |
-| `lint` | ESLint（`server/src`、`web/src`、`scripts`） |
+| `format:check` | Prettier 校验 `server`、`web/src`、`scripts` 与根配置 |
+| `version:check` | 根 `package.json` 版本 vs `web/package.json` vs `server/core/version.ts`，漂移即失败 |
+| `lint` | ESLint（`server`、`web/src`、`scripts`） |
 | `typecheck` | 后端 `tsc --noEmit` |
 | `typecheck:web` | 前端 `vue-tsc --noEmit` |
-| `arch:final` | 架构守卫：层矩阵 `app → use-cases → domains → kernel → lib`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
+| `arch:final` | 架构守卫：层矩阵 `app → use-cases → modules → core → shared`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
 | `deadcode` | knip 死代码 / 无用导出检查（配置提示也视为错误） |
 | `deps:check` | 依赖一致性脚本 + `npm audit --omit=dev --audit-level=high` |
 | `routes:check` | 路由指纹漂移门禁（`scripts/api-route-manifest.json` 与代码不一致即失败） |
@@ -76,7 +76,7 @@ npm run build                 # 只构建
 
 ## 3. 探针清单与单跑
 
-探针以仓库根为工作目录运行（内部使用相对路径 `server/src/...`），**必须在项目根执行**。多数探针用 `os.tmpdir()` 建临时数据目录并通过 `setDataRoot` 指向它，不读写生产 `data/`；少数探针额外读取仓库文件（如 `Dockerfile`、前端源码）做契约断言。
+探针以仓库根为工作目录运行（内部使用相对路径 `server/...`），**必须在项目根执行**。多数探针用 `os.tmpdir()` 建临时数据目录并通过 `setDataRoot` 指向它，不读写生产 `data/`；少数探针额外读取仓库文件（如 `Dockerfile`、前端源码）做契约断言。
 
 | 探针 | 覆盖内容 |
 | --- | --- |
@@ -146,7 +146,7 @@ docker run -d \
 根 `package.json` 的 `version` 是唯一手写版本源。
 
 ```bash
-npm run version:sync     # 同步到 web/package.json 与 server/src/kernel/version.ts（APP_VERSION）
+npm run version:sync     # 同步到 web/package.json 与 server/core/version.ts（APP_VERSION）
 npm run version:check    # 检查三处是否漂移；已接入 npm run verify
 ```
 
@@ -158,7 +158,7 @@ npm run version:check    # 检查三处是否漂移；已接入 npm run verify
 
 ## 6. 备份与恢复
 
-**自动备份**：数据迁移前自动把整个数据目录复制到 `data/backups/<label>/`（标签形如 `pre-v0-20261004-235959`，字典序即时间序），保留最近 5 份（`server/src/kernel/backup/backup.service.ts`）。
+**自动备份**：数据迁移前自动把整个数据目录复制到 `data/backups/<label>/`（标签形如 `pre-v0-20261004-235959`，字典序即时间序），保留最近 5 份（`server/core/backup/backup.service.ts`）。
 
 **手工备份**：
 
@@ -193,7 +193,7 @@ chown -R 1000:1000 data && chmod 700 data
 
 ### 7.1 密钥解密失败（provider 相关接口 500）
 
-症状：日志出现 `Failed to decrypt stored credential`，错误码 `credential_decrypt_failed`（`server/src/kernel/crypto/secret-box.ts`）。
+症状：日志出现 `Failed to decrypt stored credential`，错误码 `credential_decrypt_failed`（`server/core/crypto/secret-box.ts`）。
 
 成因：`data/credential.key` 丢失、被替换，或 `providers.json` 来自另一份数据目录；手工编辑把 `enc:v1:` 密文改坏也会命中。
 

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { migrateDataRoot } from '../server/src/kernel/store/migrations.js'
-import { createStore } from '../server/src/kernel/store/store-registry.js'
-import { ProviderRepository, type ProvidersFile } from '../server/src/kernel/providers/provider.repository.js'
-import { loadCredentialKey } from '../server/src/kernel/security/credential-key.js'
-import { createSecretBox } from '../server/src/kernel/crypto/secret-box.js'
+import { migrateDataRoot } from '../server/core/store/migrations.js'
+import { createStore } from '../server/core/store/store-registry.js'
+import { ProviderRepository, type ProvidersFile } from '../server/core/providers/provider.repository.js'
+import { loadCredentialKey } from '../server/core/security/credential-key.js'
+import { createSecretBox } from '../server/core/crypto/secret-box.js'
 
 const log = { info: () => undefined }
 const readJson = async (target: string) => JSON.parse(await fs.readFile(target, 'utf8')) as Record<string, unknown>

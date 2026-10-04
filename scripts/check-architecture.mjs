@@ -21,22 +21,22 @@ const walk = (dir) => {
 const lineAt = (code, position) => code.slice(0, position).split('\n').length
 const report = (rule, file, line, message) => errors.push(`${rule} ${file}:${line} ${message}`)
 
-const sourceFiles = [...walk('server/src'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
-const backendFiles = sourceFiles.filter((file) => file.startsWith('server/src/'))
+const sourceFiles = [...walk('server'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
+const backendFiles = sourceFiles.filter((file) => file.startsWith('server/'))
 const webFiles = sourceFiles.filter((file) => file.startsWith('web/src/'))
 
-const cacheProductionFiles = walk('server/src/kernel/cache')
-if (exists('server/src/kernel/events')) {
-  report('ARCH010', 'server/src/kernel/events', 1, 'EventBus platform layer must not be recreated')
+const cacheProductionFiles = walk('server/core/cache')
+if (exists('server/core/events')) {
+  report('ARCH010', 'server/core/events', 1, 'EventBus platform layer must not be recreated')
 }
 if (
   cacheProductionFiles.length !== 2 ||
-  !cacheProductionFiles.includes('server/src/kernel/cache/memory-cache.ts') ||
-  !cacheProductionFiles.includes('server/src/kernel/cache/provider-cache.ts')
+  !cacheProductionFiles.includes('server/core/cache/memory-cache.ts') ||
+  !cacheProductionFiles.includes('server/core/cache/provider-cache.ts')
 ) {
   report(
     'ARCH012',
-    'server/src/kernel/cache',
+    'server/core/cache',
     1,
     'cache production implementation must contain only memory-cache.ts and provider-cache.ts'
   )
@@ -93,7 +93,7 @@ for (const file of sourceFiles) {
           imports.push({ from: file, to: target, typeOnly, line: block.offset + lineAt(block.code, node.getStart(sf)) })
       }
       if (
-        file.startsWith('server/src/') &&
+        file.startsWith('server/') &&
         ts.isNewExpression(node) &&
         ts.isIdentifier(node.expression) &&
         node.expression.text === 'ApiError' &&
@@ -103,7 +103,7 @@ for (const file of sourceFiles) {
         apiErrorCodes.add(node.arguments[0].text)
       }
       if (
-        file.startsWith('server/src/') &&
+        file.startsWith('server/') &&
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
@@ -130,7 +130,7 @@ for (const file of sourceFiles) {
 
 if (finalMode) {
   const forbiddenBatchJobFields = new Set(['items', 'execution_owner', 'execution_token', 'lease_until'])
-  for (const file of backendFiles.filter((candidate) => candidate.startsWith('server/src/use-cases/'))) {
+  for (const file of backendFiles.filter((candidate) => candidate.startsWith('server/use-cases/'))) {
     const code = read(file)
     const sf = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true)
     const visit = (node) => {
@@ -193,25 +193,25 @@ if (finalMode) {
 }
 
 function backendLayer(file) {
-  if (file === 'server/src/main.ts') return 'shell'
-  if (file.startsWith('server/src/types/')) return 'kernel'
-  for (const layer of ['app', 'use-cases', 'domains', 'kernel', 'lib'])
-    if (file.startsWith(`server/src/${layer}/`)) return layer
+  if (file === 'server/main.ts') return 'shell'
+  if (file.startsWith('server/types/')) return 'core'
+  for (const layer of ['app', 'use-cases', 'modules', 'core', 'shared'])
+    if (file.startsWith(`server/${layer}/`)) return layer
   return 'other'
 }
 function webLayer(file) {
   for (const layer of ['app', 'pages', 'features', 'shared']) if (file.startsWith(`web/src/${layer}/`)) return layer
   return 'other'
 }
-// 蓝图 §2.4：app → use-cases → domains → kernel → lib，只允许向右依赖
+// 蓝图 §2.4：app → use-cases → modules → core → shared，只允许向右依赖
 const backendAllowed = {
-  shell: new Set(['shell', 'app', 'use-cases', 'domains', 'kernel', 'lib']),
-  app: new Set(['app', 'use-cases', 'domains', 'kernel', 'lib']),
-  'use-cases': new Set(['use-cases', 'domains', 'kernel', 'lib']),
-  domains: new Set(['domains', 'kernel', 'lib']),
-  kernel: new Set(['kernel', 'lib']),
-  lib: new Set(['lib']),
-  other: new Set(['shell', 'app', 'use-cases', 'domains', 'kernel', 'lib', 'other']),
+  shell: new Set(['shell', 'app', 'use-cases', 'modules', 'core', 'shared']),
+  app: new Set(['app', 'use-cases', 'modules', 'core', 'shared']),
+  'use-cases': new Set(['use-cases', 'modules', 'core', 'shared']),
+  modules: new Set(['modules', 'core', 'shared']),
+  core: new Set(['core', 'shared']),
+  shared: new Set(['shared']),
+  other: new Set(['shell', 'app', 'use-cases', 'modules', 'core', 'shared', 'other']),
 }
 const webAllowed = {
   app: new Set(['app', 'pages', 'features', 'shared']),
@@ -222,7 +222,7 @@ const webAllowed = {
 }
 
 for (const edge of imports) {
-  if (edge.from.startsWith('server/src/') && edge.to.startsWith('server/src/')) {
+  if (edge.from.startsWith('server/') && edge.to.startsWith('server/')) {
     const from = backendLayer(edge.from),
       to = backendLayer(edge.to)
     if (finalMode && !backendAllowed[from]?.has(to))
@@ -303,7 +303,7 @@ for (const node of graph.keys()) if (!indices.has(node)) strong(node)
 for (const file of sourceFiles) {
   const code = read(file)
   if (
-    file.startsWith('server/src/') &&
+    file.startsWith('server/') &&
     !file.endsWith('.d.ts') &&
     !/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\.[a-z0-9]+(?:-[a-z0-9]+)*)*\.ts$/.test(path.basename(file))
   )
@@ -314,14 +314,12 @@ for (const file of sourceFiles) {
     report('ARCH010', file, 1, 'EventBus platform layer and event envelopes are forbidden')
   if (
     /new JsonStore\s*(?:<|\()/.test(code) &&
-    !['server/src/app/context.ts', 'server/src/app/modules.ts', 'server/src/kernel/store/store-registry.ts'].includes(
-      file
-    )
+    !['server/app/context.ts', 'server/app/modules.ts', 'server/core/store/store-registry.ts'].includes(file)
   )
     report('ARCH011', file, 1, 'new JsonStore is only allowed in composition root')
   if (
     /invalidateProviderCache/.test(code) &&
-    file !== 'server/src/kernel/cache/provider-cache.ts' &&
+    file !== 'server/core/cache/provider-cache.ts' &&
     !file.endsWith('.cache.ts')
   )
     report('ARCH012', file, 1, 'cache invalidation is only allowed in provider-cache and domain cache helpers')
@@ -336,21 +334,20 @@ for (const file of sourceFiles) {
     report('ARCH029', file, 1, 'row mutation ownership must use shared useRowBusy')
   if (
     finalMode &&
-    file === 'server/src/domains/cloudflare/cloudflare-zone.handlers.ts' &&
+    file === 'server/modules/cloudflare/cloudflare-zone.handlers.ts' &&
     /request\.body\.domain/.test(code)
   )
     report('ARCH030', file, 1, 'Cloudflare zone create accepts name only')
 }
 
-if (schemaRoutes !== routeCalls)
-  report('ARCH013', 'server/src', 1, `${routeCalls - schemaRoutes} route(s) missing schema`)
-const errorMessageMap = read('server/src/kernel/http/error-messages.ts')
+if (schemaRoutes !== routeCalls) report('ARCH013', 'server', 1, `${routeCalls - schemaRoutes} route(s) missing schema`)
+const errorMessageMap = read('server/core/http/error-messages.ts')
 const mappedErrorCodes = new Set(
   [...errorMessageMap.matchAll(/^\s*([a-zA-Z0-9_]+):\s*['"]/gm)].map((match) => match[1])
 )
 for (const code of apiErrorCodes) {
   if (!mappedErrorCodes.has(code))
-    report('ARCH028', 'server/src/kernel/http/error-messages.ts', 1, `missing ApiError message: ${code}`)
+    report('ARCH028', 'server/core/http/error-messages.ts', 1, `missing ApiError message: ${code}`)
 }
 for (const file of backendFiles)
   if (/\bapp\.(?:get|post|put|patch|delete|head|options)\s*\(/.test(read(file)) && !file.endsWith('.routes.ts'))
@@ -370,7 +367,7 @@ if (finalMode) {
     for (const match of code.matchAll(/\brequest\s*:\s*FastifyRequest(?!\s*<\s*RequestOf\s*<\s*typeof\s+)/g)) {
       report('ARCH026', file, lineAt(code, match.index), 'every handler request must use RequestOf<typeof schema>')
     }
-    if (file.startsWith('server/src/domains/') && /\brequest\.server\.ctx\.workflows\b/.test(code)) {
+    if (file.startsWith('server/modules/') && /\brequest\.server\.ctx\.workflows\b/.test(code)) {
       report('ARCH027', file, 1, 'module handlers must not call workflows')
     }
   }
@@ -394,7 +391,7 @@ if (finalMode) {
   }
 }
 
-for (const dir of ['server/src', 'web/src']) {
+for (const dir of ['server', 'web/src']) {
   for (const candidate of walk(dir).map((file) => path.posix.dirname(file))) {
     if (
       exists(candidate) &&
@@ -407,17 +404,17 @@ for (const dir of ['server/src', 'web/src']) {
 
 const forbiddenLegacy = [
   'src',
-  'server/src/compose',
-  'server/src/app-context.ts',
-  'server/src/config',
-  'server/src/app.ts',
-  'server/src/server.ts',
-  'server/src/bootstrap',
-  'server/src/plugins',
-  'server/src/modules',
-  'server/src/workflows',
-  'server/src/platform',
-  'server/src/shared',
+  'server/compose',
+  'server/app-context.ts',
+  'server/config',
+  'server/app.ts',
+  'server/server.ts',
+  'server/bootstrap',
+  'server/plugins',
+  'server/domains',
+  'server/workflows',
+  'server/platform',
+  'server/lib',
   'web/src/main.ts',
   'web/src/layouts',
   'web/src/router',

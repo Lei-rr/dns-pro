@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import fs from 'node:fs/promises'
-import { registerApiRoutes } from '../server/src/app/routes.js'
+import { registerApiRoutes } from '../server/app/routes.js'
 
 type RouteEntry = { method: string; path: string }
 type RoutePlugin = (app: RouteCollector) => unknown | Promise<unknown>

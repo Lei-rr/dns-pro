@@ -3,7 +3,7 @@
 - 状态：Accepted（实现进行中，尚未落地）
 - 日期：2026-10-04
 - 依据：`dns-pro-target-architecture.md` §3 D4；缺陷 B3 / B4
-- 相关代码（现状）：`server/src/kernel/jobs/job-types.ts`、`server/src/domains/cloudflare/tunnel/tunnel-dns.service.ts`、`server/src/domains/cloudflare/saas/saas-hostname.service.ts`
+- 相关代码（现状）：`server/core/jobs/job-types.ts`、`server/modules/cloudflare/tunnel/tunnel-dns.service.ts`、`server/modules/cloudflare/saas/saas-hostname.service.ts`
 
 ## 背景
 

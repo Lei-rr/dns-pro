@@ -3,7 +3,7 @@
 - 状态：Accepted（实现进行中，尚未落地）
 - 日期：2026-10-04
 - 依据：`dns-pro-target-architecture.md` §3 D6
-- 相关代码（现状）：`server/src/app/plugins/error-handler.ts`、`server/src/kernel/http/api-error.ts`
+- 相关代码（现状）：`server/app/plugins/error-handler.ts`、`server/core/http/api-error.ts`
 
 ## 背景
 

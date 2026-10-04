@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // 上游限流重试与任务快照体积守卫
 import assert from 'node:assert/strict'
-import { JobService } from '../server/src/kernel/jobs/job.service.js'
-import { ApiError } from '../server/src/kernel/http/api-error.js'
-import { BaseHttpClient } from '../server/src/kernel/http/base-http.client.js'
-import { TencentCloudClient } from '../server/src/kernel/providers/tencent-cloud.client.js'
+import { JobService } from '../server/core/jobs/job.service.js'
+import { ApiError } from '../server/core/http/api-error.js'
+import { BaseHttpClient } from '../server/core/http/base-http.client.js'
+import { TencentCloudClient } from '../server/core/providers/tencent-cloud.client.js'
 
 // 直接暴露受保护的 request
 class ProbeClient extends BaseHttpClient {

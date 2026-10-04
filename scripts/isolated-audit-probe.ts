@@ -6,7 +6,7 @@
  */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { AuditLog, auditActor } from '../server/src/kernel/observability/audit-log.js'
+import { AuditLog, auditActor } from '../server/core/observability/audit-log.js'
 
 const logged: string[] = []
 const audit = new AuditLog((event) => logged.push(`${event.action}:${event.target}`), 2)
@@ -44,13 +44,13 @@ const root = new URL('../', import.meta.url)
 const read = async (file: string) => await readFile(new URL(file, root), 'utf8')
 const [auth, providers, dnsBatch, saasBatch, edgeOne, preferred, routes] = await Promise.all(
   [
-    'server/src/domains/system/auth/auth.handlers.ts',
-    'server/src/use-cases/provider-management/provider-management.handlers.ts',
-    'server/src/use-cases/dns-batch/dns-batch.handlers.ts',
-    'server/src/use-cases/saas-dns-sync/saas-batch.handlers.ts',
-    'server/src/use-cases/edge-one-dns-sync/edge-one-dns-sync.handlers.ts',
-    'server/src/use-cases/saas-dns-sync/preferred-apply.handlers.ts',
-    'server/src/app/routes.ts',
+    'server/modules/system/auth/auth.handlers.ts',
+    'server/use-cases/provider-management/provider-management.handlers.ts',
+    'server/use-cases/dns-batch/dns-batch.handlers.ts',
+    'server/use-cases/saas-dns-sync/saas-batch.handlers.ts',
+    'server/use-cases/edge-one-dns-sync/edge-one-dns-sync.handlers.ts',
+    'server/use-cases/saas-dns-sync/preferred-apply.handlers.ts',
+    'server/app/routes.ts',
   ].map(read)
 )
 

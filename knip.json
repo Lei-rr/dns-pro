@@ -3,7 +3,7 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,ts}"],
-      "project": ["server/src/**/*.ts", "scripts/**/*.{mjs,ts}"]
+      "project": ["server/**/*.ts", "scripts/**/*.{mjs,ts}"]
     },
     "web": {
       "entry": ["src/app/styles/index.css"],
@@ -11,8 +11,8 @@
     }
   },
   "ignoreIssues": {
-    "server/src/domains/cloudflare/cloudflare-response.schema.ts": ["types"],
-    "server/src/domains/dnspod/dns-pod-response.schema.ts": ["types"],
-    "server/src/domains/edgeone/edge-one-response.schema.ts": ["types"]
+    "server/modules/cloudflare/cloudflare-response.schema.ts": ["types"],
+    "server/modules/dnspod/dns-pod-response.schema.ts": ["types"],
+    "server/modules/edgeone/edge-one-response.schema.ts": ["types"]
   }
 }
