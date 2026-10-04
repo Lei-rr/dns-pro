@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { JsonStore } from '../server/src/platform/storage/json-store.js'
-import { JobService } from '../server/src/platform/jobs/job.service.js'
-import { SaaSBatchWorkflow } from '../server/src/workflows/saas-dns-sync/saas-batch.workflow.js'
+import { JsonStore } from '../server/src/kernel/store/json-store.js'
+import { JobService } from '../server/src/kernel/jobs/job.service.js'
+import { SaaSBatchWorkflow } from '../server/src/use-cases/saas-dns-sync/saas-batch.workflow.js'
 
 type DeleteOptions = {
   primaryDeleted?: boolean

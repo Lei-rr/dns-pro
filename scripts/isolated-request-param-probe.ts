@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict'
 import Fastify from 'fastify'
 import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from '@fastify/type-provider-typebox'
-import { edgeoneDomainParamsSchema } from '../server/src/modules/edge-one/edge-one.schema.js'
-import { trimmedParam } from '../server/src/shared/http/route-params.js'
+import { edgeoneDomainParamsSchema } from '../server/src/domains/edgeone/edge-one.schema.js'
+import { trimmedParam } from '../server/src/kernel/http/route-params.js'
 
 const app = Fastify().withTypeProvider<TypeBoxTypeProvider>()
 app.setValidatorCompiler(TypeBoxValidatorCompiler)

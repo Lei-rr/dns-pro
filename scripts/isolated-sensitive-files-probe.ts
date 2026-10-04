@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app.js'
-import { resolveSessionSecret } from '../server/src/shared/auth/session-secret.js'
-import { JsonStore, setDataRoot } from '../server/src/platform/storage/json-store.js'
-import type { AppConfig } from '../server/src/bootstrap/app-config.js'
+import { buildApp } from '../server/src/app/build.js'
+import { resolveSessionSecret } from '../server/src/kernel/security/session-secret.js'
+import { JsonStore, setDataRoot } from '../server/src/kernel/store/json-store.js'
+import type { AppConfig } from '../server/src/app/config.js'
 
 const mode = async (file: string) => (await fs.stat(file)).mode & 0o777
 /** Windows 无 POSIX 权限位（chmod 仅只读位），权限断言只在 POSIX 平台生效 */

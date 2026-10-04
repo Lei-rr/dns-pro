@@ -2,9 +2,9 @@
 // 隧道路由：写回顺序、扩展字段与 catch_all 保留、并发写入串行化、CNAME 归属保护与 repair 幂等
 // 只桩掉上游 HTTP 与 DNS 副作用，走真实 getConfig/writeIngress/repairRoutes 代码路径
 import assert from 'node:assert/strict'
-import { CloudflareClient } from '../server/src/modules/cloudflare/cloudflare.client.js'
-import { TunnelDnsService } from '../server/src/modules/tunnels/tunnel-dns.service.js'
-import { TunnelRouteService } from '../server/src/modules/tunnels/tunnel-route.service.js'
+import { CloudflareClient } from '../server/src/domains/cloudflare/cloudflare.client.js'
+import { TunnelDnsService } from '../server/src/domains/cloudflare/tunnel/tunnel-dns.service.js'
+import { TunnelRouteService } from '../server/src/domains/cloudflare/tunnel/tunnel-route.service.js'
 
 type IngressRule = { hostname?: string; service?: string; path?: string; [key: string]: unknown }
 type DnsRecord = { id: string; content: string | null }

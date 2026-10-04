@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 
-import { ApiError } from '../server/src/shared/http/api-error.js'
-import { isExplicitNotFound } from '../server/src/shared/providers/provider-error.js'
-import { dnspodDomainListResponseSchema } from '../server/src/modules/dns-pod/dns-pod-response.schema.js'
-import { edgeoneZoneListResponseSchema } from '../server/src/modules/edge-one/edge-one-response.schema.js'
-import { DnsPodSaaSSyncAdapter } from '../server/src/workflows/saas-dns-sync/dns-pod-saas-sync.adapter.js'
-import { CloudflareDnsSaaSSyncAdapter } from '../server/src/workflows/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
-import { cloudflareDnsCleanupRecipe } from '../server/src/workflows/saas-dns-sync/saas-sync-records.js'
-import { SaaSDnsSyncWorkflow } from '../server/src/workflows/saas-dns-sync/saas-dns-sync.workflow.js'
+import { ApiError } from '../server/src/kernel/http/api-error.js'
+import { isExplicitNotFound } from '../server/src/kernel/providers/provider-error.js'
+import { dnspodDomainListResponseSchema } from '../server/src/domains/dnspod/dns-pod-response.schema.js'
+import { edgeoneZoneListResponseSchema } from '../server/src/domains/edgeone/edge-one-response.schema.js'
+import { DnsPodSaaSSyncAdapter } from '../server/src/use-cases/saas-dns-sync/dns-pod-saas-sync.adapter.js'
+import { CloudflareDnsSaaSSyncAdapter } from '../server/src/use-cases/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
+import { cloudflareDnsCleanupRecipe } from '../server/src/use-cases/saas-dns-sync/saas-sync-records.js'
+import { SaaSDnsSyncWorkflow } from '../server/src/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
 
 assert.equal(isExplicitNotFound(new Error('token service not found')), false)
 assert.equal(isExplicitNotFound(new Error('provider returned 404')), false)

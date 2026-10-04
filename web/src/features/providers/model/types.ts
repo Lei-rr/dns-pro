@@ -1,5 +1,5 @@
 // 契约来源：后端 presenter 的输出类型直接引用（type-only，构建期擦除）
-import type { PresentedProvider } from '@server/modules/providers/provider.types.js'
+import type { PresentedProvider } from '@server/kernel/providers/provider.types.js'
 
 export interface Provider extends PresentedProvider {
   dependencies?: Array<{ reason?: string; name?: string; id?: string }>

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // 缓存语义：存活时间、容量上限、标签失效与在途加载拦截
 import assert from 'node:assert/strict'
-import { MemoryCache, CACHE_MAX_ENTRIES, CACHE_TTL_MS } from '../server/src/platform/cache/memory-cache.js'
+import { MemoryCache, CACHE_MAX_ENTRIES, CACHE_TTL_MS } from '../server/src/kernel/cache/memory-cache.js'
 import {
   invalidateProviderCache,
   providerCacheStats,
   withProviderCache,
-} from '../server/src/platform/cache/provider-cache.js'
+} from '../server/src/kernel/cache/provider-cache.js'
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 

@@ -3,7 +3,7 @@
  * Version single-source tooling.
  *
  * The root package.json is the only version written by hand.
- *   sync  — propagate it to web/package.json and server/src/shared/version.ts
+ *   sync  — propagate it to web/package.json and server/src/kernel/version.ts
  *   check — fail when any copy drifts (wired into `npm run verify`)
  */
 import { readFile, writeFile } from 'node:fs/promises'
@@ -13,7 +13,7 @@ import process from 'node:process'
 const root = path.resolve(import.meta.dirname, '..')
 const rootPkgPath = path.join(root, 'package.json')
 const webPkgPath = path.join(root, 'web', 'package.json')
-const versionTsPath = path.join(root, 'server', 'src', 'shared', 'version.ts')
+const versionTsPath = path.join(root, 'server', 'src', 'kernel', 'version.ts')
 
 function tsSource(version) {
   return `/**
@@ -62,7 +62,7 @@ async function check() {
   const [web, ts] = await Promise.all([readJson(webPkgPath), currentVersionTs()])
   const drift = []
   if (web.version !== version) drift.push(`web/package.json=${web.version}`)
-  if (ts !== version) drift.push(`server/src/shared/version.ts=${ts}`)
+  if (ts !== version) drift.push(`server/src/kernel/version.ts=${ts}`)
 
   if (drift.length > 0) {
     console.error(`version-check=failed expected=${version} ${drift.join(' ')}`)

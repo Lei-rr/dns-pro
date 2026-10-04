@@ -11,8 +11,8 @@
     }
   },
   "ignoreIssues": {
-    "server/src/modules/cloudflare/cloudflare-response.schema.ts": ["types"],
-    "server/src/modules/dns-pod/dns-pod-response.schema.ts": ["types"],
-    "server/src/modules/edge-one/edge-one-response.schema.ts": ["types"]
+    "server/src/domains/cloudflare/cloudflare-response.schema.ts": ["types"],
+    "server/src/domains/dnspod/dns-pod-response.schema.ts": ["types"],
+    "server/src/domains/edgeone/edge-one-response.schema.ts": ["types"]
   }
 }

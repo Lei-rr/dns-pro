@@ -4,11 +4,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { JsonStore } from '../server/src/platform/storage/json-store.js'
-import { JobService } from '../server/src/platform/jobs/job.service.js'
-import { ApiError } from '../server/src/shared/http/api-error.js'
-import { BaseHttpClient } from '../server/src/shared/providers/http.client.js'
-import { TencentCloudClient } from '../server/src/shared/providers/tencent-cloud.client.js'
+import { JsonStore } from '../server/src/kernel/store/json-store.js'
+import { JobService } from '../server/src/kernel/jobs/job.service.js'
+import { ApiError } from '../server/src/kernel/http/api-error.js'
+import { BaseHttpClient } from '../server/src/kernel/http/base-http.client.js'
+import { TencentCloudClient } from '../server/src/kernel/providers/tencent-cloud.client.js'
 
 // 直接暴露受保护的 request
 class ProbeClient extends BaseHttpClient {

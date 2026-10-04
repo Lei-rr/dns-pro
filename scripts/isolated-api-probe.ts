@@ -3,30 +3,30 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/src/app.js'
-import { setDataRoot } from '../server/src/platform/storage/json-store.js'
+import { buildApp } from '../server/src/app/build.js'
+import { setDataRoot } from '../server/src/kernel/store/json-store.js'
 import {
   requestSchemaTypeContractSchema,
   type RequestSchemaTypeContract,
-} from '../server/src/shared/http/request-schema.js'
+} from '../server/src/kernel/http/request-schema.js'
 import routeManifest from './api-route-manifest.json' with { type: 'json' }
 import {
   DNS_BATCH_CREATE_JOB,
   DNS_BATCH_DELETE_JOB,
   DNS_BATCH_UPDATE_JOB,
-} from '../server/src/platform/jobs/job-types.js'
+} from '../server/src/kernel/jobs/job-types.js'
 import {
   PREFERRED_APPLY_JOB,
   SAAS_BATCH_DELETE_JOB,
   SAAS_BATCH_UPDATE_JOB,
-} from '../server/src/platform/jobs/job-types.js'
-import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/src/platform/jobs/job-types.js'
-import { DnsPodClient } from '../server/src/modules/dns-pod/dns-pod.client.js'
-import { DnsPodRecordService } from '../server/src/modules/dns-pod/dns-pod-record.service.js'
-import { dnsPodBatchPort } from '../server/src/workflows/dns-batch/dns-batch.adapters.js'
-import { EdgeOneClient } from '../server/src/modules/edge-one/edge-one.client.js'
-import { CloudflareClient } from '../server/src/modules/cloudflare/cloudflare.client.js'
-import { ApiError } from '../server/src/shared/http/api-error.js'
+} from '../server/src/kernel/jobs/job-types.js'
+import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/src/kernel/jobs/job-types.js'
+import { DnsPodClient } from '../server/src/domains/dnspod/dns-pod.client.js'
+import { DnsPodRecordService } from '../server/src/domains/dnspod/dns-pod-record.service.js'
+import { dnsPodBatchPort } from '../server/src/use-cases/dns-batch/dns-batch.adapters.js'
+import { EdgeOneClient } from '../server/src/domains/edgeone/edge-one.client.js'
+import { CloudflareClient } from '../server/src/domains/cloudflare/cloudflare.client.js'
+import { ApiError } from '../server/src/kernel/http/api-error.js'
 
 const requestSchemaTypeContract: RequestSchemaTypeContract = true
 void requestSchemaTypeContract
