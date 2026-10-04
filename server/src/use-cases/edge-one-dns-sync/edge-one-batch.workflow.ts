@@ -19,7 +19,7 @@ import {
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
 } from '../../kernel/jobs/job-types.js'
-import type { EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
+import { completedEdgeOneDeleteStages, type EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
 
 type EdgeOneBatchJobView = BatchJobViewBase & { provider_id: string; zone_id: string }
 type ZoneScope = { providerId: string; zoneId: string }
@@ -127,14 +127,12 @@ export class EdgeOneBatchWorkflow {
       runningMessage: '删除中',
       progressMessage: '批量删除执行中',
       execute: async (item, domain) => {
-        const primaryDeleted = item.primary_deleted === true
+        const completed = completedEdgeOneDeleteStages(item)
         const result = await this.dnsSync.deleteAccelerationDomain(providerId, zoneId, domain, autoCleanup, {
-          primaryDeleted,
-          // 仅在首次删除时使用快照 CNAME；重试时主机名已删除，快照可能过期，回退到按名称+类型清理
-          cname: autoCleanup && !primaryDeleted ? (cnames.get(domain) ?? '') : undefined,
-          onPrimaryDeleted: primaryDeleted
-            ? undefined
-            : () => persistItemStage(this.jobs, job.id, byDomain(domain), { primary_deleted: true }),
+          completed,
+          // 仅在首次删除时使用快照 CNAME；重试时域名已删除，快照可能过期，回退到按名称+类型清理
+          cname: autoCleanup && !completed.includes('primary-deleted') ? (cnames.get(domain) ?? '') : undefined,
+          onStage: (_stage, patch) => persistItemStage(this.jobs, job.id, byDomain(domain), patch),
         })
         const cleanup = dnsEffectOf(result, 'cleanup')
         if (autoCleanup && cleanup?.status === 'failed') {

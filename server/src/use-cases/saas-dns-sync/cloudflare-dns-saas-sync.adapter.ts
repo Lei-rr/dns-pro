@@ -229,10 +229,12 @@ function buildRecords(
 ): SaaSSyncRecord[] {
   const fqdn = hostname.hostname
   if (!fqdn) return []
+  const refId = String(hostname.id ?? '').trim() || fqdn
   const record = (type: string, name: string, value: string, purpose: string): SaaSSyncRecord =>
     desiredRecord({
       fqdn: name,
       purpose,
+      refId,
       record: { type, value, ttl: SAAS_RECORD_TTL, note: syncRemark(purpose, fqdn, CLOUDFLARE_ORIGIN_LABEL) },
       provider_type: 'cloudflare',
       provider_id: target.cloudflareProviderId,

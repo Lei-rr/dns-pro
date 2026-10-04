@@ -1,30 +1,21 @@
 import type { FastifyBaseLogger } from 'fastify'
-import { createInitialAuthConfig } from '../domains/system/auth/auth-config.repository.js'
-import { JobService } from '../kernel/jobs/job.service.js'
-import { loadCredentialKey } from '../kernel/security/credential-key.js'
-import { migrateDataRoot } from '../kernel/store/migrations.js'
 import type { AppConfig } from './config.js'
-import { createModules } from './modules.js'
+import type { AppModules } from './modules.js'
 import { createWorkflows } from './use-cases.js'
+import type { JobService } from '../kernel/jobs/job.service.js'
 
 /** 平台设施：单进程内存任务执行器 */
 export type AppPlatform = { jobs: JobService }
 
-/** 应用上下文：config / platform / modules / workflows 四层 */
-export async function createAppContext(config: AppConfig, log: FastifyBaseLogger) {
-  // 数据结构迁移：创建任何 store 之前完成（迁移前自动整目录备份）
-  await migrateDataRoot(config.dataDir, { info: (message) => log.info(message) })
-  // 凭据加密密钥：复用已有文件，缺失时生成
-  const credentialKey = await loadCredentialKey(config.dataDir)
-  // 首次启动生成随机初始密码（只落盘哈希，明文由启动日志输出）
-  const initialPassword = await createInitialAuthConfig(config.dataDir)
-  const platform: AppPlatform = { jobs: new JobService() }
-  const modules = createModules(config, { credentialKey })
-  const workflows = createWorkflows(platform, modules)
-  return { config, platform, modules, workflows, initialPassword }
+/** 装配完成的运行上下文：config / platform / modules / workflows 四层 */
+export type AppContext = {
+  config: AppConfig
+  platform: AppPlatform
+  modules: AppModules
+  workflows: ReturnType<typeof createWorkflows>
+  /** 首次启动生成的初始密码（仅启动日志输出一次） */
+  initialPassword: string | null
 }
-
-export type AppContext = Awaited<ReturnType<typeof createAppContext>>
 
 /** 启动预热：加载持久化数据、清理孤儿偏好 */
 export async function startAppContext(ctx: AppContext, log: FastifyBaseLogger): Promise<void> {

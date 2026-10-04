@@ -5,14 +5,11 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../server/src/app/build.js'
-import { setDataRoot } from '../server/src/kernel/store/json-store.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-password-'))
 const configPath = path.join(dataDir, 'config.json')
 // 模拟旧版本遗留的明文默认密码
 await fs.writeFile(configPath, `${JSON.stringify({ auth: { username: 'admin', password: 'admin' } }, null, 2)}\n`)
-
-setDataRoot(dataDir)
 
 const base = {
   host: '127.0.0.1',
@@ -113,7 +110,6 @@ try {
 }
 
 // 8. 重启后：新密码可登录，旧默认密码失效
-setDataRoot(dataDir)
 const restarted = await buildApp(base)
 try {
   await restarted.ready()

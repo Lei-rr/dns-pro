@@ -10,14 +10,12 @@ import { buildApp } from '../server/src/app/build.js'
 import { CloudflareClient } from '../server/src/domains/cloudflare/cloudflare.client.js'
 import { DnsPodClient } from '../server/src/domains/dnspod/dns-pod.client.js'
 import { EdgeOneClient } from '../server/src/domains/edgeone/edge-one.client.js'
-import { setDataRoot } from '../server/src/kernel/store/json-store.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-requests-'))
 await fs.writeFile(
   path.join(dataDir, 'config.json'),
   JSON.stringify({ auth: { username: 'probe', password: 'probe-password' } }, null, 2)
 )
-setDataRoot(dataDir)
 
 const app = await buildApp({
   host: '127.0.0.1',
@@ -88,11 +86,18 @@ try {
     assert.fail(`unexpected DNSPod action: ${action}`)
   }
 
-  const writer = new DnsWriter({ dnspod: dnsPodRecordPort(app.ctx.modules.dnsPod.records) })
+  const writer = new DnsWriter(
+    { dnspod: dnsPodRecordPort(app.ctx.modules.dnsPod.records) },
+    {
+      claimsFor: async () => [],
+    }
+  )
   await writer.sync('dnspod', 'dns-target', 'example.com', [
     {
       purpose: 'origin_cname',
       fqdn: 'www.example.com',
+      owner: 'saas',
+      refId: 'probe-hostname',
       record: { type: 'CNAME', value: 'origin.example.net', line: '默认', ttl: 600 },
     },
   ])

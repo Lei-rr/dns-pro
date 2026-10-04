@@ -4,7 +4,6 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../server/src/app/build.js'
-import { setDataRoot } from '../server/src/kernel/store/json-store.js'
 import { normalizeCreateRecords } from '../server/src/use-cases/dns-batch/dns-record-payload.js'
 import { ProviderPresenter } from '../server/src/kernel/providers/provider-presenter.js'
 import type { Provider } from '../server/src/kernel/providers/provider.types.js'
@@ -32,7 +31,6 @@ let app: Awaited<ReturnType<typeof buildApp>> | undefined
 try {
   await fs.writeFile(path.join(dataDir, 'config.json'), JSON.stringify({ auth: { username: 'u', password: 'p' } }))
   await fs.writeFile(path.join(dataDir, 'providers.json'), JSON.stringify({ items: [] }))
-  setDataRoot(dataDir)
   app = await buildApp({
     host: '127.0.0.1',
     port: 0,

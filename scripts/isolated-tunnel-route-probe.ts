@@ -7,7 +7,7 @@ import { TunnelDnsService } from '../server/src/domains/cloudflare/tunnel/tunnel
 import { TunnelRouteService } from '../server/src/domains/cloudflare/tunnel/tunnel-route.service.js'
 
 type IngressRule = { hostname?: string; service?: string; path?: string; [key: string]: unknown }
-type DnsRecord = { id: string; content: string | null }
+type StubRecord = { id: string; content?: string | null }
 
 const order: string[] = []
 // 写回完成后，下一次站点查询失败：模拟「清理旧 CNAME 时查不到站点」
@@ -29,13 +29,18 @@ const zones = {
   },
 }
 // findExact 返回值可切换：数组=固定结果，函数=按主机名返回（覆盖归属冲突与幂等重放）
-let findExactResult: DnsRecord[] | ((name: string) => DnsRecord[]) = []
+let findExactResult: StubRecord[] | ((name: string) => StubRecord[]) = []
 let creates = 0
 let updates = 0
+// D3-4：隧道 DNS 改走 DnsRecordPort，桩按端口形态返回 { id, value }
 const dnsRecords = {
-  async findExact(_providerId: string, _zoneId: string, name: string) {
+  async find(_providerId: string, _zone: string, probe: { name: string; type?: string }) {
     order.push('ensure-new-dns')
-    return typeof findExactResult === 'function' ? findExactResult(name) : findExactResult
+    const rows = typeof findExactResult === 'function' ? findExactResult(probe.name) : findExactResult
+    return rows.map((row) => ({
+      id: row.id,
+      value: { type: probe.type ?? 'CNAME', name: probe.name, value: row.content ?? '' },
+    }))
   },
   async create() {
     creates++
@@ -45,8 +50,11 @@ const dnsRecords = {
     updates++
     return { id: 'updated-record' }
   },
+  async remove() {
+    return { id: 'removed' }
+  },
 }
-const dns = new TunnelDnsService(zones as never, dnsRecords as never)
+const dns = new TunnelDnsService(dnsRecords as never)
 
 // D2：隧道服务依赖 CloudflareAccess（账号 + 客户端），探针桩掉账号解析
 const access = {
@@ -180,8 +188,9 @@ remoteConfig = {
   },
   version: 10,
 }
+// 端口层的 name 是相对主机记录（FQDN 去掉站点后缀）
 findExactResult = (name) =>
-  name === 'ok.example.com'
+  name === 'ok'
     ? [{ id: 'ok-record', content: 'tunnel-1.cfargotunnel.com' }]
     : [{ id: 'busy-record', content: 'other-tunnel.cfargotunnel.com' }]
 const mixed = await service.repairRoutes('tunnel-owner', 'tunnel-1')

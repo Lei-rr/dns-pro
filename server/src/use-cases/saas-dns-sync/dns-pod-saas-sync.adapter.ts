@@ -57,10 +57,13 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
 
     const records = buildRecords(hostname, origin, target)
-    const precleaned = await this.writer.preclean('dnspod', target.dnspodProviderId, target.dnspodZone, {
-      fqdn,
-      type: 'CNAME',
-    })
+    const precleaned = await this.writer.preclean(
+      'dnspod',
+      target.dnspodProviderId,
+      target.dnspodZone,
+      { fqdn, type: 'CNAME' },
+      'saas'
+    )
     const results = await this.writer.sync('dnspod', target.dnspodProviderId, target.dnspodZone, records)
     return { hostname_fqdn: fqdn, hostname: fqdn, dnspod_zone: target.dnspodZone, precleaned, records: results }
   }
@@ -82,7 +85,13 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const precleaned =
       afterRecords.length === 0
         ? []
-        : await this.writer.preclean('dnspod', target.dnspodProviderId, target.dnspodZone, { fqdn, type: 'CNAME' })
+        : await this.writer.preclean(
+            'dnspod',
+            target.dnspodProviderId,
+            target.dnspodZone,
+            { fqdn, type: 'CNAME' },
+            'saas'
+          )
     const results = await this.writer.sync('dnspod', target.dnspodProviderId, target.dnspodZone, afterRecords)
     return {
       hostname: fqdn,
@@ -123,6 +132,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
         desiredRecord({
           fqdn: ownershipName,
           purpose: 'ownership_verification',
+          refId: fqdn,
           record: {
             type: 'TXT',
             value: '',
@@ -229,10 +239,12 @@ function buildRecords(
 ): SaaSSyncRecord[] {
   const fqdn = hostname.hostname
   if (!fqdn) return []
+  const refId = String(hostname.id ?? '').trim() || fqdn
   const record = (type: string, name: string, value: string, purpose: string, line = DNSPOD_DEFAULT_LINE) =>
     desiredRecord({
       fqdn: name,
       purpose,
+      refId,
       record: { type, value, line, ttl: SAAS_RECORD_TTL, note: syncRemark(purpose, fqdn, DNSPOD_ORIGIN_LABEL) },
       provider_type: 'dnspod',
       provider_id: target.dnspodProviderId,

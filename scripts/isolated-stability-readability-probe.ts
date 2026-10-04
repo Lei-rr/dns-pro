@@ -117,7 +117,7 @@ const updateWorkflow = new SaaSDnsSyncWorkflow(
   } as never
 )
 await updateWorkflow.updateHostname('saas-owner', 'example.com', 'www.example.com', { auto_preferred: false }, true, {
-  remoteApplied: true,
+  completed: ['before-records-saved', 'remote-applied'],
   beforeRecords: oldPreferredRecords,
 } as never)
 assert.equal(updateCollectCalls, 0, 'retry recollected post-update DNS state')
@@ -149,7 +149,7 @@ const cfRecords = {
     return { id: String(wildcardDeletes) }
   },
 } as never
-const writer = new DnsWriter({ cloudflare: cloudflareRecordPort(cfZone, cfRecords) })
+const writer = new DnsWriter({ cloudflare: cloudflareRecordPort(cfZone, cfRecords) }, { claimsFor: async () => [] })
 const cloudflareCleanup = new CloudflareDnsSaaSSyncAdapter({} as never, {} as never, cfZone, writer)
 const fallbackCleanup = await cloudflareCleanup.cleanup(
   'saas-owner',

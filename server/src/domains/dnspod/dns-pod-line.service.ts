@@ -29,7 +29,8 @@ export interface DnsPodLineListResult {
 export class DnsPodLineService {
   constructor(
     private readonly providers: ProviderRepository,
-    private readonly zones: DnsPodZoneService
+    private readonly zones: DnsPodZoneService,
+    private readonly httpTimeoutMs?: number
   ) {}
 
   async lines(providerId: string, zone: string, refresh = false): Promise<DnsPodLineListResult> {
@@ -44,7 +45,7 @@ export class DnsPodLineService {
   }
 
   private async fetchLines(providerId: string, domain: string): Promise<DnsPodLineListResult> {
-    const client = await dnsPodClientFor(this.providers, providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const grade = await this.zoneGrade(providerId, domain)
     const response = await callProvider(
       {

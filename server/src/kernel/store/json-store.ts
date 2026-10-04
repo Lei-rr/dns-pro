@@ -2,18 +2,16 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../lib/values.js'
-import { getDataRoot, onDataRootChanged, resolveDataPath, setDataRoot } from './data-root.js'
-
-export { setDataRoot }
+import { resolveDataPath } from './data-root.js'
 
 const memoryStore = new Map<string, unknown>()
 const queues = new Map<string, Promise<void>>()
-onDataRootChanged(() => memoryStore.clear())
 
 const isMissing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT'
 
 /**
  * JSON 文件存储（单进程独占数据目录）。
+ * - 数据根由构造参数传入：不存在模块级可变全局（D7）
  * - 同一路径的读写串行执行
  * - 写入：临时文件 + fsync + rename 原子替换，权限 0600
  * - 读取：进程内内存缓存，transaction 总是基于磁盘最新内容
@@ -22,7 +20,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   constructor(
     private readonly relativePath: string,
     private readonly defaultValue: T = {} as T,
-    private readonly dataRoot?: string
+    private readonly dataRoot: string
   ) {
     // 构造时即校验路径不越界
     this.absolutePath()
@@ -61,7 +59,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   }
 
   private absolutePath(): string {
-    return resolveDataPath(this.dataRoot ?? getDataRoot(), this.relativePath)
+    return resolveDataPath(this.dataRoot, this.relativePath)
   }
 
   private async serialized<U>(task: () => Promise<U>): Promise<U> {

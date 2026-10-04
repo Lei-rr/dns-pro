@@ -12,11 +12,11 @@ export interface CloudflareApiResponse {
 
 /** Cloudflare v4 API 客户端（按次创建，避免进程内长期持有已替换的 Token） */
 export class CloudflareClient extends BaseHttpClient {
-  static forProvider(provider: Pick<CloudflareProvider, 'api_token'>): CloudflareClient {
-    return new CloudflareClient(provider.api_token.trim())
+  static forProvider(provider: Pick<CloudflareProvider, 'api_token'>, timeoutMs?: number): CloudflareClient {
+    return new CloudflareClient(provider.api_token.trim(), timeoutMs)
   }
 
-  constructor(apiToken: string) {
+  constructor(apiToken: string, timeoutMs?: number) {
     super({
       baseURL: 'https://api.cloudflare.com/client/v4',
       headers: {
@@ -24,6 +24,7 @@ export class CloudflareClient extends BaseHttpClient {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
+      timeout: timeoutMs,
     })
   }
 

@@ -94,7 +94,10 @@ const OPTIONAL_PAYLOAD_FIELDS: Array<[keyof RecordCreateInput, string]> = [
 
 /** DNSPod 解析记录 CRUD；列表全量缓存，过滤在本地完成 */
 export class DnsPodRecordService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(
+    private readonly providers: ProviderRepository,
+    private readonly httpTimeoutMs?: number
+  ) {}
 
   async list(providerId: string, domain: string, filters: RecordListFilters = {}): Promise<RecordListResult> {
     const cached = await withProviderCache<RecordListResult>({
@@ -215,7 +218,7 @@ export class DnsPodRecordService {
   }
 
   private clientFor(providerId: string): Promise<DnsPodClient> {
-    return dnsPodClientFor(this.providers, providerId)
+    return dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
   }
 }
 

@@ -49,7 +49,10 @@ type DomainMutation = { name: string; request_id?: string }
 
 /** EdgeOne 加速域名 CRUD；DNS 副作用由 edge-one-dns-sync 工作流负责 */
 export class EdgeOneDomainService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(
+    private readonly providers: ProviderRepository,
+    private readonly httpTimeoutMs?: number
+  ) {}
 
   async accelerationDomains(providerId: string, zoneId: string, refresh = false): Promise<DomainListResult> {
     const { dnspodProviderId } = await resolveEdgeOneProvider(this.providers, providerId)
@@ -151,7 +154,7 @@ export class EdgeOneDomainService {
     action: 'create' | 'update' | 'delete' | 'status' | 'certificate',
     call: (client: EdgeOneClient) => Promise<Record<string, unknown>>
   ): Promise<Record<string, unknown>> {
-    const client = await edgeOneClientFor(this.providers, providerId)
+    const client = await edgeOneClientFor(this.providers, providerId, this.httpTimeoutMs)
     const response = await callProvider(
       {
         code: `edgeone_domain_${action}_failed`,

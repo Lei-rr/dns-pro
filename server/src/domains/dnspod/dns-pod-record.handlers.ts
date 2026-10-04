@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../kernel/http/api-response.js'
+import { ownerOf } from '../../kernel/contracts/ownership.port.js'
 import type { RequestOf } from '../../kernel/http/request-schema.js'
 import {
   dnspodRecordParamsSchema,
@@ -12,10 +13,26 @@ export async function listDnsPodRecordsHandler(
   request: FastifyRequest<RequestOf<typeof dnspodRecordsIndexSchema>>,
   reply: FastifyReply
 ) {
-  const result = await request.server.ctx.modules.dnsPod.records.list(request.params.providerId, request.params.zone, {
+  const { providerId, zone } = request.params
+  const result = await request.server.ctx.modules.dnsPod.records.list(providerId, zone, {
     refresh: request.query.refresh === 'true',
   })
-  return reply.send(success(result))
+  // F3：列表带 hostname 级归属徽标；归属查询失败不阻断列表（徽标降级为无）
+  const claims = await request.server.ctx.modules.ownership
+    .claimsFor({ providerType: 'dnspod', providerId, zone })
+    .catch(() => [])
+  return reply.send(
+    success({
+      ...result,
+      items: result.items.map((item) => ({ ...item, owner: ownerOf(claims, recordFqdn(item.name, zone)).owner })),
+    })
+  )
+}
+
+/** 端口记录名（相对主机记录）→ FQDN */
+function recordFqdn(name: unknown, zone: string): string {
+  const sub = String(name ?? '').trim()
+  return sub === '' || sub === '@' ? zone : `${sub}.${zone}`
 }
 
 export async function createDnsPodRecordHandler(

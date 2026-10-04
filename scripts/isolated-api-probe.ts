@@ -6,7 +6,6 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../server/src/app/build.js'
-import { setDataRoot } from '../server/src/kernel/store/json-store.js'
 import {
   requestSchemaTypeContractSchema,
   type RequestSchemaTypeContract,
@@ -104,7 +103,6 @@ try {
     httpTimeoutMs: 1000,
   }
 
-  setDataRoot(dataDir)
   app = await buildApp(config)
   await app.ready()
   for (const route of routeManifest) {
@@ -333,11 +331,22 @@ try {
     }
   }
   try {
-    const writer = new DnsWriter({ dnspod: dnsPodRecordPort(app.ctx.modules.dnsPod.records) })
-    const cleaned = await writer.preclean('dnspod', 'dns-target', 'example.com', {
-      fqdn: 'example.com',
-      type: 'CNAME',
-    })
+    const writer = new DnsWriter(
+      { dnspod: dnsPodRecordPort(app.ctx.modules.dnsPod.records) },
+      {
+        claimsFor: async () => [{ fqdn: 'example.com', owner: 'saas', refId: 'probe-preclean' }],
+      }
+    )
+    const cleaned = await writer.preclean(
+      'dnspod',
+      'dns-target',
+      'example.com',
+      {
+        fqdn: 'example.com',
+        type: 'CNAME',
+      },
+      'saas'
+    )
     assert.deepEqual(
       cleaned.map((item) => item.record_id),
       ['11'],

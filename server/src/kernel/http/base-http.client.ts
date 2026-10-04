@@ -16,11 +16,8 @@ export interface HttpRequestConfig {
   timeout?: number
 }
 
-let defaultHttpTimeoutMs = 30000
-
-export function setDefaultHttpTimeout(ms: number): void {
-  defaultHttpTimeoutMs = Math.max(1000, Math.min(300000, ms))
-}
+/** 未显式配置时的上游超时；装配层以 config.httpTimeoutMs 构造传入，不使用模块级可变全局 */
+const DEFAULT_HTTP_TIMEOUT_MS = 30000
 
 /**
  * 拼接上游 URL。拒绝 `.`/`..`/空段与绝对地址，确保最终请求不会逃逸出 baseURL
@@ -114,7 +111,7 @@ export class BaseHttpClient {
   constructor(options: HttpClientOptions) {
     this.baseURL = options.baseURL
     this.defaultHeaders = { ...(options.headers ?? {}) }
-    this.timeout = options.timeout ?? defaultHttpTimeoutMs
+    this.timeout = options.timeout ?? DEFAULT_HTTP_TIMEOUT_MS
   }
 
   protected async request(config: HttpRequestConfig): Promise<unknown> {

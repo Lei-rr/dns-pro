@@ -17,10 +17,10 @@ const storeSpecs = {
 
 export type StoreName = keyof typeof storeSpecs
 
-/** 按注册表创建 store；调用方以类型参数声明自己的数据形状 */
-export function createStore<T extends object>(name: StoreName): JsonStore<T> {
+/** 按注册表创建 store；数据根由装配层传入，调用方以类型参数声明自己的数据形状 */
+export function createStore<T extends object>(name: StoreName, dataRoot: string): JsonStore<T> {
   const spec: StoreSpec = storeSpecs[name]
-  return new JsonStore<T>(spec.path, spec.defaults as T, undefined)
+  return new JsonStore<T>(spec.path, spec.defaults as T, dataRoot)
 }
 
 /** 注册表派生的数据子目录（相对 data 根），供启动建目录 */

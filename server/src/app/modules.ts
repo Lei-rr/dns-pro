@@ -25,15 +25,24 @@ import { SaaSFallbackOriginClient } from '../domains/cloudflare/saas/saas-fallba
 import { SaaSHostnameService } from '../domains/cloudflare/saas/saas-hostname.service.js'
 import { SaaSPreferenceService, type SaaSPreferencesFile } from '../domains/cloudflare/saas/saas-preference.service.js'
 import { SaaSSyncConfigService } from '../domains/cloudflare/saas/saas-sync-config.service.js'
+import { cloudflareRecordPort } from '../domains/cloudflare/dns/cloudflare-record.adapter.js'
 import { TunnelDnsService } from '../domains/cloudflare/tunnel/tunnel-dns.service.js'
 import { TunnelRouteService } from '../domains/cloudflare/tunnel/tunnel-route.service.js'
 import { TunnelService } from '../domains/cloudflare/tunnel/tunnel.service.js'
+import {
+  OwnershipService,
+  edgeOneOwnershipSource,
+  saasOwnershipSource,
+  tunnelOwnershipSource,
+} from '../use-cases/derived-records/ownership.js'
 import { createSecretBox } from '../kernel/crypto/secret-box.js'
 import { createStore } from '../kernel/store/store-registry.js'
 
 /** 模块装配：仅做依赖注入，无业务逻辑 */
 export function createModules(config: AppConfig, deps: { credentialKey: Buffer }) {
-  const auth = new AuthService(new AuthConfigRepository(createStore<AuthConfigData>('auth')), {
+  // 数据根由装配层传入各 store（D7：不存在模块级可变全局）
+  const dataRoot = config.dataDir
+  const auth = new AuthService(new AuthConfigRepository(createStore<AuthConfigData>('auth', dataRoot)), {
     secret: config.sessionSecret,
     cookieName: config.sessionCookieName,
     maxAgeSeconds: config.sessionMaxAgeSeconds,
@@ -42,28 +51,52 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
   })
 
   const integrity = new ProviderIntegrity()
-  const providers = new ProviderRepository(createStore<ProvidersFile>('providers'), createSecretBox(deps.credentialKey))
+  const providers = new ProviderRepository(
+    createStore<ProvidersFile>('providers', dataRoot),
+    createSecretBox(deps.credentialKey)
+  )
 
-  const cloudflareAccess = new CloudflareAccess(providers)
+  const cloudflareAccess = new CloudflareAccess(providers, config.httpTimeoutMs)
   const cloudflareZones = new CloudflareZoneService(cloudflareAccess)
   const cloudflareRecords = new CloudflareDnsRecordService(cloudflareAccess)
   const zoneCatalog = new ZoneCatalog(cloudflareAccess, cloudflareZones)
-  const dnsPodZones = new DnsPodZoneService(providers)
-  const dnsPodRecords = new DnsPodRecordService(providers)
-  const edgeOneZones = new EdgeOneZoneService(providers)
-  const edgeOneDomains = new EdgeOneDomainService(providers)
+  const dnsPodZones = new DnsPodZoneService(providers, config.httpTimeoutMs)
+  const dnsPodRecords = new DnsPodRecordService(providers, config.httpTimeoutMs)
+  const edgeOneZones = new EdgeOneZoneService(providers, config.httpTimeoutMs)
+  const edgeOneDomains = new EdgeOneDomainService(providers, config.httpTimeoutMs)
   const tunnels = new TunnelService(cloudflareAccess)
 
-  const preferredDomains = new PreferredDomainService(createStore<PreferredDomainsFile>('preferredDomains'))
+  const preferredDomains = new PreferredDomainService(createStore<PreferredDomainsFile>('preferredDomains', dataRoot))
   const saasPreferences = new SaaSPreferenceService(
-    createStore<SaaSPreferencesFile>('saasPreferences'),
+    createStore<SaaSPreferencesFile>('saasPreferences', dataRoot),
     integrity,
     providers
   )
   const saasSyncConfigs = new SaaSSyncConfigService(providers, saasPreferences)
+  const saasHostnames = new SaaSHostnameService(
+    cloudflareZones,
+    zoneCatalog,
+    new SaaSCustomHostnameClient(cloudflareAccess),
+    new SaaSFallbackOriginClient(cloudflareAccess),
+    preferredDomains,
+    saasPreferences,
+    saasSyncConfigs
+  )
+  const tunnelRoutes = new TunnelRouteService(
+    cloudflareAccess,
+    zoneCatalog,
+    new TunnelDnsService(cloudflareRecordPort(cloudflareZones, cloudflareRecords))
+  )
+  // D4：归属由派生关系即时解析（不落盘），DnsWriter 仲裁与记录列表徽标共用同一份查询
+  const ownership = new OwnershipService([
+    tunnelOwnershipSource({ providers, tunnels, routes: tunnelRoutes }),
+    saasOwnershipSource({ providers, hostnames: saasHostnames }),
+    edgeOneOwnershipSource({ providers, zones: edgeOneZones, domains: edgeOneDomains }),
+  ])
 
   return {
     auth: { service: auth },
+    ownership,
     providers: {
       repository: providers,
       service: new ProviderService(providers),
@@ -78,7 +111,7 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
     cloudflare: { zones: cloudflareZones, records: cloudflareRecords },
     dnsPod: {
       zones: dnsPodZones,
-      lines: new DnsPodLineService(providers, dnsPodZones),
+      lines: new DnsPodLineService(providers, dnsPodZones, config.httpTimeoutMs),
       records: dnsPodRecords,
       access: new DnsPodAccess(providers),
       catalog: new DnsPodZoneCatalog(dnsPodZones),
@@ -87,25 +120,10 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
       preferredDomains,
       preferences: saasPreferences,
       syncConfigs: saasSyncConfigs,
-      hostnames: new SaaSHostnameService(
-        cloudflareZones,
-        zoneCatalog,
-        new SaaSCustomHostnameClient(cloudflareAccess),
-        new SaaSFallbackOriginClient(cloudflareAccess),
-        preferredDomains,
-        saasPreferences,
-        saasSyncConfigs
-      ),
+      hostnames: saasHostnames,
     },
     edgeOne: { zones: edgeOneZones, domains: edgeOneDomains },
-    tunnels: {
-      tunnels,
-      routes: new TunnelRouteService(
-        cloudflareAccess,
-        zoneCatalog,
-        new TunnelDnsService(zoneCatalog, cloudflareRecords)
-      ),
-    },
+    tunnels: { tunnels, routes: tunnelRoutes },
   }
 }
 

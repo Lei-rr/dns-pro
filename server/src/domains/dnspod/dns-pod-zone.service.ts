@@ -57,7 +57,10 @@ interface ZoneListResult {
 
 /** DNSPod 域名（Zone）管理 */
 export class DnsPodZoneService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(
+    private readonly providers: ProviderRepository,
+    private readonly httpTimeoutMs?: number
+  ) {}
 
   async list(providerId: string, filters: ZoneListFilters = {}): Promise<ZoneListResult> {
     const cached = await withProviderCache<ZoneListResult>({
@@ -135,7 +138,7 @@ export class DnsPodZoneService {
   }
 
   private clientFor(providerId: string): Promise<DnsPodClient> {
-    return dnsPodClientFor(this.providers, providerId)
+    return dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
   }
 }
 

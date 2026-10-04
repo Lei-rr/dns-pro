@@ -21,6 +21,7 @@ import {
   readResourceKeys,
 } from '../../kernel/jobs/job-types.js'
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
+import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
 import type { SaaSSyncRecord } from './saas-sync-records.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
@@ -65,10 +66,14 @@ export class SaaSBatchWorkflow {
     return this.enqueue(SAAS_BATCH_DELETE_JOB, input, { auto_cleanup: autoCleanup }, items, '批量删除任务已创建')
   }
 
-  createUpdate(input: ZoneScope & { hostnames: string[]; patch: Record<string, unknown>; autoSync?: boolean }) {
+  async createUpdate(input: ZoneScope & { hostnames: string[]; patch: Record<string, unknown>; autoSync?: boolean }) {
     const items = this.items(input.hostnames, { primary_applied: false })
     const patch = normalizePatch(input.patch)
     if (!Object.keys(patch).length) throw new ApiError('batch_patch_empty', 'No fields to update', 422)
+    // 优选域名白名单前置校验：非法时任务创建即失败，而不是逐条目失败（复用单一判定）
+    if ('preferred_domain' in patch) {
+      patch.preferred_domain = await this.hostnames.ensurePreferredDomainAllowed(String(patch.preferred_domain))
+    }
     return this.enqueue(
       SAAS_BATCH_UPDATE_JOB,
       input,
@@ -114,7 +119,7 @@ export class SaaSBatchWorkflow {
     )
   }
 
-  /** 分阶段删除：清理配方 → 删除主机名 → 清理 DNS；每阶段落盘后才进入下一阶段 */
+  /** 分阶段删除：清理配方 → 删除主机名 → 清理 DNS；阶段记录落盘后才进入下一阶段 */
   private async runDelete(job: JobRecord): Promise<void> {
     const { providerId, zoneName } = scopeOf(job)
     const autoCleanup = job.payload.auto_cleanup !== false
@@ -123,29 +128,19 @@ export class SaaSBatchWorkflow {
       runningMessage: '删除中',
       progressMessage: '批量删除执行中',
       execute: async (item, hostname) => {
-        const primaryDeleted = item.primary_deleted === true
-        let recipe = cleanupRecipeOf(item.cleanup_recipe)
-        const stage = (patch: Record<string, unknown>) =>
-          persistItemStage(this.jobs, job.id, byHostname(hostname), patch)
         const result = await this.workflow.deleteHostname(providerId, zoneName, hostname, autoCleanup, {
-          primaryDeleted,
+          completed: completedDeleteStages(item),
+          cleanup: cleanupRecipeOf(item.cleanup_recipe),
           deferListInvalidation: true,
-          cleanup: recipe,
-          onCleanupPrepared: recipe
-            ? undefined
-            : async (prepared) => {
-                recipe = prepared
-                await stage({ cleanup_recipe: prepared })
-              },
-          onPrimaryDeleted: primaryDeleted ? undefined : () => stage({ primary_deleted: true }),
+          onStage: (_stage, patch) => persistItemStage(this.jobs, job.id, byHostname(hostname), patch),
         })
         const cleanup = dnsEffectOf(result, 'cleanup')
-        const extra = { primary_deleted: true, cleanup_recipe: recipe ?? item.cleanup_recipe }
+        const primary = { primary_deleted: true }
         if (autoCleanup && cleanup?.status === 'failed') {
           return {
             status: 'failed',
             message: `主机名已删除，但 DNS 清理失败：${cleanup.message || '未知错误'}`,
-            extra: { ...extra, dns_cleanup_status: 'failed' },
+            extra: { ...primary, dns_cleanup_status: 'failed' },
           }
         }
         const note = !autoCleanup ? '' : cleanup ? dnsEffectNote(cleanup, 'DNS 已清理') : '（无 DNS 记录需清理）'
@@ -153,7 +148,7 @@ export class SaaSBatchWorkflow {
           status: 'success',
           message: `已删除${note}`,
           // 取值与 EdgeOne 保持一致：completed | skipped | failed | not_required
-          extra: { ...extra, dns_cleanup_status: autoCleanup ? (cleanup?.status ?? 'skipped') : 'not_required' },
+          extra: { ...primary, dns_cleanup_status: autoCleanup ? (cleanup?.status ?? 'skipped') : 'not_required' },
         }
       },
     })
@@ -176,12 +171,10 @@ export class SaaSBatchWorkflow {
         // 补丁对象每条目复制一份，防止下游修改污染后续条目
         const patch = { ...(job.payload.patch as Record<string, unknown>) }
         const updated = await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync, {
-          remoteApplied: item.primary_applied === true,
+          completed: completedUpdateStages(item),
           deferListInvalidation: true,
           beforeRecords,
-          onBeforeRecordsPrepared: beforeRecords
-            ? undefined
-            : (records) => persistItemStage(this.jobs, job.id, byHostname(hostname), { dns_before_records: records }),
+          onStage: (_stage, stagePatch) => persistItemStage(this.jobs, job.id, byHostname(hostname), stagePatch),
         })
 
         const local = (updated as { side_effects?: { local?: { preference?: { status?: string; message?: string } } } })

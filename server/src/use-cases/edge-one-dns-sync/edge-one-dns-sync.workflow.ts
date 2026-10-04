@@ -1,4 +1,5 @@
 import { ApiError } from '../../kernel/http/api-error.js'
+import { runStages, type Stage, type StageLifecycle } from '../../kernel/jobs/stage-runner.js'
 import { normalizeFqdn } from '../../lib/values.js'
 import { isExplicitNotFound } from '../../kernel/providers/provider-error.js'
 import {
@@ -17,9 +18,21 @@ import { normalizeAccelerationDomainPayload } from '../../domains/edgeone/edge-o
 import { invalidateEdgeOneDomainCache } from '../../domains/edgeone/edge-one.cache.js'
 import { dnsZoneKey, edgeOneZoneKey } from '../../kernel/jobs/job-types.js'
 
-type DeleteOptions = {
-  primaryDeleted?: boolean
-  onPrimaryDeleted?: () => Promise<void>
+/** 删除加速域名的阶段序列（顺序不可逆；重试从第一个未完成阶段继续） */
+const EDGEONE_DELETE_STAGES = ['primary-deleted'] as const
+export type EdgeOneDeleteStage = (typeof EDGEONE_DELETE_STAGES)[number]
+
+/** 阶段 → 任务条目上的完成判定（记录由本工作流写入，批量任务据此恢复推进点） */
+const deleteStageRecorded: Record<EdgeOneDeleteStage, (item: Record<string, unknown>) => boolean> = {
+  'primary-deleted': (item) => item.primary_deleted === true,
+}
+
+/** 任务条目 → 已完成阶段（批量任务重试时据此跳过已完成阶段） */
+export function completedEdgeOneDeleteStages(item: Record<string, unknown>): EdgeOneDeleteStage[] {
+  return EDGEONE_DELETE_STAGES.filter((stage) => deleteStageRecorded[stage](item))
+}
+
+type DeleteOptions = StageLifecycle<EdgeOneDeleteStage> & {
   /** 任务级快照中的 CNAME；提供后不再逐条查询（批量场景避免重复全量拉取） */
   cname?: string
 }
@@ -77,6 +90,10 @@ export class EdgeOneDnsSyncWorkflow {
     }
   }
 
+  /**
+   * 删除加速域名：按显式阶段推进（记录 CNAME → 删除远端域名 → 清理 DNSPod CNAME）。
+   * 重试跳过已完成的远端删除，只补做 DNS 清理。
+   */
   async deleteAccelerationDomain(
     providerId: string,
     zoneId: string,
@@ -84,9 +101,11 @@ export class EdgeOneDnsSyncWorkflow {
     autoCleanup = false,
     options: DeleteOptions = {}
   ): Promise<Record<string, unknown>> {
+    const completed = new Set(options.completed ?? [])
+
     // 删除前记录 CNAME，清理时只删指向 EdgeOne 的记录
     let cname = options.cname ?? ''
-    if (autoCleanup && !options.primaryDeleted && options.cname === undefined) {
+    if (autoCleanup && !completed.has('primary-deleted') && options.cname === undefined) {
       cname = await this.domains.assignedCname(providerId, zoneId, domainName).catch((error: unknown) => {
         if (!isEdgeOneNotFound(error)) throw error
         return ''
@@ -95,16 +114,22 @@ export class EdgeOneDnsSyncWorkflow {
 
     let primary: Record<string, unknown> = { name: domainName }
     let primaryAlreadyMissing = false
-    if (!options.primaryDeleted) {
-      try {
-        primary = await this.domains.deleteAccelerationDomain(providerId, zoneId, domainName)
-      } catch (error) {
-        if (!isEdgeOneNotFound(error)) throw error
-        primaryAlreadyMissing = true
-        invalidateEdgeOneDomainCache(providerId, zoneId)
-      }
-    }
-    await options.onPrimaryDeleted?.()
+    const stages: Array<Stage<EdgeOneDeleteStage>> = [
+      {
+        name: 'primary-deleted',
+        run: async () => {
+          try {
+            primary = await this.domains.deleteAccelerationDomain(providerId, zoneId, domainName)
+          } catch (error) {
+            if (!isEdgeOneNotFound(error)) throw error
+            primaryAlreadyMissing = true
+            invalidateEdgeOneDomainCache(providerId, zoneId)
+          }
+          return { primary_deleted: true }
+        },
+      },
+    ]
+    await runStages(stages, options)
 
     const result = { ...primary, primary_deleted: true, primary_already_missing: primaryAlreadyMissing }
     if (!autoCleanup) return result
@@ -136,12 +161,18 @@ export class EdgeOneDnsSyncWorkflow {
   private async syncCname(providerId: string, domainName: string, cname: string) {
     if (cname === '') throw new ApiError('edgeone_cname_empty', 'EdgeOne CNAME is empty', 422)
     const { fqdn, dnspodProviderId, dnspodZone } = await this.resolveDnsTarget(providerId, domainName)
-    const precleaned = await this.writer.preclean('dnspod', dnspodProviderId, dnspodZone, { fqdn, type: 'CNAME' })
+    const precleaned = await this.writer.preclean(
+      'dnspod',
+      dnspodProviderId,
+      dnspodZone,
+      { fqdn, type: 'CNAME' },
+      'edgeone'
+    )
     const [record] = await this.writer.sync('dnspod', dnspodProviderId, dnspodZone, [edgeOneCnameDesired(fqdn, cname)])
     return { domain_name: fqdn, dnspod_zone: dnspodZone, precleaned, record }
   }
 
-  /** 删除关联 DNSPod 的默认线路 CNAME；未知目标时按名称删除 */
+  /** 删除关联 DNSPod 的默认线路 CNAME；域名已删除时靠显式来源声明 + 值/备注证据通过归属校验 */
   private async cleanupCname(providerId: string, domainName: string, cname: string) {
     const dnspodProviderId = await this.access.linkedProviderId(providerId, 'edgeone', 'EdgeOne')
     if (dnspodProviderId === '') return { cleaned: 0, records: [], reason: 'dnspod_provider_missing' }
@@ -174,6 +205,8 @@ function edgeOneCnameDesired(fqdn: string, cname: string): DesiredRecord {
   return {
     purpose: 'edgeone_cname',
     fqdn,
+    owner: 'edgeone',
+    refId: fqdn,
     record: {
       type: 'CNAME',
       value: cname,

@@ -1,4 +1,5 @@
 import { ApiError } from '../../kernel/http/api-error.js'
+import { runStages, type Stage, type StageLifecycle } from '../../kernel/jobs/stage-runner.js'
 import {
   buildDnsSideEffects,
   toCleanupSideEffect,
@@ -18,11 +19,38 @@ import type { SaaSSyncRecord, SyncCollectedRecords } from './saas-sync-records.j
 
 export type SaaSDeleteCleanupRecipe = SyncCollectedRecords
 
-type SaaSDeleteOptions = {
-  primaryDeleted?: boolean
+/** 删除主机名的阶段序列（顺序不可逆；重试从第一个未完成阶段继续） */
+const SAAS_DELETE_STAGES = ['cleanup-prepared', 'primary-deleted'] as const
+export type SaaSDeleteStage = (typeof SAAS_DELETE_STAGES)[number]
+
+/** 更新主机名的阶段序列（顺序不可逆） */
+const SAAS_UPDATE_STAGES = ['before-records-saved', 'remote-applied'] as const
+export type SaaSUpdateStage = (typeof SAAS_UPDATE_STAGES)[number]
+
+/** 阶段 → 任务条目上的完成判定（记录由本工作流写入，批量任务据此恢复推进点） */
+const deleteStageRecorded: Record<SaaSDeleteStage, (item: Record<string, unknown>) => boolean> = {
+  'cleanup-prepared': (item) => Boolean(item.cleanup_recipe),
+  'primary-deleted': (item) => item.primary_deleted === true,
+}
+
+const updateStageRecorded: Record<SaaSUpdateStage, (item: Record<string, unknown>) => boolean> = {
+  'before-records-saved': (item) => Array.isArray(item.dns_before_records),
+  'remote-applied': (item) => item.primary_applied === true,
+}
+
+/** 任务条目 → 已完成阶段（批量任务重试时据此跳过已完成阶段） */
+export function completedDeleteStages(item: Record<string, unknown>): SaaSDeleteStage[] {
+  return SAAS_DELETE_STAGES.filter((stage) => deleteStageRecorded[stage](item))
+}
+
+export function completedUpdateStages(item: Record<string, unknown>): SaaSUpdateStage[] {
+  return SAAS_UPDATE_STAGES.filter((stage) => updateStageRecorded[stage](item))
+}
+
+/** 删除的显式生命周期：阶段推进状态 + 已完成阶段的产物 */
+type SaaSDeleteOptions = StageLifecycle<SaaSDeleteStage> & {
+  /** cleanup-prepared 的产物（该阶段已完成时由调用方从任务条目恢复） */
   cleanup?: SaaSDeleteCleanupRecipe
-  onCleanupPrepared?: (cleanup: SaaSDeleteCleanupRecipe) => Promise<void>
-  onPrimaryDeleted?: () => Promise<void>
   /**
    * 批量任务中只失效主机名详情缓存，列表缓存留到任务结束统一失效。
    * 避免逐条失效导致下一条目重新分页拉取整站主机名（O(N²)）。
@@ -30,10 +58,10 @@ type SaaSDeleteOptions = {
   deferListInvalidation?: boolean
 }
 
-type SaaSUpdateOptions = {
-  remoteApplied?: boolean
+/** 更新的显式生命周期：阶段推进状态 + 已完成阶段的产物 */
+type SaaSUpdateOptions = StageLifecycle<SaaSUpdateStage> & {
+  /** before-records-saved 的产物（该阶段已完成时由调用方从任务条目恢复） */
   beforeRecords?: SaaSSyncRecord[]
-  onBeforeRecordsPrepared?: (records: SaaSSyncRecord[]) => Promise<void>
   deferListInvalidation?: boolean
 }
 
@@ -68,6 +96,10 @@ export class SaaSDnsSyncWorkflow {
     return withDnsEffects(result, { sync: toSyncSideEffect(sync, '已执行 DNS 同步') })
   }
 
+  /**
+   * 更新主机名：按显式阶段推进（保存 DNS 快照 → 应用远端变更 → 重同步 DNS）。
+   * 快照必须先于远端变更落盘；远端已应用的重试跳过重复 PATCH，但仍刷新本地偏好。
+   */
   async updateHostname(
     providerId: string,
     zoneName: string,
@@ -78,15 +110,22 @@ export class SaaSDnsSyncWorkflow {
   ) {
     const owner = await this.hostnames.resolveZoneRef(providerId, zoneName)
     const shouldSync = autoSync || DNS_LINKED_FIELDS.some((field) => field in data)
+    const completed = new Set(options.completed ?? [])
 
-    // 更新前保存记录快照，用于删除不再需要的记录
+    // 阶段 before-records-saved：更新前记录快照，用于删除不再需要的记录
     let beforeRecords = options.beforeRecords ?? []
-    if (shouldSync && options.beforeRecords === undefined) {
+    if (shouldSync && !completed.has('before-records-saved')) {
       beforeRecords = (await this.sync.collect(providerId, zoneName, hostnameFqdn)).records
-      await options.onBeforeRecordsPrepared?.(beforeRecords)
+      completed.add('before-records-saved')
+      await options.onStage?.('before-records-saved', { dns_before_records: beforeRecords })
     }
 
-    const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data, options)
+    // 阶段 remote-applied：远端已应用时不再重复 PATCH，只刷新本地偏好并返回当前状态
+    const result = await this.hostnames.updateHostname(providerId, zoneName, hostnameFqdn, data, {
+      remoteApplied: completed.has('remote-applied'),
+    })
+    completed.add('remote-applied')
+    await options.onStage?.('remote-applied', { primary_applied: true })
     this.invalidateHostnameCache(owner, options.deferListInvalidation)
     if (!shouldSync || hasLocalError(result)) return presentMutation(result)
 
@@ -119,6 +158,10 @@ export class SaaSDnsSyncWorkflow {
     }
   }
 
+  /**
+   * 删除主机名：按显式阶段推进（收集清理配方 → 删除远端主机名 → 清理 DNS）。
+   * 清理配方必须先于远端删除落盘；重试跳过已完成阶段，只补做未完成的部分。
+   */
   async deleteHostname(
     providerId: string,
     zoneName: string,
@@ -126,27 +169,38 @@ export class SaaSDnsSyncWorkflow {
     autoCleanup = true,
     options: SaaSDeleteOptions = {}
   ): Promise<Record<string, unknown>> {
-    let recipe = options.cleanup ?? null
-    if (autoCleanup && !recipe) {
-      recipe = await this.sync.collect(providerId, zoneName, hostnameFqdn)
-      await options.onCleanupPrepared?.(recipe)
-    }
+    const collected: { recipe: SaaSDeleteCleanupRecipe | null } = { recipe: options.cleanup ?? null }
+    const result: { value: Record<string, unknown> } = { value: { id: '', hostname: hostnameFqdn } }
 
-    let result: Record<string, unknown> = { id: '', hostname: hostnameFqdn }
-    if (!options.primaryDeleted) {
-      try {
-        result = await this.hostnames.deleteHostname(providerId, zoneName, hostnameFqdn)
-      } catch (error) {
-        if (!(error instanceof ApiError && error.code === 'saas_hostname_not_found')) throw error
-      }
-      await options.onPrimaryDeleted?.()
+    const stages: Array<Stage<SaaSDeleteStage>> = []
+    if (autoCleanup) {
+      stages.push({
+        name: 'cleanup-prepared',
+        run: async () => {
+          collected.recipe = await this.sync.collect(providerId, zoneName, hostnameFqdn)
+          return { cleanup_recipe: collected.recipe }
+        },
+      })
     }
+    stages.push({
+      name: 'primary-deleted',
+      run: async () => {
+        try {
+          result.value = await this.hostnames.deleteHostname(providerId, zoneName, hostnameFqdn)
+        } catch (error) {
+          if (!(error instanceof ApiError && error.code === 'saas_hostname_not_found')) throw error
+        }
+        return { primary_deleted: true }
+      },
+    })
+    await runStages(stages, options)
     await this.invalidateZone(providerId, zoneName, options.deferListInvalidation)
 
-    if (!autoCleanup || !recipe?.hostname_fqdn || recipe.records.length === 0) return result
+    const { recipe } = collected
+    if (!autoCleanup || !recipe?.hostname_fqdn || recipe.records.length === 0) return result.value
     const cleanup = await this.sync.cleanup(providerId, zoneName, recipe.hostname_fqdn, recipe.records)
     return {
-      ...result,
+      ...result.value,
       side_effects: buildDnsSideEffects({ cleanup: toCleanupSideEffect(cleanup, '已执行 DNS 删除后清理') }),
     }
   }

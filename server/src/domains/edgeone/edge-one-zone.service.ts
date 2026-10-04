@@ -42,7 +42,10 @@ interface ZoneListResult {
 
 /** EdgeOne 站点查询（站点数量少，全量拉取） */
 export class EdgeOneZoneService {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(
+    private readonly providers: ProviderRepository,
+    private readonly httpTimeoutMs?: number
+  ) {}
 
   async zones(providerId: string, refresh = false): Promise<ZoneListResult> {
     const { dnspodProviderId } = await resolveEdgeOneProvider(this.providers, providerId)
@@ -62,7 +65,7 @@ export class EdgeOneZoneService {
   }
 
   private async fetchAll(providerId: string): Promise<ZoneListResult> {
-    const client = await edgeOneClientFor(this.providers, providerId)
+    const client = await edgeOneClientFor(this.providers, providerId, this.httpTimeoutMs)
     const { items, requestId } = await collectOffsetPages(
       async (offset, limit) => {
         const response = await callProvider(

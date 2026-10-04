@@ -4,7 +4,6 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../server/src/app/build.js'
-import { setDataRoot } from '../server/src/kernel/store/json-store.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-static-probe-'))
 await fs.writeFile(
@@ -13,7 +12,6 @@ await fs.writeFile(
 )
 await fs.writeFile(path.join(dataDir, 'providers.json'), JSON.stringify({ items: [] }))
 
-setDataRoot(dataDir)
 const app = await buildApp({
   host: '127.0.0.1',
   port: 0,

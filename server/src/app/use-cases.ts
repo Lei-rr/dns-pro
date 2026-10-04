@@ -22,7 +22,7 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
     dnspod: dnsPodRecordPort(dnsPod.records),
     cloudflare: cloudflareRecordPort(cloudflare.zones, cloudflare.records),
   }
-  const dnsWriter = new DnsWriter(dnsPorts)
+  const dnsWriter = new DnsWriter(dnsPorts, modules.ownership)
 
   const saasDnsSync = new SaaSDnsSyncWorkflow(
     saas.hostnames,

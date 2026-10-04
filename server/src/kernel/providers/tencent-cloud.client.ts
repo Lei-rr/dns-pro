@@ -20,11 +20,13 @@ interface TencentCloudClientOptions {
 export class TencentCloudClient extends BaseHttpClient {
   constructor(
     private readonly credentials: TencentCloudCredentials,
-    private readonly options: TencentCloudClientOptions
+    private readonly options: TencentCloudClientOptions,
+    timeoutMs?: number
   ) {
     super({
       baseURL: `https://${options.endpoint}`,
       headers: { 'Content-Type': TENCENT_CONTENT_TYPE, Host: options.endpoint },
+      timeout: timeoutMs,
     })
   }
 

@@ -110,11 +110,15 @@ export function desiredRecord(input: {
   provider_type: SaaSSyncProviderType
   provider_id: string
   zone: string
+  /** 派生来源标识（主机名 ID）；缺省回退到 FQDN */
+  refId?: string
 }): SaaSSyncRecord {
   return {
     purpose: input.purpose,
     fqdn: input.fqdn,
     record: input.record,
+    owner: 'saas',
+    refId: input.refId ?? '',
     provider_type: input.provider_type,
     provider_id: input.provider_id,
     zone: input.zone,
@@ -148,6 +152,7 @@ export function cloudflareDnsCleanupRecipe(fqdn: string, providerId: string, zon
       ...target,
       fqdn: name,
       purpose,
+      refId: fqdn,
       record: { type, value: '', note: syncRemark(purpose, fqdn, CLOUDFLARE_ORIGIN_LABEL) },
     })
   return [
@@ -170,6 +175,7 @@ export function dnspodSaaSCleanupRecipe(
       ...target,
       fqdn: name,
       purpose,
+      refId: fqdn,
       record: { type, value: '', line, note: syncRemark(purpose, fqdn, DNSPOD_ORIGIN_LABEL) },
     })
   return [

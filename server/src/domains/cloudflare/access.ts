@@ -16,7 +16,11 @@ export interface CloudflareAccount {
  * DNS / SaaS / 隧道三条产品线只依赖本类，不互相引用。
  */
 export class CloudflareAccess {
-  constructor(private readonly providers: ProviderRepository) {}
+  constructor(
+    private readonly providers: ProviderRepository,
+    /** 上游超时：装配层构造传入（D7 消除模块级全局 setter） */
+    private readonly httpTimeoutMs?: number
+  ) {}
 
   /** 解析 Cloudflare 服务商的账号与客户端 */
   async forProvider(providerId: string): Promise<CloudflareAccount> {
@@ -29,7 +33,7 @@ export class CloudflareAccess {
     return {
       provider,
       accountId: provider.account_id.trim(),
-      client: CloudflareClient.forProvider(provider),
+      client: CloudflareClient.forProvider(provider, this.httpTimeoutMs),
     }
   }
 

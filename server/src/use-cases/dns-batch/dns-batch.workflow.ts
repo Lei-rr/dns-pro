@@ -22,7 +22,8 @@ import {
   normalizeRecords,
   type BatchRecordInput,
 } from './dns-record-payload.js'
-import { dnsRecordMatches, type DnsRecordPort, type DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
+import { findExistingRecord } from './dns-batch.idempotency.js'
+import type { DnsRecordPort, DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
 
 export type DnsProviderType = 'cloudflare' | 'dnspod'
 
@@ -123,15 +124,10 @@ export class DnsBatchWorkflow {
       progressCurrent: (item) => [item.name, item.type].filter(Boolean).join(' '),
       execute: async ({ port, scope }, item) => {
         const value = toRecordValue(item)
-        if (Number(item.attempt || 0) > 0) {
-          const existing = await findExisting(port, scope, value)
-          if (existing) {
-            return {
-              status: 'skipped',
-              message: '目标记录已存在，未重复添加',
-              extra: { record_id: existing.id },
-            }
-          }
+        // 幂等显式策略：默认全查重（手动重提交与自动重试同一判定）
+        const existing = await findExistingRecord(port, scope, value)
+        if (existing) {
+          return { status: 'skipped', message: '目标记录已存在，未重复添加', extra: { record_id: existing.id } }
         }
         const created = await port.create(scope.providerId, scope.zone, value)
         return { status: 'success', message: '已添加', extra: { record_id: created.id } }
@@ -247,10 +243,4 @@ function mergeRecordValue(item: Record<string, unknown>, patch: Record<string, u
     status: pick('status', 'record_status'),
     weight: pick('weight'),
   })
-}
-
-/** 重试幂等判定：端口返回值已归一化，比较不涉及厂商字段 */
-async function findExisting(port: DnsRecordPort, scope: JobScope, value: DnsRecordValue) {
-  const candidates = await port.find(scope.providerId, scope.zone, value)
-  return candidates.find((ref) => dnsRecordMatches(ref.value, value)) ?? null
 }

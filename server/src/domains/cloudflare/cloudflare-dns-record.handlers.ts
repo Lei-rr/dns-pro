@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../kernel/http/api-response.js'
+import { ownerOf } from '../../kernel/contracts/ownership.port.js'
 import type { RequestOf } from '../../kernel/http/request-schema.js'
 import {
   cloudflareRecordParamsSchema,
@@ -12,16 +13,23 @@ export async function listCloudflareRecordsHandler(
   request: FastifyRequest<RequestOf<typeof cloudflareRecordsIndexSchema>>,
   reply: FastifyReply
 ) {
-  const zoneId = await request.server.ctx.modules.cloudflare.zones.idByName(
-    request.params.providerId,
-    request.params.zone
-  )
+  const { providerId, zone } = request.params
+  const zoneId = await request.server.ctx.modules.cloudflare.zones.idByName(providerId, zone)
   const result = await request.server.ctx.modules.cloudflare.records.listAll(
-    request.params.providerId,
+    providerId,
     zoneId,
     request.query.refresh === 'true'
   )
-  return reply.send(success(result))
+  // F3：列表带 hostname 级归属徽标；归属查询失败不阻断列表（徽标降级为无）
+  const claims = await request.server.ctx.modules.ownership
+    .claimsFor({ providerType: 'cloudflare', providerId, zone })
+    .catch(() => [])
+  return reply.send(
+    success({
+      ...result,
+      items: result.items.map((item) => ({ ...item, owner: ownerOf(claims, String(item.name ?? '')).owner })),
+    })
+  )
 }
 
 export async function createCloudflareRecordHandler(

@@ -20,7 +20,8 @@ export async function resolveEdgeOneProvider(
 /** 每次调用都从持久化配置读取关联 DNSPod 密钥并创建客户端 */
 export async function edgeOneClientFor(
   providers: ProviderRepository,
-  edgeoneProviderId: string
+  edgeoneProviderId: string,
+  timeoutMs?: number
 ): Promise<EdgeOneClient> {
   const { dnspodProviderId } = await resolveEdgeOneProvider(providers, edgeoneProviderId)
   if (dnspodProviderId === '') {
@@ -32,5 +33,5 @@ export async function edgeOneClientFor(
     'DNSPod provider not found',
     'dnspod_provider_not_found'
   )
-  return EdgeOneClient.forProvider(dnspod)
+  return EdgeOneClient.forProvider(dnspod, timeoutMs)
 }

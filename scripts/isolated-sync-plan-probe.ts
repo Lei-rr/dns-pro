@@ -12,6 +12,8 @@ const base = { providerType: 'dnspod', providerId: 'p1', zone }
 const want = (value: string, note = 'EdgeOne 加速丨a.example.com'): DesiredRecord => ({
   purpose: 'edgeone_cname',
   fqdn: 'a.example.com',
+  owner: 'edgeone',
+  refId: 'a.example.com',
   record: { type: 'CNAME', value, line: '默认', note, ttl: 600 },
 })
 

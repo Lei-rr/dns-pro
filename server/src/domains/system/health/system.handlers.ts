@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { providerCacheStats } from '../../../kernel/cache/provider-cache.js'
-import { getDataRoot } from '../../../kernel/store/data-root.js'
 import { error, success } from '../../../kernel/http/api-response.js'
 import type { noRequestSchema, RequestOf } from '../../../kernel/http/request-schema.js'
 import { APP_VERSION } from '../../../kernel/version.js'
@@ -20,10 +19,10 @@ export async function getHealthHandler(
   request: FastifyRequest<RequestOf<typeof noRequestSchema>>,
   reply: FastifyReply
 ) {
-  const writable = await isWritable(getDataRoot())
+  const { ctx } = request.server
+  const writable = await isWritable(ctx.config.dataDir)
   if (!writable) return reply.status(503).send(error('health_check_failed', 503, 'health_check_failed'))
 
-  const { ctx } = request.server
   if (!(await ctx.modules.auth.service.authenticate(request))) return reply.send(success({ status: 'ok' }))
 
   const jobs = await ctx.platform.jobs.stats().catch(() => null)

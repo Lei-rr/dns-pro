@@ -5,7 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../server/src/app/build.js'
 import { resolveSessionSecret } from '../server/src/kernel/security/session-secret.js'
-import { JsonStore, setDataRoot } from '../server/src/kernel/store/json-store.js'
+import { JsonStore } from '../server/src/kernel/store/json-store.js'
 import type { AppConfig } from '../server/src/app/config.js'
 
 const mode = async (file: string) => (await fs.stat(file)).mode & 0o777
@@ -17,8 +17,6 @@ const assertPrivate = async (file: string, message: string) => {
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-sensitive-'))
 
 try {
-  setDataRoot(root)
-
   const generatedSecret = await resolveSessionSecret(root, '')
   const secretPath = path.join(root, 'session-secret')
   await assertPrivate(secretPath, 'new session secret must be private')
@@ -68,7 +66,6 @@ try {
         files.map(async ([file]) => [file, await fs.readFile(path.join(coldRoot, file), 'utf8')] as const)
       )
     )
-    setDataRoot(coldRoot)
     const config: AppConfig = {
       host: '127.0.0.1',
       port: 0,

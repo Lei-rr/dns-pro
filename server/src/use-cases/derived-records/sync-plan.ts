@@ -1,5 +1,6 @@
 import type { DnsRecordRef, DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
 import { dnsRecordMatches, relativeRecordName, sameDnsValue } from '../../kernel/contracts/dns-record.port.js'
+import type { DerivedOwner } from '../../kernel/contracts/ownership.port.js'
 
 /** 产品线声明的期望记录：DNS 记录是上层资源的派生投影 */
 export interface DesiredRecord {
@@ -11,6 +12,13 @@ export interface DesiredRecord {
   record: Omit<DnsRecordValue, 'name'>
   /** false 表示期望该记录不存在（清理） */
   keep?: boolean
+  /** D4 归属声明：本记录由哪条产品线派生 */
+  owner: DerivedOwner
+  /**
+   * 派生来源标识（主机名 ID / 加速域名 / 隧道 ID）。
+   * 资源已删除后的清理（关系已消失）必须携带，否则同一条目被视为无主记录而拒绝自动写入。
+   */
+  refId?: string
 }
 
 export type SyncAction = 'create' | 'update' | 'delete' | 'unchanged'
@@ -20,6 +28,9 @@ export interface SyncPlanEntry {
   action: SyncAction
   fqdn: string
   record: Omit<DnsRecordValue, 'name'>
+  /** D4 归属声明：校验写入/删除目标是否由本产品线派生 */
+  owner: DerivedOwner
+  refId: string
   /** 命中的现有记录 */
   existing?: DnsRecordRef
 }
@@ -63,6 +74,8 @@ export function planSync(input: {
         action,
         fqdn: want.fqdn,
         record: want.record,
+        owner: want.owner,
+        refId: String(want.refId ?? ''),
         ...(existing ? { existing } : {}),
       })
 

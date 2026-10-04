@@ -18,7 +18,7 @@ import { invalidateTunnelRouteCache } from './tunnel.cache.js'
 import { runSerial } from '../../../lib/serial-queue.js'
 import { tunnelPath } from './tunnel-path.js'
 import type { CloudflareAccess } from '../access.js'
-import type { ZoneCatalog } from '../zone-catalog.js'
+import type { ZoneCatalog, ZoneRef } from '../zone-catalog.js'
 import type { TunnelDnsService } from './tunnel-dns.service.js'
 
 export interface TunnelRoute {
@@ -81,7 +81,7 @@ export class TunnelRouteService {
   async addRoute(providerId: string, tunnelId: string, route: TunnelRoute): Promise<Record<string, unknown>> {
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const normalized = normalizeRoute(route)
-    const zoneId = await this.requireZoneId(cfProviderId, normalized.hostname)
+    const zone = await this.requireZone(cfProviderId, normalized.hostname)
     return runSerial(ingressKey(providerId, tunnelId), async () => {
       const config = await this.fetchConfig(providerId, tunnelId)
       if (config.routes.some((existing) => sameRouteKey(existing, normalized))) throw routeExists(normalized)
@@ -89,7 +89,7 @@ export class TunnelRouteService {
       await this.writeIngress(providerId, tunnelId, [...config.routes, normalized], config.catch_all)
       invalidateTunnelRouteCache(providerId, tunnelId)
 
-      const sync = await this.dns.ensureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
+      const sync = await this.dns.ensureCname(zone, normalized.hostname, tunnelId)
       return {
         ...normalized,
         side_effects: buildDnsSideEffects({ sync: fromDnsOperationResult(sync, '已执行 Cloudflare DNS 同步') }),
@@ -107,7 +107,7 @@ export class TunnelRouteService {
     const cfProviderId = await this.cfProviderIdOf(providerId)
     const normalized = normalizeRoute(route)
     const original = { hostname: normalizeFqdn(originalHostname), path: originalPath.trim() }
-    const zoneId = await this.requireZoneId(cfProviderId, normalized.hostname)
+    const zone = await this.requireZone(cfProviderId, normalized.hostname)
     return runSerial(ingressKey(providerId, tunnelId), async () => {
       const config = await this.fetchConfig(providerId, tunnelId)
       const current = config.routes
@@ -123,10 +123,10 @@ export class TunnelRouteService {
       // Ingress 已提交：先失效缓存，避免 DNS 副作用期间返回旧配置
       invalidateTunnelRouteCache(providerId, tunnelId)
 
-      const sync = await this.dns.ensureCname(cfProviderId, zoneId, normalized.hostname, tunnelId)
+      const sync = await this.dns.ensureCname(zone, normalized.hostname, tunnelId)
       let cleanup: DnsOperationResult | undefined
       if (original.hostname !== normalized.hostname && !next.some((r) => r.hostname === original.hostname)) {
-        cleanup = await this.dns.removeCname(cfProviderId, original.hostname, tunnelId)
+        cleanup = await this.removeCnameIfResolvable(cfProviderId, original.hostname, tunnelId)
       }
       return {
         ...normalized,
@@ -159,7 +159,7 @@ export class TunnelRouteService {
       // 同主机名仍有其它路径路由时保留 CNAME
       const cleanup: DnsOperationResult = next.some((r) => r.hostname === target.hostname)
         ? { action: 'kept', reason: 'hostname_still_used' }
-        : await this.dns.removeCname(cfProviderId, target.hostname, tunnelId)
+        : await this.removeCnameIfResolvable(cfProviderId, target.hostname, tunnelId)
       return {
         ...target,
         side_effects: buildDnsSideEffects({ cleanup: fromDnsOperationResult(cleanup, '已执行 Cloudflare DNS 清理') }),
@@ -195,9 +195,9 @@ export class TunnelRouteService {
     tunnelId: string
   ): Promise<Record<string, unknown>> {
     try {
-      const zoneId = (await this.catalog.resolve(cfProviderId, hostname))?.zoneId ?? ''
-      if (zoneId === '') return { hostname, zone_id: '', action: 'skipped', reason: 'zone_not_found' }
-      return { hostname, zone_id: zoneId, ...(await this.dns.ensureCname(cfProviderId, zoneId, hostname, tunnelId)) }
+      const zone = await this.catalog.resolve(cfProviderId, hostname)
+      if (!zone) return { hostname, zone_id: '', action: 'skipped', reason: 'zone_not_found' }
+      return { hostname, zone_id: zone.zoneId, ...(await this.dns.ensureCname(zone, hostname, tunnelId)) }
     } catch (error) {
       return { hostname, action: 'failed', error: errorMessage(error) }
     }
@@ -238,11 +238,26 @@ export class TunnelRouteService {
     )
   }
 
-  private async requireZoneId(cfProviderId: string, hostname: string): Promise<string> {
-    const zoneId = (await this.catalog.resolve(cfProviderId, hostname))?.zoneId ?? ''
-    if (zoneId === '') throw new ApiError('cloudflared_zone_not_found', `No Cloudflare zone matches ${hostname}`, 422)
-    return zoneId
+  /** 站点解析失败时不清理（沿用原 zone_not_found 语义） */
+  private async removeCnameIfResolvable(cfProviderId: string, hostname: string, tunnelId: string) {
+    try {
+      const zone = await this.catalog.resolve(cfProviderId, hostname)
+      if (!zone) return { action: 'skipped', reason: 'zone_not_found' }
+      return await this.dns.removeCname(zone, hostname, tunnelId)
+    } catch (error) {
+      return { action: 'failed', error: errorMessage(error) }
+    }
   }
+
+  private async requireZone(cfProviderId: string, hostname: string): Promise<ZoneRef> {
+    const zone = await this.catalog.resolve(cfProviderId, hostname)
+    if (!zone) throw new ApiError('cloudflared_zone_not_found', zoneMissingMessage(hostname), 422)
+    return zone
+  }
+}
+
+function zoneMissingMessage(hostname: string): string {
+  return `No Cloudflare zone matches ${hostname}`
 }
 
 function normalizeRoute(route: TunnelRoute): TunnelRoute {

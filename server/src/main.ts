@@ -1,21 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import { buildApp } from './app/build.js'
-import { loadAppConfig, parseCliOverrides, type AppConfig } from './app/config.js'
-import { storeSubdirectories } from './kernel/store/store-registry.js'
-import { resolveSessionSecret } from './kernel/security/session-secret.js'
-import { setDefaultHttpTimeout } from './kernel/http/base-http.client.js'
-import { ensureDataDirs } from './kernel/store/ensure-dirs.js'
-import { setDataRoot } from './kernel/store/data-root.js'
+import { bootServer } from './app/lifecycle.js'
 
 const SHUTDOWN_TIMEOUT_MS = 10000
-
-async function prepareConfig(): Promise<AppConfig> {
-  const base = loadAppConfig(parseCliOverrides(process.argv.slice(2)))
-  setDataRoot(base.dataDir)
-  await ensureDataDirs(base.dataDir, storeSubdirectories())
-  setDefaultHttpTimeout(base.httpTimeoutMs)
-  return { ...base, sessionSecret: await resolveSessionSecret(base.dataDir, base.sessionSecret) }
-}
 
 /** 优雅退出：停止接收请求 → 等待任务落盘 → 超时强制退出 */
 function registerShutdown(app: FastifyInstance): void {
@@ -48,8 +34,8 @@ function registerShutdown(app: FastifyInstance): void {
 }
 
 async function main(): Promise<void> {
-  const config = await prepareConfig()
-  const app = await buildApp(config)
+  // 启动阶段顺序见 app/lifecycle.ts 的 STARTUP_STAGES（fail-fast）
+  const { app, config } = await bootServer()
   registerShutdown(app)
   await app.listen({ host: config.host, port: config.port })
   console.log(`dns-pro listening at http://${config.host}:${config.port}`)
