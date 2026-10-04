@@ -29,7 +29,10 @@ export interface OwnershipPort {
   claimsFor(target: OwnershipTarget): Promise<RecordOwnership[]>
 }
 
-/** 主机名归一：小写、去空白、去尾点（与端口层一致） */
+/**
+ * 主机名归一：小写、去空白、去全部尾点。
+ * 注意比 shared/values 的 normalizeFqdn（只去一个尾点）更严格，`a.com..` 与 `a.com` 视为同一主机。
+ */
 export function normalizeOwnershipHost(value: unknown): string {
   return normalizeFqdn(value).replace(/\.+$/, '')
 }

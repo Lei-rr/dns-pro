@@ -101,7 +101,7 @@ function onPageSizeChange(value: unknown) {
           >
             {{ item.value }}
           </PaginationItem>
-          <PaginationEllipsis v-else :index="index" class="size-8" />
+          <PaginationEllipsis v-else class="size-8" />
         </template>
         <PaginationNext size="icon-sm" />
       </PaginationContent>

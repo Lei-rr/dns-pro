@@ -1,14 +1,17 @@
 import { ref } from 'vue'
 import type { ConfirmOptions } from './types'
 
-const open = ref(false)
-const options = ref<ConfirmOptions>({
+/** 默认文案单一来源：模块初值与 confirmDialog 的兜底共用，避免两处字面量各改一半 */
+const DEFAULT_CONFIRM_OPTIONS: Required<ConfirmOptions> = {
   title: '确认操作',
   description: '此操作不可撤销，确定继续吗？',
   confirmText: '确认',
   cancelText: '取消',
   destructive: true,
-})
+}
+
+const open = ref(false)
+const options = ref<ConfirmOptions>({ ...DEFAULT_CONFIRM_OPTIONS })
 
 let resolver: ((value: boolean) => void) | null = null
 
@@ -20,11 +23,11 @@ export function confirmDialog(opts: ConfirmOptions = {}): Promise<boolean> {
     prev(false)
   }
   options.value = {
-    title: opts.title || '确认操作',
-    description: opts.description || '此操作不可撤销，确定继续吗？',
-    confirmText: opts.confirmText || '确认',
-    cancelText: opts.cancelText || '取消',
-    destructive: opts.destructive ?? true,
+    title: opts.title || DEFAULT_CONFIRM_OPTIONS.title,
+    description: opts.description || DEFAULT_CONFIRM_OPTIONS.description,
+    confirmText: opts.confirmText || DEFAULT_CONFIRM_OPTIONS.confirmText,
+    cancelText: opts.cancelText || DEFAULT_CONFIRM_OPTIONS.cancelText,
+    destructive: opts.destructive ?? DEFAULT_CONFIRM_OPTIONS.destructive,
   }
   open.value = true
   return new Promise<boolean>((resolve) => {

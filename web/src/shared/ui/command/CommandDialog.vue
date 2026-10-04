@@ -79,6 +79,8 @@ function executeSelected() {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  // 中文输入法组合态：Enter/方向键用于上屏与选词，不能当成面板操作
+  if (e.isComposing || e.keyCode === 229) return
   if (!filteredItems.value.length) return
 
   if (e.key === 'ArrowDown') {

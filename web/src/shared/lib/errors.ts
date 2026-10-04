@@ -10,16 +10,16 @@ const LOCAL_CODE_HINTS: Record<string, string> = {
 export function errorMessage(error: unknown, fallback = '请求失败'): string {
   if (typeof error === 'string' && error.trim()) return error
 
+  // transport 是 shared/api/http.ts 的原生 fetch：RequestError 只有 code/details/status，没有 axios 的 response
   const err = error as {
     message?: string
     code?: string
     status?: number
-    response?: { data?: { message?: string; code?: string }; status?: number }
   }
 
-  const code = String(err?.code || err?.response?.data?.code || '').trim()
-  const message = String(err?.response?.data?.message || err?.message || '').trim()
-  const status = Number(err?.status || err?.response?.status || 0)
+  const code = String(err?.code || '').trim()
+  const message = String(err?.message || '').trim()
+  const status = Number(err?.status || 0)
 
   if (LOCAL_CODE_HINTS[code]) return LOCAL_CODE_HINTS[code]
   if (message && /[\u4e00-\u9fff]/.test(message)) return message

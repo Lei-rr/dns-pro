@@ -6,10 +6,10 @@ import {
   collectOffsetPages,
   parseUpstreamTotal,
   toFullListResult,
-  type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../core/providers/provider-values.js'
 import { asRecordArray } from '../../core/providers/response-guards.js'
+import { normalizeFqdn } from '../../shared/values.js'
 import { invalidateEdgeOneDomainCache } from './edge-one.cache.js'
 import type { EdgeOneClient } from './edge-one.client.js'
 import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
@@ -42,12 +42,8 @@ interface EdgeOneAccelerationDomain {
   modified_on?: string
 }
 
-interface DomainListResult {
-  items: EdgeOneAccelerationDomain[]
-  pagination: FullListPagination
-  meta: FullListPagination
-  request_id?: string
-}
+/** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
+type DomainListResult = ReturnType<typeof toFullListResult<EdgeOneAccelerationDomain>>
 
 type DomainMutation = { name: string; request_id?: string }
 
@@ -77,7 +73,9 @@ export class EdgeOneDomainService {
   /** 读取已分配的 CNAME；域名不存在抛 404 */
   async assignedCname(providerId: string, zoneId: string, domainName: string, refresh = false): Promise<string> {
     const listing = await this.accelerationDomains(providerId, zoneId, refresh)
-    const domain = listing.items.find((item) => item.name === domainName)
+    // 写入路径统一小写，读取同样归一，避免大小写不同的 URL 被误判为加速域名不存在
+    const target = normalizeFqdn(domainName)
+    const domain = listing.items.find((item) => normalizeFqdn(item.name) === target)
     if (!domain) {
       throw new ApiError(
         'edgeone_acceleration_domain_not_found',
@@ -175,7 +173,7 @@ export class EdgeOneDomainService {
   }
 
   private async fetchAll(providerId: string, zoneId: string): Promise<DomainListResult> {
-    const client = await edgeOneClientFor(this.providers, providerId)
+    const client = await edgeOneClientFor(this.providers, providerId, this.httpTimeoutMs)
     const { items, requestId } = await collectOffsetPages(
       async (offset, limit) => {
         const response = await callProvider(

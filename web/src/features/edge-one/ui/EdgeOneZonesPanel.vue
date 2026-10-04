@@ -60,6 +60,8 @@ function openZone(zone: EdgeOneZone) {
 watch(
   () => props.providerId,
   () => {
+    // 搜索词属于上一个服务商：不清理会让新站点列表被旧关键词过滤成空表
+    keyword.value = ''
     resetPage()
   }
 )

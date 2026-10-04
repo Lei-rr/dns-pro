@@ -1,6 +1,6 @@
 import type { ProviderRepository } from './provider.repository.js'
 import { ApiError } from '../http/api-error.js'
-import type { PresentedProvider, Provider, ProviderInput } from './provider.types.js'
+import type { PresentedProvider, Provider } from './provider.types.js'
 import { getProviderDefinition, getProviderDefinitionsList } from './provider-definitions.js'
 import { ProviderNormalizer } from './provider-normalizer.js'
 import { ProviderPresenter } from './provider-presenter.js'
@@ -45,22 +45,20 @@ export class ProviderService {
   }
 
   async update(id: string, data: Record<string, unknown>): Promise<PresentedProvider> {
-    let updated: ProviderInput | null = null
-
-    const savedProviders = await this.providers.mutateAll((providers) => {
+    const { saved, result: updated } = await this.providers.mutateAllWithResult((providers) => {
       const { index, provider: current } = this.locate(providers, id)
       if (data.type && data.type !== '' && data.type !== current.type) {
         throw new ApiError('provider_type_immutable', 'Provider type cannot be changed', 422)
       }
       const definition = this.definitionFor(current.type)
-      updated = this.normalizer.normalize(this.mergeUpdatePayload(current, data, definition), definition)
-      validateProviderReferences(updated as Provider, providers)
-      providers[index] = updated as Provider
-      return providers
+      const normalized = this.normalizer.normalize(this.mergeUpdatePayload(current, data, definition), definition)
+      validateProviderReferences(normalized as Provider, providers)
+      providers[index] = normalized as Provider
+      // 结果随事务一起返回：不再依赖闭包副作用判断更新是否成功
+      return { next: providers, result: normalized }
     })
 
-    if (!updated) throw new ApiError('server_error', 'Provider update failed', 500)
-    const presented = this.presenter.present(updated as Provider, savedProviders)
+    const presented = this.presenter.present(updated, saved)
     invalidateProviderConfigCache(presented.id)
     return presented
   }

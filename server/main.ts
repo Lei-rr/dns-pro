@@ -28,8 +28,11 @@ function registerShutdown(app: FastifyInstance): void {
     app.log.fatal(err, 'uncaught exception')
     shutdown('uncaughtException', 1)
   })
+  // 注册监听器会顶掉 Node 对未处理拒绝的默认 fail-fast，因此这里必须与 uncaughtException 同一策略：
+  // 记录后有序退出，不能让状态不可信的进程继续服务
   process.on('unhandledRejection', (reason) => {
-    app.log.error({ err: reason }, 'unhandled rejection')
+    app.log.fatal({ err: reason }, 'unhandled rejection')
+    shutdown('unhandledRejection', 1)
   })
 }
 

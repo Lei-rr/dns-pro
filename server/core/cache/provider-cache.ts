@@ -1,14 +1,7 @@
 import { memoryCache } from './memory-cache.js'
 
-type CacheMeta = {
-  cache: boolean
-  cached: boolean
-  source: 'cache' | 'provider'
-}
-
 type CachedResult<T> = {
   value: T
-  meta: CacheMeta
   hit: boolean
 }
 
@@ -53,7 +46,7 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
   if (!options.refresh) {
     const hit = memoryCache.get<T>(key)
     if (hit !== undefined) {
-      return { value: hit, hit: true, meta: { cache: true, cached: true, source: 'cache' } }
+      return { value: hit, hit: true }
     }
     const pending = inflight.get(key)
     if (pending && pending.tagGenerations.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))) {
@@ -73,7 +66,7 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
       fence.tags.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))
     if (current) memoryCache.set(key, value, tags)
 
-    return { value, hit: false, meta: { cache: false, cached: false, source: 'provider' } }
+    return { value, hit: false }
   })()
   const inflightEntry: InflightEntry = { promise: loading, tagGenerations: fence.tags }
   if (!options.refresh) inflight.set(key, inflightEntry)

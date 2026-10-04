@@ -7,7 +7,11 @@ interface StoreSpec {
   readonly defaults: Record<string, unknown>
 }
 
-/** 全部持久化文件登记表；新增数据文件必须在此登记（建目录由此派生） */
+/**
+ * JsonStore 管理的业务数据文件登记表；新增业务数据文件必须在此登记（建目录由此派生）。
+ * credential.key、session-secret、__meta.json、backups/ 等运行时文件由各自模块直接读写，
+ * 既不在此表内，也不参与建目录与迁移判定。
+ */
 const storeSpecs = {
   auth: { path: 'config.json', defaults: { auth: { username: '' } } },
   providers: { path: 'providers.json', defaults: { items: [] } },

@@ -53,9 +53,8 @@ export async function getSaaSBatchJobHandler(
   request: FastifyRequest<RequestOf<typeof saasJobParamsSchema>>,
   reply: FastifyReply
 ) {
-  const { saasBatch, saasPreferredApply } = request.server.ctx.workflows
-  const id = request.params.jobId
-  return reply.send(success((await saasBatch.find(id)) ?? (await saasPreferredApply.find(id))))
+  // 任务类型与端点一一对应：不做跨类型兜底，否则同一 jobId 会按端点返回不同任务
+  return reply.send(success(await request.server.ctx.workflows.saasBatch.find(request.params.jobId)))
 }
 
 export async function getActiveSaaSBatchJobHandler(
@@ -74,8 +73,7 @@ export async function retrySaaSBatchJobHandler(
   request: FastifyRequest<RequestOf<typeof saasJobParamsSchema>>,
   reply: FastifyReply
 ) {
-  const { saasBatch, saasPreferredApply } = request.server.ctx.workflows
-  const id = request.params.jobId
-  const result = (await saasBatch.find(id)) ? await saasBatch.retryFailed(id) : await saasPreferredApply.retryFailed(id)
+  // 未命中时由本族抛出 batch_job_not_found，避免跨类型兜底给出另一族的错误码
+  const result = await request.server.ctx.workflows.saasBatch.retryFailed(request.params.jobId)
   return reply.send(success(result))
 }

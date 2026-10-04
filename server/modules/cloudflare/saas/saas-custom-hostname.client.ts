@@ -55,6 +55,17 @@ export interface CloudflareCustomHostname {
   custom_metadata?: Record<string, unknown> | null
   preferred_domain?: string
   auto_preferred?: boolean
+  /** 读路径合并本地偏好后注入的显式同步配置（非 Cloudflare 上游字段） */
+  sync_target?: string
+  sync_provider_id?: string
+  sync_zone?: string
+  /** 生效同步配置派生字段（默认值补全 + 脏配置修复后的结果） */
+  effective_sync_target?: string
+  effective_sync_provider_id?: string
+  effective_sync_zone?: string
+  sync_config_explicit?: boolean
+  /** 远端已成功、本地偏好写入失败时的降级标记 */
+  local_preference_error?: string
   [key: string]: unknown
 }
 

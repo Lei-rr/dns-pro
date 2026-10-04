@@ -12,41 +12,35 @@ export const edgeOneAccelerationDomainSchema = {
     return { ...r, OriginDetail: asRecord(r.OriginDetail), Certificate: asRecord(r.Certificate) }
   },
 }
+/**
+ * 列表响应归一：校验列表字段、展开原记录，SourceCount 取原始条目数
+ * （分页偏移按上游条目数推进，因此不能用过滤后的长度）。
+ */
+function listResponseSchema(value: unknown, listField: string, label: string): Record<string, any> {
+  const r = requireRecord(value, 'edgeone_invalid_response', 'EdgeOne')
+  const list = r[listField]
+  if (!Array.isArray(list)) {
+    throw new ApiError('edgeone_invalid_response', `EdgeOne invalid ${label} list response`, 502)
+  }
+  return {
+    ...r,
+    [listField]: asRecordArray(list),
+    SourceCount: list.length,
+    TotalCount: r.TotalCount ?? null,
+    RequestId: r.RequestId ?? null,
+  }
+}
 export const edgeoneZoneListResponseSchema = {
-  parse: (v: unknown): Record<string, any> => {
-    const r = requireRecord(v, 'edgeone_invalid_response', 'EdgeOne')
-    if (!Array.isArray(r.Zones)) {
-      throw new ApiError('edgeone_invalid_response', 'EdgeOne invalid zone list response', 502)
-    }
-    return {
-      ...r,
-      Zones: asRecordArray(r.Zones),
-      SourceCount: r.Zones.length,
-      TotalCount: r.TotalCount ?? null,
-      RequestId: r.RequestId ?? null,
-    }
-  },
+  parse: (v: unknown): Record<string, any> => listResponseSchema(v, 'Zones', 'zone'),
 }
 export const edgeoneAccelerationDomainListResponseSchema = {
-  parse: (v: unknown): Record<string, any> => {
-    const r = requireRecord(v, 'edgeone_invalid_response', 'EdgeOne')
-    if (!Array.isArray(r.AccelerationDomains)) {
-      throw new ApiError('edgeone_invalid_response', 'EdgeOne invalid domain list response', 502)
-    }
-    return {
-      ...r,
-      AccelerationDomains: asRecordArray(r.AccelerationDomains),
-      SourceCount: r.AccelerationDomains.length,
-      TotalCount: r.TotalCount ?? null,
-      RequestId: r.RequestId ?? null,
-    }
-  },
+  parse: (v: unknown): Record<string, any> => listResponseSchema(v, 'AccelerationDomains', 'domain'),
 }
 export const edgeoneAccelerationDomainCreateResponseSchema = {
   parse: (v: unknown): Record<string, any> => {
     const r = requireRecord(v, 'edgeone_invalid_response', 'EdgeOne')
     requireField(r, 'RequestId', 'edgeone_invalid_response', 'EdgeOne')
-    return { ...r, RequestId: r.RequestId, OwnershipVerification: r.OwnershipVerification }
+    return r
   },
 }
 export const edgeoneMutationResponseSchema = {

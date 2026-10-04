@@ -6,7 +6,6 @@ import {
   parseUpstreamTotal,
   TENCENT_PAGE_SIZE,
   toFullListResult,
-  type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import {
   providerFiniteNumber,
@@ -48,12 +47,8 @@ interface ZoneListItem {
   updated_on: string
 }
 
-interface ZoneListResult {
-  items: ZoneListItem[]
-  pagination: FullListPagination
-  meta: FullListPagination
-  request_id?: string
-}
+/** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
+type ZoneListResult = ReturnType<typeof toFullListResult<ZoneListItem>>
 
 /** DNSPod 域名（Zone）管理 */
 export class DnsPodZoneService {
@@ -90,7 +85,8 @@ export class DnsPodZoneService {
     return {
       id: providerFiniteNumber(info.Id),
       name: providerString(info.Domain, domain),
-      name_servers: (info.GradeNsList as unknown[]).filter((value): value is string => typeof value === 'string'),
+      // dnspodDomainInfoSchema 已把 GradeNsList 归一为字符串数组
+      name_servers: info.GradeNsList as string[],
       request_id: providerOptionalString(parsed.RequestId),
     }
   }

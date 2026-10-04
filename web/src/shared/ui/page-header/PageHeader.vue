@@ -17,7 +17,6 @@ const props = withDefaults(
     <div class="min-w-0 space-y-1">
       <h1 v-if="title" class="break-words text-xl font-semibold tracking-tight sm:text-2xl">{{ title }}</h1>
       <p v-if="description" class="text-muted-foreground break-words text-sm">{{ description }}</p>
-      <slot name="title" />
     </div>
     <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
       <slot />

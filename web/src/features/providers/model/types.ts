@@ -22,5 +22,6 @@ export interface ProviderDefinition {
 
 export interface ProviderDefinitions {
   types: ProviderDefinition[]
-  labels: Record<string, string>
+  /** labels[类型][字段名]：字段文案与类型相关，不能跨类型共用 */
+  labels: Record<string, Record<string, string>>
 }

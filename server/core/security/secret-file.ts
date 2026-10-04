@@ -20,7 +20,8 @@ async function readSecretFile<T>(filePath: string, parse: (raw: string) => T | n
 
 /**
  * 加载或原子创建私有文件（0600）：凭据密钥、会话密钥等「首次运行自动生成」的文件。
- * - 已有文件交给 parse 判定是否可用，不可用则按新文件重建
+ * - 已有文件交给 parse 判定：合法则直接复用；不合法不会被重建 —— link 的 EEXIST 会让流程落到
+ *   「竞争落败」分支并抛出 invalidMessage，既有文件原样保留（损坏文件需人工处理）
  * - 创建走「临时文件 + link」：link 的 EEXIST 语义保证多进程并发启动时只有一个赢家落盘，
  *   落败方读取赢家的结果，避免两个进程各自攥着一份不同密钥
  */

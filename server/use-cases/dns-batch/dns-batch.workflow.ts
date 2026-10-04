@@ -9,12 +9,14 @@ import {
   type BatchJobViewBase,
   type BatchItemResult,
 } from '../../core/jobs/batch-job.js'
-import { ZONE_WRITE_JOB_TYPES, dnsZoneKey, readResourceKeys } from '../../core/jobs/job-types.js'
 import {
   DNS_BATCH_CREATE_JOB,
   DNS_BATCH_DELETE_JOB,
   DNS_BATCH_UPDATE_JOB,
   DNS_ZONE_JOB_TYPES,
+  ZONE_WRITE_JOB_TYPES,
+  dnsZoneKey,
+  readResourceKeys,
 } from '../../core/jobs/job-types.js'
 import {
   normalizeCreateRecords,
@@ -63,7 +65,10 @@ export class DnsBatchWorkflow {
   createCreate(input: JobScope & { records: BatchRecordInput[] }) {
     const records = normalizeCreateRecords(input.records)
     if (!records.length) throw new ApiError('batch_empty', 'No records to create', 422)
-    return this.enqueue(DNS_BATCH_CREATE_JOB, input, {}, records, '批量添加 DNS 记录任务已创建')
+    // 记录启停状态改名为 record_status：任务条目的 status 会被执行骨架覆写为 running，
+    // 沿用 item.status 会让幂等查重与 DISABLE 语义双双失效
+    const items = records.map(({ status, ...record }) => ({ ...record, record_status: status ?? '' }))
+    return this.enqueue(DNS_BATCH_CREATE_JOB, input, {}, items, '批量添加 DNS 记录任务已创建')
   }
 
   createDelete(input: JobScope & { records: Array<{ id: string; name?: string; type?: string }> }) {
@@ -215,7 +220,7 @@ export class DnsBatchWorkflow {
 function toRecordValue(item: Record<string, unknown>): DnsRecordValue {
   const value: DnsRecordValue = {
     type: String(item.type || 'A').toUpperCase(),
-    name: String(item.name || '@') || '@',
+    name: String(item.name || '@'),
     value: String(item.value ?? ''),
   }
   if (item.ttl !== undefined && item.ttl !== '') value.ttl = Number(item.ttl)
@@ -224,7 +229,10 @@ function toRecordValue(item: Record<string, unknown>): DnsRecordValue {
   if (item.priority !== undefined && item.priority !== '') value.priority = Number(item.priority)
   if (item.remark !== undefined) value.note = String(item.remark)
   if (item.proxied !== undefined) value.proxied = Boolean(item.proxied)
-  if (item.status !== undefined && item.status !== '') value.status = String(item.status).toUpperCase()
+  // 记录启停状态取自 record_status：item.status 是任务条目状态（执行骨架会覆写为 running）
+  if (item.record_status !== undefined && item.record_status !== '') {
+    value.status = String(item.record_status).toUpperCase()
+  }
   if (item.weight !== undefined && item.weight !== '') value.weight = Number(item.weight)
   return value
 }
@@ -238,8 +246,9 @@ function mergeRecordValue(item: Record<string, unknown>, patch: Record<string, u
     return current !== undefined && current !== null && current !== '' ? current : undefined
   }
   return toRecordValue({
-    type: pick('type'),
-    name: pick('name'),
+    // patch 由 normalizePatch 产出，只含可覆盖字段；type/name 恒取条目快照
+    type: item.type,
+    name: item.name,
     value: pick('value'),
     ttl: pick('ttl'),
     line: pick('line'),
@@ -247,7 +256,7 @@ function mergeRecordValue(item: Record<string, unknown>, patch: Record<string, u
     priority: pick('priority'),
     remark: pick('remark'),
     proxied: pick('proxied'),
-    status: pick('status', 'record_status'),
+    record_status: pick('status', 'record_status'),
     weight: pick('weight'),
   })
 }

@@ -48,12 +48,9 @@ const commandOpen = ref(false)
 const isDark = ref(false)
 
 const activeProviderId = computed(() => {
+  // 服务商页面统一在 /p/:provider 前缀下，取第二段；其余首段都是系统页面（控制台/服务商/同步健康/登录）
   const segments = route.path.split('/').filter(Boolean)
-  // 服务商页面统一在 /p/:provider 前缀下，取第二段；其余首段是系统页面（控制台/服务商/同步健康）
-  if (segments[0] === 'p') return segments[1] || ''
-  const first = segments[0] || ''
-  if (!first || first === 'providers' || first === 'login' || first === 'sync') return ''
-  return first
+  return segments[0] === 'p' ? segments[1] || '' : ''
 })
 
 const providerIcons: Record<string, Component> = {
@@ -209,8 +206,8 @@ onMounted(async () => {
   initTheme()
   window.addEventListener('keydown', handleGlobalKeydown)
   try {
-    const s = await session.load()
-    if (s.is_default_credential) {
+    await session.load()
+    if (session.isDefaultCredential) {
       passwordRequired.value = true
       passwordDialogOpen.value = true
     }

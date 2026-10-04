@@ -42,13 +42,13 @@ const props = defineProps<ToasterProps>()
 </template>
 
 <style>
-[data-sonner-toast] {
+/* 只让定位容器透传指针，避免遮挡其下页面；toast 本体必须可交互（悬停暂停/展开、滑动关闭、选中文字），
+   隐藏中的 toast 交回 vue-sonner 自带的 [data-visible='false'] 规则处理 */
+[data-sonner-toaster] {
   pointer-events: none;
 }
 
-[data-sonner-toast] [data-close-button],
-[data-sonner-toast] [data-button],
-[data-sonner-toast] [data-cancel] {
+[data-sonner-toast][data-visible='true'] {
   pointer-events: auto;
 }
 </style>

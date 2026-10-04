@@ -26,7 +26,7 @@ type ZoneScope = { providerId: string; zoneId: string }
 
 const byDomain = (domain: string) => (row: Record<string, unknown>) => String(row.domain ?? '') === domain
 
-/** EdgeOne 加速域名批量 停用/删除，同一站点内互斥 */
+/** EdgeOne 加速域名批量 停用/删除；与 DNS 批量等任务按底层写入资源键（EdgeOne 站点 + 关联 DNSPod 域名）互斥 */
 export class EdgeOneBatchWorkflow {
   private readonly kind: BatchJobKind<EdgeOneBatchJobView>
 

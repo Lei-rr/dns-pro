@@ -8,7 +8,6 @@ import {
   parseUpstreamTotal,
   TENCENT_PAGE_SIZE,
   toFullListResult,
-  type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../core/providers/provider-values.js'
 import { invalidateDnsPodRecordCache } from './dns-pod.cache.js'
@@ -47,12 +46,8 @@ export interface DnsPodRecordItem {
   updated_on: string
 }
 
-interface RecordListResult {
-  items: DnsPodRecordItem[]
-  pagination: FullListPagination
-  meta: FullListPagination
-  request_id?: string
-}
+/** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
+type RecordListResult = ReturnType<typeof toFullListResult<DnsPodRecordItem>>
 
 export interface RecordCreateInput {
   record_type: string
@@ -222,7 +217,7 @@ function optionalString(value: unknown): string | undefined {
   return text === '' ? undefined : text
 }
 
-/** 解析非负整数；超出 [min, max] 视为非法（NaN/越界一律拒绝，避免上游 502） */
+/** 解析非负整数；非有限数静默忽略，越界抛 422（避免把非法值发给上游） */
 function optionalUint(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): number | undefined {
   if (value === undefined || value === null || value === '') return undefined
   const num = Number(value)

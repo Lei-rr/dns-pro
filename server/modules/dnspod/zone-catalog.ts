@@ -1,10 +1,10 @@
 import { ApiError } from '../../core/http/api-error.js'
-import { normalizeFqdn } from '../../shared/values.js'
+import { toAsciiFqdn } from '../../shared/values.js'
 import type { DnsPodZoneService } from './dns-pod-zone.service.js'
 
-/** 在候选域名中做最长后缀匹配（FQDN 归属判定） */
+/** 在候选域名中做最长后缀匹配（FQDN 归属判定）；两侧统一为 punycode 小写形态 */
 function longestMatchingZone(fqdn: string, zoneNames: string[]): string {
-  const normalized = normalizeFqdn(fqdn)
+  const normalized = toAsciiFqdn(fqdn)
   if (normalized === '') return ''
   let best = ''
   for (const raw of zoneNames) {
@@ -22,10 +22,11 @@ function longestMatchingZone(fqdn: string, zoneNames: string[]): string {
 export class DnsPodZoneCatalog {
   constructor(private readonly zones: DnsPodZoneService) {}
 
-  /** 账号内全部域名（小写） */
+  /** 账号内全部域名（小写 punycode） */
   async names(providerId: string): Promise<string[]> {
     const zones = await this.zones.list(providerId)
-    return zones.items.map((zone) => zone.name.toLowerCase()).filter(Boolean)
+    // IDN 域名同时返回 Unicode 名与 Punycode：统一取 ASCII 形态，否则与入参恒不匹配
+    return zones.items.map((zone) => toAsciiFqdn(zone.punycode || zone.name)).filter(Boolean)
   }
 
   /** 最长后缀匹配；未命中返回空串 */
@@ -35,7 +36,7 @@ export class DnsPodZoneCatalog {
 
   /** 要求命中，否则按前缀抛 422 */
   async resolve(providerId: string, fqdn: string, errorCodePrefix: string): Promise<string> {
-    const normalized = normalizeFqdn(fqdn)
+    const normalized = toAsciiFqdn(fqdn)
     if (normalized === '') throw new ApiError(`${errorCodePrefix}_fqdn_empty`, 'Empty FQDN', 422)
     const best = longestMatchingZone(normalized, await this.names(providerId))
     if (best === '') {
@@ -46,7 +47,7 @@ export class DnsPodZoneCatalog {
 
   /** 显式指定的域名必须存在于账号内 */
   async requireExplicit(providerId: string, zoneName: string, errorCodePrefix: string): Promise<string> {
-    const normalized = normalizeFqdn(zoneName)
+    const normalized = toAsciiFqdn(zoneName)
     if (normalized !== '' && (await this.names(providerId)).includes(normalized)) return normalized
     throw new ApiError(
       `${errorCodePrefix}_dnspod_zone_not_found`,

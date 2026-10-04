@@ -87,8 +87,8 @@ export class SaaSDnsSyncWorkflow {
   ) {}
 
   /** 本工作流会写入的底层 DNS 资源键（供批量任务做跨工作流互斥） */
-  resourceKeys(providerId: string, zoneName: string): Promise<string[]> {
-    return this.sync.resourceKeys(providerId, zoneName)
+  resourceKeys(providerId: string, zoneName: string, hostnames: string[] = []): Promise<string[]> {
+    return this.sync.resourceKeys(providerId, zoneName, hostnames)
   }
 
   async createHostname(providerId: string, zoneName: string, data: Record<string, unknown>, autoSync = false) {

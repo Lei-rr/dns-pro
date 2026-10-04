@@ -83,7 +83,6 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   saas_business_target_missing: '缺少业务主 CNAME 的目标域名',
   saas_dnspod_provider_missing: 'SaaS 未关联 DNSPod 服务商',
   saas_dnspod_zone_not_found: 'DNSPod 中找不到与该主机名匹配的域名',
-  saas_fqdn_empty: '主机名 FQDN 为空',
   saas_fqdn_missing: '主机名 FQDN 缺失',
   saas_not_active: '该主机名当前未激活',
   saas_hostname_not_found: 'SaaS 主机名不存在',
@@ -103,7 +102,6 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   saas_cloudflare_sync_zone_mismatch: 'Cloudflare DNS 同步域名与主机名不匹配，请检查同步目标',
   provider_test_failed: '服务商连接测试失败',
   provider_credentials_invalid: '密钥无效或权限不足',
-  forbidden: '权限不足，请检查服务商权限范围',
 
   // Fallback origin
   fallback_origin_invalid: '默认回源必须是当前站点的有效子域名',

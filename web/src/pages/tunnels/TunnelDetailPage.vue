@@ -2,7 +2,7 @@
 import { TunnelDetailPanel } from '@/features/tunnels'
 import type { ProviderPageProps } from '../provider-entry/provider-page-props'
 
-defineProps<Pick<ProviderPageProps, 'providerId' | 'zoneId'>>()
+defineProps<ProviderPageProps>()
 </script>
 
 <template>

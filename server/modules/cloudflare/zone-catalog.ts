@@ -2,10 +2,9 @@ import { normalizeFqdn, toAsciiFqdn } from '../../shared/values.js'
 import { providerCacheTag, withProviderCache, zoneCacheTag } from '../../core/cache/provider-cache.js'
 import { callProvider } from '../../core/providers/provider-call.js'
 import { parseCloudflareItemResponse } from './cloudflare-response.schema.js'
+import { CLOUDFLARE_PROVIDER_TYPE } from './cloudflare.cache.js'
 import type { CloudflareAccess } from './access.js'
 import type { CloudflareZoneService } from './cloudflare-zone.service.js'
-
-const PROVIDER_TYPE = 'cloudflare'
 
 export interface ZoneRef {
   providerId: string
@@ -40,8 +39,11 @@ export class ZoneCatalog {
   /** 站点级 DCV 委派 UUID（SaaS 证书委派用） */
   async dcvDelegationUuid(providerId: string, zoneId: string, refresh = false): Promise<string> {
     const cached = await withProviderCache<{ uuid: string }>({
-      key: { prefix: `${PROVIDER_TYPE}:dcv_delegation`, parts: { provider_id: providerId, zone_id: zoneId } },
-      tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
+      key: {
+        prefix: `${CLOUDFLARE_PROVIDER_TYPE}:dcv_delegation`,
+        parts: { provider_id: providerId, zone_id: zoneId },
+      },
+      tags: [providerCacheTag(providerId), zoneCacheTag(CLOUDFLARE_PROVIDER_TYPE, providerId)],
       refresh,
       loader: async () => {
         const { client } = await this.access.forProvider(providerId)

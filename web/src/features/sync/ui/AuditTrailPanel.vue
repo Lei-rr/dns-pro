@@ -1,19 +1,13 @@
 <script setup lang="ts">
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/shared/ui/empty'
 import { StatusBadge } from '@/shared/ui/status-badge'
-import { AUDIT_LABEL } from '../lib/status'
+import { auditMeta } from '../lib/status'
 import type { AuditEvent } from '../model/types'
 
 defineProps<{
   events: AuditEvent[]
   loading?: boolean
 }>()
-
-function badgeVariant(action: string) {
-  if (action === 'credential_change') return 'warning' as const
-  if (action === 'session_revoked') return 'destructive' as const
-  return 'secondary' as const
-}
 
 function detailText(detail: Record<string, unknown>) {
   return Object.entries(detail)
@@ -45,8 +39,8 @@ function timeText(at: string) {
         class="flex flex-col gap-1 rounded-lg border border-border/40 px-3 py-2"
       >
         <div class="flex flex-wrap items-center gap-2">
-          <StatusBadge :variant="badgeVariant(event.action)">{{
-            AUDIT_LABEL[event.action] ?? event.action
+          <StatusBadge :variant="auditMeta(event.action).variant" :title="event.action">{{
+            auditMeta(event.action).label
           }}</StatusBadge>
           <span class="truncate text-sm font-medium">{{ event.target }}</span>
           <span class="text-muted-foreground ml-auto text-xs tabular-nums">{{ timeText(event.at) }}</span>

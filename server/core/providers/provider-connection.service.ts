@@ -45,6 +45,8 @@ export class ProviderConnectionService {
     const provider = await this.providers.find(id)
     if (!provider) throw new ApiError('provider_not_found', 'Provider not found', 404)
     const nextVisited = new Set(visited).add(id)
+    // 存储脏数据可能带白名单外的 type：先按 string 取原始值，供 default 分支使用
+    const providerType: string = provider.type
 
     try {
       switch (provider.type) {
@@ -103,6 +105,13 @@ export class ProviderConnectionService {
             message: `Cloudflare Tunnel 连接正常（隧道 ${tunnels.items.length} 个）`,
             details: { total: tunnels.items.length, cloudflare_provider: linked },
           }
+        }
+        default: {
+          // 白名单外的 type 只可能来自被手工编辑的存储：明确失败，避免 switch 落空后返回 undefined
+          throw new ApiError('provider_test_failed', `Unsupported provider type: ${providerType}`, 422, {
+            provider_id: id,
+            type: providerType,
+          })
         }
       }
     } catch (error) {

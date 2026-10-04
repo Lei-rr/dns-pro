@@ -1,5 +1,5 @@
 import { reactive, ref, toValue, type MaybeRefOrGetter } from 'vue'
-import { dnsApi, type DnsProviderRef } from '../api/dns-api'
+import { batchJobFetcher, batchJobRetrier, dnsApi, type DnsProviderRef } from '../api/dns-api'
 import type { DnsRecord } from '../model/types'
 import { parseRecordNames } from '../lib/record-names'
 import { toast } from '@/shared/lib/toast'
@@ -126,8 +126,8 @@ export function useRecordForm(options: {
           label: '批量创建',
           create: () =>
             dnsApi.batchCreateRecords(provider, zoneId, { records: names.map((name) => ({ ...base, name })) }),
-          fetchJob: async (id) => ((await dnsApi.batchJob(provider, id)).data as Record<string, unknown>) || {},
-          retry: (id) => dnsApi.batchRetry(provider, id),
+          fetchJob: batchJobFetcher(provider),
+          retry: batchJobRetrier(provider),
           onDone: () => options.invalidate(),
           jobProgress: options.jobProgress,
         })

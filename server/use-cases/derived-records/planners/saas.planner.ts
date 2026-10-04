@@ -427,7 +427,7 @@ export function saasDerivedPlanner(deps: SaaSDerivedPlannerDeps): DerivedSourceP
           if (!zone.name) continue
           const listed = await deps.hostnames.hostnames(provider.id, zone.name)
           for (const item of listed.items) {
-            const hostname = item as CloudflareCustomHostname
+            const hostname = item
             const fqdn = normalizeFqdn(hostname.hostname)
             if (fqdn === '') continue
             const target = await resolveSaaSSyncTarget(deps, provider.id, hostname, fqdn, zone.name).catch(

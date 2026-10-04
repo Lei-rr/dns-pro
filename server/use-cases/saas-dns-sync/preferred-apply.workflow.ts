@@ -1,15 +1,7 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
-import type { SideEffects } from '../../core/providers/side-effect-result.js'
-import {
-  BatchJobKind,
-  dnsEffectNote,
-  dnsEffectOf,
-  finishBatchJob,
-  runBatchItems,
-  type BatchJobViewBase,
-} from '../../core/jobs/batch-job.js'
+import { BatchJobKind, finishBatchJob, runBatchItems, type BatchJobViewBase } from '../../core/jobs/batch-job.js'
 import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
 import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
 import {
@@ -18,6 +10,8 @@ import {
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
 } from '../../core/jobs/job-types.js'
+import { itemResultFromSideEffects } from './saas-batch-item-result.js'
+import { invalidateSaasZoneListCache } from './saas-zone-cache.js'
 import type { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 
 type PreferredApplyJob = BatchJobViewBase & {
@@ -97,7 +91,11 @@ export class SaaSPreferredApplyWorkflow {
     const payload = {
       provider_id: input.providerId,
       zone_name: input.zoneName,
-      resource_keys: await this.workflow.resourceKeys(input.providerId, input.zoneName),
+      resource_keys: await this.workflow.resourceKeys(
+        input.providerId,
+        input.zoneName,
+        targets.map((item) => String(item.hostname ?? '')).filter(Boolean)
+      ),
       preferred_domain: preferred,
       only_auto_preferred: Boolean(input.onlyAutoPreferred),
       dry_run: Boolean(input.dryRun),
@@ -166,33 +164,20 @@ export class SaaSPreferredApplyWorkflow {
           zoneName,
           hostname,
           { preferred_domain: preferred, auto_preferred: true },
-          true
+          true,
+          // 批量逐条更新：抑制逐条列表缓存失效，否则每条都要重新分页拉取整站主机名（O(N²) 上游请求）
+          { deferListInvalidation: true }
         )
-        // 本地偏好失败时 updateHostname 提前返回且不写 DNS：条目不能按成功上报
-        const local = (updated as { side_effects?: SideEffects }).side_effects?.local?.preference
-        if (local?.status === 'failed') {
-          return {
-            status: 'failed',
-            message: `优选已保存，但本地偏好保存失败：${local.message || '未知错误'}`,
-            extra: { preferred_domain: preferred, local_preference_status: 'failed' },
-          }
-        }
-        const sync = dnsEffectOf(updated, 'sync')
-        if (sync?.status === 'failed') {
-          return {
-            status: 'failed',
-            message: `优选已保存，但 DNS 写回失败：${sync.message || '未知错误'}`,
-            extra: { preferred_domain: preferred, dns_sync_status: 'failed' },
-          }
-        }
-        return {
-          status: 'success',
-          message: `已切换为 ${preferred}${dnsEffectNote(sync, 'DNS 已写回')}`,
-          extra: { preferred_domain: preferred, dns_sync_status: sync?.status ?? 'unknown' },
-        }
+        return itemResultFromSideEffects(updated, {
+          successMessage: `已切换为 ${preferred}`,
+          extra: { preferred_domain: preferred },
+          localFailureMessage: '优选已保存，但本地偏好保存失败',
+          syncFailureMessage: '优选已保存，但 DNS 写回失败',
+        })
       },
     })
     await finishBatchJob(this.jobs, job.id, '优选应用')
+    await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
   }
 
   private async resolveTargets(input: ApplyInput): Promise<CloudflareCustomHostname[]> {

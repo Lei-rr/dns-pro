@@ -21,7 +21,7 @@ import type { CloudflareAccess } from '../access.js'
 import type { ZoneCatalog, ZoneRef } from '../zone-catalog.js'
 import type { TunnelDnsService } from './tunnel-dns.service.js'
 
-export interface TunnelRoute {
+interface TunnelRoute {
   hostname: string
   service: string
   path: string

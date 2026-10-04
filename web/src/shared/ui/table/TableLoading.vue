@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import type { HTMLAttributes } from 'vue'
 import { cn } from '@/shared/lib/utils'
 import { Spinner } from '@/shared/ui/spinner'
 
@@ -10,7 +11,7 @@ const props = withDefaults(
     empty?: boolean
     text?: string
     refreshing?: boolean
-    class?: string
+    class?: HTMLAttributes['class']
     /** 有数据时延迟显示 soft-loading（ms） */
     delayMs?: number
   }>(),

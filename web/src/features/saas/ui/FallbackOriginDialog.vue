@@ -18,9 +18,6 @@ const props = defineProps<{
   providerId: string
   zoneName: string
 }>()
-const emit = defineEmits<{
-  updated: [origin: string]
-}>()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -91,20 +88,15 @@ async function save() {
   saving.value = true
   try {
     if (!nextEnabled) {
-      // 未配置过就没有可删除的对象，直接关闭，避免无谓的 404
-      if (!hadOrigin.value) {
-        if (owner.active()) emit('updated', '')
-        return
-      }
+      // 未配置过就没有可删除的对象，无需调用删除接口（避免无谓的 404）
+      if (!hadOrigin.value) return
       await saasApi.deleteFallbackOrigin(owner.value.providerId, owner.value.zoneName)
       if (!owner.active()) return
       toast.success('默认回源已关闭')
-      emit('updated', '')
     } else {
       await saasApi.setFallbackOrigin(owner.value.providerId, owner.value.zoneName, nextOrigin)
       if (!owner.active()) return
       toast.success('默认回源已保存')
-      emit('updated', nextOrigin)
     }
     open.value = false
   } catch (error) {
@@ -135,7 +127,6 @@ async function removeOrigin() {
     await saasApi.deleteFallbackOrigin(owner.value.providerId, owner.value.zoneName)
     if (!owner.active()) return
     toast.success('已删除默认回源')
-    emit('updated', '')
     open.value = false
   } catch (error) {
     if (owner.active()) toast.error(errorMessage(error))

@@ -1,15 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ReconcileSummary } from '../model/types'
+import { statusMeta, statusTone } from '../lib/status'
+import type { DerivedStatus, ReconcileSummary } from '../model/types'
 
 const props = defineProps<{ summary: ReconcileSummary }>()
 
+/** 状态卡片顺序固定；标签与色调取自 STATUS_META，卡片只负责计数与排版 */
+const STATUS_KEYS: DerivedStatus[] = ['synced', 'drifted', 'missing', 'failed']
+
 const cards = computed(() => [
   { key: 'total', label: '派生记录', value: props.summary.total, tone: 'text-foreground' },
-  { key: 'synced', label: '已同步', value: props.summary.synced, tone: 'text-emerald-600 dark:text-emerald-400' },
-  { key: 'drifted', label: '有漂移', value: props.summary.drifted, tone: 'text-amber-600 dark:text-amber-400' },
-  { key: 'missing', label: '缺失', value: props.summary.missing, tone: 'text-destructive' },
-  { key: 'failed', label: '失败', value: props.summary.failed, tone: 'text-destructive' },
+  ...STATUS_KEYS.map((status) => ({
+    key: status,
+    label: statusMeta(status).label,
+    value: props.summary[status],
+    tone: statusTone(status),
+  })),
 ])
 </script>
 

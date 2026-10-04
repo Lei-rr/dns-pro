@@ -8,6 +8,7 @@ import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { useRowBusy } from '@/shared/lib/row-busy'
 import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
+import { routeKey } from '@/features/tunnels/lib/route-key'
 import type { TunnelDetailScope } from './use-tunnel-detail'
 
 /** 隧道 Ingress 路由的增删改：表单状态、逐行 busy 与作用域失效 */
@@ -24,10 +25,7 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
     path: '',
   })
 
-  /** hostname + path 唯一确定一条 ingress 规则，行 key 与 busy key 共用此口径 */
-  function routeKey(record: TunnelRoute) {
-    return `${record.hostname}|${record.path}`
-  }
+  /** hostname + path 唯一确定一条 ingress 规则，行 key 与 busy key 共用此口径（见 lib/route-key） */
   const isRouteBusy = (record: TunnelRoute) => isBusy(routeKey(record))
 
   function captureMutationOwner(): GenerationOwner {

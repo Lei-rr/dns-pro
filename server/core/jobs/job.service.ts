@@ -1,18 +1,19 @@
 import * as crypto from 'node:crypto'
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
-import { summarizeJobItems, type JobItem, type JobLock, type JobRecord, type JobStatus } from './job.types.js'
+import {
+  EXECUTION_SNAPSHOT_FIELDS,
+  summarizeJobItems,
+  type JobItem,
+  type JobLock,
+  type JobRecord,
+  type JobStatus,
+} from './job.types.js'
 
 export type { JobRecord } from './job.types.js'
 
 const ACTIVE: JobStatus[] = ['pending', 'running']
 const TERMINAL: JobStatus[] = ['completed', 'failed']
-/**
- * 仅用于执行期恢复的内部快照字段。
- * 已完成任务不可能再重试，剥离以控制内存占用；
- * 失败任务保留（重试需要更新前的 DNS 快照）。
- */
-const EXECUTION_SNAPSHOT_FIELDS = ['dns_before_records', 'cleanup_recipe'] as const
 /** 终态任务保留上限：超出后按结束时间淘汰最旧，避免长进程内存无界增长 */
 const MAX_TERMINAL_JOBS = 500
 
@@ -55,23 +56,18 @@ export class JobService {
       skipped: number
     }
   ): Promise<JobRecord> {
-    const now = Date.now()
-    const job: JobRecord = {
-      id: crypto.randomBytes(8).toString('hex'),
+    const job = this.buildJob({
       type,
+      payload,
+      items,
       status: options.status,
-      total: items.length,
       done: items.length,
       success: options.success,
       failed: options.failed,
       skipped: options.skipped,
-      payload,
-      items,
-      created_at: now,
-      updated_at: now,
-      finished_at: now,
       message: options.message,
-    }
+      finished: true,
+    })
     this.assertNoActiveConflict(lock)
     return this.put(job)
   }
@@ -83,26 +79,53 @@ export class JobService {
     lock: JobLock | undefined,
     options: { start?: boolean; message?: string } = {}
   ): Promise<JobRecord> {
-    const now = Date.now()
-    const job: JobRecord = {
-      id: crypto.randomBytes(8).toString('hex'),
+    const job = this.buildJob({
       type,
+      payload,
+      items: items.map((item) => ({ status: 'pending', ...item })),
       status: 'pending',
-      total: items.length,
       done: 0,
       success: 0,
       failed: 0,
       skipped: 0,
-      payload,
-      items: items.map((item) => ({ status: 'pending', ...item })),
-      created_at: now,
-      updated_at: now,
       message: options.message || 'pending',
-    }
+    })
     this.assertNoActiveConflict(lock)
     this.put(job)
     if (options.start !== false) this.requestStart(job.id)
     return job
+  }
+
+  /** 任务骨架：id / 时间戳 / 计数集中构造，创建与终态创建共用 */
+  private buildJob(input: {
+    type: string
+    payload: Record<string, unknown>
+    items: Array<Record<string, unknown>>
+    status: JobStatus
+    done: number
+    success: number
+    failed: number
+    skipped: number
+    message: string
+    finished?: boolean
+  }): JobRecord {
+    const now = Date.now()
+    return {
+      id: crypto.randomBytes(8).toString('hex'),
+      type: input.type,
+      status: input.status,
+      total: input.items.length,
+      done: input.done,
+      success: input.success,
+      failed: input.failed,
+      skipped: input.skipped,
+      payload: input.payload,
+      items: input.items,
+      created_at: now,
+      updated_at: now,
+      ...(input.finished ? { finished_at: now } : {}),
+      message: input.message,
+    }
   }
 
   async get(id: string): Promise<JobRecord | null> {
@@ -133,7 +156,7 @@ export class JobService {
   ): Promise<JobRecord | null> {
     const job = this.jobs.get(id)
     if (!job) return null
-    if (TERMINAL.includes(job.status)) return { ...job }
+    if (TERMINAL.includes(job.status)) return cloneJob(job)
     const items = job.items.map((item) => (match(item) ? { ...item, ...itemPatch } : item))
     return this.put({ ...job, ...jobPatch, items, ...summarizeJobItems(items), updated_at: Date.now() })
   }

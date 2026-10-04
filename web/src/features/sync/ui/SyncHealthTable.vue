@@ -16,7 +16,7 @@ function describe(record: { type?: string; value?: string } | null | undefined) 
   return `${record.type ?? ''} ${record.value ?? ''}`.trim() || '—'
 }
 
-/** 行标识：与后端 itemKey 同口径带上 purpose，同一主机名的 origin_cname 与 preferred_cname 不再撞 key */
+/** 行标识：后端 itemKey 的超集——额外带 source 维度，避免不同来源写同一 fqdn+purpose 时撞 key */
 function rowKey(item: ReconcileItem) {
   const { providerType, providerId, zone, fqdn } = item.target
   return [item.source.kind, item.source.id, providerType, providerId, zone, fqdn, item.purpose].join('|')
@@ -44,7 +44,7 @@ function rowKey(item: ReconcileItem) {
         <TableRow v-for="item in items" :key="rowKey(item)">
           <TableCell>
             <div class="flex flex-col gap-0.5">
-              <span class="text-sm font-medium">{{ sourceLabel(item.source.kind) }}</span>
+              <span class="text-sm font-medium" :title="item.source.kind">{{ sourceLabel(item.source.kind) }}</span>
               <span class="text-muted-foreground truncate text-xs">{{ item.source.id }}</span>
             </div>
           </TableCell>
@@ -65,7 +65,9 @@ function rowKey(item: ReconcileItem) {
             </div>
           </TableCell>
           <TableCell>
-            <StatusBadge :variant="statusMeta(item.status).variant">{{ statusMeta(item.status).label }}</StatusBadge>
+            <StatusBadge :variant="statusMeta(item.status).variant" :title="item.status">{{
+              statusMeta(item.status).label
+            }}</StatusBadge>
           </TableCell>
           <TableCell>
             <div class="flex flex-col gap-0.5">

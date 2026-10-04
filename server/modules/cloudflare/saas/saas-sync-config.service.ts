@@ -7,9 +7,9 @@ import { guessZoneFromFqdn, zoneOwnsHostname } from './saas-hostname-rules.js'
 import type { HostnamePreference, SaaSPreferenceService, SyncPreference } from './saas-preference.service.js'
 import { preferenceOf } from './saas-preference.service.js'
 
-export type SyncTarget = 'dnspod' | 'cloudflare_dns' | ''
+type SyncTarget = 'dnspod' | 'cloudflare_dns' | ''
 
-export type ExplicitSyncConfig = SyncPreference & { hostname: string }
+type ExplicitSyncConfig = SyncPreference & { hostname: string }
 type EffectiveSyncConfig = ExplicitSyncConfig & { explicit: boolean }
 
 /** 主机名 + 本地偏好合并后的形状：读路径的生效配置与写路径的响应都由它派生 */
@@ -123,9 +123,14 @@ export class SaaSSyncConfigService {
       sync_zone: zoneText(existing?.sync_zone),
       auto_preferred: Boolean(existing?.auto_preferred),
     }
+    const explicitTarget = text(data.sync_target)
+    // 目标被显式切换时旧目标的 provider 不再适用：未显式提交就交回 resolve 取新目标的默认服务商，
+    // 否则旧值会把 provider ||= 短路掉，落成目标与类型不匹配的配置（写入时 422 provider_reference_not_found）
+    const providerFallback =
+      explicitTarget !== '' && explicitTarget !== stored.sync_target ? '' : stored.sync_provider_id
     let candidate: SyncPreference = {
-      sync_target: text(data.sync_target) || stored.sync_target,
-      sync_provider_id: text(data.sync_provider_id) || stored.sync_provider_id,
+      sync_target: explicitTarget || stored.sync_target,
+      sync_provider_id: text(data.sync_provider_id) || providerFallback,
       sync_zone: zoneText(data.sync_zone) || stored.sync_zone,
       auto_preferred: 'auto_preferred' in data ? Boolean(data.auto_preferred) : stored.auto_preferred,
     }

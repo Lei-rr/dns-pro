@@ -17,6 +17,7 @@ import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { useRowBusy } from '@/shared/lib/row-busy'
+import { createScopeGeneration } from '@/shared/lib/scope-generation'
 import { JobProgressAlert, useJobProgress } from '@/shared/job'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { confirmDelete } from '@/shared/ui/confirm'
@@ -32,6 +33,8 @@ const props = defineProps<{ provider: DnsProviderRef; zoneId: string }>()
 const router = useRouter()
 const jobProgress = useJobProgress()
 const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
+/** 写路径作用域快照：确认弹窗期间路由可能已切到别的 provider/zone */
+const writeScope = createScopeGeneration()
 
 const providerId = computed(() => props.provider.id)
 const isCloudflare = computed(() => props.provider.type === 'cloudflare')
@@ -168,16 +171,19 @@ async function removeRecord(record: DnsRecord) {
     toast.error('该记录缺少 ID，无法删除，请刷新后重试')
     return
   }
+  // 确认弹窗期间可能切换作用域：先快照 provider/zone，请求只用快照值
+  const scopeOwner = writeScope.capture({ provider: { ...props.provider }, zoneId: props.zoneId })
   if (!(await confirmDelete(`${record.name} · ${record.type}`))) return
+  if (!scopeOwner.active()) return
   await runBusy(dnsRecordRowKey(record), async (owner) => {
     try {
-      await dnsApi.deleteRecord(props.provider, props.zoneId, recordId)
-      if (!owner.active()) return
+      await dnsApi.deleteRecord(scopeOwner.value.provider, scopeOwner.value.zoneId, recordId)
+      if (!owner.active() || !scopeOwner.active()) return
       toast.success('已删除')
       selection.clear()
       await recordsQuery.invalidate()
     } catch (error) {
-      if (owner.active()) toast.error(errorMessage(error))
+      if (owner.active() && scopeOwner.active()) toast.error(errorMessage(error))
     }
   })
 }
@@ -215,6 +221,7 @@ function handleExport(format: 'json' | 'csv' | 'zone') {
 }
 
 watch([providerId, () => props.provider.type, () => props.zoneId], () => {
+  writeScope.invalidate()
   recordForm.dialogOpen.value = false
   batch.batchEditOpen.value = false
   batch.invalidateScope()
@@ -231,6 +238,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  writeScope.invalidate()
   batch.invalidateScope()
   jobProgress.reset()
   resetRowOperations()

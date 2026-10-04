@@ -44,8 +44,7 @@ const loading = tunnelsQuery.loading
 const refreshing = tunnelsQuery.refreshing
 const pageSize = tunnelsQuery.pageSize
 const tunnels = computed(() => tunnelsQuery.data.value ?? [])
-const tunnelItems = computed(() => tunnels.value)
-const { page, total, pagedItems: pagedTunnels, resetPage } = useLocalPagination(tunnelItems, pageSize)
+const { page, total, pagedItems: pagedTunnels, resetPage } = useLocalPagination(tunnels, pageSize)
 
 function onPageSizeChange(next: number) {
   tunnelsQuery.setPageSize(next)
@@ -92,8 +91,13 @@ async function createTunnel() {
 }
 
 async function removeTunnel(record: CloudflaredTunnel) {
+  // 删除接口按 Cloudflare 隧道 ID 定位：id 缺失时提前拦下，避免请求打到空 ID 换回 404
+  const tunnelId = record.id
+  if (!tunnelId) {
+    toast.warning('该隧道缺少 ID，暂无法删除')
+    return
+  }
   const scopeOwner = providerGeneration.capture({ providerId: props.providerId })
-  const tunnelId = String(record.id || '')
   const tunnelKey = tunnelRowKey(record)
   if (!(await confirmDelete(record.name || record.id)) || !scopeOwner.active()) return
   await runBusy(tunnelKey, async (owner) => {
@@ -106,10 +110,6 @@ async function removeTunnel(record: CloudflaredTunnel) {
       if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
     }
   })
-}
-
-function replicaCount(record: CloudflaredTunnel) {
-  return record.connections.length
 }
 
 watch(
@@ -181,7 +181,7 @@ onUnmounted(() => {
             <TableCell>
               <StatusBadge>{{ tunnelStatusLabel(record.status) }}</StatusBadge>
             </TableCell>
-            <TableCell>{{ replicaCount(record) }}</TableCell>
+            <TableCell>{{ record.connections.length }}</TableCell>
             <TableCell class="max-w-[220px] truncate text-sm">{{ record.id || '-' }}</TableCell>
             <TableCell class="text-right">
               <div class="inline-flex items-center justify-end gap-0.5 whitespace-nowrap">

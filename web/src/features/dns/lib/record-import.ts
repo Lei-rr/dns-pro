@@ -94,10 +94,56 @@ function parseCsvRows(text: string): string[][] {
   return rows
 }
 
-const CSV_HEADER_KEYS = ['name', 'type', 'value', 'content', 'ttl', 'line', 'proxied', 'remark', 'comment', 'mx']
+/**
+ * 表头列名（归一化后精确比对）。不能沿用子串匹配：`mx` / `line` 这类短词会命中数据行，
+ * 无表头 CSV 首行 `mail,MX,10 mx.example.com` 曾被整行当表头吞掉。
+ */
+const CSV_HEADER_LABELS = new Set([
+  'name',
+  'subdomain',
+  'host',
+  'type',
+  'recordtype',
+  'value',
+  'content',
+  'ttl',
+  'line',
+  'recordline',
+  'proxied',
+  'cdn',
+  'remark',
+  'comment',
+  'priority',
+  'mx',
+  '主机',
+  '主机记录',
+  '名称',
+  '域名',
+  '子域名',
+  '类型',
+  '记录类型',
+  '值',
+  '记录值',
+  '内容',
+  '记录内容',
+  '缓存时间',
+  '线路',
+  '解析线路',
+  '代理',
+  '备注',
+  '优先级',
+])
 
+function normalizeHeaderCell(cell: string): string {
+  return cell
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '')
+}
+
+/** 至少两列命中才判为表头：数据行里出现单个 `mx` 之类的值很常见，单列命中不能作为依据 */
 function isCsvHeader(cells: string[]): boolean {
-  return cells.some((cell) => CSV_HEADER_KEYS.some((key) => cell.toLowerCase().includes(key)))
+  return cells.filter((cell) => CSV_HEADER_LABELS.has(normalizeHeaderCell(cell))).length >= 2
 }
 
 function parseCsvRecords(text: string): ParsedImportRecord[] {

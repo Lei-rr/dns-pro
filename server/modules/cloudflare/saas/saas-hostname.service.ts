@@ -249,10 +249,13 @@ export class SaaSHostnameService {
   /** 未知站点时遍历所有站点查找主机名 */
   private async resolveHostnameByFqdn(providerId: string, hostnameFqdn: string): Promise<HostnameRef> {
     const fqdn = normalizeFqdn(hostnameFqdn)
-    for (const zone of (await this.zones(providerId)).items) {
-      if (!zone.name) continue
+    const cloudflareProviderId = await this.cloudflareProviderId(providerId)
+    for (const zone of (await this.cloudflareZones.listAll(cloudflareProviderId)).items) {
+      if (!zone.id || !zone.name) continue
       try {
-        return await this.resolveHostname(providerId, zone.name, fqdn)
+        // 站点 ID 已在手：直接查主机名，省掉 idByName（带 name 过滤、与 listAll 不同键）对每个站点的一次上游往返
+        const hostnameId = await this.customHostnames.idByHostname(cloudflareProviderId, zone.id, fqdn)
+        return { cloudflareProviderId, zoneId: zone.id, zoneName: zone.name, hostnameId }
       } catch (error) {
         if (!isExplicitNotFound(error, NOT_FOUND)) throw error
       }
@@ -260,13 +263,18 @@ export class SaaSHostnameService {
     throw new ApiError('saas_hostname_not_found', `SaaS hostname ${hostnameFqdn} not found`, 404)
   }
 
-  /** 优选域名白名单校验：一键切换（预览/创建）与单条更新共用同一判定，非法时 422 */
+  /**
+   * 优选域名白名单校验：一键切换（预览/创建）与单条更新共用同一判定，非法时 422。
+   * 返回归一化后的域名：该值会落库并作为 DNS 目标（'https://x.com' 这类等价写法不能原样带下去）。
+   */
   async ensurePreferredDomainAllowed(value: string): Promise<string> {
     const preferred = String(value ?? '').trim()
-    if (preferred !== '' && !(await this.preferredDomains.isAllowed(preferred))) {
+    if (preferred === '') return ''
+    const normalized = this.preferredDomains.normalize(preferred)
+    if (normalized === null || !(await this.preferredDomains.isAllowed(normalized))) {
       throw new ApiError('preferred_domain_not_allowed', `Preferred domain ${preferred} is not allowed`, 422)
     }
-    return preferred
+    return normalized
   }
 
   /** 校验优选域名在白名单内；未提交该字段返回 null，空串表示清除 */
@@ -293,10 +301,10 @@ export class SaaSHostnameService {
   ): Promise<CloudflareCustomHostname> {
     const hostname = await this.customHostnames.show(ref.cloudflareProviderId, ref.zoneId, ref.hostnameId, refresh)
     const ssl = hostname.ssl ?? {}
-    // 主机名未返回 DCV UUID 时用站点级 UUID 兜底
+    // 主机名未返回 DCV UUID 时用站点级 UUID 兜底；站点级查询失败（非 SaaS 站点 403/404）不阻断详情
     const dcvUuid =
       String(ssl.dcv_delegation_uuid ?? '') ||
-      (await this.zoneCatalog.dcvDelegationUuid(ref.cloudflareProviderId, ref.zoneId))
+      (await this.zoneCatalog.dcvDelegationUuid(ref.cloudflareProviderId, ref.zoneId).catch(() => ''))
     const enriched = { ...hostname, ssl: { ...ssl, dcv_delegation_uuid: dcvUuid } }
     return this.applyEffectiveSyncConfig(
       providerId,

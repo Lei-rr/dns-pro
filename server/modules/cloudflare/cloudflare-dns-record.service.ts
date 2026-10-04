@@ -7,7 +7,7 @@ import {
   type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import { providerNullableNumber, providerNullableString } from '../../core/providers/provider-values.js'
-import { invalidateCloudflareRecordCache } from './cloudflare.cache.js'
+import { invalidateCloudflareRecordCache, CLOUDFLARE_PROVIDER_TYPE } from './cloudflare.cache.js'
 import { CLOUDFLARE_PAGE_LIMIT } from './cloudflare-pagination.js'
 import type { CloudflareAccess } from './access.js'
 import {
@@ -16,8 +16,6 @@ import {
   parseCloudflareListResponse,
   type CloudflarePage,
 } from './cloudflare-response.schema.js'
-
-const PROVIDER_TYPE = 'cloudflare'
 
 export interface CloudflareRecord {
   [key: string]: unknown
@@ -152,7 +150,7 @@ export class CloudflareDnsRecordService {
   ): Promise<CloudflarePage<CloudflareRecord>> {
     const cached = await withProviderCache<CloudflarePage<CloudflareRecord>>({
       key: cloudflareRecordPageKey(providerId, zoneId, page, perPage, filters),
-      tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)],
+      tags: [providerCacheTag(providerId), recordCacheTag(CLOUDFLARE_PROVIDER_TYPE, providerId, zoneId)],
       refresh: filters.refresh ?? false,
       loader: () => this.fetchPage(providerId, zoneId, page, perPage, filters),
     })
@@ -198,7 +196,7 @@ export function cloudflareRecordPageKey(
   perPage: number,
   filters: { type?: string; name?: string } = {}
 ): string {
-  return buildCacheKey(`${PROVIDER_TYPE}:records`, {
+  return buildCacheKey(`${CLOUDFLARE_PROVIDER_TYPE}:records`, {
     provider_id: providerId,
     zone_id: zoneId,
     page,
@@ -209,8 +207,9 @@ export function cloudflareRecordPageKey(
   })
 }
 
-function toRecordPayload(data: RecordPayload | Record<string, unknown>): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
+/** DNS 记录请求体归一化：适配器与服务共用同一份兜底规则（type 大写、ttl 默认 1 等） */
+export function toRecordPayload(data: RecordPayload | Record<string, unknown>): RecordPayload {
+  const payload: RecordPayload = {
     type: String(data.type).trim().toUpperCase(),
     name: String(data.name),
     content: String(data.content),

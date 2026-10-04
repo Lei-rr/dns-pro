@@ -18,6 +18,9 @@ function assertSameOrigin(request: FastifyRequest): void {
   if (fetchSite === 'cross-site' || fetchSite === 'same-site') {
     throw new ApiError('csrf_rejected', 'Cross-site request rejected', 403)
   }
+  // 浏览器声明同源即放行：开发代理（vite changeOrigin）会把 Host 改写成后端地址而 Origin 仍是前端地址，
+  // 继续按 host 严格比较会把代理下的登录与全部写请求误判为跨站；该头由浏览器写入、页面脚本无法伪造
+  if (fetchSite === 'same-origin') return
   const origin = request.headers.origin
   if (!origin) return
   let originHost: string

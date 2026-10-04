@@ -6,8 +6,9 @@ import type { EdgeOneProvider, SaaSProvider } from '../../core/providers/provide
 export type DnsPodLinkSource = 'edgeone' | 'saas'
 
 /**
- * D3-2 底座：provider → 关联 DNSPod 账号 的唯一定义。
- * EdgeOne / SaaS 两条产品线只依赖本类，不各自实现关联解析。
+ * D3-2 底座：provider → 关联 DNSPod 账号 的解析。
+ * EdgeOne / SaaS 两条产品线只依赖本类；edgeone 模块不得反向引用本模块，
+ * 故 edge-one-credentials.ts 内保留一份等效实现（错误码与归一方式与其保持一致）。
  */
 export class DnsPodAccess {
   constructor(private readonly providers: ProviderRepository) {}

@@ -10,6 +10,7 @@ import { buildApp } from '../server/app/build.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
+import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-types.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-requests-'))
 await fs.writeFile(
@@ -246,11 +247,16 @@ try {
     // 兜底：断言失败时也要能收敛，避免 close() 一直等待在途任务
     setTimeout(resolve, 3000).unref()
   })
-  DnsPodClient.prototype.call = async function (action: string): Promise<unknown> {
+  const dnsCreatePayloads: Array<Record<string, unknown>> = []
+  DnsPodClient.prototype.call = async function (
+    action: string,
+    payload: Record<string, unknown> = {}
+  ): Promise<unknown> {
     if (action === 'DescribeRecordList') {
       return { RecordList: [], RecordCountInfo: { TotalCount: 0 }, RequestId: 'lock' }
     }
     if (action === 'CreateRecord') {
+      dnsCreatePayloads.push(payload)
       await gate
       return { RecordId: 7, RequestId: 'created' }
     }
@@ -263,18 +269,36 @@ try {
     assert.fail(`unexpected DNSPod action: ${action}`)
   }
 
+  // 入队条目必须用 record_status 承载记录启停状态：任务骨架的 item.status 是条目执行态
+  // （buildJob 注入 status:'pending'、执行时改写为 running），沿用 status 会同时打断幂等查重与 DISABLE 语义
+  const enqueuedDnsItems: Array<Record<string, unknown>> = []
+  const jobs = app.ctx.platform.jobs
+  const originalCreateExclusive = jobs.createExclusive.bind(jobs)
+  jobs.createExclusive = (async (type, payload, items, lock, options) => {
+    if (type === DNS_BATCH_CREATE_JOB) enqueuedDnsItems.push(...items)
+    return originalCreateExclusive(type, payload, items, lock, options)
+  }) as typeof jobs.createExclusive
+
   const dnsJob = await app.ctx.workflows.dnsBatch.createCreate({
     providerType: 'dnspod',
     providerId: 'dns-target',
     zone: 'example.com',
-    records: [{ name: 'lock', type: 'A', value: '192.0.2.1' }],
+    records: [{ name: 'lock', type: 'A', value: '192.0.2.1', status: 'DISABLE' }],
   })
+  const enqueuedCreate = enqueuedDnsItems.find((item) => item.name === 'lock')
+  assert.ok(enqueuedCreate, 'DNS 批量新增必须入队条目')
+  assert.equal(enqueuedCreate.record_status, 'DISABLE', '入队条目必须用 record_status 携带记录启停状态')
+  assert.equal('status' in enqueuedCreate, false, '入队条目不得占用任务骨架的 status 字段')
+
   const dnsRaw = await app.ctx.platform.jobs.get(dnsJob.id)
   assert.deepEqual(
     dnsRaw?.payload.resource_keys,
     ['dns:dnspod:dns-target:example.com'],
     'DNS 批量任务必须登记底层写入资源键'
   )
+  // 骨架注入的 status 只描述条目执行态，不得覆盖记录启停状态
+  assert.equal(dnsRaw?.items[0]?.record_status, 'DISABLE', '任务条目必须保留 record_status')
+  assert.notEqual(dnsRaw?.items[0]?.status, 'DISABLE', '任务条目的 status 属于执行骨架')
 
   // SaaS 批量写回同一个 DNSPod 域名 → 必须被拒
   const conflict = await app.ctx.workflows.saasBatch
@@ -302,8 +326,52 @@ try {
   deferred.resolve()
   await app.ctx.platform.jobs.drain()
 
+  const dnsFinished = await app.ctx.workflows.dnsBatch.find(dnsJob.id, 'dnspod', 'dns-target')
+  assert.equal(dnsFinished?.status, 'completed', dnsFinished?.message)
+  assert.equal(
+    dnsCreatePayloads.some((payload) => payload.Status === 'DISABLE'),
+    true,
+    'record_status 必须在执行时映射为上游 Status'
+  )
+
+  // ---- 6. 幂等查重：上游已存在同名同类型同值记录时必须 skipped，且不得再创建 ----
+  let idempotentCreates = 0
+  DnsPodClient.prototype.call = async function (action: string): Promise<unknown> {
+    if (action === 'DescribeRecordList') {
+      return {
+        RecordList: [{ RecordId: 99, Name: 'dup', Type: 'A', Value: '192.0.2.9', Line: '默认' }],
+        RecordCountInfo: { TotalCount: 1 },
+        RequestId: 'duplicate',
+      }
+    }
+    if (action === 'CreateRecord') {
+      idempotentCreates++
+      return { RecordId: 100, RequestId: 'created' }
+    }
+    if (action === 'DescribeDomainList') {
+      return {
+        DomainList: [{ DomainId: 1, Name: 'example.com', Grade: 'D_FREE' }],
+        DomainCountInfo: { DomainTotal: 1 },
+      }
+    }
+    assert.fail(`unexpected DNSPod action: ${action}`)
+  }
+
+  const idempotentJob = await app.ctx.workflows.dnsBatch.createCreate({
+    providerType: 'dnspod',
+    providerId: 'dns-target',
+    zone: 'example.com',
+    records: [{ name: 'dup', type: 'A', value: '192.0.2.9' }],
+  })
+  await app.ctx.platform.jobs.drain()
+  const idempotentState = await app.ctx.workflows.dnsBatch.find(idempotentJob.id, 'dnspod', 'dns-target')
+  assert.equal(idempotentState?.status, 'completed', idempotentState?.message)
+  assert.equal(idempotentState?.items[0]?.status, 'skipped', '上游已存在的记录必须判定为 skipped')
+  assert.equal(idempotentState?.items[0]?.record_id, '99', 'skipped 条目必须回填已存在记录 ID')
+  assert.equal(idempotentCreates, 0, '命中幂等时不得调用 CreateRecord')
+
   console.log(
-    'batch-request-probe=ok dnspod=upstream-filter cloudflare=exact-name saas=o(n) edgeone=snapshot lock=resource-keys'
+    'batch-request-probe=ok dnspod=upstream-filter cloudflare=exact-name saas=o(n) edgeone=snapshot lock=resource-keys dns-batch=record-status idempotency=skip-existing'
   )
 } finally {
   // 断言失败时可能有任务仍在等待上游：close 加超时，保证失败能正常退出

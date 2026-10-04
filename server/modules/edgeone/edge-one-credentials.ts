@@ -14,7 +14,8 @@ export async function resolveEdgeOneProvider(
     'EdgeOne provider not found',
     'edgeone_provider_not_found'
   )
-  return { provider, dnspodProviderId: provider.dnspod_provider.trim() }
+  // 字段可能缺失（旧数据/手工编辑）：未关联时返回空串，由调用方给出可读的 422
+  return { provider, dnspodProviderId: String(provider.dnspod_provider ?? '').trim() }
 }
 
 /** 每次调用都从持久化配置读取关联 DNSPod 密钥并创建客户端 */

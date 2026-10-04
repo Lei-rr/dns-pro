@@ -34,9 +34,11 @@ export function statusVariant(
   status?: string | null
 ): 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning' {
   if (!status) return 'outline'
-  if (GREEN.has(status)) return 'success'
-  if (RED.has(status)) return 'destructive'
-  if (GOLD.has(status)) return 'warning'
+  // 与 statusLabel 同一口径：上游可能返回大写/混合大小写状态
+  const key = String(status).toLowerCase()
+  if (GREEN.has(key)) return 'success'
+  if (RED.has(key)) return 'destructive'
+  if (GOLD.has(key)) return 'warning'
   return 'outline'
 }
 

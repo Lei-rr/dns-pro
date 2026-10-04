@@ -55,6 +55,23 @@ export function edgeOneDomainFormValues(
   }
 }
 
+/** 提交给后端的字段：host_header 仅在「IP/域名 + 自定义 HOST」时存在 */
+export interface EdgeOneDomainSubmitValues {
+  origin_type: string
+  origin: string
+  origin_protocol: string
+  http_origin_port: number
+  https_origin_port: number
+  ipv6_status: string
+  host_header?: string
+}
+
+/** 表单 → 面板 save 的负载：后端字段 + 面板侧派生字段 */
+export interface EdgeOneDomainSubmitPayload extends EdgeOneDomainSubmitValues {
+  fullDomain: string
+  autoSync: boolean
+}
+
 export function edgeOneDomainSubmitValues(values: {
   origin_type: string
   origin: string
@@ -64,8 +81,8 @@ export function edgeOneDomainSubmitValues(values: {
   host_header: string
   host_header_mode: string
   ipv6_status: string
-}): Record<string, unknown> {
-  const payload: Record<string, unknown> = {
+}): EdgeOneDomainSubmitValues {
+  const payload: EdgeOneDomainSubmitValues = {
     origin_type: values.origin_type,
     origin: values.origin,
     origin_protocol: values.origin_protocol,

@@ -36,11 +36,13 @@ export type RequestOf<Schema extends RequestParts> = (Schema extends { params: i
  * - 标识符：首字符为字母数字，禁止 `.`/`..` 等路径段
  * - 域名：字母数字、`-`、`.`、`*`、`_`，必须以字母数字/`*`/`_` 开头
  */
-const IDENTIFIER_PATTERN = '^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$'
+const identifierPattern = (maxLength: number): string =>
+  `^[A-Za-z0-9][A-Za-z0-9_-]{0,${Math.max(0, Math.floor(maxLength) - 1)}}$`
 const DOMAIN_PATTERN = '^[A-Za-z0-9_*][A-Za-z0-9_.*-]{0,252}$'
 
+// pattern 的长度上限跟随 maxLength：否则传入的 maxLength 会被固定的 {0,127} 卡死
 export const identifier = (maxLength = 128): TString =>
-  Type.String({ minLength: 1, maxLength, pattern: IDENTIFIER_PATTERN })
+  Type.String({ minLength: 1, maxLength, pattern: identifierPattern(maxLength) })
 export const domainName = (): TString => Type.String({ minLength: 1, maxLength: 253, pattern: DOMAIN_PATTERN })
 
 // 路径参数按名称自动选择格式，新路由无需逐个声明
@@ -55,7 +57,7 @@ const PARAM_FORMATS: Record<string, () => TString> = {
 export const text = (maxLength = 1024): TString => Type.String({ minLength: 1, maxLength })
 export const optionalText = (maxLength = 1024): TString => Type.String({ maxLength })
 export const bool: TBoolean = Type.Boolean()
-const boolQuery: TUnion<[TLiteral<'true'>, TLiteral<'false'>]> = Type.Union([
+export const boolQuery: TUnion<[TLiteral<'true'>, TLiteral<'false'>]> = Type.Union([
   Type.Literal('true'),
   Type.Literal('false'),
 ])

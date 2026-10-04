@@ -1,6 +1,6 @@
 import type { JsonStore } from '../../../core/store/json-store.js'
 
-export interface PreferredDomain {
+interface PreferredDomain {
   domain: string
   sort: number
 }
@@ -90,9 +90,22 @@ export class PreferredDomainService {
     return this.list()
   }
 
+  /**
+   * 归一化域名：去协议/路径/尾点、小写；格式非法返回 null。
+   * 白名单写入侧（create/rename）与校验侧共用同一份归一化，避免 'https://x.com'、'x.com.' 这类
+   * 等价写法在「写入」判真、在「能不能用」判假。
+   */
+  normalize(domain: string): string | null {
+    try {
+      return this.normalizeDomain(domain)
+    } catch {
+      return null
+    }
+  }
+
   async isAllowed(domain: string): Promise<boolean> {
-    const normalized = domain.trim().toLowerCase()
-    if (normalized === '') return false
+    const normalized = this.normalize(domain)
+    if (normalized === null || normalized === '') return false
     const domains = await this.readDomains()
     return domains.includes(normalized)
   }

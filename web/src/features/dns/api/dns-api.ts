@@ -1,5 +1,6 @@
 import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
 import type { ApiResponse } from '@/shared/api/types'
+import type { JobLike } from '@/shared/job'
 import type { DnsLine, DnsRecord, Zone } from '@/features/dns/model/types'
 import { encodePath } from '@/shared/lib/path'
 
@@ -72,12 +73,13 @@ function recordPayload(
   if (provider.type === 'cloudflare') {
     const zoneName = options.zoneName || zone
     const rawName = String(data.name || '').toLowerCase()
+    // 主机名缺省按 @ 处理：直接用 data.name 拼接会产出 `undefined.example.com`
     const name =
-      data.name === '@'
+      rawName === '' || rawName === '@'
         ? zoneName
         : rawName.endsWith('.' + String(zoneName).toLowerCase())
-          ? data.name
-          : `${data.name}.${zoneName}`
+          ? rawName
+          : `${rawName}.${zoneName}`
 
     return {
       type: data.type,
@@ -108,7 +110,11 @@ const providerTypeNames: Record<string, string> = {
   cloudflare: 'Cloudflare',
   dnspod: 'DNSPod',
   saas: 'Cloudflare SaaS',
-  edgeone: 'EdgeOne',
+}
+
+/** 服务商类型展示名：跨 feature 引用 providers 的同名映射违反分层约束（ARCH005），这里各自维护 */
+export function dnsProviderTypeLabel(type: DnsProviderType): string {
+  return providerTypeNames[type] || type
 }
 
 function presentDomain(provider: DnsProviderRef, domain: Zone): Zone {
@@ -118,7 +124,7 @@ function presentDomain(provider: DnsProviderRef, domain: Zone): Zone {
     ...domain,
     provider: provider.id,
     provider_type: type,
-    provider_name: provider.name || providerTypeNames[type] || type,
+    provider_name: provider.name || dnsProviderTypeLabel(type),
     name_servers: domain.name_servers || domain.effective_dns || [],
     access_status: domain.access_status || domain.status || domain.dns_status,
   }
@@ -222,4 +228,14 @@ export const dnsApi = {
   batchRetry: (provider: DnsProviderRef, jobId: string) => http.post(endpoints.recordsBatchRetry(provider, jobId)),
   batchActive: (provider: DnsProviderRef, domain: string) =>
     http.get(endpoints.recordsBatchActive(provider, domain), { timeout: POLL_TIMEOUT_MS }),
+}
+
+/** 批量任务轮询适配：runBatchJob / PollJobOptions 要裸任务对象，接口返回的是 ApiResponse 包装 */
+export function batchJobFetcher(provider: DnsProviderRef): (jobId: string) => Promise<JobLike> {
+  return async (jobId) => ((await dnsApi.batchJob(provider, jobId)).data as JobLike) || {}
+}
+
+/** 批量任务重试适配：把 provider 固定进任务创建时返回的 retry 回调 */
+export function batchJobRetrier(provider: DnsProviderRef) {
+  return (jobId: string) => dnsApi.batchRetry(provider, jobId)
 }

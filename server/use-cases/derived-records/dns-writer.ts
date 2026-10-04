@@ -160,7 +160,11 @@ export class DnsWriter {
       if (entry.action === 'delete') {
         return this.removeRef(port, providerId, zone, entry.fqdn, entry.existing ?? { id: '', value }, entry.purpose)
       }
-      if (entry.action === 'update' && entry.existing) {
+      if (entry.action === 'update') {
+        // 计划允许调用方自行构造：缺 existing 的 update 不能降级为创建，否则同一槽位会被写出重复记录
+        if (!entry.existing) {
+          return { ...base, status: 'failed', record_id: '', error: 'update 缺少既有记录，拒绝降级为创建' }
+        }
         const updated = await port.update(providerId, zone, entry.existing.id, value)
         return { ...base, status: 'updated', record_id: updated.id }
       }

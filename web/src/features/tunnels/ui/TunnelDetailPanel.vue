@@ -24,6 +24,7 @@ const {
   tunnel,
   routes,
   token,
+  tokenFailed,
   loading,
   refreshing,
   pageSize,
@@ -110,7 +111,10 @@ function onPageSizeChange(next: number) {
         <div class="min-w-0 flex-1">
           <div class="text-sm font-semibold">安装 Token</div>
           <div class="text-muted-foreground mt-1 min-w-0 max-w-3xl truncate font-mono text-xs">
-            {{ token || '暂无 Token' }}
+            {{ token || (tokenFailed ? '令牌获取失败' : '暂无 Token') }}
+          </div>
+          <div v-if="tokenFailed" class="text-amber-600 dark:text-amber-400 mt-1 text-xs">
+            令牌获取失败，可点击「刷新」重试
           </div>
         </div>
         <div class="flex gap-2">

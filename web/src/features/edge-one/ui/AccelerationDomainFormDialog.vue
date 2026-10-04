@@ -6,7 +6,11 @@ import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Switch } from '@/shared/ui/switch'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
-import { edgeOneDomainFormValues, edgeOneDomainSubmitValues } from '@/features/edge-one/model/domain-command'
+import {
+  edgeOneDomainFormValues,
+  edgeOneDomainSubmitValues,
+  type EdgeOneDomainSubmitPayload,
+} from '@/features/edge-one/model/domain-command'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 
 const open = defineModel<boolean>('open', { default: false })
@@ -19,7 +23,7 @@ const props = defineProps<{
   errors?: Record<string, string>
 }>()
 const emit = defineEmits<{
-  save: [payload: Record<string, unknown>]
+  save: [payload: EdgeOneDomainSubmitPayload]
 }>()
 
 const localErrors = ref<Record<string, string>>({})

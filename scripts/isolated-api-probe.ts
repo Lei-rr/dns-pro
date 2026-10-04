@@ -548,6 +548,7 @@ try {
   const originalCloudflareGet = CloudflareClient.prototype.get
   const originalCloudflarePost = CloudflareClient.prototype.post
   let customHostnameCreates = 0
+  let customHostnameLists = 0
   const saasMutationOrder: string[] = []
   let tunnelCreates = 0
   let tokenFetchFails = true
@@ -558,6 +559,10 @@ try {
         result: [{ id: 'zone-1', name: 'example.com', status: 'active' }],
         result_info: { page: 1, per_page: 100, total_count: 1, total_pages: 1 },
       }
+    }
+    if (requestPath === 'zones/zone-1/custom_hostnames') {
+      customHostnameLists++
+      return { result: [], result_info: { page: 1, per_page: 100, total_count: 0, total_pages: 1 } }
     }
     if (requestPath === 'accounts/probe-account/cfd_tunnel') {
       tunnelReads.list++
@@ -901,6 +906,78 @@ try {
       assert.equal((await app.inject({ method: 'GET', url, headers: { cookie } })).statusCode, 200, url)
     }
     assert.deepEqual(tunnelReads, { list: 2, show: 2, config: 2 }, 'linked Cloudflare update left tunnel caches stale')
+
+    // ---- reconcile HTTP 契约：GET /api/reconcile 与 GET /api/reconcile?refresh=true 都必须 200 ----
+    // refresh 由前端 withRefresh 统一下发（sync-api.detect + useResourceQuery.refresh），
+    // schema 里漏放行它会让「重新检测 / 一键修复后的刷新」全量 400；
+    // 检测本身只读，这里把三条产品线的上游都固定在假数据上（EdgeOne 站点为空 → 无派生记录）
+    const edgeOneZonesService = app.ctx.modules.edgeOne.zones
+    const edgeOneDomainsService = app.ctx.modules.edgeOne.domains
+    const originalEdgeZonesList = edgeOneZonesService.zones
+    const originalEdgeDomainsList = edgeOneDomainsService.accelerationDomains
+    const emptyEdgePage = async () => ({
+      items: [],
+      pagination: { page: 1, per_page: 0, offset: 0, limit: 0, count: 0, total: 0, total_count: 0, total_pages: 1 },
+    })
+    edgeOneZonesService.zones = emptyEdgePage as unknown as typeof edgeOneZonesService.zones
+    edgeOneDomainsService.accelerationDomains =
+      emptyEdgePage as unknown as typeof edgeOneDomainsService.accelerationDomains
+    const createsBeforeDetect = customHostnameCreates
+    const tunnelsBeforeDetect = tunnelCreates
+    try {
+      const detectHealth = await app.inject({ method: 'GET', url: '/api/reconcile', headers: { cookie } })
+      assert.equal(
+        detectHealth.statusCode,
+        200,
+        `GET /api/reconcile => ${detectHealth.statusCode}: ${detectHealth.body}`
+      )
+      const report = detectHealth.json().data
+      assert.deepEqual(report.scope, {}, '无参检测的 scope 必须为空')
+      assert.equal(typeof report.scanned_at, 'string')
+      assert.equal(Number.isNaN(Date.parse(String(report.scanned_at))), false, '检测必须带可解析的 scanned_at')
+      assert.ok(Array.isArray(report.items), '检测报告必须带 items 数组')
+      assert.equal(report.summary.total, report.items.length, 'summary.total 必须与 items 一致')
+      assert.equal('executed_at' in report, false, '只读检测响应不得带执行痕迹')
+
+      const refreshed = await app.inject({ method: 'GET', url: '/api/reconcile?refresh=true', headers: { cookie } })
+      assert.equal(
+        refreshed.statusCode,
+        200,
+        `GET /api/reconcile?refresh=true => ${refreshed.statusCode}: ${refreshed.body}`
+      )
+      const notRefreshed = await app.inject({ method: 'GET', url: '/api/reconcile?refresh=false', headers: { cookie } })
+      assert.equal(notRefreshed.statusCode, 200, `GET /api/reconcile?refresh=false => ${notRefreshed.statusCode}`)
+
+      // 前端实际查询串（scopeParams + withRefresh）必须整串通过
+      const frontendQuery = '/api/reconcile?provider_id=saas-owner&kind=saas-hostname&refresh=true'
+      const scopedDetect = await app.inject({ method: 'GET', url: frontendQuery, headers: { cookie } })
+      assert.equal(scopedDetect.statusCode, 200, `GET ${frontendQuery} => ${scopedDetect.statusCode}`)
+      assert.deepEqual(scopedDetect.json().data.scope, { providerId: 'saas-owner', kind: 'saas-hostname' })
+
+      // 反向控制：schema 仍是 additionalProperties:false，未知参数继续被拒
+      const unknownQuery = await app.inject({ method: 'GET', url: '/api/reconcile?cache=true', headers: { cookie } })
+      assert.equal(unknownQuery.statusCode, 400, 'reconcile 检测必须继续拒绝未知查询参数')
+
+      // 检测 + 执行（无漂移项）都不得写远端
+      assert.equal(customHostnameCreates, createsBeforeDetect, '检测创建了 SaaS 主机名')
+      assert.equal(tunnelCreates, tunnelsBeforeDetect, '检测创建了隧道')
+      assert.ok(customHostnameLists >= 1, '检测必须真正读取 SaaS 主机名列表')
+
+      const apply = await app.inject({
+        method: 'POST',
+        url: '/api/reconcile',
+        headers: { cookie },
+        payload: { provider_id: 'saas-owner', kind: 'saas-hostname' },
+      })
+      assert.equal(apply.statusCode, 200, `POST /api/reconcile => ${apply.statusCode}: ${apply.body}`)
+      const applied = apply.json().data
+      assert.equal(typeof applied.executed_at, 'string', '执行必须带 executed_at')
+      assert.deepEqual(applied.results, [], '无漂移项时不得产生写入结果')
+      assert.equal(customHostnameCreates, createsBeforeDetect, '无漂移项的对账不得写远端')
+    } finally {
+      edgeOneZonesService.zones = originalEdgeZonesList
+      edgeOneDomainsService.accelerationDomains = originalEdgeDomainsList
+    }
   } finally {
     CloudflareClient.prototype.get = originalCloudflareGet
     CloudflareClient.prototype.post = originalCloudflarePost

@@ -26,7 +26,7 @@ const props = defineProps<{
   editing: Provider | null
   saving: boolean
   definitions: ProviderDefinition[]
-  labels: Record<string, string>
+  labels: Record<string, Record<string, string>>
   providers: Provider[]
   errors: FieldErrors
 }>()
@@ -37,7 +37,7 @@ const emit = defineEmits<{
 }>()
 
 function fieldLabel(key: string) {
-  return props.labels[key] || key
+  return props.labels[form.value.type]?.[key] || key
 }
 
 function isProviderSelectField(field: string) {

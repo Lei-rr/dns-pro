@@ -4,7 +4,7 @@ import { Check, Copy } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { AppTooltip } from '@/shared/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
-import { toast } from '@/shared/lib/toast'
+import { useClipboardCopy } from '@/features/tunnels/lib/clipboard'
 
 const props = defineProps<{
   token?: string
@@ -103,20 +103,7 @@ watch(os, () => {
   arch.value = archTabs.value[0]?.key || 'amd64'
 })
 
-const copiedIndex = ref<number | null>(null)
-
-async function copyCommand(command: string, index: number) {
-  try {
-    await navigator.clipboard.writeText(command)
-    copiedIndex.value = index
-    setTimeout(() => {
-      if (copiedIndex.value === index) copiedIndex.value = null
-    }, 2000)
-    toast.success('命令已复制')
-  } catch {
-    toast.warning('复制失败，请手动选择')
-  }
-}
+const { copied: copiedIndex, copy: copyCommand } = useClipboardCopy()
 </script>
 
 <template>
@@ -148,7 +135,7 @@ async function copyCommand(command: string, index: number) {
               variant="ghost"
               size="icon"
               class="absolute top-1 right-1 size-8 text-zinc-200 hover:bg-zinc-800 hover:text-white cursor-pointer"
-              @click="copyCommand(step.command, index)"
+              @click="copyCommand(step.command, index, { success: '命令已复制', failure: '复制失败，请手动选择' })"
             >
               <Check v-if="copiedIndex === index" class="size-4 text-emerald-400" />
               <Copy v-else class="size-4" />

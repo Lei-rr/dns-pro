@@ -7,7 +7,6 @@ import {
   collectOffsetPages,
   parseUpstreamTotal,
   toFullListResult,
-  type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import { providerOptionalString, providerString } from '../../core/providers/provider-values.js'
 import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
@@ -33,12 +32,8 @@ interface EdgeOneZone {
   modified_on?: string
 }
 
-interface ZoneListResult {
-  items: EdgeOneZone[]
-  pagination: FullListPagination
-  meta: FullListPagination
-  request_id?: string
-}
+/** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
+type ZoneListResult = ReturnType<typeof toFullListResult<EdgeOneZone>>
 
 /** EdgeOne 站点查询（站点数量少，全量拉取） */
 export class EdgeOneZoneService {

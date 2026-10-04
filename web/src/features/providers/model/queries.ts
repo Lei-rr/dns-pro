@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { useQuery } from '@tanstack/vue-query'
+import { useQuery, type QueryFunctionContext } from '@tanstack/vue-query'
 import { providersApi } from '../api/provider-api'
 import { queryClient } from '@/shared/query'
 import type { Provider } from './types'
@@ -11,7 +11,7 @@ const providersKeys = {
 function providersQueryOptions() {
   return {
     queryKey: providersKeys.all,
-    queryFn: async (): Promise<Provider[]> => (await providersApi.list()).data,
+    queryFn: async ({ signal }: QueryFunctionContext): Promise<Provider[]> => (await providersApi.list(signal)).data,
   }
 }
 

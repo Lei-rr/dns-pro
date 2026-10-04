@@ -6,6 +6,7 @@
  */
 import { normalizeFqdn } from '../../../shared/values.js'
 import type { ProviderRepository } from '../../../core/providers/provider.repository.js'
+import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import type { EdgeOneProvider } from '../../../core/providers/provider.types.js'
 import { DNSPOD_DEFAULT_LINE } from '../../../modules/dnspod/dns-pod-record.service.js'
 import type { DnsPodZoneCatalog } from '../../../modules/dnspod/zone-catalog.js'
@@ -57,10 +58,18 @@ export function edgeOneDerivedPlanner(deps: {
           for (const domain of (await deps.domains.accelerationDomains(provider.id, zone.id)).items) {
             const fqdn = normalizeFqdn(domain.name)
             if (fqdn === '') continue
-            // 尚未分配 CNAME 的加速域名没有派生目标，跳过（不算漂移）
-            const cname = await deps.domains.assignedCname(provider.id, zone.id, fqdn).catch(() => '')
+            // 尚未分配 CNAME 的加速域名没有派生目标，跳过（不算漂移）；
+            // 只吞「加速域名已不存在」这一种未命中，其余错误上抛——上游故障不能被显示成无漂移
+            const cname = await deps.domains.assignedCname(provider.id, zone.id, fqdn).catch((error: unknown) => {
+              if (isExplicitNotFound(error, { localCodes: ['edgeone_acceleration_domain_not_found'] })) return ''
+              throw error
+            })
             if (cname === '') continue
-            const dnspodZone = await deps.catalog.resolve(dnspodProviderId, fqdn, 'edgeone').catch(() => '')
+            // 加速域名不在关联 DNSPod 账号内：无派生目标，同样只吞这一种未命中
+            const dnspodZone = await deps.catalog.resolve(dnspodProviderId, fqdn, 'edgeone').catch((error: unknown) => {
+              if (isExplicitNotFound(error, { localCodes: ['edgeone_dnspod_zone_not_found'] })) return ''
+              throw error
+            })
             if (dnspodZone === '') continue
             const desired = edgeOneCnameDesired(fqdn, cname)
             records.push({

@@ -40,17 +40,24 @@ async function copyTree(source: string, target: string, skip: (source: string) =
   }
 }
 
-/** 仅保留最近 keep 份备份（按名字排序 = 时间排序），返回删除数量 */
+/** 仅保留最近 keep 份备份（按目录 mtime 判定新旧），返回删除数量 */
 export async function pruneBackups(dataRoot: string, keep: number): Promise<number> {
   const backups = path.join(dataRoot, BACKUPS_DIR)
   const entries = await fs.readdir(backups, { withFileTypes: true }).catch(() => [])
-  const names = entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-  const excess = names.slice(0, Math.max(0, names.length - keep))
-  for (const name of excess) {
-    await fs.rm(path.join(backups, name), { recursive: true, force: true })
+  // 不能按名字排序：标签前缀由调用方决定（pre-vN / keep-N），混合前缀或多个位数的版本号会删错较新的备份
+  const dated = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const stats = await fs.stat(path.join(backups, entry.name)).catch(() => null)
+        return { name: entry.name, mtimeMs: stats?.mtimeMs ?? 0 }
+      })
+  )
+  const excess = dated
+    .sort((a, b) => a.mtimeMs - b.mtimeMs || a.name.localeCompare(b.name))
+    .slice(0, Math.max(0, dated.length - keep))
+  for (const entry of excess) {
+    await fs.rm(path.join(backups, entry.name), { recursive: true, force: true })
   }
   return excess.length
 }

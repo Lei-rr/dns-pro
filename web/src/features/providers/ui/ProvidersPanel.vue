@@ -39,7 +39,7 @@ const typeFilter = ref('all')
 
 const definitionsQuery = useResourceQuery<ProviderDefinitions>({
   key: ['providers', 'definitions'],
-  queryFn: async () => (await providersApi.definitions()).data,
+  queryFn: async ({ signal }) => (await providersApi.definitions(signal)).data,
   pageSizeScope: 'providers',
 })
 const definitions = computed(() => definitionsQuery.data.value?.types ?? [])

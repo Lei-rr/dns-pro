@@ -1,7 +1,6 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
-import type { SideEffects } from '../../core/providers/side-effect-result.js'
 import {
   BatchJobKind,
   dedupeStrings,
@@ -13,7 +12,6 @@ import {
   type BatchJobViewBase,
 } from '../../core/jobs/batch-job.js'
 import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
-import { invalidateSaaSHostnameCache } from '../../modules/cloudflare/saas/saas.cache.js'
 import {
   SAAS_BATCH_DELETE_JOB,
   SAAS_BATCH_UPDATE_JOB,
@@ -23,6 +21,8 @@ import {
 } from '../../core/jobs/job-types.js'
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
+import { itemResultFromSideEffects } from './saas-batch-item-result.js'
+import { invalidateSaasZoneListCache } from './saas-zone-cache.js'
 import type { SaaSSyncRecord } from '../derived-records/planners/saas.planner.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
@@ -109,10 +109,11 @@ export class SaaSBatchWorkflow {
     items: Array<Record<string, unknown>>,
     message: string
   ) {
+    const hostnames = items.map((item) => String(item.hostname ?? '')).filter(Boolean)
     const payload = {
       provider_id: scope.providerId,
       zone_name: scope.zoneName,
-      resource_keys: await this.workflow.resourceKeys(scope.providerId, scope.zoneName),
+      resource_keys: await this.workflow.resourceKeys(scope.providerId, scope.zoneName, hostnames),
       ...extra,
     }
     return this.kind.present(
@@ -154,7 +155,7 @@ export class SaaSBatchWorkflow {
       },
     })
     await finishBatchJob(this.jobs, job.id, '批量删除')
-    await this.invalidateZoneCache(providerId, zoneName)
+    await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
   }
 
   /** 修改前保存 DNS 快照并落盘，重试时远端已应用则不重复 PATCH */
@@ -178,42 +179,15 @@ export class SaaSBatchWorkflow {
           onStage: (_stage, stagePatch) => persistItemStage(this.jobs, job.id, byHostname(hostname), stagePatch),
         })
 
-        const local = (updated as { side_effects?: SideEffects }).side_effects?.local?.preference
-        if (local?.status === 'failed') {
-          return {
-            status: 'failed',
-            message: `远端配置已更新，但本地偏好保存失败：${local.message || '未知错误'}`,
-            extra: { primary_applied: true, local_preference_status: 'failed' },
-          }
-        }
-        if (!autoSync) return { status: 'success', message: '已更新', extra: { primary_applied: true } }
-
-        const sync = dnsEffectOf(updated, 'sync')
-        if (sync?.status === 'failed') {
-          return {
-            status: 'failed',
-            message: `配置已更新，但 DNS 写回失败：${sync.message || '未知错误'}`,
-            extra: { primary_applied: true, dns_sync_status: 'failed' },
-          }
-        }
-        return {
-          status: 'success',
-          message: `已更新${dnsEffectNote(sync, 'DNS 已写回')}`,
-          extra: { primary_applied: true, dns_sync_status: sync?.status ?? 'unknown' },
-        }
+        return itemResultFromSideEffects(updated, {
+          successMessage: '已更新',
+          extra: { primary_applied: true },
+          autoSync,
+        })
       },
     })
     await finishBatchJob(this.jobs, job.id, '批量修改')
-    await this.invalidateZoneCache(providerId, zoneName)
-  }
-
-  private async invalidateZoneCache(providerId: string, zoneName: string): Promise<void> {
-    try {
-      const zone = await this.hostnames.resolveZoneRef(providerId, zoneName)
-      invalidateSaaSHostnameCache(zone.cloudflareProviderId, zone.zoneId, true)
-    } catch {
-      // 远端变更已完成，缓存失效尽力而为
-    }
+    await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
   }
 }
 

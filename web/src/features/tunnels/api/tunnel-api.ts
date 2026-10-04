@@ -41,7 +41,7 @@ export const cloudflaredApi = {
     http.post<RouteMutationResult>(`${tunnelBase(provider, tunnelId)}/routes`, data),
   /** 与 SaaS / EdgeOne 的 dns-repair 同义：为隧道全部路由补齐/修正 CNAME */
   repairRoutes: (provider: string, tunnelId: string) =>
-    http.post<{ results: Array<Record<string, unknown>>; side_effects?: SideEffects }>(
+    http.post<{ tunnel_id: string; hostnames: Array<Record<string, unknown>>; side_effects?: SideEffects }>(
       `${tunnelBase(provider, tunnelId)}/routes/repair`
     ),
   updateRoute: (

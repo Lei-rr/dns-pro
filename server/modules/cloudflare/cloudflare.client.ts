@@ -2,7 +2,7 @@ import { ApiError } from '../../core/http/api-error.js'
 import { BaseHttpClient, type HttpRequestConfig } from '../../core/http/base-http.client.js'
 import type { CloudflareProvider } from '../../core/providers/provider.types.js'
 
-export interface CloudflareApiResponse {
+interface CloudflareApiResponse {
   success?: boolean
   errors?: unknown[]
   messages?: unknown[]

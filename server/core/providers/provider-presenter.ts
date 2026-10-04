@@ -29,7 +29,7 @@ export class ProviderPresenter {
     return providers.map((provider) => this.present(provider, providers))
   }
 
-  isConfigured(
+  private isConfigured(
     provider: Provider,
     definition = getProviderDefinition(provider.type),
     allProviders: Provider[] = [provider]

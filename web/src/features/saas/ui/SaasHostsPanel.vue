@@ -50,7 +50,7 @@ const {
   showPreferred,
   showFallback,
   openPreferred,
-  decodedZone,
+  routeZoneName,
   hostTotal,
   loading,
   refreshing,
@@ -88,7 +88,7 @@ function clearSearch() {
 
 <template>
   <div class="flex flex-1 flex-col gap-4">
-    <PageHeader :title="decodedZone" description="Cloudflare SaaS 自定义主机名">
+    <PageHeader :title="routeZoneName" description="Cloudflare SaaS 自定义主机名">
       <Button variant="outline" size="sm" @click="router.push('/' + encodePath(providerId))">返回站点</Button>
       <LoadingButton
         variant="outline"
@@ -253,6 +253,6 @@ function clearSearch() {
       :applying="applyingPreferred || jobProgress.running.value"
       @apply="applyPreferred"
     />
-    <FallbackOriginDialog v-model:open="showFallback" :provider-id="providerId" :zone-name="decodedZone" />
+    <FallbackOriginDialog v-model:open="showFallback" :provider-id="providerId" :zone-name="routeZoneName" />
   </div>
 </template>

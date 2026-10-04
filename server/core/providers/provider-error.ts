@@ -23,10 +23,9 @@ export function hasRateLimitCode(error: unknown): boolean {
   return Boolean(details && RATE_LIMIT_CODE.test(String(details.code ?? '')))
 }
 
-/** 上游限流：请求未被应用，任何方法都可安全重试 */
-export function isProviderRateLimited(error: unknown): boolean {
+/** 上游以 HTTP 429 限流（HTTP 200 + 业务限流码见 hasRateLimitCode） */
+export function isHttpRateLimited(error: unknown): boolean {
   if (!(error instanceof ApiError)) return false
-  if (hasRateLimitCode(error)) return true
   return Number(upstreamDetails(error)?.upstream_status) === 429 || error.statusCode === 429
 }
 

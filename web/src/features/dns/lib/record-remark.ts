@@ -78,7 +78,7 @@ function relativeHostLabel(name?: string | null, zoneName = ''): string {
     .toLowerCase()
     .replace(/\.$/, '')
   if (!n || n === '@' || n === zone) return '@'
-  if (zone && (n === zone || n.endsWith(`.${zone}`))) {
+  if (zone && n.endsWith(`.${zone}`)) {
     n = n.slice(0, n.length - zone.length - 1)
     if (!n) return '@'
   }
@@ -148,9 +148,9 @@ function isEmailRecord(record: RecordLike, zoneName = ''): boolean {
   // Cloudflare Email Routing 特征
   if (/mx\.cloudflare\.net/i.test(val) || /_spf\.mx\.cloudflare\.net/i.test(val)) return true
   // 常见第三方邮（DNSPod 侧也多见）
-  if (type === 'MX' || type === 'CNAME' || type === 'TXT') {
+  if (type === 'CNAME' || type === 'TXT') {
     if (
-      /qq\.com|mxbiz\d*\.qq\.com|aliyun|mxhichina|outlook\.com|protection\.outlook|google\.com|googlemail|zoho|mail\.me\.com|icloud/i.test(
+      /qq\.com|aliyun|mxhichina|outlook\.com|protection\.outlook|google\.com|googlemail|zoho|mail\.me\.com|icloud/i.test(
         val
       )
     ) {
@@ -278,7 +278,7 @@ function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaasRemark
 }
 
 function purposeSortKey(purpose: SaasRemarkPurpose): number {
-  return PURPOSE_ORDER[purpose] ?? 9
+  return PURPOSE_ORDER[purpose]
 }
 
 export function compareRecordsForGroup(a: RecordLike, b: RecordLike, zoneName = ''): number {

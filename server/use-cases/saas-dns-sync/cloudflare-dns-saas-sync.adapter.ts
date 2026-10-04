@@ -16,13 +16,11 @@ import {
   resolveCloudflareSaasTarget,
   resolveEffectiveOrigin,
   saasDefaultCloudflareProviderId,
-  saasDesiredRecords,
   syncRemark,
-  type CloudflareSaasTarget,
   type SaaSSyncRecord,
   type SaaSSyncTargetDeps,
 } from '../derived-records/planners/saas.planner.js'
-import { orphanRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
+import { deleteRemovedRecords, saasTargetRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
 
 /** Cloudflare 同步记录 TTL：1 表示自动 */
 const SAAS_RECORD_TTL = 1
@@ -62,7 +60,12 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     const target = await resolveCloudflareSaasTarget(this.target, providerId, hostnameFqdn, { cfZoneName })
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn)
     const fqdn = requireFqdn(hostname)
-    const records = this.records(hostname, await this.businessTarget(providerId, cfZoneName, hostname, true), target)
+    const records = saasTargetRecords(
+      'cloudflare',
+      hostname,
+      target,
+      await this.businessTarget(providerId, cfZoneName, hostname, true)
+    )
     const results = await this.writer.sync('cloudflare', target.providerId, target.zone, records)
     return {
       hostname_fqdn: fqdn,
@@ -82,12 +85,13 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     const fqdn = requireFqdn(hostname)
     const target = await resolveCloudflareSaasTarget(this.target, providerId, fqdn)
-    const afterRecords = this.records(
+    const afterRecords = saasTargetRecords(
+      'cloudflare',
       hostname,
-      await this.businessTarget(providerId, cfZoneName, hostname, true),
-      target
+      target,
+      await this.businessTarget(providerId, cfZoneName, hostname, true)
     )
-    const deleted = await this.deleteRemoved(target, beforeRecords, afterRecords)
+    const deleted = await deleteRemovedRecords(this.writer, 'cloudflare', target, beforeRecords, afterRecords)
     const results = await this.writer.sync('cloudflare', target.providerId, target.zone, afterRecords)
     return {
       hostname_fqdn: fqdn,
@@ -134,6 +138,8 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
         desiredRecord({
           fqdn: ownershipTxtName(fqdn),
           purpose: 'ownership_verification',
+          // 该记录所属主机名（D4 门禁按来源放行无主记录）
+          refId: fqdn,
           record: {
             type: 'TXT',
             value: String(current.ownership_verification?.value ?? ''),
@@ -155,26 +161,14 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     const business = await this.businessTarget(providerId, cfZoneName, hostname, false)
     return {
       hostname_fqdn: hostname.hostname,
-      records: saasDesiredRecords({
+      records: saasTargetRecords(
+        'cloudflare',
         hostname,
-        providerType: 'cloudflare',
-        providerId: sync.sync_provider_id || (await this.defaultDnsProviderId(providerId)),
-        zone: sync.sync_zone,
-        origin: business,
-        includeAll: true,
-      }),
+        { providerId: sync.sync_provider_id || (await this.defaultDnsProviderId(providerId)), zone: sync.sync_zone },
+        business,
+        true
+      ),
     }
-  }
-
-  /** 更新后不再需要的记录：按身份差集一次清理（值或备注可证明归属） */
-  private async deleteRemoved(
-    target: CloudflareSaasTarget,
-    beforeRecords: SaaSSyncRecord[],
-    afterRecords: SaaSSyncRecord[]
-  ) {
-    const orphans = orphanRecords(target, beforeRecords, afterRecords)
-    if (orphans.length === 0) return []
-    return this.writer.sync('cloudflare', target.providerId, target.zone, orphans)
   }
 
   /** 业务 CNAME 目标：优选域名 > 自定义回源 > 默认回源 */
@@ -187,23 +181,6 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     const preferred = String(hostname.custom_metadata?.preferred_domain ?? hostname.preferred_domain ?? '').trim()
     const target = preferred || (await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
     return required ? requireBusinessTarget(target) : target
-  }
-
-  /** 期望记录：写入与对账共用 saasDesiredRecords（单一来源） */
-  private records(
-    hostname: CloudflareCustomHostname,
-    business: string,
-    target: CloudflareSaasTarget,
-    includeAll = false
-  ): SaaSSyncRecord[] {
-    return saasDesiredRecords({
-      hostname,
-      providerType: 'cloudflare',
-      providerId: target.providerId,
-      zone: target.zone,
-      origin: business,
-      includeAll,
-    })
   }
 
   private async defaultDnsProviderId(providerId: string): Promise<string> {

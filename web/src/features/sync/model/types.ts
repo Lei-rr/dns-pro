@@ -60,10 +60,14 @@ export type ReconcileReport = {
   summary: ReconcileSummary
 }
 
+/** 单条写入结果（后端 dns-writer）：status 为闭合联合，action 额外含执行期的 cleanup */
+type WriteStatus = 'created' | 'updated' | 'deleted' | 'unchanged' | 'skipped' | 'not_found' | 'failed'
+type WriteAction = SyncAction | 'cleanup'
+
 type WriteOutcomeView = {
   purpose: string
-  action: string
-  status: string
+  action: WriteAction
+  status: WriteStatus
   fqdn: string
   value: string
   record_id: string

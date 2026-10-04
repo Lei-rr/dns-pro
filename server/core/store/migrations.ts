@@ -102,15 +102,21 @@ async function writeMeta(metaPath: string, version: number): Promise<void> {
 
 /** 临时文件 + fsync + rename 的原子 JSON 写入（迁移期 store 尚未创建） */
 async function writeJsonAtomic(filePath: string, data: unknown): Promise<void> {
-  const temporary = `${filePath}.${process.pid}.tmp`
-  const handle = await fs.open(temporary, 'w', 0o600)
+  // 临时名必须含 pid + 时间 + 随机数：多进程可能同时启动并迁移同一数据目录，同名临时文件会互相覆盖
+  const temporary = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
   try {
-    await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
-    await handle.sync()
-  } finally {
-    await handle.close()
+    const handle = await fs.open(temporary, 'wx', 0o600)
+    try {
+      await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await fs.rename(temporary, filePath)
+  } catch (error) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined)
+    throw error
   }
-  await fs.rename(temporary, filePath)
 }
 
 async function hasExistingData(dataRoot: string): Promise<boolean> {

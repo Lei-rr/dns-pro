@@ -1,10 +1,10 @@
 import { reactive, ref, toValue, type MaybeRefOrGetter } from 'vue'
-import { dnsApi, type DnsProviderRef, type DnsRecordBatchPatch } from '../api/dns-api'
+import { batchJobFetcher, batchJobRetrier, dnsApi, type DnsProviderRef, type DnsRecordBatchPatch } from '../api/dns-api'
 import type { DnsRecord } from '../model/types'
 import type { ImportPlan } from '../lib/record-import-preview'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { formatFailedJobItem, runBatchJob, showBatchFailures, type JobLike, type useJobProgress } from '@/shared/job'
+import { formatFailedJobItem, runBatchJob, showBatchFailures, type useJobProgress } from '@/shared/job'
 import { confirmDialog } from '@/shared/ui/confirm'
 import { createScopeGeneration } from '@/shared/lib/scope-generation'
 
@@ -67,8 +67,8 @@ export function useRecordsBatch(options: {
     return runBatchJob({
       label,
       create,
-      fetchJob: async (id) => ((await dnsApi.batchJob(provider, id)).data as Record<string, unknown>) || {},
-      retry: (id) => dnsApi.batchRetry(provider, id),
+      fetchJob: batchJobFetcher(provider),
+      retry: batchJobRetrier(provider),
       clearSelection: () => options.clearSelection(),
       onDone: () => options.invalidate(),
       jobProgress: options.jobProgress,
@@ -81,6 +81,8 @@ export function useRecordsBatch(options: {
       toast.warning('请先勾选记录')
       return
     }
+    // 确认弹窗期间可能切换 provider/zone：先快照作用域，请求只用快照值
+    const scopeOwner = scope.capture({ provider: toValue(options.provider), zoneId: toValue(options.zoneId) })
     if (
       !(await confirmDialog({
         title: '批量删除',
@@ -90,12 +92,12 @@ export function useRecordsBatch(options: {
       }))
     )
       return
+    if (!scopeOwner.active()) return
     const payload = rows
       .map((row) => ({ id: String(row.id || ''), name: String(row.name || ''), type: String(row.type || '') }))
       .filter((row) => row.id)
     if (!payload.length) return
-    const provider = toValue(options.provider)
-    const zoneId = toValue(options.zoneId)
+    const { provider, zoneId } = scopeOwner.value
     try {
       await runDnsBatch(() => dnsApi.batchDeleteRecords(provider, zoneId, { records: payload }), '批量删除')
     } catch (error) {
@@ -141,7 +143,7 @@ export function useRecordsBatch(options: {
       remark: row.remark || row.comment,
       priority: row.priority ?? row.mx,
       proxied: row.proxied,
-      // 与单条编辑同约定：不回传启停状态与权重，会被上游重置（停用记录被启用、权重归零）
+      // 与单条编辑同约定：必须回传启停状态与权重，否则会被上游重置（停用记录被启用、权重归零）
       status: String(row.status || '').toUpperCase() || undefined,
       weight: row.weight,
     }))
@@ -211,12 +213,13 @@ export function useRecordsBatch(options: {
 
   async function resumeJobs() {
     if (options.jobProgress.running.value) return
-    const owner = scope.claim()
-    const provider = toValue(options.provider)
-    const zoneId = toValue(options.zoneId)
+    // 用 capture 而不是 claim：claim 会作废仍在探测中的上一次恢复，
+    // 两次恢复重叠时最新作用域的后台任务会被静默丢弃；作用域切换统一由 invalidateScope 作废
+    const owner = scope.capture({ provider: toValue(options.provider), zoneId: toValue(options.zoneId) })
+    const { provider, zoneId } = owner.value
     const finished = await options.jobProgress.resumeActive(() => dnsApi.batchActive(provider, zoneId), {
       label: 'DNS 批量',
-      fetchJob: async (id) => ((await dnsApi.batchJob(provider, id)).data as JobLike) || {},
+      fetchJob: batchJobFetcher(provider),
     })
     if (!owner.active() || !finished) return
     const jobId = String(finished.id || '')
@@ -233,7 +236,7 @@ export function useRecordsBatch(options: {
             if (!owner.active()) return null
             return options.jobProgress.pollJob(jobId, {
               label: 'DNS 批量',
-              fetchJob: async (id) => ((await dnsApi.batchJob(provider, id)).data as JobLike) || {},
+              fetchJob: batchJobFetcher(provider),
             })
           },
           isActive: () => owner.active(),

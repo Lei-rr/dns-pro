@@ -5,10 +5,18 @@ import { CloudflareClient } from './cloudflare.client.js'
 
 export type TunnelAccount = CloudflareAccount & { cloudflareProviderId: string }
 
-export interface CloudflareAccount {
+interface CloudflareAccount {
   provider: CloudflareProvider
   accountId: string
   client: CloudflareClient
+}
+
+/**
+ * account_id 在 provider-definitions 中不是必填字段（只有 api_token 必填），
+ * 历史或手工写入的 providers.json 行可能没有它：按「可能缺失」读取，避免直接 .trim() 抛 TypeError。
+ */
+export function providerAccountId(provider: CloudflareProvider): string {
+  return String(provider.account_id ?? '').trim()
 }
 
 /**
@@ -32,7 +40,7 @@ export class CloudflareAccess {
     )
     return {
       provider,
-      accountId: provider.account_id.trim(),
+      accountId: providerAccountId(provider),
       client: CloudflareClient.forProvider(provider, this.httpTimeoutMs),
     }
   }

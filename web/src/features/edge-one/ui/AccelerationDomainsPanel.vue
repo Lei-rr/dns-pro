@@ -9,6 +9,7 @@ import { Input } from '@/shared/ui/input'
 import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
 
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/features/edge-one/model/types'
+import type { EdgeOneDomainSubmitPayload } from '@/features/edge-one/model/domain-command'
 import { toast } from '@/shared/lib/toast'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
@@ -60,7 +61,8 @@ const filtered = computed(() => {
     return name.includes(q) || cname.includes(q)
   })
 })
-const pageTitle = computed(() => zoneMeta.value?.name || decodeURIComponent(props.zoneId))
+// route 参数已由 vue-router 解码（畸形编码会回退原值），这里不再二次解码，避免含 '%' 的站点名抛 URIError
+const pageTitle = computed(() => zoneMeta.value?.name || props.zoneId)
 /** 站点元数据是否就绪：未就绪时不允许新增（否则会拿 zoneId 当域名拼出错误的主机名） */
 const zoneMetaReady = computed(() => Boolean(zoneMeta.value?.name))
 
@@ -150,7 +152,7 @@ function openCert(record: EdgeOneAccelerationDomain) {
   certDialogOpen.value = true
 }
 
-async function save(payload: Record<string, unknown>) {
+async function save(payload: EdgeOneDomainSubmitPayload) {
   if (saving.value) return
   const editingName = editingDomain.value ? domainName(editingDomain.value) : ''
   if (!editingName && !zoneMetaReady.value) {
@@ -161,10 +163,10 @@ async function save(payload: Record<string, unknown>) {
   saving.value = true
   try {
     const data: Record<string, unknown> = {
-      origin_type: payload.origin_type as string,
-      origin: payload.origin as string,
+      origin_type: payload.origin_type,
+      origin: payload.origin,
     }
-    if (!editingName) data.domain_name = payload.fullDomain as string
+    if (!editingName) data.domain_name = payload.fullDomain
     if (payload.origin_protocol) data.origin_protocol = payload.origin_protocol
     // 端口按数值提交（0/空值不再被静默忽略，交给后端 schema 统一校验）
     if (Number.isFinite(Number(payload.http_origin_port))) {
@@ -187,7 +189,7 @@ async function save(payload: Record<string, unknown>) {
       notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '加速域名已更新')
     } else {
       const response = await edgeOneApi.createAccelerationDomain(owner.value.providerId, owner.value.zoneId, data, {
-        autoSync: !!payload.autoSync,
+        autoSync: payload.autoSync,
       })
       if (!owner.active()) return
       notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '加速域名已创建')
@@ -226,8 +228,6 @@ async function saveCertificate(payload: Record<string, unknown>) {
 
 async function setStatus(record: EdgeOneAccelerationDomain, status: string) {
   const key = domainName(record)
-  const scope = captureMutationOwner()
-  const previous = String(record.status || '')
   await runBusy(key, async (owner) => {
     try {
       await edgeOneApi.updateAccelerationDomainStatus(props.providerId, props.zoneId, key, status)
@@ -243,14 +243,7 @@ async function setStatus(record: EdgeOneAccelerationDomain, status: string) {
       )
       toast.success('状态已更新')
     } catch (error) {
-      // 失败回滚乐观更新，避免界面显示未生效的状态
-      if (scope.active()) {
-        patchListItem(
-          domains,
-          (item) => domainName(item) === key,
-          (item) => ({ ...item, status: previous, active_status: previous })
-        )
-      }
+      // 行数据只在成功后改写，失败时无需回滚（回滚反而会覆盖并发刷新的新值）
       if (owner.active()) toast.error(errorMessage(error))
     }
   })
@@ -310,7 +303,22 @@ async function runEdgeBatch(
   })
 }
 
-async function batchDisableSelected() {
+/** 批量停用/删除只差动词与接口，共用同一套「校验选中 → 二次确认 → 执行」流程 */
+const BATCH_ACTIONS = {
+  disable: {
+    verb: '停用',
+    run: (providerId: string, zoneId: string, domains: string[]) =>
+      edgeOneApi.batchDisable(providerId, zoneId, { domains }),
+  },
+  delete: {
+    verb: '删除',
+    run: (providerId: string, zoneId: string, domains: string[]) =>
+      edgeOneApi.batchDelete(providerId, zoneId, { domains }),
+  },
+} as const
+
+async function runBatchWithConfirm(kind: 'disable' | 'delete') {
+  const action = BATCH_ACTIONS[kind]
   const scopeOwner = captureMutationOwner()
   const providerId = scopeOwner.value.providerId
   const zoneId = scopeOwner.value.zoneId
@@ -323,9 +331,9 @@ async function batchDisableSelected() {
   }
   if (
     !(await confirmDialog({
-      title: '批量停用',
-      description: `确认停用已选 ${list.length} 个加速域名？`,
-      confirmText: '停用',
+      title: `批量${action.verb}`,
+      description: `确认${action.verb}已选 ${list.length} 个加速域名？`,
+      confirmText: action.verb,
       destructive: true,
     }))
   )
@@ -334,50 +342,18 @@ async function batchDisableSelected() {
   list = list.filter((name) => !isRowBusy(name))
   if (!list.length) return
   try {
-    await runEdgeBatch(
-      () => edgeOneApi.batchDisable(providerId, zoneId, { domains: list }),
-      '批量停用',
-      scopeOwner,
-      providerId
-    )
+    await runEdgeBatch(() => action.run(providerId, zoneId, list), `批量${action.verb}`, scopeOwner, providerId)
   } catch (error) {
     if (scopeOwner.active()) toast.error(errorMessage(error))
   }
 }
 
-async function batchDeleteSelected() {
-  const scopeOwner = captureMutationOwner()
-  const providerId = scopeOwner.value.providerId
-  const zoneId = scopeOwner.value.zoneId
-  let list = selectedAvailableRows(pagedDomains.value, selection.selected.value, domainName, (row) =>
-    isRowBusy(domainName(row))
-  ).map(domainName)
-  if (!list.length) {
-    toast.warning('请先勾选加速域名')
-    return
-  }
-  if (
-    !(await confirmDialog({
-      title: '批量删除',
-      description: `确认删除已选 ${list.length} 个加速域名？`,
-      confirmText: '删除',
-      destructive: true,
-    }))
-  )
-    return
-  if (!scopeOwner.active()) return
-  list = list.filter((name) => !isRowBusy(name))
-  if (!list.length) return
-  try {
-    await runEdgeBatch(
-      () => edgeOneApi.batchDelete(providerId, zoneId, { domains: list }),
-      '批量删除',
-      scopeOwner,
-      providerId
-    )
-  } catch (error) {
-    if (scopeOwner.active()) toast.error(errorMessage(error))
-  }
+function batchDisableSelected() {
+  return runBatchWithConfirm('disable')
+}
+
+function batchDeleteSelected() {
+  return runBatchWithConfirm('delete')
 }
 
 async function resumeJobs() {
@@ -432,6 +408,9 @@ watch(
     selection.clear()
     zoneMeta.value = null
     domains.value = []
+    // 搜索词与页码属于上一个站点：不清理会让新列表被旧关键词过滤成空表
+    keyword.value = ''
+    resetPage()
     void domainsQuery.invalidate()
     void resumeJobs()
   }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DnsLineOption } from '@/features/dns/model/types'
+import type { RecordFormState } from '@/features/dns/model/use-record-form'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
@@ -8,19 +9,8 @@ import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { fieldError, type FieldErrors } from '@/shared/lib/field-errors'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 
-type RecordFormModel = {
-  name: string
-  type: string
-  value: string
-  ttl: string
-  line: string
-  remark: string
-  priority: string
-  proxied: boolean
-}
-
 const open = defineModel<boolean>('open', { required: true })
-const form = defineModel<RecordFormModel>('form', { required: true })
+const form = defineModel<RecordFormState>('form', { required: true })
 
 defineProps<{
   editing: boolean

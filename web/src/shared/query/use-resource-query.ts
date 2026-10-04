@@ -4,7 +4,11 @@ import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 
-type ResourceQueryContext = { refresh: boolean }
+type ResourceQueryContext = {
+  refresh: boolean
+  /** TanStack 的取消信号：卸载或作用域失效时用它中止在飞请求 */
+  signal: AbortSignal
+}
 
 type ResourceQueryOptions<T> = {
   /** 查询键（含 scope），由调用方按域约定构造 */
@@ -48,7 +52,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
   const query = useQuery({
     queryKey: key,
-    queryFn: () => options.queryFn({ refresh: refreshFlag.value }),
+    queryFn: ({ signal }) => options.queryFn({ refresh: refreshFlag.value, signal }),
   })
 
   const loading = computed(() => query.isPending.value || (query.isFetching.value && query.data.value === undefined))

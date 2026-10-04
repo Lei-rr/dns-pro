@@ -9,5 +9,5 @@ const props = defineProps<{
 </script>
 
 <template>
-  <LoaderCircle role="status" aria-label="Loading" :class="cn('size-4 animate-spin', props.class)" />
+  <LoaderCircle role="status" aria-label="加载中" :class="cn('size-4 animate-spin', props.class)" />
 </template>

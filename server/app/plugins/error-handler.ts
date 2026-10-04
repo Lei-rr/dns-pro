@@ -25,18 +25,32 @@ function publicDetails(details: unknown): Record<string, unknown> | undefined {
   return picked.length ? Object.fromEntries(picked) : undefined
 }
 
+function toFieldNames(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : [value]
+  return list.map((entry) => String(entry ?? '').trim()).filter(Boolean)
+}
+
 function validationFieldErrors(validation: FastifySchemaValidationError[]): Record<string, string> {
   const fields: Record<string, string> = {}
   for (const item of validation) {
-    const field =
-      String(item.params?.missingProperty ?? '').trim() ||
-      String(item.params?.additionalProperty ?? '').trim() ||
-      String(item.instancePath ?? '')
-        .split('/')
-        .filter(Boolean)
-        .at(-1) ||
-      'request'
-    fields[field] ??= item.message || '字段格式不正确'
+    const message = item.message || '字段格式不正确'
+    // TypeBox 编译器的必填 / 多余字段错误 instancePath 为空，字段名只出现在 params 数组里；
+    // Ajv 形状则是单数字段名，两种都收，否则前端拿不到可定位表单的键
+    const names = [
+      ...toFieldNames(item.params?.requiredProperties),
+      ...toFieldNames(item.params?.additionalProperties),
+      ...toFieldNames(item.params?.missingProperty),
+      ...toFieldNames(item.params?.additionalProperty),
+    ]
+    if (names.length) {
+      for (const name of names) fields[name] ??= message
+      continue
+    }
+    const path = String(item.instancePath ?? '')
+      .split('/')
+      .filter(Boolean)
+      .at(-1)
+    fields[path || 'request'] ??= message
   }
   return fields
 }

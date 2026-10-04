@@ -60,8 +60,14 @@ export class MemoryCache {
     this.entries.clear()
   }
 
+  /** 统计未过期条目：惰性过期下没有写入时 size 也必须反映真实容量 */
   stats(): { size: number } {
-    return { size: this.entries.size }
+    const now = Date.now()
+    let size = 0
+    for (const entry of this.entries.values()) {
+      if (entry.expiresAt > now) size++
+    }
+    return { size }
   }
 
   /** 清理过期条目并维持容量上限（写入时顺带执行，避免后台定时器） */

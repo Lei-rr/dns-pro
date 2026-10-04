@@ -34,17 +34,38 @@ export class ProviderRepository {
   }
 
   async mutateAll(mutator: (current: Provider[]) => Provider[]): Promise<Provider[]> {
-    const result = await this.store.transaction((current) => {
+    const { saved } = await this.runTransaction((current) => ({ next: mutator(current), result: undefined }))
+    return saved
+  }
+
+  /**
+   * 与 mutateAll 相同的事务写，但把 mutator 的结果经事务通道透传：
+   * 调用方不必用闭包副作用回收结果，避免事务跳过/重试时结果与落盘状态脱节。
+   */
+  async mutateAllWithResult<U>(
+    mutator: (current: Provider[]) => { next: Provider[]; result: U }
+  ): Promise<{ saved: Provider[]; result: U }> {
+    return this.runTransaction(mutator)
+  }
+
+  /** 事务公共骨架：落盘密文，返回明文副本与 mutator 结果 */
+  private async runTransaction<U>(
+    mutator: (current: Provider[]) => { next: Provider[]; result: U }
+  ): Promise<{ saved: Provider[]; result: U }> {
+    const outcome = await this.store.transaction((current) => {
       const items = (Array.isArray(current.items) ? current.items : []).map((item) =>
         openProviderSecrets(item, this.secrets)
       )
-      const next = mutator(items)
+      const { next, result } = mutator(items)
       const plaintext = next.map((provider) => this.normalizeForStorage(provider))
       const sealed = plaintext.map((provider) => sealProviderSecrets(provider, this.secrets))
       // 落盘密文，返回值保持明文：mutator 与调用方的语义不变
-      return { next: { items: sealed }, result: plaintext }
+      return { next: { items: sealed }, result: { saved: plaintext, result } }
     })
-    return result ?? []
+    if (outcome === undefined) {
+      throw new ApiError('server_error', 'Provider transaction produced no result', 500)
+    }
+    return outcome
   }
 
   private normalizeForStorage(provider: ProviderInput): Provider {

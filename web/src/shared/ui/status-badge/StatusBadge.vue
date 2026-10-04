@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import type { BadgeVariants } from '@/shared/ui/badge'
 import { Badge } from '@/shared/ui/badge'
 
 withDefaults(
   defineProps<{
-    variant?: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning'
+    variant?: BadgeVariants['variant']
   }>(),
   { variant: 'secondary' }
 )

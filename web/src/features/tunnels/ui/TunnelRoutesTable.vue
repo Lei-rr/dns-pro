@@ -4,6 +4,7 @@ import { Button } from '@/shared/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
+import { routeKey } from '@/features/tunnels/lib/route-key'
 import type { TunnelRoute } from '@/features/tunnels/model/types'
 
 defineProps<{
@@ -40,11 +41,7 @@ const emit = defineEmits<{
             </div>
           </TableCell>
         </TableRow>
-        <TableRow
-          v-for="(record, index) in routes"
-          :key="`${record.hostname}-${record.path}-${index}`"
-          :class="busy(record) && 'bg-muted/40 opacity-80'"
-        >
+        <TableRow v-for="record in routes" :key="routeKey(record)" :class="busy(record) && 'bg-muted/40 opacity-80'">
           <TableCell class="px-4 font-medium">{{ record.hostname || '-' }}</TableCell>
           <TableCell class="max-w-[280px] truncate">{{ record.service || '-' }}</TableCell>
           <TableCell>{{ record.path || '/' }}</TableCell>

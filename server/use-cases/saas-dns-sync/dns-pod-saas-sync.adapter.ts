@@ -17,14 +17,13 @@ import {
   requireFqdn,
   resolveDnsPodSaasTarget,
   resolveEffectiveOrigin,
-  saasDesiredRecords,
   saasDnsPodProviderId,
   syncRemark,
   type SaaSDnsPodTargetDeps,
   type SaaSDnsTarget,
   type SaaSSyncRecord,
 } from '../derived-records/planners/saas.planner.js'
-import { orphanRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
+import { deleteRemovedRecords, saasTargetRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
 
 /** DNSPod 同步记录 TTL（沿用历史默认值） */
 const SAAS_RECORD_TTL = 600
@@ -62,7 +61,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const target = await resolveDnsPodSaasTarget(this.target, providerId, hostname, fqdn)
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
 
-    const records = this.records(hostname, origin, target)
+    const records = saasTargetRecords('dnspod', hostname, target, origin)
     const precleaned = await this.writer.preclean(
       'dnspod',
       target.providerId,
@@ -86,8 +85,8 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     if ('reason' in target) return { cleaned: 0, records: [], deleted: [], reason: target.reason }
 
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
-    const afterRecords = this.records(hostname, origin, target)
-    const deleted = await this.deleteRemoved(target, beforeRecords, afterRecords)
+    const afterRecords = saasTargetRecords('dnspod', hostname, target, origin)
+    const deleted = await deleteRemovedRecords(this.writer, 'dnspod', target, beforeRecords, afterRecords)
     const precleaned =
       afterRecords.length === 0
         ? []
@@ -161,35 +160,16 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
   async collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string) {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn)
     const fqdn = hostname.hostname
+    if (!fqdn) return { hostname_fqdn: '', records: [] }
+
     const dnspodProviderId = await saasDnsPodProviderId(this.target, providerId, hostname).catch(() => '')
-    const target = fqdn ? await optionalDnsPodSaasTarget(this.target, providerId, hostname, fqdn) : { reason: '' }
+    // 未关联 DNSPod 服务商：目标不可解析，返回空快照，避免清理配方携带 provider/zone 全空的记录
+    if (dnspodProviderId === '') return { hostname_fqdn: fqdn, records: [] }
+
+    const target = await optionalDnsPodSaasTarget(this.target, providerId, hostname, fqdn)
     const resolved: SaaSDnsTarget =
       'reason' in target ? { providerType: 'dnspod', providerId: dnspodProviderId, zone: '' } : target
     const origin = await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname)
-    return { hostname_fqdn: fqdn, records: this.records(hostname, origin, resolved, true) }
-  }
-
-  /** 期望记录：写入与对账共用 saasDesiredRecords（单一来源） */
-  private records(
-    hostname: CloudflareCustomHostname,
-    origin: string,
-    target: SaaSDnsTarget,
-    includeAll = false
-  ): SaaSSyncRecord[] {
-    return saasDesiredRecords({
-      hostname,
-      providerType: 'dnspod',
-      providerId: target.providerId,
-      zone: target.zone,
-      origin,
-      includeAll,
-    })
-  }
-
-  /** 更新后不再需要的记录：按身份差集一次清理（值或备注可证明归属） */
-  private async deleteRemoved(target: SaaSDnsTarget, beforeRecords: SaaSSyncRecord[], afterRecords: SaaSSyncRecord[]) {
-    const orphans = orphanRecords(target, beforeRecords, afterRecords)
-    if (orphans.length === 0) return []
-    return this.writer.sync('dnspod', target.providerId, target.zone, orphans)
+    return { hostname_fqdn: fqdn, records: saasTargetRecords('dnspod', hostname, resolved, origin, true) }
   }
 }

@@ -58,6 +58,8 @@ const providerDefinitions: Record<ProviderType, ProviderDefinition> = {
 }
 
 export function getProviderDefinition(type: string): ProviderDefinition | undefined {
+  // 必须挡掉原型链键（constructor/toString/__proto__ 等），否则会取到 Object.prototype 上的值
+  if (!Object.hasOwn(providerDefinitions, type)) return undefined
   return providerDefinitions[type as ProviderType]
 }
 

@@ -1,7 +1,13 @@
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
 import type { JobService } from './job.service.js'
-import { summarizeJobItems, type JobItem, type JobLock, type JobRecord } from './job.types.js'
+import {
+  EXECUTION_SNAPSHOT_FIELDS,
+  summarizeJobItems,
+  type JobItem,
+  type JobLock,
+  type JobRecord,
+} from './job.types.js'
 
 /** 批量任务对外视图公共字段 */
 export type BatchJobViewBase = {
@@ -28,8 +34,8 @@ export type BatchItemResult = {
   extra?: Record<string, unknown>
 }
 
-// 内部执行字段不对外暴露
-const INTERNAL_ITEM_FIELDS = new Set(['attempt', 'item_key', 'dns_before_records', 'cleanup_recipe'])
+// 内部执行字段不对外暴露（执行期快照清单与 job.service 的内存剥离共用一份）
+const INTERNAL_ITEM_FIELDS = new Set(['attempt', 'item_key', ...EXECUTION_SNAPSHOT_FIELDS])
 
 /** 批量任务族：同一 scope 内互斥的一组任务类型 */
 export class BatchJobKind<View> {
@@ -97,7 +103,7 @@ export class BatchJobKind<View> {
   }
 }
 
-/** 按条目计数收尾（已取消的任务保持取消） */
+/** 按条目计数收尾；任务已进入终态时 jobs.patch 返回 null，原状态保持不变 */
 export async function finishBatchJob(jobs: JobService, jobId: string, label: string): Promise<JobRecord | null> {
   const job = await jobs.get(jobId)
   if (!job) return job

@@ -1,22 +1,14 @@
 <script setup lang="ts">
 import type { DnsLineOption } from '@/features/dns/model/types'
+import type { BatchPatchState } from '@/features/dns/model/use-records-batch'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button } from '@/shared/ui/button'
 import { Input } from '@/shared/ui/input'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 
-type BatchPatchModel = {
-  value: string
-  ttl: string
-  line: string
-  remark: string
-  priority: string
-  proxied: '__keep' | 'true' | 'false'
-}
-
 const open = defineModel<boolean>('open', { required: true })
-const patch = defineModel<BatchPatchModel>('patch', { required: true })
+const patch = defineModel<BatchPatchState>('patch', { required: true })
 
 defineProps<{
   selectedCount: number

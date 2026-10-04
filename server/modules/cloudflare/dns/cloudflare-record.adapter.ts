@@ -6,28 +6,36 @@ import {
   type DnsRecordValue,
 } from '../../../core/contracts/dns-record.port.js'
 import { toAsciiFqdn } from '../../../shared/values.js'
-import type { CloudflareDnsRecordService, CloudflareRecord, RecordPayload } from '../cloudflare-dns-record.service.js'
+import {
+  toRecordPayload,
+  type CloudflareDnsRecordService,
+  type CloudflareRecord,
+  type RecordPayload,
+} from '../cloudflare-dns-record.service.js'
 import type { CloudflareZoneService } from '../cloudflare-zone.service.js'
 
-/** 相对主机记录 → FQDN（'@' 或空为站点名本身；已是站点后缀时原样保留） */
+/** 相对主机记录 → FQDN（'@' 或空为站点名本身；已是站点后缀时不再重复拼接） */
 function toFqdn(nameRaw: string, zone: string): string {
   if (nameRaw === '' || nameRaw === '@') return zone
-  const lower = nameRaw.toLowerCase()
-  const zoneLower = zone.toLowerCase()
-  return lower.endsWith('.' + zoneLower) ? nameRaw : `${nameRaw}.${zone}`
+  // 导入等路径会送入绝对主机名：与站点同名（'example.com' 配站点 'example.com'）或带尾点时必须
+  // 按站点名处理，否则会拼出 example.com.example.com 并查不到、写出重复记录
+  const lower = nameRaw.toLowerCase().replace(/\.+$/, '')
+  const zoneLower = zone.toLowerCase().replace(/\.+$/, '')
+  if (lower === zoneLower) return zoneLower
+  return lower.endsWith(`.${zoneLower}`) ? lower : `${lower}.${zoneLower}`
 }
 
 function toPayload(value: DnsRecordValue, zone: string): RecordPayload {
-  const payload: RecordPayload = {
-    type: String(value.type || 'A').toUpperCase(),
+  // 可选字段的兜底规则交给 toRecordPayload 单点维护，适配器只做语义映射（note→comment、相对名→FQDN）
+  return toRecordPayload({
+    type: String(value.type || 'A'),
     name: toFqdn(value.name, zone),
     content: String(value.value ?? ''),
-    ttl: Number(value.ttl ?? 1) || 1,
-  }
-  if (value.priority !== undefined) payload.priority = Number(value.priority)
-  if (value.note !== undefined) payload.comment = String(value.note)
-  if (value.proxied !== undefined) payload.proxied = Boolean(value.proxied)
-  return payload
+    ttl: value.ttl,
+    proxied: value.proxied,
+    priority: value.priority,
+    comment: value.note,
+  })
 }
 
 function toValue(record: CloudflareRecord, zone: string): DnsRecordValue {

@@ -3,7 +3,8 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,ts}"],
-      "project": ["server/**/*.ts", "scripts/**/*.{mjs,ts}"]
+      "project": ["server/**/*.ts", "scripts/**/*.{mjs,ts}"],
+      "ignoreDependencies": ["vue", "@tanstack/vue-query"]
     },
     "web": {
       "entry": ["src/app/styles/index.css"],

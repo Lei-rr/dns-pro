@@ -25,6 +25,17 @@ export interface AuthState {
 
 const CONFIG_FILE = 'config.json'
 
+/** 会话代次：非安全整数或负数一律归零，避免脏数据进入自增链 */
+function normalizeEpoch(value: unknown): number {
+  const epoch = Number(value ?? 0)
+  return Number.isSafeInteger(epoch) && epoch >= 0 ? epoch : 0
+}
+
+/** 会话代次 +1（登出/改密时递增，使已签发会话全部失效） */
+function nextSessionEpoch(value: unknown): number {
+  return normalizeEpoch(value) + 1
+}
+
 /**
  * first run：生成随机初始密码，只落盘哈希；明文通过返回值交给启动日志输出。
  * 已存在配置时不做任何改动。
@@ -53,12 +64,11 @@ export class AuthConfigRepository {
     const config = await this.store.readFresh()
     const hash = String(config.auth?.password_hash ?? '').trim()
     const plaintext = String(config.auth?.password ?? '')
-    const epoch = Number(config.session_epoch ?? 0)
     return {
       username: String(config.auth?.username ?? ''),
       credential: hash !== '' ? hash : plaintext,
       plaintext: plaintext !== '' ? plaintext : null,
-      sessionEpoch: Number.isSafeInteger(epoch) && epoch >= 0 ? epoch : 0,
+      sessionEpoch: normalizeEpoch(config.session_epoch),
     }
   }
 
@@ -78,20 +88,18 @@ export class AuthConfigRepository {
   /** 会话代次 +1（保留文件其余内容） */
   async bumpSessionEpoch(): Promise<void> {
     await this.store.transaction((current) => {
-      const epoch = Number(current.session_epoch ?? 0)
-      return { next: { ...current, session_epoch: (Number.isSafeInteger(epoch) ? epoch : 0) + 1 } }
+      return { next: { ...current, session_epoch: nextSessionEpoch(current.session_epoch) } }
     })
   }
 
   private async writeCredential(passwordHash: string): Promise<void> {
     await this.store.transaction((current) => {
       const { password: _plaintext, ...auth } = current.auth ?? { username: '' }
-      const epoch = Number(current.session_epoch ?? 0)
       return {
         next: {
           ...current,
           auth: { ...auth, password_hash: passwordHash },
-          session_epoch: (Number.isSafeInteger(epoch) ? epoch : 0) + 1,
+          session_epoch: nextSessionEpoch(current.session_epoch),
         },
       }
     })

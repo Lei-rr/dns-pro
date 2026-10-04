@@ -175,7 +175,6 @@ function createHttpShell(config: AppConfig): FastifyInstance {
     // 路径参数上限需覆盖最长域名（schema 允许 253），默认 100 会让合法域名直接 414
     routerOptions: { maxParamLength: 256 },
     bodyLimit: 1024 * 1024,
-    ajv: { customOptions: { coerceTypes: false, removeAdditional: false } },
   })
     .withTypeProvider<TypeBoxTypeProvider>()
     .setValidatorCompiler(TypeBoxValidatorCompiler)

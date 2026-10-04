@@ -22,7 +22,6 @@ const props = withDefaults(
   { hostCount: 0, applying: false }
 )
 const emit = defineEmits<{
-  update: [items: Array<{ domain: string }>]
   apply: [payload: { domain: string; onlyAutoPreferred?: boolean; dryRun?: boolean }]
 }>()
 
@@ -32,7 +31,7 @@ const saving = ref(false)
 const newDomain = ref('')
 const editingDomain = ref<string | null>(null)
 const editingValue = ref('')
-// 立即防重复点击；父级 applying 结束后自动解除
+// 立即防重复点击；父级 applying 结束后或弹窗重新打开时解除
 const applyingDomain = ref('')
 watch(
   () => props.applying,
@@ -51,7 +50,6 @@ async function load() {
     const response = await preferredDomainApi.list()
     if (!owner.active() || !open.value) return
     items.value = response.data || []
-    emit('update', items.value)
   } catch (error) {
     if (!owner.active() || !open.value) return
     toast.error(errorMessage(error))
@@ -145,7 +143,6 @@ async function move(index: number, delta: number) {
   saving.value = true
   try {
     await preferredDomainApi.sort(copy.map((item) => item.domain))
-    emit('update', items.value)
     toast.success('排序已保存')
   } catch (error) {
     toast.error(errorMessage(error))
@@ -156,11 +153,15 @@ async function move(index: number, delta: number) {
 }
 
 watch(open, (value) => {
-  if (value) load()
-  else {
-    loadGeneration.invalidate()
-    loading.value = false
+  if (value) {
+    // 打开即复位：父级在 scopeOwner 失效时会提前 return（applying 始终不翻转），
+    // 只依赖 applying 的下降沿会让这个防重复标记永久残留并吞掉后续点击
+    applyingDomain.value = ''
+    load()
+    return
   }
+  loadGeneration.invalidate()
+  loading.value = false
 })
 
 onMounted(() => {

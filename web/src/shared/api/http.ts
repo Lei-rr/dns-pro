@@ -15,6 +15,8 @@ type RequestConfig = {
   headers?: Record<string, string>
   timeout?: number
   data?: unknown
+  /** 外部取消信号（组件卸载 / TanStack 查询取消），与超时共用同一个 AbortController */
+  signal?: AbortSignal
 }
 
 const DEFAULT_TIMEOUT_MS = 120000
@@ -70,6 +72,14 @@ async function request<T = unknown>(method: string, url: string, config: Request
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeout ?? DEFAULT_TIMEOUT_MS)
 
+  // fetch 只接受一个 signal，外部取消与超时必须合并到同一个 controller
+  const external = config.signal
+  const abortFromExternal = () => controller.abort()
+  if (external) {
+    if (external.aborted) controller.abort()
+    else external.addEventListener('abort', abortFromExternal, { once: true })
+  }
+
   const headers: Record<string, string> = {
     Accept: 'application/json',
     ...(config.headers || {}),
@@ -107,6 +117,8 @@ async function request<T = unknown>(method: string, url: string, config: Request
       })
       // Session expired / not logged in → jump login.
       // Wrong password (invalid_credentials) stays on the form.
+      // 该码被后端复用于两处：登录密码错误（auth.service 登录）与改密时当前密码不正确。
+      // 两者都应留在表单上，故此白名单同时覆盖；后端若拆出独立错误码，这里要同步。
       if (response.status === 401 && code !== 'invalid_credentials') unauthorizedHandler?.()
       throw error
     }
@@ -124,6 +136,7 @@ async function request<T = unknown>(method: string, url: string, config: Request
     throw toRequestError((error as Error)?.message || '网络错误', { code: 'NETWORK_ERROR', status: 0 })
   } finally {
     clearTimeout(timer)
+    external?.removeEventListener('abort', abortFromExternal)
   }
 }
 

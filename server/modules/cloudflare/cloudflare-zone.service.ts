@@ -8,17 +8,15 @@ import {
   type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import { providerNullableString } from '../../core/providers/provider-values.js'
-import { invalidateCloudflareZoneCache } from './cloudflare.cache.js'
+import { invalidateCloudflareZoneCache, CLOUDFLARE_PROVIDER_TYPE } from './cloudflare.cache.js'
 import { CLOUDFLARE_PAGE_LIMIT } from './cloudflare-pagination.js'
-import type { CloudflareAccess } from './access.js'
+import { providerAccountId, type CloudflareAccess } from './access.js'
 import {
   cloudflareZoneSchema,
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
   type CloudflarePage,
 } from './cloudflare-response.schema.js'
-
-const PROVIDER_TYPE = 'cloudflare'
 
 interface ZonePresentation {
   [key: string]: unknown
@@ -48,8 +46,13 @@ export class CloudflareZoneService {
   /** 单页查询（带缓存），name 为精确站点名过滤 */
   async page(providerId: string, page: number, perPage: number, name = '', refresh = false) {
     const cached = await withProviderCache<CloudflarePage<ZonePresentation>>({
-      key: buildCacheKey(`${PROVIDER_TYPE}:zones`, { provider_id: providerId, page, per_page: perPage, name }),
-      tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
+      key: buildCacheKey(`${CLOUDFLARE_PROVIDER_TYPE}:zones`, {
+        provider_id: providerId,
+        page,
+        per_page: perPage,
+        name,
+      }),
+      tags: [providerCacheTag(providerId), zoneCacheTag(CLOUDFLARE_PROVIDER_TYPE, providerId)],
       refresh,
       loader: async () => {
         const { client } = await this.access.forProvider(providerId)
@@ -74,7 +77,7 @@ export class CloudflareZoneService {
 
   async create(providerId: string, name: string): Promise<ZonePresentation> {
     const { provider, client } = await this.access.forProvider(providerId)
-    const accountId = provider.account_id.trim()
+    const accountId = providerAccountId(provider)
     if (accountId === '') {
       throw new ApiError('cloudflare_account_id_required', 'Cloudflare account_id is required', 422)
     }

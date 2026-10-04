@@ -19,6 +19,7 @@ import type { EdgeOneProvider, SaaSProvider } from '../../core/providers/provide
 import type { EdgeOneDomainService } from '../../modules/edgeone/edge-one-domain.service.js'
 import type { EdgeOneZoneService } from '../../modules/edgeone/edge-one-zone.service.js'
 import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
+import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
 import type { TunnelRouteService } from '../../modules/cloudflare/tunnel/tunnel-route.service.js'
 import type { TunnelService } from '../../modules/cloudflare/tunnel/tunnel.service.js'
 
@@ -87,7 +88,7 @@ export function saasOwnershipSource(deps: {
         for (const zoneName of await zonesToScan(deps.hostnames, provider.id, target)) {
           const listed = await deps.hostnames.hostnames(provider.id, zoneName)
           for (const item of listed.items) {
-            const hostname = item as SaasHostnameView
+            const hostname = item
             const fqdn = normalizeOwnershipHost(hostname.hostname)
             if (fqdn === '' || !hostInZone(fqdn, target.zone)) continue
             if (!hostnameTargets(hostname, target)) continue
@@ -132,13 +133,6 @@ export function edgeOneOwnershipSource(deps: {
   }
 }
 
-interface SaasHostnameView {
-  id?: unknown
-  hostname?: unknown
-  effective_sync_target?: unknown
-  effective_sync_provider_id?: unknown
-}
-
 /** SaaS 服务商是否可能写入该 DNS 目标（关联账号匹配） */
 function saasTargets(provider: SaaSProvider, target: OwnershipTarget): boolean {
   if (target.providerType === 'dnspod') return String(provider.dnspod_provider ?? '') === target.providerId
@@ -162,7 +156,7 @@ async function zonesToScan(
 }
 
 /** 主机名生效同步目标是否落在该 DNS 目标上 */
-function hostnameTargets(hostname: SaasHostnameView, target: OwnershipTarget): boolean {
+function hostnameTargets(hostname: CloudflareCustomHostname, target: OwnershipTarget): boolean {
   const type = String(hostname.effective_sync_target ?? '')
   const provider = String(hostname.effective_sync_provider_id ?? '')
   if (target.providerType === 'cloudflare') return type === 'cloudflare_dns' && provider === target.providerId

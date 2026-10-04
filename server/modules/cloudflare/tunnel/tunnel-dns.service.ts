@@ -22,7 +22,15 @@ export class TunnelDnsService {
       const name = relativeRecordName(fqdn, zone.zoneName)
       const records = await this.port.find(zone.providerId, zone.zoneName, { name, type: 'CNAME' })
       const owned = records.find((ref) => ref.value.value === content)
-      if (owned) return { action: 'unchanged', record_id: owned.id }
+      if (owned) {
+        if (owned.value.proxied !== false) return { action: 'unchanged', record_id: owned.id }
+        // 记录必须代理：已存在但未代理时补写，否则 repair 只看目标值、永远发现不了这条差异
+        const updated = await this.port.update(zone.providerId, zone.zoneName, owned.id, {
+          ...owned.value,
+          proxied: true,
+        })
+        return { action: 'updated', record_id: updated.id }
+      }
 
       // 与 removeCname 相同的归属保护：只管理指向本隧道的记录，绝不覆盖其它隧道或人工记录
       const [conflict] = records

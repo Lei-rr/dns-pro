@@ -25,13 +25,13 @@ export function success<T>(data: T, sideEffects?: SideEffects): SuccessResponseB
 }
 
 export function error(
-  messageOrCode: string,
+  message: string,
   statusCode: number = 400,
   errorCode?: string,
   details: unknown = undefined
 ): ErrorResponseBody {
   const code = errorCode ?? 'error'
-  const provided = String(messageOrCode ?? '').trim()
+  const provided = String(message ?? '').trim()
   const translated = translateError(code)
   // 已本地化（含中文）的消息原样返回；否则优先使用错误码的中文映射，
   // 避免内部英文错误文本直接暴露在中文界面上。

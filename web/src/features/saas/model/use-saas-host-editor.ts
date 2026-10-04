@@ -78,6 +78,8 @@ export function useSaasHostEditor(options: {
 
   // 已加载过的服务商不重复请求（resetForm 会主动加载一次）
   let loadedSyncProvider = ''
+  // 同一服务商的加载已在进行中：resetForm 已显式发起，watch 再触发一次只会让两次响应互相作废
+  let pendingSyncProvider = ''
 
   async function loadSyncZones() {
     const owner = syncZonesOwnership.claim()
@@ -88,6 +90,7 @@ export function useSaasHostEditor(options: {
       loadingSyncZones.value = false
       return
     }
+    pendingSyncProvider = providerId
     loadingSyncZones.value = true
     syncZonesError.value = ''
     syncZones.value = []
@@ -100,6 +103,7 @@ export function useSaasHostEditor(options: {
     } catch {
       if (owner.active()) syncZonesError.value = '同步域名加载失败。'
     } finally {
+      if (pendingSyncProvider === providerId) pendingSyncProvider = ''
       if (owner.active()) loadingSyncZones.value = false
     }
   }
@@ -109,6 +113,7 @@ export function useSaasHostEditor(options: {
     (next) => {
       if (!next || next === loadedSyncProvider || editing.value) return
       form.sync_zone = ''
+      if (next === pendingSyncProvider) return
       void loadSyncZones()
     }
   )

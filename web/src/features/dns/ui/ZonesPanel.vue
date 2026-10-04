@@ -11,7 +11,7 @@ import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { EllipsisVertical, Globe2, Plus, RefreshCw, Search, X } from '@lucide/vue'
-import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
+import { dnsApi, dnsProviderTypeLabel, type DnsProviderRef } from '@/features/dns/api/dns-api'
 
 import type { Zone } from '@/features/dns/model/types'
 import { toast } from '@/shared/lib/toast'
@@ -171,7 +171,7 @@ function clearSearch() {
 
 <template>
   <div class="flex flex-1 flex-col gap-4">
-    <PageHeader :title="title" :description="`${provider.type === 'dnspod' ? 'DNSPod' : 'Cloudflare'} · 域名列表`">
+    <PageHeader :title="title" :description="`${dnsProviderTypeLabel(provider.type)} · 域名列表`">
       <LoadingButton
         variant="outline"
         size="sm"

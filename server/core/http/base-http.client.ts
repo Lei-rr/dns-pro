@@ -1,5 +1,5 @@
 import { ApiError } from './api-error.js'
-import { hasRateLimitCode, isProviderRateLimited, retryAfterMs } from '../providers/provider-error.js'
+import { hasRateLimitCode, isHttpRateLimited, retryAfterMs } from '../providers/provider-error.js'
 
 interface HttpClientOptions {
   baseURL: string
@@ -56,11 +56,14 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * 是否重试：
- * - 限流（429 / 上游限流错误码）：请求未被应用，任何方法都可重试
+ * - HTTP 限流（429）：请求未被应用，任何方法都可重试
  * - 5xx：仅幂等方法（GET/HEAD）重试，避免非幂等请求被重复执行
+ *
+ * 业务错误码限流（HTTP 200 + 限流 Code，如腾讯云）不在这里重试：
+ * 由 withRateLimitRetry 统一处理，否则两层各重试 3 次会叠加成 9 次上游请求。
  */
 function shouldRetry(method: string, error: unknown): boolean {
-  if (isProviderRateLimited(error)) return true
+  if (isHttpRateLimited(error)) return true
   if (method !== 'GET' && method !== 'HEAD') return false
   if (error instanceof ApiError) {
     const upstreamStatus = (error.details as Record<string, unknown> | undefined)?.upstream_status

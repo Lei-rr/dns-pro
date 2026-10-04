@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ProgressRootProps } from 'reka-ui'
 import type { HTMLAttributes } from 'vue'
 import { reactiveOmit } from '@vueuse/core'
@@ -10,6 +11,9 @@ const props = withDefaults(defineProps<ProgressRootProps & { class?: HTMLAttribu
 })
 
 const delegatedProps = reactiveOmit(props, 'class')
+
+// max 会随 delegatedProps 转发给 reka 的 ProgressRoot（无障碍语义按 max 计算），视觉位移必须同口径
+const percent = computed(() => ((props.modelValue ?? 0) / (props.max || 100)) * 100)
 </script>
 
 <template>
@@ -21,7 +25,7 @@ const delegatedProps = reactiveOmit(props, 'class')
     <ProgressIndicator
       data-slot="progress-indicator"
       class="bg-primary h-full w-full flex-1 transition-all"
-      :style="`transform: translateX(-${100 - (props.modelValue ?? 0)}%);`"
+      :style="`transform: translateX(-${100 - percent}%);`"
     />
   </ProgressRoot>
 </template>

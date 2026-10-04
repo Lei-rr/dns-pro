@@ -1,8 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteLocationNormalized } from 'vue-router'
-import { getCachedProviderAny, loadProviders } from '@/features/providers'
 import { useSessionStore } from '@/features/auth'
 import { toast } from '@/shared/lib/toast'
-import { errorMessage } from '@/shared/lib/errors'
 import { encodePath } from '@/shared/lib/path'
 
 // 静态导入：切换页面不再 lazy chunk「加载中」
@@ -13,10 +11,9 @@ import ProvidersPage from '@/pages/providers/ProvidersPage.vue'
 import SyncPage from '@/pages/sync/SyncPage.vue'
 import ProviderEntryPage from '@/pages/provider-entry/ProviderEntryPage.vue'
 
-// 与后端保留字（server/core/providers/provider-normalizer.ts 的 RESERVED_PROVIDER_IDS）同一口径：
-// 这些首段永远不会是服务商 ID，守卫无需做服务商存在性校验；'p' 是服务商详情的前缀（见下方 routes）。
-const systemRouteIds = new Set(['', 'home', 'login', 'p', 'providers', 'sync', 'user'])
-
+// 与后端保留字（server/core/providers/provider-normalizer.ts 的 RESERVED_PROVIDER_IDS = home/login/providers/user）
+// 不同：这里只是前端路由表里出现过的首段。'p' 是服务商页面前缀，故首段无法用来判断服务商是否存在——
+// 存在性校验放在 ProviderEntryPage（未找到时提示并回首页），守卫只负责登录态。
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
@@ -46,10 +43,6 @@ const router = createRouter({
   ],
 })
 
-function firstRouteSegment(to: RouteLocationNormalized) {
-  return to.path.split('/').filter(Boolean)[0] || ''
-}
-
 async function ensureAuthenticated(to: RouteLocationNormalized) {
   try {
     const session = await useSessionStore().load()
@@ -64,24 +57,6 @@ async function ensureAuthenticated(to: RouteLocationNormalized) {
   }
 }
 
-async function ensureProviderRoute(to: RouteLocationNormalized) {
-  const first = firstRouteSegment(to)
-  if (systemRouteIds.has(first)) return true
-  await loadProviders()
-  if (getCachedProviderAny(first)) return true
-  toast.warning('未找到该服务商')
-  return '/'
-}
-
-router.beforeEach(async (to) => {
-  const authResult = await ensureAuthenticated(to)
-  if (authResult !== true) return authResult
-  try {
-    return await ensureProviderRoute(to)
-  } catch (error) {
-    toast.error(errorMessage(error))
-    return '/'
-  }
-})
+router.beforeEach(async (to) => ensureAuthenticated(to))
 
 export default router

@@ -27,11 +27,12 @@ export interface SaasHostsPanelProps {
 export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   const router = useRouter()
 
-  const decodedZone = computed(() => decodeURIComponent(props.zoneName))
+  // route 参数已由 vue-router 解码（畸形编码会回退原值），这里不再二次解码，避免含 '%' 的站点名抛 URIError
+  const routeZoneName = computed(() => props.zoneName)
   const hostnamesQuery = useResourceQuery<SaaSHostname[]>({
-    key: () => ['saas', 'hostnames', props.providerId, decodedZone.value],
+    key: () => ['saas', 'hostnames', props.providerId, routeZoneName.value],
     queryFn: async ({ refresh }) =>
-      (await saasApi.hostnames(props.providerId, decodedZone.value, { refresh })).data || [],
+      (await saasApi.hostnames(props.providerId, routeZoneName.value, { refresh })).data || [],
     pageSizeScope: 'saas-hosts',
   })
   /** 视图镜像：保留面板内的局部 patch 反馈，写后统一由 invalidate 收敛到服务端真相 */
@@ -73,7 +74,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   let preferredDialogOwner: ScopeOwner<SaasScope> | null = null
 
   function captureScope(): ScopeOwner<SaasScope> {
-    return scopeGeneration.capture({ providerId: props.providerId, zoneName: decodedZone.value })
+    return scopeGeneration.capture({ providerId: props.providerId, zoneName: routeZoneName.value })
   }
 
   function openPreferred() {
@@ -115,7 +116,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     reset: resetJobs,
   } = useSaasHostJobs({
     providerId: () => props.providerId,
-    zoneName: () => decodedZone.value,
+    zoneName: () => routeZoneName.value,
     reload: () => runLoad(),
     clearSelection: () => selection.clear(),
   })
@@ -163,7 +164,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     reset: resetEditor,
   } = useSaasHostEditor({
     providerId: () => props.providerId,
-    zoneName: () => decodedZone.value,
+    zoneName: () => routeZoneName.value,
     loadDnsZones: props.loadDnsZones,
     reload: () => runLoad(),
     patchHostname: patchHostnameRow,
@@ -191,7 +192,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   }
 
   function detailIdentity(record: SaaSHostname) {
-    return JSON.stringify([props.providerId, decodedZone.value, String(record.hostname || '')])
+    return JSON.stringify([props.providerId, routeZoneName.value, String(record.hostname || '')])
   }
 
   function isCurrentDetail(owner: { active: () => boolean }, identity: string) {
@@ -211,7 +212,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     detailOpen.value = true
     detailLoading.value = true
     try {
-      const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname)
+      const response = await saasApi.hostname(props.providerId, routeZoneName.value, record.hostname)
       if (!isCurrentDetail(owner, identity)) return
       if (response.data) {
         detailRecord.value = response.data
@@ -232,7 +233,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       detailRefreshing.value = true
       try {
         // reconcile：刷新远端状态，并在激活后清理所有权验证 TXT
-        const response = await saasApi.reconcileHostname(props.providerId, decodedZone.value, record.hostname)
+        const response = await saasApi.reconcileHostname(props.providerId, routeZoneName.value, record.hostname)
         if (!rowOwner.active() || !isCurrentDetail(detailOwner, identity)) return
         if (response.data) patchHostnameRow(response.data)
         toast.success('已刷新状态')
@@ -276,7 +277,9 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     const key = hostnameKey(record)
     await runBusy(key, async (owner) => {
       try {
-        const response = await saasApi.hostname(props.providerId, decodedZone.value, record.hostname, { refresh: true })
+        const response = await saasApi.hostname(props.providerId, routeZoneName.value, record.hostname, {
+          refresh: true,
+        })
         if (!owner.active()) return
         patchHostnameRow(response.data || null)
         toast.success('已刷新')
@@ -410,6 +413,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       resetRowOperations()
       resetEditor()
       resetJobs()
+      // 搜索词属于上一个站点：不清理会让新列表被旧关键词过滤成空表
+      keyword.value = ''
       resetPage()
       selection.clear()
       hostnames.value = []
@@ -466,7 +471,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     showPreferred,
     showFallback,
     openPreferred,
-    decodedZone,
+    routeZoneName,
     filtered,
     loading,
     refreshing,
