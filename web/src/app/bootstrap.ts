@@ -1,9 +1,11 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import { VueQueryPlugin } from '@tanstack/vue-query'
 import App from '@/app/App.vue'
 import router from '@/app/router'
 import { useSessionStore } from '@/features/auth'
 import { clearProvidersCache } from '@/features/providers'
+import { queryClient } from '@/shared/query'
 import { setUnauthorizedHandler } from '@/shared/api/http'
 import { watch } from 'vue'
 import '@/app/styles/index.css'
@@ -29,5 +31,6 @@ app.config.errorHandler = (err, _instance, info) => {
 }
 
 app.use(pinia)
+app.use(VueQueryPlugin, { queryClient })
 app.use(router)
 app.mount('#app')

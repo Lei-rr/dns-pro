@@ -1,80 +1,51 @@
 <script setup lang="ts">
 import { computed, onMounted, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCachedProvider, getCachedProviderAny, loadProviders, useProviderStore } from '@/features/providers'
-import { dnsApi, RecordsPanel, ZonesPanel } from '@/features/dns'
-import { SaasHostsPanel, type SaaSSyncProvider } from '@/features/saas'
-import { AccelerationDomainsPanel, EdgeOneZonesPanel } from '@/features/edge-one'
-import { TunnelDetailPanel, TunnelsPanel } from '@/features/tunnels'
-import { Button } from '@/shared/ui/button'
+import { getCachedProviderAny, loadProviders, useProvidersQuery } from '@/features/providers'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { Button } from '@/shared/ui/button'
+import type { ProviderPageProps } from './provider-page-props'
+import ZonesListPage from '../zones/ZonesListPage.vue'
+import DnsRecordsPage from '../dns/DnsRecordsPage.vue'
+import SaasHostsPage from '../saas/SaasHostsPage.vue'
+import EdgeOneZonesPage from '../edge-one/EdgeOneZonesPage.vue'
+import EdgeOneDomainsPage from '../edge-one/EdgeOneDomainsPage.vue'
+import TunnelsPage from '../tunnels/TunnelsPage.vue'
+import TunnelDetailPage from '../tunnels/TunnelDetailPage.vue'
 
 const props = defineProps<{ child?: boolean }>()
 const route = useRoute()
 const router = useRouter()
+const { allProviders } = useProvidersQuery()
 
 const providerId = computed(() => String(route.params.provider || ''))
 const second = computed(() => String(route.params.second || ''))
-const provider = computed(() => getCachedProvider(providerId.value))
+const current = computed(() => allProviders.value.find((item) => item.id === providerId.value) || null)
 /** 存在但未配置完整的服务商：展示明确状态而不是空白页 */
-const unconfigured = computed(() => (provider.value ? null : getCachedProviderAny(providerId.value)))
-const providerType = computed(() => provider.value?.type || '')
-const edgeOneDnspodLinked = computed<boolean>(() => {
-  const current = provider.value
-  if (current?.type !== 'edgeone') return false
-  return Boolean(String(current.dnspod_provider || current.fields?.dnspod_provider || '').trim())
-})
-const syncProviders = computed<SaaSSyncProvider[]>(() =>
-  (useProviderStore().providers || []).flatMap((item) =>
-    item.type === 'dnspod' || item.type === 'cloudflare' ? [{ id: item.id, type: item.type, name: item.name }] : []
-  )
-)
+const unconfigured = computed(() => (current.value ? null : getCachedProviderAny(providerId.value)))
 
-async function loadDnsZones(providerId: string) {
-  const target = getCachedProvider(providerId)
-  if (!target || (target.type !== 'dnspod' && target.type !== 'cloudflare')) return []
-  return (await dnsApi.zones({ id: target.id, type: target.type, name: target.name })).data
+/** 声明式页面注册表：provider.type → { 列表页, 详情页 }，取代原来的 if 链分派。 */
+const PAGE_REGISTRY: Record<string, { list: Component; detail: Component }> = {
+  dnspod: { list: ZonesListPage, detail: DnsRecordsPage },
+  cloudflare: { list: ZonesListPage, detail: DnsRecordsPage },
+  saas: { list: ZonesListPage, detail: SaasHostsPage },
+  edgeone: { list: EdgeOneZonesPage, detail: EdgeOneDomainsPage },
+  cloudflared: { list: TunnelsPage, detail: TunnelDetailPage },
 }
 
-const page = computed((): { component: Component | null; pageProps: Record<string, unknown> } => {
-  const type = providerType.value
-  const id = providerId.value
-  if (!type || !id) return { component: null, pageProps: {} }
-
-  if (props.child) {
-    if (type === 'dnspod' || type === 'cloudflare') {
-      return { component: RecordsPanel, pageProps: { provider: provider.value, zoneId: second.value } }
-    }
-    if (type === 'saas') {
-      return {
-        component: SaasHostsPanel,
-        pageProps: { providerId: id, zoneName: second.value, loadDnsZones, syncProviders: syncProviders.value },
-      }
-    }
-    if (type === 'edgeone') {
-      return {
-        component: AccelerationDomainsPanel,
-        pageProps: { providerId: id, zoneId: second.value, dnspodLinked: edgeOneDnspodLinked.value },
-      }
-    }
-    if (type === 'cloudflared') {
-      return { component: TunnelDetailPanel, pageProps: { providerId: id, tunnelId: second.value } }
-    }
-    return { component: null, pageProps: {} }
-  }
-
-  if (type === 'dnspod' || type === 'cloudflare' || type === 'saas') {
-    return { component: ZonesPanel, pageProps: { provider: provider.value } }
-  }
-  if (type === 'edgeone') {
-    return { component: EdgeOneZonesPanel, pageProps: { providerId: id } }
-  }
-  if (type === 'cloudflared') {
-    return { component: TunnelsPanel, pageProps: { providerId: id } }
-  }
-  return { component: null, pageProps: {} }
+const page = computed<Component | null>(() => {
+  const entry = PAGE_REGISTRY[current.value?.type || '']
+  if (!entry) return null
+  return props.child ? entry.detail : entry.list
 })
+
+const pageProps = computed<ProviderPageProps>(() => ({
+  providerId: providerId.value,
+  providerName: current.value?.name ?? '',
+  providerType: current.value?.type ?? '',
+  zoneId: second.value,
+}))
 
 onMounted(async () => {
   try {
@@ -90,7 +61,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <component :is="page.component" v-if="page.component" v-bind="page.pageProps" />
+  <component :is="page" v-if="page" v-bind="pageProps" />
   <div v-else class="py-16 text-center">
     <div class="text-lg font-medium">{{ unconfigured?.name || providerId }}</div>
     <p class="text-muted-foreground mt-2 text-sm">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { onUnmounted, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { EllipsisVertical, Plus, RefreshCw, Server } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
@@ -15,11 +15,12 @@ import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
 
 import type { Tunnel as CloudflaredTunnel } from '@/features/tunnels/model/types'
 import { toast } from '@/shared/lib/toast'
+import { errorMessage } from '@/shared/lib/errors'
 import { confirmDelete } from '@/shared/ui/confirm'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
-import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
+import { useRowBusy } from '@/shared/lib/row-busy'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { createScopeGeneration } from '@/shared/lib/scope-generation'
 import { encodePath } from '@/shared/lib/path'
@@ -28,40 +29,26 @@ const props = defineProps<{ providerId: string }>()
 const router = useRouter()
 
 const creating = ref(false)
-const tunnels = ref<CloudflaredTunnel[]>([])
 const dialogOpen = ref(false)
 const name = ref('')
 const nameError = ref('')
 const providerGeneration = createScopeGeneration()
 const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
-const {
-  loading,
-  refreshing,
-  pageSize,
-  runLoad,
-  onRefresh,
-  onPageSizeChange: setPageSize,
-  fail,
-} = useListPage({
+const tunnelsQuery = useResourceQuery<CloudflaredTunnel[]>({
+  key: () => ['tunnels', 'list', props.providerId],
+  queryFn: async ({ refresh }) => (await cloudflaredApi.tunnels(props.providerId, { refresh })).data || [],
   pageSizeScope: 'cloudflared-tunnels',
-  load: async (options = {}) => {
-    try {
-      const response = await cloudflaredApi.tunnels(props.providerId, { refresh: options.refresh })
-      if (options.isLatest && !options.isLatest()) return false
-      tunnels.value = response.data || []
-      return true
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
-      return false
-    }
-  },
 })
+const loading = tunnelsQuery.loading
+const refreshing = tunnelsQuery.refreshing
+const pageSize = tunnelsQuery.pageSize
+const tunnels = computed(() => tunnelsQuery.data.value ?? [])
 const tunnelItems = computed(() => tunnels.value)
 const { page, total, pagedItems: pagedTunnels, resetPage } = useLocalPagination(tunnelItems, pageSize)
 
 function onPageSizeChange(next: number) {
-  setPageSize(next)
+  tunnelsQuery.setPageSize(next)
   resetPage()
 }
 
@@ -89,11 +76,11 @@ async function createTunnel() {
     else toast.success('隧道已创建')
     dialogOpen.value = false
     name.value = ''
-    await runLoad()
+    await tunnelsQuery.invalidate()
   } catch (error) {
     if (!scopeOwner.active()) return
     nameError.value = serverFieldErrors(error).name || nameError.value
-    fail(error)
+    toast.error(errorMessage(error))
   } finally {
     if (scopeOwner.active()) creating.value = false
   }
@@ -109,9 +96,9 @@ async function removeTunnel(record: CloudflaredTunnel) {
       await cloudflaredApi.deleteTunnel(scopeOwner.value.providerId, tunnelId)
       if (!scopeOwner.active() || !owner.active()) return
       toast.success('已删除')
-      removeListItem(tunnels, (item) => String(item.id || item.name) === tunnelKey)
+      await tunnelsQuery.invalidate()
     } catch (error) {
-      if (scopeOwner.active() && owner.active()) fail(error)
+      if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
     }
   })
 }
@@ -125,14 +112,12 @@ watch(
   () => {
     providerGeneration.invalidate()
     resetRowOperations()
-    tunnels.value = []
     dialogOpen.value = false
     creating.value = false
-    void runLoad()
+    resetPage()
   }
 )
 
-onMounted(() => runLoad())
 onUnmounted(() => {
   providerGeneration.invalidate()
   resetRowOperations()
@@ -146,7 +131,7 @@ onUnmounted(() => {
         size="sm"
         :loading="refreshing"
         :disabled="loading && !refreshing"
-        @click="onRefresh()"
+        @click="tunnelsQuery.refresh()"
       >
         <RefreshCw class="size-4" />
         刷新

@@ -1,31 +1,10 @@
-const CODE_HINTS: Record<string, string> = {
-  saas_cloudflare_sync_zone_mismatch: 'Cloudflare DNS 同步域名与主机名不匹配，请到编辑页检查同步目标',
-  saas_dnspod_provider_missing: 'SaaS 未关联 DNSPod，请先在服务商设置里绑定',
-  saas_dnspod_zone_not_found: 'DNSPod 中找不到匹配域名，请确认主域名已接入 DNSPod',
-  preferred_apply_running: '已有优选切换任务在跑，请稍后再试',
-  preferred_apply_empty: '没有匹配主机可切换（可取消“仅自动优选”）',
-  dns_sync_failed: 'DNS 写回失败，请检查关联 DNS 服务商与权限',
-  cloudflare_provider_not_found: 'Cloudflare 服务商不存在或已删除',
-  dnspod_provider_not_found: 'DNSPod 服务商不存在或已删除',
-  edgeone_cname_empty: 'EdgeOne 尚未生成 CNAME，请稍后刷新再同步',
-  validation_failed: '参数不完整或格式不正确',
-  unauthenticated: '登录已失效，请重新登录',
-  password_change_required: '仍在使用默认初始密码，请先修改密码',
-  password_too_weak: '新密码强度不足（至少 8 位，且不能包含用户名）',
-  invalid_credentials: '用户名或密码错误',
-  provider_in_use: '该服务商仍被其它配置引用，请先解除引用',
-  provider_exists: '该服务商 ID 已存在，请换一个',
-  provider_type_immutable: '服务商类型不可修改',
-  provider_reference_not_found: '关联的服务商不存在，请重新选择',
-  provider_reference_type_mismatch: '关联服务商类型不匹配',
-  provider_order_duplicated: '排序列表中存在重复服务商',
-  provider_order_mismatch: '排序列表与现有服务商不一致，请刷新后重试',
-  provider_test_failed: '服务商连接测试失败',
-  provider_credentials_invalid: '密钥无效或权限不足',
-  provider_test_unsupported: '该服务商类型暂不支持测通',
-  batch_job_running: '该站点已有批量任务在执行',
-  batch_empty: '未选择任何目标',
-  batch_patch_empty: '没有可修改的字段',
+/**
+ * 错误文案唯一来源是后端 `server/src/kernel/http/error-messages.ts`：
+ * 错误响应体已带本地化 message，前端只做透传 + 本地网络层兜底，不再维护错误码对照表。
+ */
+const LOCAL_CODE_HINTS: Record<string, string> = {
+  TIMEOUT: '请求超时或已取消',
+  NETWORK_ERROR: '网络连接失败，请检查网络后重试',
 }
 
 export function errorMessage(error: unknown, fallback = '请求失败'): string {
@@ -35,39 +14,21 @@ export function errorMessage(error: unknown, fallback = '请求失败'): string 
     message?: string
     code?: string
     status?: number
-    details?: unknown
-    response?: { data?: { message?: string; code?: string; details?: unknown }; status?: number }
+    response?: { data?: { message?: string; code?: string }; status?: number }
   }
 
   const code = String(err?.code || err?.response?.data?.code || '').trim()
-  const serverMessage = String(err?.response?.data?.message || err?.message || '').trim()
+  const message = String(err?.response?.data?.message || err?.message || '').trim()
   const status = Number(err?.status || err?.response?.status || 0)
 
-  if (serverMessage && (code === 'auth_rate_limited' || status === 429)) return serverMessage
-  if (code && CODE_HINTS[code]) return CODE_HINTS[code]
-  if (serverMessage) {
-    if (/sync zone/i.test(serverMessage) || /does not match hostname/i.test(serverMessage)) {
-      return 'DNS 同步域名与主机名不匹配，请检查同步目标（通常应为 example.com 这类主域名，而不是 SaaS 区）'
-    }
-    if (/permission|unauthorized|forbidden|invalid.*(token|key|secret)|auth/i.test(serverMessage)) {
-      return `${serverMessage}（请检查 API Token / 密钥权限）`
-    }
-    if (/rate|too many|throttl/i.test(serverMessage)) {
-      return `${serverMessage}（请求过快，请稍后重试）`
-    }
-    if (/timeout|timed out|gateway/i.test(serverMessage)) {
-      return `${serverMessage}（上游超时，请稍后重试）`
-    }
-    // Prefer Chinese-looking server messages as-is
-    if (/[\u4e00-\u9fff]/.test(serverMessage)) return serverMessage
-    if (status === 401 || status === 403) return `${serverMessage}（认证/权限失败）`
-    return serverMessage
-  }
+  if (LOCAL_CODE_HINTS[code]) return LOCAL_CODE_HINTS[code]
+  if (message && /[\u4e00-\u9fff]/.test(message)) return message
 
   if (status === 401) return '登录已失效，请重新登录'
   if (status === 403) return '没有权限执行该操作'
   if (status === 404) return '资源不存在'
   if (status >= 500) return '服务暂时异常，请稍后重试'
+  if (message) return message
 
   return fallback
 }

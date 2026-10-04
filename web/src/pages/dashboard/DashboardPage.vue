@@ -11,14 +11,13 @@ import {
   providerAvatarColor,
   providerPath,
   providerTypeLabel,
-  useProviderStore,
+  useProvidersQuery,
 } from '@/features/providers'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import type { Component } from 'vue'
 
-const providerStore = useProviderStore()
-const providers = computed(() => providerStore.providers || [])
+const { providers, loading } = useProvidersQuery()
 const count = computed(() => providers.value.length)
 
 const typeMeta: Record<string, { blurb: string; icon: Component }> = {
@@ -48,7 +47,7 @@ onMounted(async () => {
       <div class="min-w-0 space-y-0.5">
         <h1 class="text-2xl font-bold tracking-tight">控制台</h1>
         <p class="text-muted-foreground text-sm">
-          <template v-if="providerStore.loading">正在加载服务商数据...</template>
+          <template v-if="loading">正在加载服务商数据...</template>
           <template v-else>已接入 {{ count }} 个服务商</template>
         </p>
       </div>
@@ -61,7 +60,7 @@ onMounted(async () => {
     </div>
 
     <!-- 骨架屏：统计指标 -->
-    <div v-if="providerStore.loading" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div v-if="loading" class="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div v-for="i in 4" :key="i" class="bg-muted/40 rounded-xl px-4 py-3 space-y-1.5">
         <Skeleton class="h-3 w-14" />
         <Skeleton class="h-7 w-10" />
@@ -95,7 +94,7 @@ onMounted(async () => {
     </div>
 
     <!-- 空状态 -->
-    <Empty v-if="!providers.length && !providerStore.loading">
+    <Empty v-if="!providers.length && !loading">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Globe2 />
@@ -114,7 +113,7 @@ onMounted(async () => {
     </Empty>
 
     <!-- 骨架屏：服务商卡片列表 -->
-    <div v-if="providerStore.loading" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <div v-if="loading" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <div
         v-for="i in 3"
         :key="i"

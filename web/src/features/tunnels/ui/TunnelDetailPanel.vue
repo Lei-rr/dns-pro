@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Check, Copy, Plus, RefreshCw } from '@lucide/vue'
+import { useQueryClient } from '@tanstack/vue-query'
+import { Check, Copy, Plus, RefreshCw, Wrench } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Card } from '@/shared/ui/card'
@@ -13,10 +14,10 @@ import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
 import type { Tunnel as CloudflaredTunnel, TunnelRoute as CloudflaredRoute } from '@/features/tunnels/model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
-import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
+import { useRowBusy } from '@/shared/lib/row-busy'
 import TunnelInstallPanel from '@/features/tunnels/ui/TunnelInstallPanel.vue'
 import TunnelRoutesTable from '@/features/tunnels/ui/TunnelRoutesTable.vue'
 import TunnelRouteFormDialog from '@/features/tunnels/ui/TunnelRouteFormDialog.vue'
@@ -26,15 +27,17 @@ import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { encodePath } from '@/shared/lib/path'
 import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
 
+type TunnelDetail = { tunnel: CloudflaredTunnel | null; routes: CloudflaredRoute[]; token: string }
+
 const props = defineProps<{ providerId: string; tunnelId: string }>()
 const mutationGeneration = createScopeGeneration()
-const tokenGeneration = createScopeGeneration()
 const rotationGeneration = createScopeGeneration()
+const client = useQueryClient()
+const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 function captureMutationOwner(): GenerationOwner {
   return mutationGeneration.capture({})
 }
-const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 function routeKey(record: CloudflaredRoute) {
   return `${record.hostname || ''}|${record.path || ''}`
 }
@@ -42,9 +45,7 @@ const router = useRouter()
 
 const saving = ref(false)
 const rotating = ref(false)
-const tunnel = ref<CloudflaredTunnel | null>(null)
-const routes = ref<CloudflaredRoute[]>([])
-const token = ref('')
+const repairing = ref(false)
 const dialogOpen = ref(false)
 const editingRoute = ref<CloudflaredRoute | null>(null)
 const routeErrors = ref<Record<string, string>>({})
@@ -54,44 +55,34 @@ const form = reactive({
   path: '',
 })
 
-const title = computed(() => tunnel.value?.name || props.tunnelId)
-
-const {
-  loading,
-  refreshing,
-  pageSize,
-  runLoad,
-  onRefresh,
-  onPageSizeChange: setPageSize,
-  fail,
-} = useListPage({
-  pageSizeScope: 'cloudflared-detail',
-  load: async (options = {}) => {
-    const tokenOwner = tokenGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
-    try {
-      const [tunnelRes, routesRes, tokenRes] = await Promise.all([
-        cloudflaredApi.tunnel(tokenOwner.value.providerId, tokenOwner.value.tunnelId, { refresh: options.refresh }),
-        cloudflaredApi.routes(tokenOwner.value.providerId, tokenOwner.value.tunnelId, { refresh: options.refresh }),
-        cloudflaredApi.tunnelToken(tokenOwner.value.providerId, tokenOwner.value.tunnelId).catch(() => null),
-      ])
-      if (options.isLatest && !options.isLatest()) return false
-      tunnel.value = tunnelRes.data
-      routes.value = routesRes.data?.routes || []
+const detailKey = () => ['tunnels', 'detail', props.providerId, props.tunnelId]
+const detailQuery = useResourceQuery<TunnelDetail>({
+  key: detailKey,
+  queryFn: async ({ refresh }) => {
+    const [tunnelRes, routesRes, tokenRes] = await Promise.all([
+      cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh }),
+      cloudflaredApi.routes(props.providerId, props.tunnelId, { refresh }),
+      cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).catch(() => null),
+    ])
+    return {
+      tunnel: tunnelRes.data,
+      routes: routesRes.data?.routes || [],
       // 失败不清空已展示的 token；轮换期间由轮换结果负责写入
-      const nextToken = tokenRes?.data?.token
-      if (tokenOwner.active() && nextToken) token.value = nextToken
-      return true
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
-      return false
+      token: tokenRes?.data?.token || '',
     }
   },
+  pageSizeScope: 'cloudflared-detail',
 })
-const routeItems = computed(() => routes.value)
-const { page, total, pagedItems: pagedRoutes, resetPage } = useLocalPagination(routeItems, pageSize)
+
+const tunnel = computed(() => detailQuery.data.value?.tunnel ?? null)
+const routes = computed(() => detailQuery.data.value?.routes ?? [])
+const token = computed(() => detailQuery.data.value?.token ?? '')
+const title = computed(() => tunnel.value?.name || props.tunnelId)
+
+const { page, total, pagedItems: pagedRoutes, resetPage } = useLocalPagination(routes, detailQuery.pageSize)
 
 function onPageSizeChange(next: number) {
-  setPageSize(next)
+  detailQuery.setPageSize(next)
   resetPage()
 }
 
@@ -143,7 +134,7 @@ async function saveRoute() {
       notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已添加')
     }
     dialogOpen.value = false
-    await runLoad()
+    await detailQuery.invalidate()
   } catch (error) {
     if (!owner.active()) return
     routeErrors.value = { ...routeErrors.value, ...serverFieldErrors(error) }
@@ -167,11 +158,28 @@ async function removeRoute(record: CloudflaredRoute) {
       const response = await cloudflaredApi.deleteRoute(providerId, tunnelId, hostname, path)
       if (!scopeOwner.active() || !owner.active()) return
       notifyDnsSideEffect(response.data?.side_effects?.dns?.cleanup, '已删除')
-      removeListItem(routes, (item) => routeKey(item) === key)
+      await detailQuery.invalidate()
     } catch (error) {
       if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
     }
   })
+}
+
+/** 快赢能力（F5）：CNAME 丢失/漂移时一键修复，逐主机名结果由副作用摘要反馈。 */
+async function repairRoutes() {
+  if (repairing.value) return
+  const owner = mutationGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
+  repairing.value = true
+  try {
+    const response = await cloudflaredApi.repairRoutes(owner.value.providerId, owner.value.tunnelId)
+    if (!owner.active()) return
+    notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, 'DNS 修复完成')
+    await detailQuery.invalidate()
+  } catch (error) {
+    if (owner.active()) toast.error(errorMessage(error))
+  } finally {
+    if (owner.active()) repairing.value = false
+  }
 }
 
 async function rotateToken() {
@@ -181,9 +189,12 @@ async function rotateToken() {
   try {
     const response = await cloudflaredApi.rotateToken(owner.value.providerId, owner.value.tunnelId)
     if (!owner.active()) return
-    // 作废在途的读取，避免旧响应把轮换后的 token 覆盖回去
-    tokenGeneration.invalidate()
-    if (response.data?.token) token.value = response.data.token
+    const nextToken = response.data?.token
+    if (nextToken) {
+      client.setQueryData<TunnelDetail>(detailKey(), (previous) =>
+        previous ? { ...previous, token: nextToken } : previous
+      )
+    }
     toast.success('Token 已轮换')
   } catch (error) {
     if (owner.active()) toast.error(errorMessage(error))
@@ -212,24 +223,18 @@ watch(
   () => [props.providerId, props.tunnelId],
   () => {
     mutationGeneration.invalidate()
-    tokenGeneration.invalidate()
     rotationGeneration.invalidate()
     dialogOpen.value = false
     editingRoute.value = null
     saving.value = false
     rotating.value = false
-    token.value = ''
-    tunnel.value = null
-    routes.value = []
+    repairing.value = false
     resetRowOperations()
-    void runLoad()
   }
 )
 
-onMounted(() => runLoad())
 onUnmounted(() => {
   mutationGeneration.invalidate()
-  tokenGeneration.invalidate()
   rotationGeneration.invalidate()
   resetRowOperations()
 })
@@ -239,12 +244,16 @@ onUnmounted(() => {
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="title" :description="`状态：${tunnelStatusLabel(tunnel?.status)} · Cloudflare Tunnel`">
       <Button variant="outline" size="sm" @click="router.push('/' + encodePath(providerId))">返回隧道列表</Button>
+      <LoadingButton variant="outline" size="sm" :loading="repairing" @click="repairRoutes">
+        <Wrench class="size-4" />
+        修复 DNS
+      </LoadingButton>
       <LoadingButton
         variant="outline"
         size="sm"
-        :loading="refreshing"
-        :disabled="loading && !refreshing"
-        @click="onRefresh()"
+        :loading="detailQuery.refreshing.value"
+        :disabled="detailQuery.loading.value && !detailQuery.refreshing.value"
+        @click="detailQuery.refresh()"
       >
         <RefreshCw class="size-4" />
         刷新
@@ -307,17 +316,17 @@ onUnmounted(() => {
 
     <TunnelRoutesTable
       :routes="pagedRoutes"
-      :loading="loading"
-      :refreshing="refreshing"
+      :loading="detailQuery.loading.value"
+      :refreshing="detailQuery.refreshing.value"
       :busy="(record) => isRowBusy(routeKey(record))"
       @edit="openEditRoute"
       @remove="removeRoute"
     />
     <TablePagination
       :page="page"
-      :page-size="pageSize"
+      :page-size="detailQuery.pageSize.value"
       :total="total"
-      :disabled="loading"
+      :disabled="detailQuery.loading.value"
       @update:page="page = $event"
       @update:page-size="onPageSizeChange"
     />

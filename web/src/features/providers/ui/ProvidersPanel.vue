@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onUnmounted, reactive, ref } from 'vue'
 import { Plus, RefreshCw } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
@@ -7,25 +7,24 @@ import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import ProviderFormDialog from './ProviderFormDialog.vue'
 import ProvidersTable from './ProvidersTable.vue'
 import { providersApi } from '../api/provider-api'
-import { replaceProvidersCache } from '../model/store'
-import type { Provider, ProviderDefinition } from '../model/types'
+import type { Provider, ProviderDefinition, ProviderDefinitions } from '../model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useRowBusy } from '@/shared/lib/row-busy'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { isProviderSecretField } from '../model/provider-fields'
+import { useProvidersQuery } from '../model/queries'
 
 const saving = ref(false)
-const providers = ref<Provider[]>([])
-const definitions = ref<ProviderDefinition[]>([])
+const providersQuery = useProvidersQuery()
+const providers = computed(() => providersQuery.allProviders.value)
 
 /** 按类型取服务商定义（密钥字段判定以内置定义为准） */
 function definitionForType(type: string): ProviderDefinition | undefined {
   return definitions.value.find((item) => item.type === type)
 }
-const labels = ref<Record<string, string>>({})
 const dialogOpen = ref(false)
 const editing = ref<Provider | null>(null)
 const form = reactive({
@@ -37,32 +36,22 @@ const form = reactive({
 const formErrors = ref<FieldErrors>({})
 const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 const typeFilter = ref('all')
-const definitionsError = ref('')
 
-const { loading, refreshing, runLoad, onRefresh, fail } = useListPage({
+const definitionsQuery = useResourceQuery<ProviderDefinitions>({
+  key: ['providers', 'definitions'],
+  queryFn: async () => (await providersApi.definitions()).data,
   pageSizeScope: 'providers',
-  load: async (options = {}) => {
-    const [listResult, definitionsResult] = await Promise.allSettled([providersApi.list(), providersApi.definitions()])
-    if (options.isLatest && !options.isLatest()) return false
-    if (listResult.status === 'rejected') {
-      fail(listResult.reason)
-      return false
-    }
-    const listRes = listResult.value
-    providers.value = listRes.data
-    replaceProvidersCache(listRes.data.filter((item) => item.configured))
-    if (definitionsResult.status === 'fulfilled') {
-      const defRes = definitionsResult.value
-      definitions.value = defRes.data.types
-      labels.value = defRes.data.labels
-      definitionsError.value = ''
-    } else {
-      definitionsError.value = '服务商定义加载失败。'
-      return false
-    }
-    return true
-  },
 })
+const definitions = computed(() => definitionsQuery.data.value?.types ?? [])
+const labels = computed(() => definitionsQuery.data.value?.labels ?? {})
+const definitionsError = computed(() => (definitionsQuery.error.value ? '服务商定义加载失败。' : ''))
+const loading = computed(() => providersQuery.loading.value || definitionsQuery.loading.value)
+const refreshing = definitionsQuery.refreshing
+
+async function onRefresh() {
+  await definitionsQuery.refresh()
+  await providersQuery.reload()
+}
 
 const filteredProviders = computed(() => {
   if (typeFilter.value === 'all') return providers.value
@@ -143,7 +132,7 @@ async function save() {
       toast.success('服务商已创建')
     }
     dialogOpen.value = false
-    await runLoad()
+    await providersQuery.reload()
   } catch (error) {
     formErrors.value = { ...formErrors.value, ...serverFieldErrors(error) }
     toast.error(errorMessage(error))
@@ -171,14 +160,13 @@ async function removeProvider(record: Provider) {
       await providersApi.remove(record.id)
       if (!owner.active()) return
       toast.success('已删除')
-      await runLoad()
+      await providersQuery.reload()
     } catch (error) {
       if (owner.active()) toast.error(errorMessage(error))
     }
   })
 }
 
-onMounted(() => runLoad())
 onUnmounted(resetRowOperations)
 </script>
 

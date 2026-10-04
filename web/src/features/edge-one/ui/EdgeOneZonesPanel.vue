@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Radar, RefreshCw, Search, X } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
@@ -11,7 +11,7 @@ import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
 import { edgeOneAccessLabel, edgeOneStatusLabel } from '@/features/edge-one/lib/status'
 
 import type { EdgeOneZone } from '@/features/edge-one/model/types'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
 import { encodePath } from '@/shared/lib/path'
@@ -19,8 +19,17 @@ import { encodePath } from '@/shared/lib/path'
 const props = defineProps<{ providerId: string }>()
 const router = useRouter()
 
-const zones = ref<EdgeOneZone[]>([])
 const keyword = ref('')
+
+const zonesQuery = useResourceQuery<EdgeOneZone[]>({
+  key: () => ['edgeone', 'zones', props.providerId],
+  queryFn: async ({ refresh }) => (await edgeOneApi.zones(props.providerId, { refresh })).data || [],
+  pageSizeScope: 'edgeone-zones',
+})
+const loading = zonesQuery.loading
+const refreshing = zonesQuery.refreshing
+const pageSize = zonesQuery.pageSize
+const zones = computed(() => zonesQuery.data.value ?? [])
 
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -36,33 +45,11 @@ const filtered = computed(() => {
   )
 })
 
-const {
-  loading,
-  refreshing,
-  pageSize,
-  runLoad,
-  onRefresh,
-  onPageSizeChange: setPageSize,
-  fail,
-} = useListPage({
-  pageSizeScope: 'edgeone-zones',
-  load: async (options = {}) => {
-    try {
-      const response = await edgeOneApi.zones(props.providerId, { refresh: options.refresh })
-      if (options.isLatest && !options.isLatest()) return false
-      zones.value = response.data || []
-      return true
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
-      return false
-    }
-  },
-})
 const { page, total, pagedItems: pagedZones, resetPage } = useLocalPagination(filtered, pageSize)
 watch(keyword, resetPage)
 
 function onPageSizeChange(next: number) {
-  setPageSize(next)
+  zonesQuery.setPageSize(next)
   resetPage()
 }
 
@@ -73,13 +60,9 @@ function openZone(zone: EdgeOneZone) {
 watch(
   () => props.providerId,
   () => {
-    zones.value = []
     resetPage()
-    void runLoad()
   }
 )
-
-onMounted(() => runLoad())
 
 function clearSearch() {
   keyword.value = ''
@@ -95,7 +78,7 @@ function clearSearch() {
         size="sm"
         :loading="refreshing"
         :disabled="loading && !refreshing"
-        @click="onRefresh()"
+        @click="zonesQuery.refresh()"
       >
         <RefreshCw class="size-4" />
         刷新

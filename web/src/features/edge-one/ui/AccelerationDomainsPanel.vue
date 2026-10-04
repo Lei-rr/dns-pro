@@ -14,7 +14,7 @@ import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
 import { useRowBusy, removeListItem, patchListItem } from '@/shared/lib/row-busy'
@@ -41,6 +41,7 @@ const jobProgress = useJobProgress()
 const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 const saving = ref(false)
+/** 视图镜像：保留面板内 patch/remove 的即时反馈，写后统一由 invalidate 收敛 */
 const domains = ref<EdgeOneAccelerationDomain[]>([])
 const zoneMeta = ref<EdgeOneZone | null>(null)
 const keyword = ref('')
@@ -63,35 +64,27 @@ const pageTitle = computed(() => zoneMeta.value?.name || decodeURIComponent(prop
 /** 站点元数据是否就绪：未就绪时不允许新增（否则会拿 zoneId 当域名拼出错误的主机名） */
 const zoneMetaReady = computed(() => Boolean(zoneMeta.value?.name))
 
-const {
-  loading,
-  refreshing,
-  pageSize,
-  runLoad,
-  onRefresh,
-  onPageSizeChange: setPageSize,
-  active: listActive,
-  fail,
-} = useListPage({
-  pageSizeScope: 'edgeone-records',
-  load: async (options = {}) => {
-    try {
-      if (options.refresh || !zoneMeta.value) {
-        const meta = await loadZoneMeta(options.refresh)
-        if (options.isLatest && !options.isLatest()) return false
-        zoneMeta.value = meta
-      }
-      const response = await edgeOneApi.accelerationDomains(props.providerId, props.zoneId, {
-        refresh: options.refresh,
-      })
-      if (options.isLatest && !options.isLatest()) return false
-      domains.value = response.data || []
-      return true
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
-      return false
-    }
+type EdgeOneDomainsData = { domains: EdgeOneAccelerationDomain[]; zoneMeta: EdgeOneZone | null }
+
+const domainsQuery = useResourceQuery<EdgeOneDomainsData>({
+  key: () => ['edgeone', 'domains', props.providerId, props.zoneId],
+  queryFn: async ({ refresh }) => {
+    const [response, meta] = await Promise.all([
+      edgeOneApi.accelerationDomains(props.providerId, props.zoneId, { refresh }),
+      loadZoneMeta(refresh),
+    ])
+    return { domains: response.data || [], zoneMeta: meta }
   },
+  pageSizeScope: 'edgeone-records',
+})
+const loading = domainsQuery.loading
+const refreshing = domainsQuery.refreshing
+const pageSize = domainsQuery.pageSize
+const runLoad = () => domainsQuery.invalidate()
+watch(domainsQuery.data, (data) => {
+  if (!data) return
+  domains.value = data.domains
+  if (data.zoneMeta) zoneMeta.value = data.zoneMeta
 })
 const { page, total, pagedItems: pagedDomains, resetPage } = useLocalPagination(filtered, pageSize)
 const selection = useRowSelection(pagedDomains, (row) => String(row.domain_name || row.name || ''))
@@ -107,7 +100,7 @@ function onPageChange(next: number) {
 }
 
 function onPageSizeChange(next: number) {
-  setPageSize(next)
+  domainsQuery.setPageSize(next)
   resetPage()
   selection.clear()
 }
@@ -439,9 +432,8 @@ watch(
     selection.clear()
     zoneMeta.value = null
     domains.value = []
-    void runLoad()
-      .then(() => (listActive() ? resumeJobs() : undefined))
-      .catch(fail)
+    void domainsQuery.invalidate()
+    void resumeJobs()
   }
 )
 
@@ -454,9 +446,7 @@ onUnmounted(() => {
 })
 
 onMounted(() => {
-  void runLoad()
-    .then(() => (listActive() ? resumeJobs() : undefined))
-    .catch(fail)
+  void resumeJobs()
 })
 </script>
 
@@ -469,7 +459,7 @@ onMounted(() => {
         size="sm"
         :loading="refreshing"
         :disabled="loading && !refreshing"
-        @click="onRefresh()"
+        @click="domainsQuery.refresh()"
       >
         <RefreshCw class="size-4" />
         刷新

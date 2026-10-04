@@ -1,29 +1,39 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { FileUp, Info, Upload } from '@lucide/vue'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
+import { Checkbox } from '@/shared/ui/checkbox'
 import { cn } from '@/shared/lib/utils'
 import { parseDnsFile, type ParsedImportRecord } from '../lib/record-import'
+import { buildImportPreview, type ImportPlan } from '../lib/record-import-preview'
+import type { DnsRecord } from '../model/types'
 import { toast } from '@/shared/lib/toast'
 
 const open = defineModel<boolean>('open', { default: false })
 
 const props = defineProps<{
   zoneName: string
+  existingRecords: DnsRecord[]
   submitting?: boolean
 }>()
 
 const emit = defineEmits<{
-  submit: [records: ParsedImportRecord[]]
+  submit: [plan: ImportPlan]
 }>()
 
 const parsedRecords = ref<ParsedImportRecord[]>([])
 const fileName = ref('')
 const parseError = ref('')
 const isDragging = ref(false)
+const overwriteExisting = ref(true)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+/** F4：写入前 diff——新增 / 覆盖 / 重复跳过，用户确认后才落库。 */
+const preview = computed(() => buildImportPreview(parsedRecords.value, props.existingRecords))
+const overwriteCount = computed(() => (overwriteExisting.value ? preview.value.overwritten.length : 0))
+const totalWriteCount = computed(() => preview.value.added.length + overwriteCount.value)
 
 watch(open, (isOpen) => {
   if (!isOpen) {
@@ -31,6 +41,7 @@ watch(open, (isOpen) => {
     fileName.value = ''
     parseError.value = ''
     isDragging.value = false
+    overwriteExisting.value = true
     if (fileInput.value) fileInput.value.value = ''
   }
 })
@@ -73,8 +84,11 @@ async function onFileDrop(e: DragEvent) {
 }
 
 function handleConfirm() {
-  if (!parsedRecords.value.length) return
-  emit('submit', parsedRecords.value)
+  if (!totalWriteCount.value) return
+  emit('submit', {
+    added: preview.value.added,
+    overwritten: overwriteExisting.value ? preview.value.overwritten : [],
+  })
 }
 </script>
 
@@ -122,34 +136,71 @@ function handleConfirm() {
         {{ parseError }}
       </div>
 
-      <div v-if="parsedRecords.length" class="space-y-2">
-        <div class="flex items-center justify-between text-xs">
-          <span class="text-muted-foreground">已识别记录列表：</span>
-          <span class="font-medium text-foreground">共 {{ parsedRecords.length }} 条</span>
-        </div>
-
-        <div class="max-h-[220px] overflow-y-auto rounded-lg border border-border/60 text-xs divide-y divide-border/40">
-          <div
-            v-for="(rec, idx) in parsedRecords.slice(0, 50)"
-            :key="idx"
-            class="flex items-center justify-between gap-2 p-2 hover:bg-muted/40"
-          >
-            <div class="flex items-center gap-1.5 min-w-0">
-              <span class="font-semibold truncate max-w-[120px]">{{ rec.name }}</span>
-              <Badge variant="secondary" class="text-[10px] h-4 px-1 shrink-0">{{ rec.type }}</Badge>
+      <div v-if="parsedRecords.length" class="space-y-3">
+        <div class="grid grid-cols-3 gap-2 text-center">
+          <div class="rounded-lg border border-border/60 bg-muted/30 px-2 py-2">
+            <div class="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {{ preview.added.length }}
             </div>
-            <span class="text-muted-foreground font-mono truncate max-w-[200px] text-right">{{ rec.value }}</span>
+            <div class="text-[11px] text-muted-foreground">新增</div>
+          </div>
+          <div class="rounded-lg border border-border/60 bg-muted/30 px-2 py-2">
+            <div class="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+              {{ preview.overwritten.length }}
+            </div>
+            <div class="text-[11px] text-muted-foreground">覆盖同名同类型</div>
+          </div>
+          <div class="rounded-lg border border-border/60 bg-muted/30 px-2 py-2">
+            <div class="text-lg font-semibold tabular-nums text-muted-foreground">{{ preview.duplicates.length }}</div>
+            <div class="text-[11px] text-muted-foreground">重复跳过</div>
           </div>
         </div>
 
-        <p v-if="parsedRecords.length > 50" class="text-muted-foreground text-[11px] text-center">
-          仅预览前 50 条，确认后将全量导入 {{ parsedRecords.length }} 条记录
+        <label v-if="preview.overwritten.length" class="flex items-center gap-2 text-xs cursor-pointer">
+          <Checkbox v-model="overwriteExisting" />
+          <span>用文件内容覆盖已有的同名同类型记录（不勾选则跳过这 {{ preview.overwritten.length }} 条）</span>
+        </label>
+
+        <div class="max-h-[220px] overflow-y-auto rounded-lg border border-border/60 text-xs divide-y divide-border/40">
+          <div
+            v-for="(rec, idx) in preview.added.slice(0, 50)"
+            :key="`add-${idx}`"
+            class="flex items-center justify-between gap-2 p-2 hover:bg-muted/40"
+          >
+            <div class="flex items-center gap-1.5 min-w-0">
+              <Badge variant="secondary" class="text-[10px] h-4 px-1 shrink-0 text-emerald-600">新增</Badge>
+              <span class="font-semibold truncate max-w-[110px]">{{ rec.name }}</span>
+              <Badge variant="outline" class="text-[10px] h-4 px-1 shrink-0">{{ rec.type }}</Badge>
+            </div>
+            <span class="text-muted-foreground font-mono truncate max-w-[180px] text-right">{{ rec.value }}</span>
+          </div>
+          <div
+            v-for="(item, idx) in preview.overwritten.slice(0, 50)"
+            :key="`upd-${idx}`"
+            class="flex items-center justify-between gap-2 p-2 hover:bg-muted/40"
+          >
+            <div class="flex items-center gap-1.5 min-w-0">
+              <Badge variant="secondary" class="text-[10px] h-4 px-1 shrink-0 text-amber-600">覆盖</Badge>
+              <span class="font-semibold truncate max-w-[110px]">{{ item.incoming.name }}</span>
+              <Badge variant="outline" class="text-[10px] h-4 px-1 shrink-0">{{ item.incoming.type }}</Badge>
+            </div>
+            <span class="text-muted-foreground font-mono truncate max-w-[180px] text-right">
+              {{ item.existing.value ?? item.existing.content }} → {{ item.incoming.value }}
+            </span>
+          </div>
+        </div>
+
+        <p
+          v-if="preview.added.length + preview.overwritten.length > 50"
+          class="text-muted-foreground text-[11px] text-center"
+        >
+          仅预览前 50 条差异，确认后将写入 {{ totalWriteCount }} 条记录
         </p>
       </div>
 
       <div class="text-muted-foreground flex items-start gap-1.5 text-[11px]">
         <Info class="size-3.5 shrink-0 mt-0.5" />
-        <span>导入将调用批量添加任务后台执行，自动排重已存在的同名同值记录。</span>
+        <span>新增记录走批量添加任务后台执行；覆盖为逐条更新，失败会汇总提示。</span>
       </div>
     </div>
 
@@ -159,10 +210,10 @@ function handleConfirm() {
         <LoadingButton
           size="sm"
           :loading="submitting"
-          :disabled="!parsedRecords.length || submitting"
+          :disabled="!totalWriteCount || submitting"
           @click="handleConfirm"
         >
-          开始批量导入 ({{ parsedRecords.length }} 条)
+          写入 {{ totalWriteCount }} 条（新增 {{ preview.added.length }} / 覆盖 {{ overwriteCount }}）
         </LoadingButton>
       </div>
     </template>

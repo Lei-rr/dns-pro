@@ -29,7 +29,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu'
-import { loadProviders, providerPath, providerTypeLabel, useProviderStore } from '@/features/providers'
+import { loadProviders, providerPath, providerTypeLabel, useProvidersQuery } from '@/features/providers'
 import { useSessionStore } from '@/features/auth'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -39,7 +39,7 @@ import type { Component } from 'vue'
 const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
-const providerStore = useProviderStore()
+const { providers } = useProvidersQuery()
 // 仍在使用默认密码时强制弹出（后端会拦截其它业务接口）
 const passwordRequired = ref(false)
 const passwordDialogOpen = ref(false)
@@ -47,7 +47,6 @@ const passwordDialogOpen = ref(false)
 const commandOpen = ref(false)
 const isDark = ref(false)
 
-const providers = computed(() => providerStore.providers || [])
 const activeProviderId = computed(() => {
   const first = route.path.split('/').filter(Boolean)[0] || ''
   if (!first || first === 'providers' || first === 'login') return ''

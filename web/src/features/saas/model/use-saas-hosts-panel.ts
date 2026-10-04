@@ -8,9 +8,9 @@ import { preferredDomainOf, useSaasHostEditor } from './use-saas-host-editor'
 import type { DnsZoneOption } from '../model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
-import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
+import { useRowBusy } from '@/shared/lib/row-busy'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
@@ -27,7 +27,18 @@ export interface SaasHostsPanelProps {
 export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   const router = useRouter()
 
+  const decodedZone = computed(() => decodeURIComponent(props.zoneName))
+  const hostnamesQuery = useResourceQuery<SaaSHostname[]>({
+    key: () => ['saas', 'hostnames', props.providerId, decodedZone.value],
+    queryFn: async ({ refresh }) =>
+      (await saasApi.hostnames(props.providerId, decodedZone.value, { refresh })).data || [],
+    pageSizeScope: 'saas-hosts',
+  })
+  /** 视图镜像：保留面板内的局部 patch 反馈，写后统一由 invalidate 收敛到服务端真相 */
   const hostnames = ref<SaaSHostname[]>([])
+  watch(hostnamesQuery.data, (data) => {
+    if (data) hostnames.value = data
+  })
   const keyword = ref('')
   const detailOpen = ref(false)
   const detailLoading = ref(false)
@@ -59,7 +70,6 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   const showFallback = ref(false)
   let preferredDialogOwner: ScopeOwner<SaasScope> | null = null
 
-  const decodedZone = computed(() => decodeURIComponent(props.zoneName))
   function captureScope(): ScopeOwner<SaasScope> {
     return scopeGeneration.capture({ providerId: props.providerId, zoneName: decodedZone.value })
   }
@@ -84,29 +94,11 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
         .includes(q)
     )
   })
-  const {
-    loading,
-    refreshing,
-    pageSize,
-    runLoad,
-    onRefresh,
-    onPageSizeChange: setPageSize,
-    active: listActive,
-    fail,
-  } = useListPage({
-    pageSizeScope: 'saas-hosts',
-    load: async (options = {}) => {
-      try {
-        const response = await saasApi.hostnames(props.providerId, decodedZone.value, { refresh: options.refresh })
-        if (options.isLatest && !options.isLatest()) return false
-        hostnames.value = response.data || []
-        return true
-      } catch (error) {
-        if (!options.isLatest || options.isLatest()) fail(error)
-        return false
-      }
-    },
-  })
+  const loading = hostnamesQuery.loading
+  const refreshing = hostnamesQuery.refreshing
+  const pageSize = hostnamesQuery.pageSize
+  const setPageSize = hostnamesQuery.setPageSize
+  const runLoad = () => hostnamesQuery.invalidate()
   const { page, total, pagedItems: pagedHostnames, resetPage } = useLocalPagination(filtered, pageSize)
   /** 服务商下的主机名总数（不受搜索过滤影响） */
   const hostTotal = computed(() => hostnames.value.length)
@@ -265,10 +257,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
         const response = await saasApi.deleteHostname(scopeOwner.value.providerId, scopeOwner.value.zoneName, hostname)
         if (!scopeOwner.active() || !owner.active()) return
         notifyDnsSideEffect(dnsSideEffectFromData(response, 'cleanup'), '已删除')
-        removeListItem(
-          hostnames,
-          (item) => String(item.hostname) === String(record.hostname) || String(item.id) === String(record.id)
-        )
+        await hostnamesQuery.invalidate()
         selection.clear()
         if (detailOpen.value && detailRecord.value?.hostname === record.hostname) {
           detailRequestGeneration.invalidate()
@@ -419,9 +408,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       resetPage()
       selection.clear()
       hostnames.value = []
-      void runLoad()
-        .then(() => (listActive() ? resumeJobs() : undefined))
-        .catch(fail)
+      void resumeJobs()
     }
   )
 
@@ -440,9 +427,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
 
   onMounted(() => {
     void loadPreferredOptions()
-    void runLoad()
-      .then(() => (listActive() ? resumeJobs() : undefined))
-      .catch(fail)
+    void resumeJobs()
   })
 
   return {
@@ -479,7 +464,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     loading,
     refreshing,
     pageSize,
-    onRefresh,
+    onRefresh: () => hostnamesQuery.refresh(),
     page,
     total,
     hostTotal,

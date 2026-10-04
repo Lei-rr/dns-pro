@@ -1,78 +1,39 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { Plus } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
-import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { TablePagination } from '@/shared/ui/pagination'
-import { Plus } from '@lucide/vue'
 import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
-
-import { parseRecordNames } from '@/features/dns/lib/record-names'
 import { buildDnsRecordDisplayRows, dnsRecordMatchesKeyword, dnsRecordRowKey } from '@/features/dns/lib/record-display'
 import { exportRecordsAsCsv, exportRecordsAsJson, exportRecordsAsZone } from '@/features/dns/lib/record-export'
-import type { DnsLineOption, DnsRecord } from '@/features/dns/model/types'
+import type { DnsRecord } from '@/features/dns/model/types'
+import type { ImportPlan } from '@/features/dns/lib/record-import-preview'
+import { useDnsLinesQuery, useDnsRecordsQuery } from '@/features/dns/model/use-records-query'
+import { useRecordForm } from '@/features/dns/model/use-record-form'
+import { useRecordsBatch } from '@/features/dns/model/use-records-batch'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
-import { useListPage } from '@/shared/lib/use-list-page'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
-import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
-import { formatFailedJobItem, JobProgressAlert, runBatchJob, showBatchFailures, useJobProgress } from '@/shared/job'
-import type { JobLike } from '@/shared/job'
+import { useRowBusy } from '@/shared/lib/row-busy'
+import { JobProgressAlert, useJobProgress } from '@/shared/job'
+import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
+import { confirmDelete } from '@/shared/ui/confirm'
+import { encodePath } from '@/shared/lib/path'
+import RecordsToolbar from '@/features/dns/ui/RecordsToolbar.vue'
+import RecordsTable from '@/features/dns/ui/RecordsTable.vue'
+import RecordsSelectionBar from '@/features/dns/ui/RecordsSelectionBar.vue'
 import RecordFormDialog from '@/features/dns/ui/RecordFormDialog.vue'
 import BatchEditDialog from '@/features/dns/ui/BatchEditDialog.vue'
 import RecordImportDialog from '@/features/dns/ui/RecordImportDialog.vue'
-import RecordsToolbar from '@/features/dns/ui/RecordsToolbar.vue'
-import RecordsTable from '@/features/dns/ui/RecordsTable.vue'
-import type { ParsedImportRecord } from '@/features/dns/lib/record-import'
-import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
-import { createScopeGeneration, type ScopeOwner } from '@/shared/lib/scope-generation'
-import { encodePath } from '@/shared/lib/path'
 
 const props = defineProps<{ provider: DnsProviderRef; zoneId: string }>()
-const providerId = computed(() => props.provider.id)
 const router = useRouter()
 const jobProgress = useJobProgress()
 const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
-const scopeGeneration = createScopeGeneration()
 
-type RecordsScope = { provider: DnsProviderRef; zoneId: string }
-
-function captureScope(): ScopeOwner<RecordsScope> {
-  return scopeGeneration.capture({ provider: { ...props.provider }, zoneId: props.zoneId })
-}
-
-const saving = ref(false)
-const records = ref<DnsRecord[]>([])
-const keyword = ref('')
-const typeFilter = ref('all')
-const dialogOpen = ref(false)
-const batchEditOpen = ref(false)
-const batchSubmitting = ref(false)
-const batchEditError = ref('')
-const editing = ref<DnsRecord | null>(null)
-const formErrors = ref<FieldErrors>({})
-const form = reactive({
-  name: '',
-  type: 'A',
-  value: '',
-  ttl: '600',
-  line: '默认',
-  remark: '',
-  priority: '',
-  proxied: false,
-})
-const batchPatch = reactive({
-  value: '',
-  ttl: '',
-  line: '__keep',
-  remark: '',
-  priority: '',
-  proxied: '__keep' as '__keep' | 'true' | 'false',
-})
-
+const providerId = computed(() => props.provider.id)
 const isCloudflare = computed(() => props.provider.type === 'cloudflare')
 // 路由参数可能含畸形百分号编码，解码失败时回退原值而不是中断渲染。
 const zoneName = computed(() => {
@@ -83,56 +44,36 @@ const zoneName = computed(() => {
   }
 })
 
+const recordsQuery = useDnsRecordsQuery(
+  () => props.provider,
+  () => props.zoneId
+)
+const linesQuery = useDnsLinesQuery({
+  provider: () => props.provider,
+  zoneName,
+  cloudflare: isCloudflare,
+})
+const records = recordsQuery.records
+
+function lineIdOf(line: string): string | undefined {
+  return linesQuery.lines.value.find((option) => option.value === line)?.lineId
+}
+
+/** 保证当前编辑/批量选择中的线路始终可选项，避免历史线路值丢失 */
+const keyword = ref('')
+const typeFilter = ref('all')
 const typeOptions = ['A', 'AAAA', 'CNAME', 'TXT', 'MX']
 
-// 线路随域名套餐变化，从 DNSPod 拉取；拉取失败时退回常用线路
-const FALLBACK_LINE_OPTIONS: DnsLineOption[] = [
-  { label: '默认', value: '默认' },
-  { label: '境内', value: '境内' },
-  { label: '境外', value: '境外' },
-]
-const fetchedLines = ref<DnsLineOption[]>([])
-const dnspodLineOptions = computed<DnsLineOption[]>(() => {
-  const options = fetchedLines.value.length ? fetchedLines.value : FALLBACK_LINE_OPTIONS
-  // 保证当前编辑/批量选择中的线路始终可选项，避免历史线路值丢失
-  const current = [form.line, batchPatch.line].filter(
-    (line) => line && line !== '__keep' && !options.some((option) => option.value === line)
-  )
-  return [...options, ...current.map((line) => ({ label: line, value: line }))]
+const recordForm = useRecordForm({
+  provider: () => props.provider,
+  zoneId: () => props.zoneId,
+  zoneName,
+  cloudflare: isCloudflare,
+  lineIdOf,
+  invalidate: recordsQuery.invalidate,
+  jobProgress,
 })
 
-/** 选中线路对应的上游线路 ID（分组等无名线路按名称提交） */
-function lineIdOf(line: string): string | undefined {
-  return dnspodLineOptions.value.find((option) => option.value === line)?.lineId
-}
-
-/** 刷新：记录与线路一起更新，避免线路加载失败后永久走回退列表 */
-async function handleRefresh() {
-  await Promise.all([onRefresh(), loadLines(true)])
-}
-
-async function loadLines(refresh = false) {
-  if (isCloudflare.value) {
-    fetchedLines.value = []
-    return
-  }
-  const owner = captureScope()
-  try {
-    const response = await dnsApi.lines(props.provider, zoneName.value, { refresh })
-    if (!owner.active()) return
-    const { items, groups } = response.data
-    fetchedLines.value = [
-      ...items.map((line) => ({ label: line.name, value: line.name, lineId: line.line_id })),
-      // 分组（境内/境外等）按名称提交
-      ...groups
-        .filter((group) => group.name && !items.some((line) => line.name === group.name))
-        .map((group) => ({ label: group.name, value: group.name })),
-    ]
-  } catch {
-    // 线路获取失败不阻断记录管理，退回常用线路
-    if (owner.active()) fetchedLines.value = []
-  }
-}
 const filteredRecords = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   return records.value.filter((record) => {
@@ -141,35 +82,39 @@ const filteredRecords = computed(() => {
   })
 })
 
-const {
-  loading,
-  refreshing,
-  pageSize,
-  runLoad,
-  onRefresh,
-  onPageSizeChange: setPageSize,
-  fail,
-} = useListPage({
-  pageSizeScope: 'dns-records',
-  load: async (options = {}) => {
-    try {
-      const response = await dnsApi.records(props.provider, props.zoneId, { refresh: options.refresh })
-      if (options.isLatest && !options.isLatest()) return false
-      records.value = response.data || []
-      return true
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
-      return false
-    }
-  },
-})
-
-const { page, total, pagedItems: pagedRecords, resetPage } = useLocalPagination(filteredRecords, pageSize)
+const { page, total, pagedItems: pagedRecords, resetPage } = useLocalPagination(filteredRecords, recordsQuery.pageSize)
 const displayRows = computed(() => buildDnsRecordDisplayRows(pagedRecords.value, zoneName.value))
 /** 折叠状态：默认收起；搜索命中自动展开。 */
 const expandedHosts = ref<Record<string, boolean>>({})
 const selection = useRowSelection(pagedRecords, dnsRecordRowKey)
 const selectedCount = computed(() => selection.selected.value.length)
+
+function currentSelectedRows(): DnsRecord[] {
+  return selectedAvailableRows(pagedRecords.value, selection.selected.value, dnsRecordRowKey, (row) =>
+    isRowBusy(dnsRecordRowKey(row))
+  )
+}
+
+const batch = useRecordsBatch({
+  provider: () => props.provider,
+  zoneId: () => props.zoneId,
+  zoneName,
+  lineIdOf,
+  jobProgress,
+  invalidate: recordsQuery.invalidate,
+  selectedRows: currentSelectedRows,
+  clearSelection: () => selection.clear(),
+})
+
+/** 保证当前编辑/批量选择中的线路始终可选项，避免历史线路值丢失 */
+const dnspodLineOptions = computed(() => {
+  const options = linesQuery.lines.value
+  const current = [recordForm.form.line, batch.batchPatch.line].filter(
+    (line) => line && line !== '__keep' && !options.some((option) => option.value === line)
+  )
+  return [...options, ...current.map((line) => ({ label: line, value: line }))]
+})
+
 watch([keyword, typeFilter], () => {
   resetPage()
   selection.clear()
@@ -201,7 +146,7 @@ function onPageChange(next: number) {
 }
 
 function onPageSizeChange(next: number) {
-  setPageSize(next)
+  recordsQuery.setPageSize(next)
   resetPage()
   selection.clear()
   expandedHosts.value = {}
@@ -211,147 +156,24 @@ function onSearch() {
   resetPage()
 }
 
-function setTypeFilter(next: string) {
-  typeFilter.value = next
-}
-
-function setSelectedKeys(keys: string[]) {
-  selection.selected.value = keys
-}
-
-function openCreate() {
-  editing.value = null
-  formErrors.value = {}
-  form.name = ''
-  form.type = 'A'
-  form.value = ''
-  form.ttl = isCloudflare.value ? '1' : '600'
-  form.line = '默认'
-  form.remark = ''
-  form.priority = ''
-  form.proxied = false
-  dialogOpen.value = true
-}
-
-function openEdit(record: DnsRecord) {
-  editing.value = record
-  formErrors.value = {}
-  form.name = String(record.name || '')
-  form.type = String(record.type || 'A')
-  form.value = String(record.value || record.content || '')
-  form.ttl = String(record.ttl ?? (isCloudflare.value ? '1' : '600'))
-  form.line = String(record.line || '默认')
-  form.remark = String(record.remark || record.comment || '')
-  form.priority = String(record.priority ?? record.mx ?? '')
-  form.proxied = !!record.proxied
-  dialogOpen.value = true
-}
-
-async function save() {
-  if (saving.value) return
-  const scopeOwner = captureScope()
-  const errors: FieldErrors = {}
-  const names = parseRecordNames(form.name)
-  const value = form.value.trim()
-  if (!names.length) errors.name = '主机记录不能为空'
-  if (!value) errors.value = '记录值不能为空'
-  if (editing.value && names.length !== 1) errors.name = '编辑时只能填写一个主机记录'
-  formErrors.value = errors
-  if (Object.keys(errors).length) return
-
-  saving.value = true
-  try {
-    const base = {
-      type: form.type,
-      value,
-      ttl: Number(form.ttl) || (isCloudflare.value ? 1 : 600),
-      line: form.line,
-      record_line_id: lineIdOf(form.line),
-      remark: form.remark,
-      priority: form.priority === '' || !Number.isFinite(Number(form.priority)) ? undefined : Number(form.priority),
-      proxied: form.proxied,
-      // 编辑时必须回传原有启停状态与权重，否则会被上游重置
-      status: editing.value ? String(editing.value.status || '').toUpperCase() || undefined : undefined,
-      weight: editing.value?.weight,
-    }
-
-    if (editing.value && !editing.value.id) {
-      toast.error('该记录缺少 ID，无法编辑，请刷新后重试')
-      return
-    }
-    if (editing.value?.id) {
-      await dnsApi.updateRecord(
-        scopeOwner.value.provider,
-        scopeOwner.value.zoneId,
-        String(editing.value.id),
-        { ...base, name: names[0] },
-        { zoneName: decodeURIComponent(scopeOwner.value.zoneId) }
-      )
-      if (!scopeOwner.active()) return
-      toast.success('记录已更新')
-      dialogOpen.value = false
-      await runLoad()
-    } else if (names.length === 1) {
-      await dnsApi.createRecord(
-        scopeOwner.value.provider,
-        scopeOwner.value.zoneId,
-        { ...base, name: names[0] },
-        { zoneName: decodeURIComponent(scopeOwner.value.zoneId) }
-      )
-      if (!scopeOwner.active()) return
-      toast.success('记录已创建')
-      dialogOpen.value = false
-      await runLoad()
-    } else {
-      // 先关弹窗，才能看到页顶 JobProgressAlert
-      dialogOpen.value = false
-      saving.value = false
-      await runBatchJob({
-        label: '批量创建',
-        create: () =>
-          dnsApi.batchCreateRecords(props.provider, props.zoneId, {
-            records: names.map((name) => ({ ...base, name })),
-          }),
-        fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as Record<string, unknown>) || {},
-        retry: (id) => dnsApi.batchRetry(props.provider, id),
-        onDone: () => runLoad(),
-        jobProgress,
-      })
-      return
-    }
-  } catch (error) {
-    if (!scopeOwner.active()) return
-    formErrors.value = {
-      ...formErrors.value,
-      ...serverFieldErrors(error, {
-        subdomain: 'name',
-        record_type: 'type',
-        content: 'value',
-      }),
-    }
-    toast.error(errorMessage(error))
-  } finally {
-    if (scopeOwner.active()) saving.value = false
-  }
+async function handleRefresh() {
+  // 记录与线路一起刷新，避免线路加载失败后永久走回退列表
+  await Promise.all([recordsQuery.refresh(), linesQuery.refresh()])
 }
 
 async function removeRecord(record: DnsRecord) {
-  const scopeOwner = captureScope()
   const key = String(record.id || `${record.name}-${record.type}-${record.value || ''}`)
   const recordId = String(record.id || '')
-  if (!(await confirmDelete(`${record.name} · ${record.type}`)) || !scopeOwner.active()) return
+  if (!(await confirmDelete(`${record.name} · ${record.type}`))) return
   await runBusy(key, async (owner) => {
-    if (!scopeOwner.active()) return
     try {
-      await dnsApi.deleteRecord(scopeOwner.value.provider, scopeOwner.value.zoneId, recordId)
-      if (!scopeOwner.active() || !owner.active()) return
+      await dnsApi.deleteRecord(props.provider, props.zoneId, recordId)
+      if (!owner.active()) return
       toast.success('已删除')
-      removeListItem(records, (item) => String(item.id || '') === recordId && recordId !== '')
-      // id 可能空：按复合键再试
-      removeListItem(records, (item) => String(item.id || `${item.name}-${item.type}-${item.value || ''}`) === key)
       selection.clear()
+      await recordsQuery.invalidate()
     } catch (error) {
-      if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
+      if (owner.active()) toast.error(errorMessage(error))
     }
   })
 }
@@ -370,266 +192,8 @@ async function copyRecordValue(record: DnsRecord | { value?: string; content?: s
   }
 }
 
-async function runDnsBatch(
-  scopeOwner: ScopeOwner<RecordsScope>,
-  create: () => Promise<{ data?: unknown }>,
-  label: string
-) {
-  if (!scopeOwner.active()) return null
-  return runBatchJob({
-    label,
-    create: () => (scopeOwner.active() ? create() : Promise.resolve({ data: undefined })),
-    fetchJob: async (id) =>
-      ((await dnsApi.batchJob(scopeOwner.value.provider, id)).data as Record<string, unknown>) || {},
-    retry: (id) => dnsApi.batchRetry(scopeOwner.value.provider, id),
-    clearSelection: () => {
-      if (scopeOwner.active()) selection.clear()
-    },
-    onDone: () => (scopeOwner.active() ? runLoad() : undefined),
-    jobProgress,
-  })
-}
-
-function captureSelectedRecords() {
-  const selectedKeys = [...selection.selected.value]
-  return {
-    selectedKeys,
-    selectedRows: selectedAvailableRows(pagedRecords.value, selectedKeys, dnsRecordRowKey, (row) =>
-      isRowBusy(dnsRecordRowKey(row))
-    ),
-  }
-}
-
-async function batchDeleteSelected() {
-  const scopeOwner = captureScope()
-  const { selectedRows } = captureSelectedRecords()
-  if (!selectedRows.length) {
-    toast.warning('请先勾选记录')
-    return
-  }
-  if (
-    !(await confirmDialog({
-      title: '批量删除',
-      description: `确认删除已选 ${selectedRows.length} 条记录？`,
-      confirmText: '删除',
-      destructive: true,
-    }))
-  )
-    return
-  if (!scopeOwner.active()) return
-  const payload = selectedRows
-    .filter((row) => !isRowBusy(dnsRecordRowKey(row)))
-    .map((row) => ({
-      id: String(row.id || ''),
-      name: String(row.name || ''),
-      type: String(row.type || ''),
-    }))
-  if (!payload.length) return
-  try {
-    await runDnsBatch(
-      scopeOwner,
-      () => dnsApi.batchDeleteRecords(scopeOwner.value.provider, scopeOwner.value.zoneId, { records: payload }),
-      '批量删除'
-    )
-  } catch (error) {
-    if (scopeOwner.active()) toast.error(errorMessage(error))
-  }
-}
-
-/** 打开批量修改表单弹窗（底部「批量管理」） */
-function openBatchEdit() {
-  if (!selection.selected.value.length) {
-    toast.warning('请先勾选记录')
-    return
-  }
-  batchPatch.value = ''
-  batchPatch.ttl = ''
-  batchPatch.line = '__keep'
-  batchPatch.remark = ''
-  batchPatch.priority = ''
-  batchPatch.proxied = '__keep'
-  batchEditError.value = ''
-  batchEditOpen.value = true
-}
-
-async function batchUpdateSelected() {
-  if (batchSubmitting.value) return
-  const scopeOwner = captureScope()
-  const { selectedRows } = captureSelectedRecords()
-  const patch: Record<string, unknown> = {}
-  let invalid = ''
-  if (batchPatch.value.trim()) patch.value = batchPatch.value.trim()
-  if (batchPatch.ttl.trim()) {
-    const ttlNum = Number(batchPatch.ttl)
-    if (Number.isFinite(ttlNum) && ttlNum > 0) patch.ttl = ttlNum
-    else invalid = 'TTL 需为正整数'
-  }
-  if (batchPatch.line && batchPatch.line !== '__keep') {
-    patch.line = batchPatch.line
-    patch.record_line_id = lineIdOf(batchPatch.line)
-  }
-  if (batchPatch.remark.trim()) patch.remark = batchPatch.remark.trim()
-  if (batchPatch.priority.trim()) {
-    const prioNum = Number(batchPatch.priority)
-    if (Number.isFinite(prioNum)) patch.priority = prioNum
-    else invalid = '优先级需为数字'
-  }
-  if (batchPatch.proxied === 'true' || batchPatch.proxied === 'false') {
-    patch.proxied = batchPatch.proxied === 'true'
-  }
-  batchEditError.value = invalid || (Object.keys(patch).length ? '' : '请至少填写一项要修改的字段')
-  if (batchEditError.value) return
-  const payload = selectedRows
-    .filter((row) => !isRowBusy(dnsRecordRowKey(row)))
-    .map((row) => ({
-      id: String(row.id || ''),
-      name: String(row.name || ''),
-      type: String(row.type || ''),
-      value: String(row.value || row.content || ''),
-      ttl: row.ttl,
-      line: row.line,
-      remark: row.remark || row.comment,
-      priority: row.priority ?? row.mx,
-      proxied: row.proxied,
-    }))
-  if (!payload.length) return
-  batchSubmitting.value = true
-  batchEditOpen.value = false
-  try {
-    await runDnsBatch(
-      scopeOwner,
-      () =>
-        dnsApi.batchUpdateRecords(scopeOwner.value.provider, scopeOwner.value.zoneId, {
-          records: payload,
-          patch,
-        }),
-      '批量修改'
-    )
-  } catch (error) {
-    if (scopeOwner.active()) toast.error(errorMessage(error))
-  } finally {
-    if (scopeOwner.active()) batchSubmitting.value = false
-  }
-}
-
-async function resumeJobs() {
-  if (jobProgress.running.value) return
-  const scopeOwner = captureScope()
-  const finished = await jobProgress.resumeActive(
-    () => dnsApi.batchActive(scopeOwner.value.provider, scopeOwner.value.zoneId),
-    {
-      label: 'DNS 批量',
-      fetchJob: async (id) => ((await dnsApi.batchJob(scopeOwner.value.provider, id)).data as JobLike) || {},
-    }
-  )
-  if (finished) {
-    const jobId = String(finished.id || '')
-    const failed = jobProgress.failedItems(finished)
-    if (failed.length) {
-      await showBatchFailures(
-        finished.message || 'DNS 批量完成',
-        failed.map((i) => formatFailedJobItem(i)),
-        '条',
-        {
-          onRetry: async () => {
-            if (!scopeOwner.active()) return null
-            await dnsApi.batchRetry(scopeOwner.value.provider, jobId)
-            if (!scopeOwner.active()) return null
-            return jobProgress.pollJob(jobId, {
-              label: 'DNS 批量',
-              fetchJob: async (id) => ((await dnsApi.batchJob(scopeOwner.value.provider, id)).data as JobLike) || {},
-            })
-          },
-          isActive: () => scopeOwner.active(),
-        }
-      )
-    }
-    await runLoad()
-  }
-}
-
-watch(
-  () => [providerId.value, props.provider.type, props.zoneId],
-  async () => {
-    scopeGeneration.invalidate()
-    dialogOpen.value = false
-    batchEditOpen.value = false
-    editing.value = null
-    saving.value = false
-    batchSubmitting.value = false
-    await loadLines()
-    jobProgress.reset()
-    resetRowOperations()
-    selection.clear()
-    records.value = []
-    await runLoad()
-    await resumeJobs()
-  }
-)
-
-onUnmounted(() => {
-  scopeGeneration.invalidate()
-  jobProgress.reset()
-  resetRowOperations()
-})
-
-onMounted(async () => {
-  await Promise.all([runLoad(), loadLines()])
-  await resumeJobs()
-})
-const importOpen = ref(false)
-const importSubmitting = ref(false)
-
-/** 导入去重：与本地区域内已存在的「主机名+类型+记录值」比对 */
-function dropExistingRecords(parsedRecords: ParsedImportRecord[]): ParsedImportRecord[] {
-  const existing = new Set(
-    records.value.map((record) =>
-      [
-        String(record.name || '').toLowerCase(),
-        String(record.type || '').toUpperCase(),
-        String(record.value || ''),
-      ].join('\u0000')
-    )
-  )
-  return parsedRecords.filter(
-    (record) =>
-      !existing.has(
-        [
-          String(record.name || '').toLowerCase(),
-          String(record.type || '').toUpperCase(),
-          String(record.value || ''),
-        ].join('\u0000')
-      )
-  )
-}
-
-async function handleImportSubmit(parsedRecords: ParsedImportRecord[]) {
-  importSubmitting.value = true
-  try {
-    const fresh = dropExistingRecords(parsedRecords)
-    const skipped = parsedRecords.length - fresh.length
-    if (!fresh.length) {
-      toast.warning('导入内容与现有记录重复，无需导入')
-      return
-    }
-    if (skipped > 0) toast.message('已跳过重复记录', `${skipped} 条与现有记录同名同值`)
-    importOpen.value = false
-    await runBatchJob({
-      label: '批量导入',
-      create: () =>
-        dnsApi.batchCreateRecords(props.provider, props.zoneId, {
-          records: fresh,
-        }),
-      fetchJob: async (id) => ((await dnsApi.batchJob(props.provider, id)).data as Record<string, unknown>) || {},
-      retry: (id) => dnsApi.batchRetry(props.provider, id),
-      onDone: () => runLoad(),
-      jobProgress,
-    })
-  } catch (error) {
-    toast.error(errorMessage(error))
-  } finally {
-    importSubmitting.value = false
-  }
+function handleImportSubmit(plan: ImportPlan) {
+  void batch.submitImport(plan)
 }
 
 function handleExport(format: 'json' | 'csv' | 'zone') {
@@ -640,22 +204,40 @@ function handleExport(format: 'json' | 'csv' | 'zone') {
     return
   }
   const name = zoneName.value || 'zone'
-  if (format === 'json') {
-    exportRecordsAsJson(rows, name)
-  } else if (format === 'csv') {
-    exportRecordsAsCsv(rows, name)
-  } else if (format === 'zone') {
-    exportRecordsAsZone(rows, name)
-  }
-  toast.success(`已导出 ${records.value.length} 条记录 (${format.toUpperCase()})`)
+  if (format === 'json') exportRecordsAsJson(rows, name)
+  else if (format === 'csv') exportRecordsAsCsv(rows, name)
+  else if (format === 'zone') exportRecordsAsZone(rows, name)
+  toast.success(`已导出 ${rows.length} 条记录 (${format.toUpperCase()})`)
 }
+
+watch([providerId, () => props.provider.type, () => props.zoneId], () => {
+  recordForm.dialogOpen.value = false
+  batch.batchEditOpen.value = false
+  batch.invalidateScope()
+  jobProgress.reset()
+  resetRowOperations()
+  selection.clear()
+  expandedHosts.value = {}
+  resetPage()
+  void batch.resumeJobs()
+})
+
+onMounted(() => {
+  void batch.resumeJobs()
+})
+
+onUnmounted(() => {
+  batch.invalidateScope()
+  jobProgress.reset()
+  resetRowOperations()
+})
 </script>
 
 <template>
   <div class="flex flex-1 flex-col gap-4">
     <PageHeader :title="zoneName" :description="`${provider.name || providerId} · 解析记录`">
       <Button variant="outline" size="sm" @click="router.push('/' + encodePath(providerId))">返回域名</Button>
-      <Button size="sm" @click="openCreate">
+      <Button size="sm" @click="recordForm.openCreate">
         <Plus class="size-4" />
         添加记录
       </Button>
@@ -673,13 +255,13 @@ function handleExport(format: 'json' | 'csv' | 'zone') {
       v-model:keyword="keyword"
       :type-filter="typeFilter"
       :type-options="typeOptions"
-      :loading="loading"
-      :refreshing="refreshing"
+      :loading="recordsQuery.loading.value"
+      :refreshing="recordsQuery.refreshing.value"
       @search="onSearch"
       @refresh="handleRefresh"
-      @update:type-filter="setTypeFilter"
+      @update:type-filter="typeFilter = $event"
       @export="handleExport"
-      @import="importOpen = true"
+      @import="batch.importOpen.value = true"
     />
 
     <RecordsTable
@@ -689,77 +271,61 @@ function handleExport(format: 'json' | 'csv' | 'zone') {
       :expanded-hosts="expandedHosts"
       :zone-name="zoneName"
       :is-cloudflare="isCloudflare"
-      :loading="loading"
-      :refreshing="refreshing"
+      :loading="recordsQuery.loading.value"
+      :refreshing="recordsQuery.refreshing.value"
       :busy="isRowBusy"
-      @update:selected-keys="setSelectedKeys"
+      @update:selected-keys="selection.selected.value = $event"
       @update:expanded-hosts="expandedHosts = $event"
-      @edit="openEdit"
+      @edit="recordForm.openEdit"
       @remove="removeRecord"
       @copy="copyRecordValue"
     />
 
     <TablePagination
       :page="page"
-      :page-size="pageSize"
+      :page-size="recordsQuery.pageSize.value"
       :total="total"
-      :disabled="loading"
+      :disabled="recordsQuery.loading.value"
       @update:page="onPageChange"
       @update:page-size="onPageSizeChange"
     />
 
-    <!-- 勾选后：底部悬浮操作条 -->
-    <FloatingSelectionBar
+    <RecordsSelectionBar
       :show="selectedCount > 0 && !jobProgress.running.value"
       :count="selectedCount"
-      :disabled="jobProgress.running.value || batchSubmitting"
+      :disabled="jobProgress.running.value || batch.batchSubmitting.value"
       @clear="selection.clear()"
-    >
-      <Button
-        size="sm"
-        class="h-7 px-3 text-xs cursor-pointer"
-        :disabled="jobProgress.running.value || batchSubmitting"
-        @click="openBatchEdit"
-      >
-        批量管理
-      </Button>
-      <Button
-        size="sm"
-        variant="destructive"
-        class="h-7 px-3 text-xs cursor-pointer"
-        :disabled="jobProgress.running.value || batchSubmitting"
-        @click="batchDeleteSelected"
-      >
-        批量删除
-      </Button>
-    </FloatingSelectionBar>
+      @edit="batch.openBatchEdit"
+      @remove="batch.batchDeleteSelected"
+    />
 
     <RecordFormDialog
-      v-model:open="dialogOpen"
-      v-model:form="form"
-      :editing="!!editing"
-      :saving="saving"
+      v-model:open="recordForm.dialogOpen.value"
+      v-model:form="recordForm.form"
+      :editing="!!recordForm.editing.value"
+      :saving="recordForm.saving.value"
       :is-cloudflare="isCloudflare"
       :type-options="typeOptions"
       :line-options="dnspodLineOptions"
-      :errors="formErrors"
-      @save="save"
+      :errors="recordForm.formErrors.value"
+      @save="recordForm.save"
     />
 
     <BatchEditDialog
-      v-model:open="batchEditOpen"
-      v-model:patch="batchPatch"
+      v-model:open="batch.batchEditOpen.value"
+      v-model:patch="batch.batchPatch"
       :selected-count="selectedCount"
       :is-cloudflare="isCloudflare"
       :line-options="dnspodLineOptions"
-      :error="batchEditError"
-      @submit="batchUpdateSelected"
+      :error="batch.batchEditError.value"
+      @submit="batch.batchUpdateSelected"
     />
 
     <RecordImportDialog
-      v-model:open="importOpen"
+      v-model:open="batch.importOpen.value"
       :zone-name="zoneName"
-      :submitting="importSubmitting"
+      :existing-records="records"
+      :submitting="batch.importSubmitting.value"
       @submit="handleImportSubmit"
     />
   </div>

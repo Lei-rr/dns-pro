@@ -7,7 +7,7 @@ import type { JobLike } from '../web/src/shared/job/model/types.js'
 import { useRowBusy } from '../web/src/shared/lib/row-busy.js'
 import { selectableRowKeys, selectedAvailableRows } from '../web/src/shared/lib/row-selection.js'
 import { createScopeGeneration } from '../web/src/shared/lib/scope-generation.js'
-import { useListPage } from '../web/src/shared/lib/use-list-page.js'
+import { queryClient } from '../web/src/shared/query/client.js'
 import { confirmState, settleConfirm } from '../web/src/shared/ui/confirm/confirm.js'
 
 Object.assign(globalThis, {
@@ -92,31 +92,37 @@ await inFlightAction
 assert.equal(inFlightToasts, 0, 'stale in-flight response emitted toast')
 assert.equal(inFlightMutations, 0, 'stale in-flight response mutated replacement list')
 
-// List loading belongs to the latest request. An old scope request finishing
-// first must not hide the replacement scope loading state.
-const oldListLoad = deferred<boolean>()
-const newListLoad = deferred<boolean>()
-let listLoadCalls = 0
-const originalWarn = console.warn
-console.warn = (...args: unknown[]) => {
-  if (!String(args[0] ?? '').includes('onScopeDispose() is called when there is no active effect scope')) {
-    originalWarn(...args)
-  }
-}
-const listPage = useListPage({
-  pageSizeScope: 'probe-list-owner',
-  load: () => (++listLoadCalls === 1 ? oldListLoad.promise : newListLoad.promise),
+// Query cache is the single read-path primitive: fetch, reuse and invalidate
+// must all go through the shared client (no hand-written loading races remain).
+let queryFetches = 0
+const firstValue = await queryClient.fetchQuery({
+  queryKey: ['probe', 'resource'],
+  queryFn: async () => {
+    queryFetches++
+    return 'cached'
+  },
 })
-console.warn = originalWarn
-const oldListRequest = listPage.runLoad()
-const newListRequest = listPage.runLoad()
-assert.equal(listPage.loading.value, true)
-oldListLoad.resolve(true)
-await oldListRequest
-assert.equal(listPage.loading.value, true, 'stale list request cleared replacement loading')
-newListLoad.resolve(true)
-await newListRequest
-assert.equal(listPage.loading.value, false, 'latest list request did not release loading')
+assert.equal(firstValue, 'cached')
+assert.equal(queryClient.getQueryData(['probe', 'resource']), 'cached')
+const secondValue = await queryClient.fetchQuery({
+  queryKey: ['probe', 'resource'],
+  queryFn: async () => {
+    queryFetches++
+    return 'stale'
+  },
+})
+assert.equal(secondValue, 'cached', 'fresh cache entry was refetched')
+assert.equal(queryFetches, 1)
+await queryClient.invalidateQueries({ queryKey: ['probe', 'resource'] })
+const refreshedValue = await queryClient.fetchQuery({
+  queryKey: ['probe', 'resource'],
+  queryFn: async () => {
+    queryFetches++
+    return 'fresh'
+  },
+})
+assert.equal(refreshedValue, 'fresh', 'invalidate did not force a refetch')
+assert.equal(queryFetches, 2)
 
 const progress = useJobProgress()
 const silentProbe = useJobProgress()

@@ -50,5 +50,10 @@ export interface DnsRecord {
   provider_type?: string
   fqdn?: string
   status?: string
+  /** 归属：派生来源（saas/tunnel/edgeone）或人工记录（manual，不会被自动删除） */
+  owner?: RecordOwner
   [key: string]: unknown
 }
+
+/** D4 归属值：未命中任何派生关系即 manual */
+export type RecordOwner = 'saas' | 'tunnel' | 'edgeone' | 'manual'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
@@ -17,9 +17,9 @@ import type { Zone } from '@/features/dns/model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
-import { useListPage } from '@/shared/lib/use-list-page'
+import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
-import { removeListItem, useRowBusy } from '@/shared/lib/row-busy'
+import { useRowBusy } from '@/shared/lib/row-busy'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
 import { StatusBadge } from '@/shared/ui/status-badge'
@@ -47,7 +47,6 @@ function captureScope(zone: Zone): ScopeOwner<ZonesScope> {
   })
 }
 
-const zones = ref<Zone[]>([])
 const keyword = ref('')
 const showAdd = ref(false)
 const adding = ref(false)
@@ -56,28 +55,15 @@ const domainError = ref('')
 
 const title = computed(() => props.provider.name || providerId.value)
 
-const {
-  loading,
-  refreshing,
-  pageSize,
-  runLoad,
-  onRefresh,
-  onPageSizeChange: setPageSize,
-  fail,
-} = useListPage({
+const zonesQuery = useResourceQuery<Zone[]>({
+  key: () => ['dns', 'zones', props.provider.id, props.provider.type],
+  queryFn: async ({ refresh }) => (await dnsApi.zones(props.provider, { refresh })).data || [],
   pageSizeScope: 'dns-zones',
-  load: async (options = {}) => {
-    try {
-      const response = await dnsApi.zones(props.provider, { refresh: options.refresh })
-      if (options.isLatest && !options.isLatest()) return false
-      zones.value = response.data || []
-      return true
-    } catch (error) {
-      if (!options.isLatest || options.isLatest()) fail(error)
-      return false
-    }
-  },
 })
+const loading = zonesQuery.loading
+const refreshing = zonesQuery.refreshing
+const pageSize = zonesQuery.pageSize
+const zones = computed(() => zonesQuery.data.value ?? [])
 const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return zones.value
@@ -96,7 +82,7 @@ function onPageChange(next: number) {
 }
 
 function onPageSizeChange(next: number) {
-  setPageSize(next)
+  zonesQuery.setPageSize(next)
   resetPage()
 }
 
@@ -122,7 +108,7 @@ async function createZone() {
     toast.success('域名已添加')
     showAdd.value = false
     domainInput.value = ''
-    await runLoad()
+    await zonesQuery.invalidate()
   } catch (error) {
     if (!scopeOwner.active()) return
     const fields = serverFieldErrors(error, { name: 'domain' })
@@ -149,7 +135,7 @@ async function removeZone(zone: Zone) {
       await dnsApi.deleteZone(scopeOwner.value.provider, scopeOwner.value.zoneKey)
       if (!scopeOwner.active() || !owner.active()) return
       toast.success('已删除')
-      removeListItem(zones, (item) => String(item.id || item.name) === scopeOwner.value.listKey)
+      await zonesQuery.invalidate()
     } catch (error) {
       if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
     }
@@ -162,18 +148,15 @@ async function openRecords(zone: Zone) {
 
 watch(
   () => [providerId.value, props.provider.type],
-  async () => {
+  () => {
     scopeGeneration.invalidate()
     resetRowOperations()
     showAdd.value = false
     adding.value = false
-    zones.value = []
     resetPage()
-    await runLoad()
   }
 )
 
-onMounted(() => runLoad())
 onUnmounted(() => {
   scopeGeneration.invalidate()
   resetRowOperations()
@@ -192,7 +175,7 @@ function clearSearch() {
         size="sm"
         :loading="refreshing"
         :disabled="loading && !refreshing"
-        @click="onRefresh()"
+        @click="zonesQuery.refresh()"
       >
         <RefreshCw class="size-4" />
         刷新

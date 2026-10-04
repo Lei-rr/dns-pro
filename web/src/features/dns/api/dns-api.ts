@@ -3,7 +3,7 @@ import type { ApiResponse } from '@/shared/api/types'
 import type { DnsLine, DnsRecord, Zone } from '@/features/dns/model/types'
 import { encodePath } from '@/shared/lib/path'
 
-type DnsProviderType = 'dnspod' | 'cloudflare'
+type DnsProviderType = 'dnspod' | 'cloudflare' | 'saas'
 export type DnsProviderRef = { id: string; type: DnsProviderType; name?: string }
 
 const providerBase = (provider: DnsProviderRef) => `/${provider.type}/providers/${encodePath(provider.id)}`
