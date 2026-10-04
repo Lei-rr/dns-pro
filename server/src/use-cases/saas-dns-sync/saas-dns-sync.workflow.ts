@@ -15,7 +15,7 @@ import {
   invalidateSaaSHostnameDetailsCache,
 } from '../../domains/cloudflare/saas/saas.cache.js'
 import type { SaaSDnsSyncCoordinator } from './saas-dns-sync.coordinator.js'
-import type { SaaSSyncRecord, SyncCollectedRecords } from './saas-sync-records.js'
+import type { SaaSSyncRecord, SyncCollectedRecords } from '../derived-records/planners/saas.planner.js'
 
 export type SaaSDeleteCleanupRecipe = SyncCollectedRecords
 

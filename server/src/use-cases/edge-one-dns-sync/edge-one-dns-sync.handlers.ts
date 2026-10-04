@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../kernel/http/api-response.js'
 import { trimmedParam } from '../../kernel/http/route-params.js'
 import type { RequestOf } from '../../kernel/http/request-schema.js'
+import { auditActor } from '../../kernel/observability/audit-log.js'
 import {
   edgeoneBatchDeleteSchema,
   edgeoneBatchDisableSchema,
@@ -59,6 +60,12 @@ export async function createEdgeOneBatchDisableHandler(
     zoneId: request.params.zoneId,
     domains: request.body.domains,
   })
+  request.server.ctx.platform.audit.record({
+    action: 'batch',
+    actor: await auditActor(request),
+    target: `edgeone:${request.params.providerId}/${request.params.zoneId}`,
+    detail: { operation: 'disable', job_id: result.id, domains: request.body.domains.length },
+  })
   return reply.status(201).send(success(result))
 }
 
@@ -71,6 +78,12 @@ export async function createEdgeOneBatchDeleteHandler(
     zoneId: request.params.zoneId,
     domains: request.body.domains,
     autoCleanup: request.body.auto_cleanup ?? true,
+  })
+  request.server.ctx.platform.audit.record({
+    action: 'batch',
+    actor: await auditActor(request),
+    target: `edgeone:${request.params.providerId}/${request.params.zoneId}`,
+    detail: { operation: 'delete', job_id: result.id, domains: request.body.domains.length },
   })
   return reply.status(201).send(success(result))
 }

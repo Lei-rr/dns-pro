@@ -1,4 +1,4 @@
-import type { DnsRecordRef, DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
+import type { DnsRecordProbe, DnsRecordRef, DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
 import { dnsRecordMatches, relativeRecordName, sameDnsValue } from '../../kernel/contracts/dns-record.port.js'
 import type { DerivedOwner } from '../../kernel/contracts/ownership.port.js'
 
@@ -48,6 +48,11 @@ function recordIdentity(value: DnsRecordValue): string {
     .toLowerCase()
     .replace(/\.+$/, '')
   return [String(value.type).toUpperCase(), name, value.lineId || value.line || ''].join('|')
+}
+
+/** 端口查询条件：FQDN + 类型 → 相对主机记录 probe（写入与只读检测共用同一判据） */
+export function recordProbe(fqdn: string, zone: string, type: string): DnsRecordProbe {
+  return { name: relativeRecordName(fqdn, zone), type: String(type || 'A').toUpperCase() }
 }
 
 /**

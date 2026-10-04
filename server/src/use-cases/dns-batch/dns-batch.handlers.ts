@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../kernel/http/api-response.js'
 import type { RequestOf } from '../../kernel/http/request-schema.js'
+import { auditActor } from '../../kernel/observability/audit-log.js'
 import type { DnsProviderType } from './dns-batch.workflow.js'
 import type { BatchRecordInput } from './dns-record-payload.js'
 import {
@@ -22,6 +23,12 @@ export function createDnsBatchHandler(providerType: DnsProviderType) {
       zone: request.params.zone,
       records: request.body.records as BatchRecordInput[],
     })
+    request.server.ctx.platform.audit.record({
+      action: 'batch',
+      actor: await auditActor(request),
+      target: `${providerType}:${request.params.providerId}/${request.params.zone}`,
+      detail: { operation: 'create', job_id: result.id, records: request.body.records.length },
+    })
     return reply.status(201).send(success(result))
   }
 }
@@ -36,6 +43,12 @@ export function deleteDnsBatchHandler(providerType: DnsProviderType) {
       providerId: request.params.providerId,
       zone: request.params.zone,
       records: request.body.records,
+    })
+    request.server.ctx.platform.audit.record({
+      action: 'batch',
+      actor: await auditActor(request),
+      target: `${providerType}:${request.params.providerId}/${request.params.zone}`,
+      detail: { operation: 'delete', job_id: result.id, records: request.body.records.length },
     })
     return reply.status(201).send(success(result))
   }
@@ -52,6 +65,12 @@ export function updateDnsBatchHandler(providerType: DnsProviderType) {
       zone: request.params.zone,
       records: request.body.records as BatchRecordInput[],
       patch: request.body.patch,
+    })
+    request.server.ctx.platform.audit.record({
+      action: 'batch',
+      actor: await auditActor(request),
+      target: `${providerType}:${request.params.providerId}/${request.params.zone}`,
+      detail: { operation: 'update', job_id: result.id, records: request.body.records.length },
     })
     return reply.status(201).send(success(result))
   }

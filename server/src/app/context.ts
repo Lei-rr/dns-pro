@@ -3,9 +3,10 @@ import type { AppConfig } from './config.js'
 import type { AppModules } from './modules.js'
 import { createWorkflows } from './use-cases.js'
 import type { JobService } from '../kernel/jobs/job.service.js'
+import type { AuditLog } from '../kernel/observability/audit-log.js'
 
-/** 平台设施：单进程内存任务执行器 */
-export type AppPlatform = { jobs: JobService }
+/** 平台设施：单进程内存任务执行器 + 关键操作审计（F6） */
+export type AppPlatform = { jobs: JobService; audit: AuditLog }
 
 /** 装配完成的运行上下文：config / platform / modules / workflows 四层 */
 export type AppContext = {

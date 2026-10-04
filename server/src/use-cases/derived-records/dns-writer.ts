@@ -14,7 +14,14 @@ import {
   type OwnershipPort,
   type RecordOwnership,
 } from '../../kernel/contracts/ownership.port.js'
-import { planSync, type DesiredRecord, type SyncAction, type SyncPlan, type SyncPlanEntry } from './sync-plan.js'
+import {
+  planSync,
+  recordProbe,
+  type DesiredRecord,
+  type SyncAction,
+  type SyncPlan,
+  type SyncPlanEntry,
+} from './sync-plan.js'
 
 /** 冲突清理时保留的类型：CNAME 由同步覆盖，TXT 与 CNAME 不冲突 */
 const PRECLEAN_KEEP_TYPES = new Set(['CNAME', 'TXT'])
@@ -54,11 +61,7 @@ export class DnsWriter {
     const port = this.portOf(providerType)
     const current: DnsRecordRef[] = []
     for (const want of desired) {
-      const probe = {
-        name: relativeRecordName(want.fqdn, zone),
-        type: String(want.record.type || 'A').toUpperCase(),
-      }
-      current.push(...(await port.find(providerId, zone, probe)))
+      current.push(...(await port.find(providerId, zone, recordProbe(want.fqdn, zone, want.record.type))))
     }
     return this.apply(providerType, providerId, zone, planSync({ providerType, providerId, zone, desired, current }))
   }

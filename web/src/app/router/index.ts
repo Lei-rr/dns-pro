@@ -9,9 +9,10 @@ import AppLayout from '@/app/layouts/AppLayout.vue'
 import LoginPage from '@/pages/login/LoginPage.vue'
 import DashboardPage from '@/pages/dashboard/DashboardPage.vue'
 import ProvidersPage from '@/pages/providers/ProvidersPage.vue'
+import SyncPage from '@/pages/sync/SyncPage.vue'
 import ProviderEntryPage from '@/pages/provider-entry/ProviderEntryPage.vue'
 
-const systemRouteIds = new Set(['', 'login', 'providers'])
+const systemRouteIds = new Set(['', 'login', 'providers', 'sync'])
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -25,6 +26,7 @@ const router = createRouter({
       children: [
         { path: '', component: DashboardPage },
         { path: 'providers', component: ProvidersPage },
+        { path: 'sync', component: SyncPage },
         { path: ':provider', component: ProviderEntryPage },
         { path: ':provider/:second', component: ProviderEntryPage, props: { child: true } },
       ],

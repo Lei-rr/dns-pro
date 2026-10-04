@@ -15,11 +15,11 @@ import { DNSPOD_PREFERRED_LINE, DnsPodSaaSSyncAdapter } from './dns-pod-saas-syn
 import {
   cloudflareDnsCleanupRecipe,
   dnspodSaaSCleanupRecipe,
-  type SaaSSyncAdapter,
   type SaaSSyncProviderType,
   type SaaSSyncRecord,
   type SyncCollectedRecords,
-} from './saas-sync-records.js'
+} from '../derived-records/planners/saas.planner.js'
+import type { SaaSSyncAdapter } from './saas-sync-records.js'
 
 /** SaaS DNS 同步调度：按主机名生效配置选择 DNSPod / Cloudflare DNS 适配器 */
 export class SaaSDnsSyncCoordinator {

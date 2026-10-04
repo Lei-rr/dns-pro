@@ -108,7 +108,7 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
       }),
       integrity,
     },
-    cloudflare: { zones: cloudflareZones, records: cloudflareRecords },
+    cloudflare: { zones: cloudflareZones, records: cloudflareRecords, catalog: zoneCatalog },
     dnsPod: {
       zones: dnsPodZones,
       lines: new DnsPodLineService(providers, dnsPodZones, config.httpTimeoutMs),

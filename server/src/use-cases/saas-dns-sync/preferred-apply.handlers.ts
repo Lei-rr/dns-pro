@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../kernel/http/api-response.js'
 import { trimmedParam } from '../../kernel/http/route-params.js'
 import type { RequestOf } from '../../kernel/http/request-schema.js'
+import { auditActor } from '../../kernel/observability/audit-log.js'
 import {
   saasJobParamsSchema,
   saasPreferredApplySchema,
@@ -33,6 +34,17 @@ export async function createPreferredApplyHandler(
     hostnames: request.body.hostnames,
     onlyAutoPreferred: request.body.only_auto_preferred ?? false,
     dryRun: request.body.dry_run ?? false,
+  })
+  request.server.ctx.platform.audit.record({
+    action: 'batch',
+    actor: await auditActor(request),
+    target: `saas-preferred:${request.params.providerId}/${trimmedParam(request, 'zoneName')}`,
+    detail: {
+      operation: 'preferred_apply',
+      job_id: result.id,
+      preferred_domain: request.body.preferred_domain,
+      dry_run: request.body.dry_run ?? false,
+    },
   })
   return reply.status(201).send(success(result))
 }

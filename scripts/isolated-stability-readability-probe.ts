@@ -9,7 +9,7 @@ import { dnspodDomainListResponseSchema } from '../server/src/domains/dnspod/dns
 import { edgeoneZoneListResponseSchema } from '../server/src/domains/edgeone/edge-one-response.schema.js'
 import { DnsPodSaaSSyncAdapter } from '../server/src/use-cases/saas-dns-sync/dns-pod-saas-sync.adapter.js'
 import { CloudflareDnsSaaSSyncAdapter } from '../server/src/use-cases/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
-import { cloudflareDnsCleanupRecipe } from '../server/src/use-cases/saas-dns-sync/saas-sync-records.js'
+import { cloudflareDnsCleanupRecipe } from '../server/src/use-cases/derived-records/planners/saas.planner.js'
 import { SaaSDnsSyncWorkflow } from '../server/src/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
 
 assert.equal(isExplicitNotFound(new Error('token service not found')), false)

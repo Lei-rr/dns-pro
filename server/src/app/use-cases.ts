@@ -2,6 +2,10 @@ import { cloudflareRecordPort } from '../domains/cloudflare/dns/cloudflare-recor
 import { dnsPodRecordPort } from '../domains/dnspod/dns/dnspod-record.adapter.js'
 import { DnsBatchWorkflow } from '../use-cases/dns-batch/dns-batch.workflow.js'
 import { DnsWriter } from '../use-cases/derived-records/dns-writer.js'
+import { edgeOneDerivedPlanner } from '../use-cases/derived-records/planners/edgeone.planner.js'
+import { saasDerivedPlanner } from '../use-cases/derived-records/planners/saas.planner.js'
+import { tunnelDerivedPlanner } from '../use-cases/derived-records/planners/tunnel.planner.js'
+import { ReconcileService } from '../use-cases/derived-records/reconcile.service.js'
 import { EdgeOneBatchWorkflow } from '../use-cases/edge-one-dns-sync/edge-one-batch.workflow.js'
 import { EdgeOneDnsSyncWorkflow } from '../use-cases/edge-one-dns-sync/edge-one-dns-sync.workflow.js'
 import { ProviderDependencyWorkflow } from '../use-cases/provider-management/provider-dependency.workflow.js'
@@ -38,6 +42,34 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
   )
   const edgeOneDnsSync = new EdgeOneDnsSyncWorkflow(edgeOne.domains, dnsPod.access, dnsPod.catalog, dnsWriter)
 
+  // §4.2 统一 reconcile 引擎：三条产品线的派生关系共用同一检测与执行入口
+  const reconcile = new ReconcileService(
+    [
+      saasDerivedPlanner({
+        providers: providers.repository,
+        hostnames: saas.hostnames,
+        syncConfigs: saas.syncConfigs,
+        access: dnsPod.access,
+        catalog: dnsPod.catalog,
+        cloudflareZones: cloudflare.zones,
+      }),
+      tunnelDerivedPlanner({
+        providers: providers.repository,
+        tunnels: modules.tunnels.tunnels,
+        routes: modules.tunnels.routes,
+        catalog: cloudflare.catalog,
+      }),
+      edgeOneDerivedPlanner({
+        providers: providers.repository,
+        zones: edgeOne.zones,
+        domains: edgeOne.domains,
+        catalog: dnsPod.catalog,
+      }),
+    ],
+    dnsPorts,
+    dnsWriter
+  )
+
   return {
     providerManagement: new ProviderManagementWorkflow(
       providers.service,
@@ -45,6 +77,7 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
       providers.connections,
       providers.integrity
     ),
+    reconcile,
     saasDnsSync,
     saasPreferredApply: new SaaSPreferredApplyWorkflow(platform.jobs, saasDnsSync, saas.hostnames),
     saasBatch: new SaaSBatchWorkflow(platform.jobs, saasDnsSync, saas.hostnames),

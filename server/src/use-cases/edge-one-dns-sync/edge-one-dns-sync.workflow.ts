@@ -8,11 +8,10 @@ import {
   toCleanupSideEffect,
   toSyncSideEffect,
 } from '../../kernel/providers/side-effect-result.js'
-import { DNSPOD_DEFAULT_LINE } from '../../domains/dnspod/dns-pod-record.service.js'
 import type { DnsPodAccess } from '../../domains/dnspod/access.js'
 import type { DnsPodZoneCatalog } from '../../domains/dnspod/zone-catalog.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
-import type { DesiredRecord } from '../derived-records/sync-plan.js'
+import { edgeOneCnameDesired } from '../derived-records/planners/edgeone.planner.js'
 import type { EdgeOneDomainService } from '../../domains/edgeone/edge-one-domain.service.js'
 import { normalizeAccelerationDomainPayload } from '../../domains/edgeone/edge-one-domain-payload.js'
 import { invalidateEdgeOneDomainCache } from '../../domains/edgeone/edge-one.cache.js'
@@ -195,25 +194,6 @@ export class EdgeOneDnsSyncWorkflow {
       dnspod_zone: dnspodZone,
       records,
     }
-  }
-}
-
-/** EdgeOne 同步解析的 TTL 默认值 */
-const EDGEONE_CNAME_TTL = 600
-
-function edgeOneCnameDesired(fqdn: string, cname: string): DesiredRecord {
-  return {
-    purpose: 'edgeone_cname',
-    fqdn,
-    owner: 'edgeone',
-    refId: fqdn,
-    record: {
-      type: 'CNAME',
-      value: cname,
-      line: DNSPOD_DEFAULT_LINE,
-      note: `EdgeOne 加速丨${fqdn}`,
-      ttl: EDGEONE_CNAME_TTL,
-    },
   }
 }
 

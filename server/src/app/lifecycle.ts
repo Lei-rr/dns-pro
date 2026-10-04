@@ -17,6 +17,7 @@ import { migrateDataRoot } from '../kernel/store/migrations.js'
 import { loadCredentialKey } from '../kernel/security/credential-key.js'
 import { createInitialAuthConfig } from '../domains/system/auth/auth-config.repository.js'
 import { JobService } from '../kernel/jobs/job.service.js'
+import { AuditLog } from '../kernel/observability/audit-log.js'
 
 type AppWorkflows = ReturnType<typeof createWorkflows>
 
@@ -93,7 +94,11 @@ async function initKernel(boot: Boot): Promise<void> {
   if (boot.config.sessionSecret.trim().length < 32) {
     throw new Error('SESSION_SECRET must contain at least 32 characters')
   }
-  boot.platform = { jobs: new JobService() }
+  boot.platform = {
+    jobs: new JobService(),
+    // F6：审计权威留痕写日志；内存环形缓冲只为 UI 提供最近事件的查询入口
+    audit: new AuditLog((event) => boot.app.log.info({ audit: event }, 'audit')),
+  }
   boot.credentialKey = await loadCredentialKey(boot.config.dataDir)
   boot.initialPassword = await createInitialAuthConfig(boot.config.dataDir)
 }

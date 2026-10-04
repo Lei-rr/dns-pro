@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { noContent, success } from '../../kernel/http/api-response.js'
 import { ApiError } from '../../kernel/http/api-error.js'
 import { noRequestSchema, type RequestOf } from '../../kernel/http/request-schema.js'
+import { auditActor } from '../../kernel/observability/audit-log.js'
 import {
   providerIdParamsSchema,
   providerSortSchema,
@@ -38,6 +39,12 @@ export async function createProviderHandler(
 ) {
   const provider = await request.server.ctx.workflows.providerManagement.create(request.body)
   request.log.info({ provider_id: provider.id, provider_type: provider.type }, 'provider.created')
+  request.server.ctx.platform.audit.record({
+    action: 'credential_change',
+    actor: await auditActor(request),
+    target: provider.id,
+    detail: { operation: 'create', provider_type: provider.type },
+  })
   return reply.status(201).send(success(provider))
 }
 
@@ -47,6 +54,12 @@ export async function updateProviderHandler(
 ) {
   const provider = await request.server.ctx.workflows.providerManagement.update(request.params.id, request.body)
   request.log.info({ provider_id: provider.id, provider_type: provider.type }, 'provider.updated')
+  request.server.ctx.platform.audit.record({
+    action: 'credential_change',
+    actor: await auditActor(request),
+    target: provider.id,
+    detail: { operation: 'update', provider_type: provider.type },
+  })
   return reply.send(success(provider))
 }
 
@@ -55,8 +68,15 @@ export async function deleteProviderHandler(
   reply: FastifyReply
 ) {
   const providerId = request.params.id
+  const actor = await auditActor(request)
   await request.server.ctx.workflows.providerManagement.delete(providerId)
   request.log.info({ provider_id: providerId }, 'provider.deleted')
+  request.server.ctx.platform.audit.record({
+    action: 'credential_change',
+    actor,
+    target: providerId,
+    detail: { operation: 'delete' },
+  })
   return reply.status(204).send(noContent())
 }
 

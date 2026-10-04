@@ -22,7 +22,7 @@ import {
 } from '../../kernel/jobs/job-types.js'
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
-import type { SaaSSyncRecord } from './saas-sync-records.js'
+import type { SaaSSyncRecord } from '../derived-records/planners/saas.planner.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
 type ZoneScope = { providerId: string; zoneName: string }

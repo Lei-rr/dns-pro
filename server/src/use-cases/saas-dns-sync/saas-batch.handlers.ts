@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../kernel/http/api-response.js'
 import { trimmedParam } from '../../kernel/http/route-params.js'
 import type { RequestOf } from '../../kernel/http/request-schema.js'
+import { auditActor } from '../../kernel/observability/audit-log.js'
 import {
   saasBatchDeleteSchema,
   saasBatchUpdateSchema,
@@ -19,6 +20,12 @@ export async function createSaaSBatchDeleteHandler(
     hostnames: request.body.hostnames,
     autoCleanup: request.body.auto_cleanup ?? true,
   })
+  request.server.ctx.platform.audit.record({
+    action: 'batch',
+    actor: await auditActor(request),
+    target: `saas:${request.params.providerId}/${trimmedParam(request, 'zoneName')}`,
+    detail: { operation: 'delete', job_id: result.id, hostnames: request.body.hostnames.length },
+  })
   return reply.status(201).send(success(result))
 }
 
@@ -32,6 +39,12 @@ export async function createSaaSBatchUpdateHandler(
     hostnames: request.body.hostnames,
     patch: request.body.patch,
     autoSync: request.body.auto_sync ?? true,
+  })
+  request.server.ctx.platform.audit.record({
+    action: 'batch',
+    actor: await auditActor(request),
+    target: `saas:${request.params.providerId}/${trimmedParam(request, 'zoneName')}`,
+    detail: { operation: 'update', job_id: result.id, hostnames: request.body.hostnames.length },
   })
   return reply.status(201).send(success(result))
 }

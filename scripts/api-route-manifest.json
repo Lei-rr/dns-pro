@@ -1,5 +1,9 @@
 [
   {
+    "method": "GET",
+    "path": "/api/audit"
+  },
+  {
     "method": "POST",
     "path": "/api/auth/password"
   },
@@ -246,6 +250,14 @@
   {
     "method": "PUT",
     "path": "/api/providers/sort-order"
+  },
+  {
+    "method": "GET",
+    "path": "/api/reconcile"
+  },
+  {
+    "method": "POST",
+    "path": "/api/reconcile"
   },
   {
     "method": "GET",
