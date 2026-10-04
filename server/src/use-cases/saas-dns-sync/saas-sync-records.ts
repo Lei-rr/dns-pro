@@ -1,15 +1,27 @@
 import { ApiError } from '../../kernel/http/api-error.js'
-import { normalizeFqdn } from '../../lib/values.js'
-import type { DnsSyncRecord } from '../../domains/dnspod/dns-pod-record-sync.service.js'
+import type { DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
 import type { CloudflareCustomHostname } from '../../domains/cloudflare/saas/saas-custom-hostname.client.js'
 import type { SaaSHostnameService } from '../../domains/cloudflare/saas/saas-hostname.service.js'
+import type { DesiredRecord } from '../derived-records/sync-plan.js'
 
-export type SyncRecord = DnsSyncRecord
 type SyncResult = Record<string, unknown>
 
+/** SaaS 同步目标厂商：DNSPod 与 Cloudflare DNS */
+export type SaaSSyncProviderType = 'dnspod' | 'cloudflare'
+
+/**
+ * SaaS 记录快照：期望记录 + 写入目标。
+ * 快照要跨阶段使用（删除/更新前收集，事后清理），因此自带 provider 与 zone。
+ */
+export interface SaaSSyncRecord extends DesiredRecord {
+  /** 记录归属的服务商类型：清理阶段据此选择端口 */
+  provider_type: SaaSSyncProviderType
+  provider_id: string
+  zone: string
+}
 export interface SyncCollectedRecords {
   hostname_fqdn: string
-  records: SyncRecord[]
+  records: SaaSSyncRecord[]
 }
 
 /** SaaS 主机名 DNS 同步目标的统一契约（DNSPod / Cloudflare DNS） */
@@ -20,9 +32,9 @@ export interface SaaSSyncAdapter {
     providerId: string,
     cfZoneName: string,
     hostnameFqdn: string,
-    beforeRecords: SyncRecord[]
+    beforeRecords: SaaSSyncRecord[]
   ): Promise<SyncResult>
-  cleanup(providerId: string, hostnameFqdn: string, records: SyncRecord[]): Promise<SyncResult>
+  cleanup(providerId: string, hostnameFqdn: string, records: SaaSSyncRecord[]): Promise<SyncResult>
   cleanupStaleRecords(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<SyncResult>
   collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<SyncCollectedRecords>
 }
@@ -90,55 +102,57 @@ export function ownershipRecord(hostname: CloudflareCustomHostname, forceName = 
   return forceName && hostname.hostname ? { name: ownershipTxtName(hostname.hostname), value: '' } : null
 }
 
-export async function withSyncPurpose(record: SyncRecord, result: Promise<SyncResult>): Promise<SyncResult> {
-  return { purpose: record.purpose, ...(await result) }
+/** 期望记录构造器：把"类型/名称/值/用途/备注/目标"收敛到一处 */
+export function desiredRecord(input: {
+  fqdn: string
+  purpose: string
+  record: Omit<DnsRecordValue, 'name'>
+  provider_type: SaaSSyncProviderType
+  provider_id: string
+  zone: string
+}): SaaSSyncRecord {
+  return {
+    purpose: input.purpose,
+    fqdn: input.fqdn,
+    record: input.record,
+    provider_type: input.provider_type,
+    provider_id: input.provider_id,
+    zone: input.zone,
+  }
 }
 
-/** 记录稳定身份：类型|名称|线路（值变化视为同一记录原地更新） */
-export function syncRecordIdentity(record: SyncRecord, line = ''): string {
-  const type = String(record.type ?? '')
+/** 清理配方：记录归属已由备注/值证明，keep=false 让写入口只删"自己的"记录 */
+export const cleanupDesired = (record: SaaSSyncRecord): SaaSSyncRecord => ({ ...record, keep: false })
+
+/** 记录稳定身份：类型|全名|线路（值变化视为同一记录原地更新） */
+export function syncRecordIdentity(record: SaaSSyncRecord): string {
+  const type = String(record.record.type ?? '')
     .trim()
     .toUpperCase()
-  const name = normalizeFqdn(record.name)
+  const name = record.fqdn.trim().toLowerCase().replace(/\.+$/, '')
   if (type === '' || name === '') return ''
-  return [type, name, String(record.line ?? line).trim()].join('|')
+  return [type, name, String(record.record.line ?? '').trim()].join('|')
 }
 
-/** 删除更新后不再需要的记录，同一身份只删一次 */
-export async function deleteRemovedSyncRecords(
-  beforeRecords: SyncRecord[],
-  afterRecords: SyncRecord[],
-  identity: (record: SyncRecord) => string,
-  remove: (record: SyncRecord) => Promise<SyncResult>
-): Promise<SyncResult[]> {
-  const retained = new Set(afterRecords.map(identity))
-  const seen = new Set<string>()
-  const deleted: SyncResult[] = []
-  for (const record of beforeRecords) {
-    const key = identity(record)
-    if (key === '' || seen.has(key) || retained.has(key)) continue
-    seen.add(key)
-    deleted.push(await withSyncPurpose(record, remove(record)))
-  }
-  return deleted
-}
-
+/** 统计删除条数（写入口回执） */
 export const countDeleted = (results: Array<{ status?: unknown }>) =>
-  results.filter((r) => r.status === 'deleted').length
+  results.filter((result) => result.status === 'deleted').length
 
-/** Cloudflare 主机名已删除时的 Cloudflare DNS 清理配方（值为空，按名称+类型+备注匹配） */
-export function cloudflareDnsCleanupRecipe(fqdn: string, providerId: string, zoneName: string): SyncRecord[] {
-  const base = { value: '', provider_id: providerId, zone_name: zoneName }
-  const record = (type: string, name: string, purpose: string): SyncRecord => ({
-    ...base,
-    type,
-    name,
-    purpose,
-    comment: syncRemark(purpose, fqdn, CLOUDFLARE_ORIGIN_LABEL),
-  })
+const acmeChallengeNameOf = (fqdn: string) => acmeChallengeName(fqdn)
+
+/** Cloudflare 主机名已删除时的清理配方（值为空，按名称+类型+备注匹配） */
+export function cloudflareDnsCleanupRecipe(fqdn: string, providerId: string, zoneName: string): SaaSSyncRecord[] {
+  const target = { provider_type: 'cloudflare' as const, provider_id: providerId, zone: zoneName }
+  const record = (type: string, name: string, purpose: string): SaaSSyncRecord =>
+    desiredRecord({
+      ...target,
+      fqdn: name,
+      purpose,
+      record: { type, value: '', note: syncRemark(purpose, fqdn, CLOUDFLARE_ORIGIN_LABEL) },
+    })
   return [
     record('CNAME', fqdn, 'origin_cname'),
-    record('CNAME', acmeChallengeName(fqdn), 'dcv_delegation'),
+    record('CNAME', acmeChallengeNameOf(fqdn), 'dcv_delegation'),
     record('TXT', ownershipTxtName(fqdn), 'ownership_verification'),
   ]
 }
@@ -149,20 +163,19 @@ export function dnspodSaaSCleanupRecipe(
   dnspodProviderId: string,
   dnspodZone: string,
   lines: { default: string; preferred: string }
-): SyncRecord[] {
-  const base = { value: '', provider_id: dnspodProviderId, dnspod_zone: dnspodZone, line: lines.default }
-  const record = (type: string, name: string, purpose: string, line = lines.default): SyncRecord => ({
-    ...base,
-    type,
-    name,
-    purpose,
-    line,
-    remark: syncRemark(purpose, fqdn, DNSPOD_ORIGIN_LABEL),
-  })
+): SaaSSyncRecord[] {
+  const target = { provider_type: 'dnspod' as const, provider_id: dnspodProviderId, zone: dnspodZone }
+  const record = (type: string, name: string, purpose: string, line = lines.default): SaaSSyncRecord =>
+    desiredRecord({
+      ...target,
+      fqdn: name,
+      purpose,
+      record: { type, value: '', line, note: syncRemark(purpose, fqdn, DNSPOD_ORIGIN_LABEL) },
+    })
   return [
     record('CNAME', fqdn, 'origin_cname'),
     record('CNAME', fqdn, 'preferred_cname', lines.preferred),
-    record('CNAME', acmeChallengeName(fqdn), 'dcv_delegation'),
+    record('CNAME', acmeChallengeNameOf(fqdn), 'dcv_delegation'),
     record('TXT', ownershipTxtName(fqdn), 'ownership_verification'),
   ]
 }

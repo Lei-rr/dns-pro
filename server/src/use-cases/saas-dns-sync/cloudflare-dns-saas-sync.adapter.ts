@@ -1,19 +1,17 @@
 import { ApiError } from '../../kernel/http/api-error.js'
-import { errorMessage, normalizeFqdn } from '../../lib/values.js'
-import type {
-  CloudflareDnsRecordService,
-  RecordPayload,
-} from '../../domains/cloudflare/cloudflare-dns-record.service.js'
+import { normalizeFqdn } from '../../lib/values.js'
 import type { CloudflareZoneService } from '../../domains/cloudflare/cloudflare-zone.service.js'
 import type { CloudflareCustomHostname } from '../../domains/cloudflare/saas/saas-custom-hostname.client.js'
 import { isHostnameActive, zoneOwnsHostname } from '../../domains/cloudflare/saas/saas-hostname-rules.js'
 import type { SaaSHostnameService } from '../../domains/cloudflare/saas/saas-hostname.service.js'
 import type { SaaSSyncConfigService } from '../../domains/cloudflare/saas/saas-sync-config.service.js'
+import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
   CLOUDFLARE_ORIGIN_LABEL,
+  cleanupDesired,
   countDeleted,
   dcvDelegationRecords,
-  deleteRemovedSyncRecords,
+  desiredRecord,
   ownershipRecord,
   ownershipTxtName,
   requireBusinessTarget,
@@ -21,12 +19,12 @@ import {
   resolveEffectiveOrigin,
   syncRecordIdentity,
   syncRemark,
-  withSyncPurpose,
   type SaaSSyncAdapter,
-  type SyncRecord,
+  type SaaSSyncRecord,
 } from './saas-sync-records.js'
 
-const stripDot = (value: unknown) => String(value ?? '').replace(/\.$/, '')
+/** Cloudflare 同步记录 TTL：1 表示自动 */
+const SAAS_RECORD_TTL = 1
 
 type Target = { cloudflareProviderId: string; zoneId: string; zoneName: string }
 
@@ -39,7 +37,7 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     private readonly hostnames: SaaSHostnameService,
     private readonly syncConfigs: SaaSSyncConfigService,
     private readonly zones: CloudflareZoneService,
-    private readonly records: CloudflareDnsRecordService
+    private readonly writer: DnsWriter
   ) {}
 
   /** 创建前预检：主机名尚未创建，不查询其偏好 */
@@ -62,7 +60,7 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn)
     const fqdn = requireFqdn(hostname)
     const records = buildRecords(hostname, await this.businessTarget(providerId, cfZoneName, hostname, true), target)
-    const results = await this.syncAll(target, records)
+    const results = await this.writer.sync('cloudflare', target.cloudflareProviderId, target.zoneName, records)
     return {
       hostname_fqdn: fqdn,
       hostname: fqdn,
@@ -72,7 +70,12 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     }
   }
 
-  async resyncAfterUpdate(providerId: string, cfZoneName: string, hostnameFqdn: string, beforeRecords: SyncRecord[]) {
+  async resyncAfterUpdate(
+    providerId: string,
+    cfZoneName: string,
+    hostnameFqdn: string,
+    beforeRecords: SaaSSyncRecord[]
+  ) {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     const fqdn = requireFqdn(hostname)
     const target = await this.resolveTarget(providerId, fqdn)
@@ -81,13 +84,8 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
       await this.businessTarget(providerId, cfZoneName, hostname, true),
       target
     )
-    const deleted = await deleteRemovedSyncRecords(
-      beforeRecords,
-      afterRecords,
-      (record) => syncRecordIdentity(record),
-      (record) => this.deleteRecord(target, record)
-    )
-    const results = await this.syncAll(target, afterRecords)
+    const deleted = await this.deleteRemoved(target, beforeRecords, afterRecords)
+    const results = await this.writer.sync('cloudflare', target.cloudflareProviderId, target.zoneName, afterRecords)
     return {
       hostname_fqdn: fqdn,
       cloudflare_zone: target.zoneName,
@@ -97,24 +95,20 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     }
   }
 
-  async cleanup(providerId: string, hostnameFqdn: string, records: SyncRecord[]) {
+  async cleanup(providerId: string, hostnameFqdn: string, records: SaaSSyncRecord[]) {
     if (records.length === 0 || hostnameFqdn === '') return { cleaned: 0, records: [] }
-    const zoneName = String(records[0]?.zone_name ?? '').trim()
+    const zoneName = String(records[0]?.zone ?? '').trim()
     if (zoneName === '') return { cleaned: 0, records: [], reason: 'cloudflare_zone_not_found' }
     const cloudflareProviderId =
       String(records[0]?.provider_id ?? '').trim() || (await this.defaultDnsProviderId(providerId))
 
-    let zoneId: string
     try {
-      zoneId = await this.zones.idByName(cloudflareProviderId, zoneName)
+      await this.zones.idByName(cloudflareProviderId, zoneName)
     } catch (error) {
       if (!(error instanceof ApiError && error.code === 'cloudflare_zone_not_found')) throw error
       return { cleaned: 0, records: [], reason: 'cloudflare_zone_not_found' }
     }
-    const target = { cloudflareProviderId, zoneId, zoneName }
-    const results = await Promise.all(
-      records.map((record) => withSyncPurpose(record, this.deleteRecord(target, record)))
-    )
+    const results = await this.writer.sync('cloudflare', cloudflareProviderId, zoneName, records.map(cleanupDesired))
     return { cleaned: countDeleted(results), cloudflare_zone: zoneName, records: results }
   }
 
@@ -126,17 +120,24 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
     const target = await this.resolveTarget(providerId, fqdn, { cfZoneName })
-    const record = {
-      type: 'TXT',
-      name: ownershipTxtName(fqdn),
-      value: String(hostname.ownership_verification?.value ?? ''),
-      purpose: 'ownership_verification',
-      provider_id: target.cloudflareProviderId,
-      zone_name: target.zoneName,
-      comment: syncRemark('ownership_verification', fqdn, CLOUDFLARE_ORIGIN_LABEL),
-    }
-    const result = await this.deleteRecord(target, record)
-    return { cleaned: result.status === 'deleted' ? 1 : 0, cloudflare_zone: target.zoneName, records: [result] }
+    const results = await this.writer.sync('cloudflare', target.cloudflareProviderId, target.zoneName, [
+      cleanupDesired(
+        desiredRecord({
+          fqdn: ownershipTxtName(fqdn),
+          purpose: 'ownership_verification',
+          record: {
+            type: 'TXT',
+            value: String(hostname.ownership_verification?.value ?? ''),
+            ttl: SAAS_RECORD_TTL,
+            note: syncRemark('ownership_verification', fqdn, CLOUDFLARE_ORIGIN_LABEL),
+          },
+          provider_type: 'cloudflare',
+          provider_id: target.cloudflareProviderId,
+          zone: target.zoneName,
+        })
+      ),
+    ])
+    return { cleaned: countDeleted(results), cloudflare_zone: target.zoneName, records: results }
   }
 
   async collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string) {
@@ -149,6 +150,21 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     }
     const business = await this.businessTarget(providerId, cfZoneName, hostname, false)
     return { hostname_fqdn: hostname.hostname, records: buildRecords(hostname, business, target, true) }
+  }
+
+  /** 更新后不再需要的记录：按身份差集一次清理（值或备注可证明归属） */
+  private async deleteRemoved(target: Target, beforeRecords: SaaSSyncRecord[], afterRecords: SaaSSyncRecord[]) {
+    const retained = new Set(afterRecords.map((record) => syncRecordIdentity(record)))
+    const seen = new Set<string>()
+    const orphans: SaaSSyncRecord[] = []
+    for (const record of beforeRecords) {
+      const key = syncRecordIdentity(record)
+      if (key === '' || seen.has(key) || retained.has(key)) continue
+      seen.add(key)
+      orphans.push(cleanupDesired(record))
+    }
+    if (orphans.length === 0) return []
+    return this.writer.sync('cloudflare', target.cloudflareProviderId, target.zoneName, orphans)
   }
 
   /** 业务 CNAME 目标：优选域名 > 自定义回源 > 默认回源 */
@@ -203,83 +219,31 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     }
     return id
   }
-
-  private syncAll(target: Target, records: SyncRecord[]) {
-    return Promise.all(records.map((record) => withSyncPurpose(record, this.syncRecord(target, record))))
-  }
-
-  /** 幂等写入：同值视为不变；同名同类型存在则原地更新，否则创建 */
-  private async syncRecord(target: Target, record: SyncRecord): Promise<Record<string, unknown>> {
-    const base = { type: record.type, name: record.name, value: record.value }
-    try {
-      const { cloudflareProviderId: cfId, zoneId } = target
-      const matches = await this.records.findExact(cfId, zoneId, record.name, record.type)
-      const expectedComment = String(record.comment ?? '')
-      const unchanged = matches.find(
-        (match) =>
-          stripDot(match.content) === stripDot(record.value) && (match.comment === expectedComment || !match.comment)
-      )
-      if (unchanged) return { ...base, status: 'unchanged', record_id: unchanged.id ?? '' }
-
-      const existing = matches.find((match) => match.id)
-      if (existing?.id) {
-        const updated = await this.records.update(cfId, zoneId, existing.id, recordPayload(record))
-        return { ...base, status: 'updated', record_id: updated.id ?? existing.id }
-      }
-      const created = await this.records.create(cfId, zoneId, recordPayload(record))
-      return { ...base, status: 'created', record_id: created.id ?? '' }
-    } catch (error) {
-      return { ...base, status: 'failed', record_id: '', error: errorMessage(error) }
-    }
-  }
-
-  /** 删除匹配记录；不删除他人手工写入（带其他备注）的同名记录 */
-  private async deleteRecord(target: Target, record: SyncRecord): Promise<Record<string, unknown>> {
-    const base = { type: record.type, name: record.name }
-    const expectedValue = stripDot(record.value)
-    const expectedComment = String(record.comment ?? '')
-    const { cloudflareProviderId: cfId, zoneId } = target
-    const match = (await this.records.findExact(cfId, zoneId, record.name, record.type)).find(
-      (candidate) =>
-        candidate.id &&
-        (expectedValue === '' || stripDot(candidate.content) === expectedValue) &&
-        (!candidate.comment || candidate.comment === expectedComment)
-    )
-    if (!match?.id) return { ...base, status: 'not_found', record_id: '' }
-    await this.records.delete(cfId, zoneId, match.id)
-    return { ...base, status: 'deleted', record_id: match.id }
-  }
 }
 
-function buildRecords(hostname: CloudflareCustomHostname, business: string, target: Target, includeAll = false) {
+function buildRecords(
+  hostname: CloudflareCustomHostname,
+  business: string,
+  target: Target,
+  includeAll = false
+): SaaSSyncRecord[] {
   const fqdn = hostname.hostname
   if (!fqdn) return []
-  const record = (type: string, name: string, value: string, purpose: string): SyncRecord => ({
-    type,
-    name,
-    value,
-    purpose,
-    provider_id: target.cloudflareProviderId,
-    zone_name: target.zoneName,
-    comment: syncRemark(purpose, fqdn, CLOUDFLARE_ORIGIN_LABEL),
-  })
+  const record = (type: string, name: string, value: string, purpose: string): SaaSSyncRecord =>
+    desiredRecord({
+      fqdn: name,
+      purpose,
+      record: { type, value, ttl: SAAS_RECORD_TTL, note: syncRemark(purpose, fqdn, CLOUDFLARE_ORIGIN_LABEL) },
+      provider_type: 'cloudflare',
+      provider_id: target.cloudflareProviderId,
+      zone: target.zoneName,
+    })
 
-  const records: SyncRecord[] = []
+  const records: SaaSSyncRecord[] = []
   if (business) records.push(record('CNAME', fqdn, business, 'origin_cname'))
   for (const dcv of dcvDelegationRecords(hostname)) records.push(record('CNAME', dcv.name, dcv.value, 'dcv_delegation'))
   // 所有权 TXT 只在清理快照中出现
   const ownership = includeAll ? ownershipRecord(hostname) : null
   if (ownership) records.push(record('TXT', ownership.name, ownership.value, 'ownership_verification'))
   return records
-}
-
-function recordPayload(record: SyncRecord): RecordPayload {
-  return {
-    type: record.type,
-    name: record.name,
-    content: record.value,
-    ttl: 1,
-    comment: String(record.comment ?? ''),
-    proxied: false,
-  }
 }

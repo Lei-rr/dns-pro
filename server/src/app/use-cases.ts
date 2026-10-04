@@ -17,23 +17,25 @@ import type { AppPlatform } from './context.js'
 export function createWorkflows(platform: AppPlatform, modules: AppModules) {
   const { providers, saas, dnsPod, cloudflare, edgeOne } = modules
 
+  // 端口实例在手写装配处共享：批量任务、SaaS 同步与 D3 写入口用同一组适配器
+  const dnsPorts = {
+    dnspod: dnsPodRecordPort(dnsPod.records),
+    cloudflare: cloudflareRecordPort(cloudflare.zones, cloudflare.records),
+  }
+  const dnsWriter = new DnsWriter(dnsPorts)
+
   const saasDnsSync = new SaaSDnsSyncWorkflow(
     saas.hostnames,
     saas.preferences,
     new SaaSDnsSyncCoordinator(
       saas.hostnames,
       saas.syncConfigs,
-      dnsPod.recordSync,
+      dnsPod.access,
+      dnsPod.catalog,
       cloudflare.zones,
-      cloudflare.records
+      dnsWriter
     )
   )
-  // 端口实例在手写装配处共享：批量任务与 D3 写入口用同一组适配器
-  const dnsPorts = {
-    dnspod: dnsPodRecordPort(dnsPod.records),
-    cloudflare: cloudflareRecordPort(cloudflare.zones, cloudflare.records),
-  }
-  const dnsWriter = new DnsWriter(dnsPorts)
   const edgeOneDnsSync = new EdgeOneDnsSyncWorkflow(edgeOne.domains, dnsPod.access, dnsPod.catalog, dnsWriter)
 
   return {

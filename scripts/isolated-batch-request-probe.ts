@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // 请求量守卫：确认同步/批量路径把过滤下推上游，且不随条目数重复全量拉取
 import assert from 'node:assert/strict'
+import { DnsWriter } from '../server/src/use-cases/derived-records/dns-writer.js'
+import { dnsPodRecordPort } from '../server/src/domains/dnspod/dns/dnspod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -86,14 +88,14 @@ try {
     assert.fail(`unexpected DNSPod action: ${action}`)
   }
 
-  await app.ctx.modules.dnsPod.recordSync.sync('dns-target', 'example.com', {
-    type: 'CNAME',
-    name: 'www.example.com',
-    value: 'origin.example.net',
-    line: '默认',
-    purpose: 'origin_cname',
-    provider_id: 'dns-target',
-  })
+  const writer = new DnsWriter({ dnspod: dnsPodRecordPort(app.ctx.modules.dnsPod.records) })
+  await writer.sync('dnspod', 'dns-target', 'example.com', [
+    {
+      purpose: 'origin_cname',
+      fqdn: 'www.example.com',
+      record: { type: 'CNAME', value: 'origin.example.net', line: '默认', ttl: 600 },
+    },
+  ])
   const recordLists = dnsPodCalls.filter((call) => call.action === 'DescribeRecordList')
   assert.equal(recordLists.length, 1, '同步不应重复分页拉取记录列表')
   assert.equal(recordLists[0]?.payload.Subdomain, 'www', 'DNSPod 查询必须把主机记录下推上游')

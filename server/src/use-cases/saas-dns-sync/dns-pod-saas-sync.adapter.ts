@@ -1,14 +1,17 @@
 import { ApiError } from '../../kernel/http/api-error.js'
 import { DNSPOD_DEFAULT_LINE } from '../../domains/dnspod/dns-pod-record.service.js'
-import type { DnsPodRecordSyncService, DnsPodSyncRecord } from '../../domains/dnspod/dns-pod-record-sync.service.js'
+import type { DnsPodAccess } from '../../domains/dnspod/access.js'
+import type { DnsPodZoneCatalog } from '../../domains/dnspod/zone-catalog.js'
 import type { CloudflareCustomHostname } from '../../domains/cloudflare/saas/saas-custom-hostname.client.js'
 import { isHostnameActive } from '../../domains/cloudflare/saas/saas-hostname-rules.js'
 import type { SaaSHostnameService } from '../../domains/cloudflare/saas/saas-hostname.service.js'
+import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
   DNSPOD_ORIGIN_LABEL,
+  cleanupDesired,
   countDeleted,
   dcvDelegationRecords,
-  deleteRemovedSyncRecords,
+  desiredRecord,
   ownershipRecord,
   ownershipTxtName,
   requireBusinessTarget,
@@ -16,13 +19,15 @@ import {
   resolveEffectiveOrigin,
   syncRecordIdentity,
   syncRemark,
-  withSyncPurpose,
   type SaaSSyncAdapter,
-  type SyncRecord,
+  type SaaSSyncRecord,
 } from './saas-sync-records.js'
 
 /** DNSPod 分线路：默认线路指向业务回源，境内线路指向优选域名 */
 export const DNSPOD_PREFERRED_LINE = '境内'
+
+/** DNSPod 同步记录 TTL（沿用历史默认值） */
+const SAAS_RECORD_TTL = 600
 
 type Target = { dnspodProviderId: string; dnspodZone: string }
 
@@ -30,14 +35,17 @@ type Target = { dnspodProviderId: string; dnspodZone: string }
 export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
   constructor(
     private readonly hostnames: SaaSHostnameService,
-    private readonly dns: DnsPodRecordSyncService
+    private readonly access: DnsPodAccess,
+    private readonly catalog: DnsPodZoneCatalog,
+    private readonly writer: DnsWriter
   ) {}
 
   async preflight(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}) {
     const fqdn = hostnameFqdn.trim()
     if (fqdn === '') throw new ApiError('saas_fqdn_missing', 'SaaS hostname FQDN missing', 422)
     const dnspodProviderId =
-      String(data.sync_provider_id ?? '').trim() || (await this.dns.requireDnsPodProviderId(providerId, 'saas', 'SaaS'))
+      String(data.sync_provider_id ?? '').trim() ||
+      (await this.access.requireLinkedProviderId(providerId, 'saas', 'SaaS'))
     const dnspodZone = await this.resolveZone(providerId, dnspodProviderId, fqdn, String(data.sync_zone ?? ''))
     return { dnspod_provider_id: dnspodProviderId, dnspod_zone: dnspodZone, hostname_fqdn: fqdn }
   }
@@ -49,12 +57,20 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
 
     const records = buildRecords(hostname, origin, target)
-    const precleaned = await this.dns.precleanConflicts(target.dnspodProviderId, target.dnspodZone, fqdn)
-    const results = await this.syncAll(target, records)
+    const precleaned = await this.writer.preclean('dnspod', target.dnspodProviderId, target.dnspodZone, {
+      fqdn,
+      type: 'CNAME',
+    })
+    const results = await this.writer.sync('dnspod', target.dnspodProviderId, target.dnspodZone, records)
     return { hostname_fqdn: fqdn, hostname: fqdn, dnspod_zone: target.dnspodZone, precleaned, records: results }
   }
 
-  async resyncAfterUpdate(providerId: string, cfZoneName: string, hostnameFqdn: string, beforeRecords: SyncRecord[]) {
+  async resyncAfterUpdate(
+    providerId: string,
+    cfZoneName: string,
+    hostnameFqdn: string,
+    beforeRecords: SaaSSyncRecord[]
+  ) {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     const fqdn = requireFqdn(hostname)
     const target = await this.optionalTarget(providerId, hostname, fqdn)
@@ -62,17 +78,12 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
 
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
     const afterRecords = buildRecords(hostname, origin, target)
-    const deleted = await deleteRemovedSyncRecords(
-      beforeRecords,
-      afterRecords,
-      (record) => syncRecordIdentity(record, DNSPOD_DEFAULT_LINE),
-      (record) => this.dns.delete(target.dnspodProviderId, target.dnspodZone, record)
-    )
+    const deleted = await this.deleteRemoved(target, beforeRecords, afterRecords)
     const precleaned =
       afterRecords.length === 0
         ? []
-        : await this.dns.precleanConflicts(target.dnspodProviderId, target.dnspodZone, fqdn)
-    const results = await this.syncAll(target, afterRecords)
+        : await this.writer.preclean('dnspod', target.dnspodProviderId, target.dnspodZone, { fqdn, type: 'CNAME' })
+    const results = await this.writer.sync('dnspod', target.dnspodProviderId, target.dnspodZone, afterRecords)
     return {
       hostname: fqdn,
       dnspod_zone: target.dnspodZone,
@@ -83,19 +94,17 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     }
   }
 
-  async cleanup(providerId: string, hostnameFqdn: string, records: SyncRecord[]) {
+  async cleanup(providerId: string, hostnameFqdn: string, records: SaaSSyncRecord[]) {
     const dnspodProviderId = String(records[0]?.provider_id ?? '').trim()
     if (records.length === 0 || hostnameFqdn === '' || dnspodProviderId === '') return { cleaned: 0, records: [] }
 
-    let dnspodZone = String(records[0]?.dnspod_zone ?? '').trim()
+    let dnspodZone = String(records[0]?.zone ?? '').trim()
     if (dnspodZone === '') {
       const zone = await this.optionalZone(providerId, dnspodProviderId, hostnameFqdn)
       if (zone === null) return { cleaned: 0, records: [], reason: 'dnspod_zone_not_found' }
       dnspodZone = zone
     }
-    const results = await Promise.all(
-      records.map((record) => withSyncPurpose(record, this.dns.delete(dnspodProviderId, dnspodZone, record)))
-    )
+    const results = await this.writer.sync('dnspod', dnspodProviderId, dnspodZone, records.map(cleanupDesired))
     return { cleaned: countDeleted(results), dnspod_zone: dnspodZone, records: results }
   }
 
@@ -103,17 +112,30 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
   async cleanupStaleRecords(providerId: string, cfZoneName: string, hostnameFqdn: string) {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     if (!isHostnameActive(hostname)) return { cleaned: 0, reason: 'saas_not_active' }
-    if (!hostname.hostname) return { cleaned: 0, reason: 'fqdn_missing' }
+    const fqdn = hostname.hostname
+    if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
-    const target = await this.optionalTarget(providerId, hostname, hostname.hostname)
+    const target = await this.optionalTarget(providerId, hostname, fqdn)
     if ('reason' in target) return { cleaned: 0, reason: target.reason }
-    const deleted = await this.dns.deleteRecordsByNameType(
-      target.dnspodProviderId,
-      target.dnspodZone,
-      ownershipTxtName(hostname.hostname),
-      'TXT',
-      DNSPOD_DEFAULT_LINE
-    )
+    const ownershipName = ownershipTxtName(fqdn)
+    const deleted = await this.writer.sync('dnspod', target.dnspodProviderId, target.dnspodZone, [
+      cleanupDesired(
+        desiredRecord({
+          fqdn: ownershipName,
+          purpose: 'ownership_verification',
+          record: {
+            type: 'TXT',
+            value: '',
+            line: DNSPOD_DEFAULT_LINE,
+            ttl: SAAS_RECORD_TTL,
+            note: syncRemark('ownership_verification', fqdn, DNSPOD_ORIGIN_LABEL),
+          },
+          provider_type: 'dnspod',
+          provider_id: target.dnspodProviderId,
+          zone: target.dnspodZone,
+        })
+      ),
+    ])
     return { cleaned: countDeleted(deleted), dnspod_zone: target.dnspodZone, records: deleted }
   }
 
@@ -128,16 +150,23 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     return { hostname_fqdn: fqdn, records: buildRecords(hostname, origin, { dnspodProviderId, dnspodZone }, true) }
   }
 
-  private syncAll(target: Target, records: DnsPodSyncRecord[]) {
-    return Promise.all(
-      records.map((record) =>
-        withSyncPurpose(record, this.dns.sync(target.dnspodProviderId, target.dnspodZone, record))
-      )
-    )
+  /** 更新后不再需要的记录：按身份差集一次清理（值或备注可证明归属） */
+  private async deleteRemoved(target: Target, beforeRecords: SaaSSyncRecord[], afterRecords: SaaSSyncRecord[]) {
+    const retained = new Set(afterRecords.map((record) => syncRecordIdentity(record)))
+    const seen = new Set<string>()
+    const orphans: SaaSSyncRecord[] = []
+    for (const record of beforeRecords) {
+      const key = syncRecordIdentity(record)
+      if (key === '' || seen.has(key) || retained.has(key)) continue
+      seen.add(key)
+      orphans.push(cleanupDesired(record))
+    }
+    if (orphans.length === 0) return []
+    return this.writer.sync('dnspod', target.dnspodProviderId, target.dnspodZone, orphans)
   }
 
   private async dnspodProviderIdOf(providerId: string, hostname: CloudflareCustomHostname): Promise<string> {
-    return String(hostname.sync_provider_id ?? '').trim() || this.dns.lookupDnsPodProviderId(providerId, 'saas', 'SaaS')
+    return String(hostname.sync_provider_id ?? '').trim() || this.access.linkedProviderId(providerId, 'saas', 'SaaS')
   }
 
   private async requireTarget(providerId: string, hostname: CloudflareCustomHostname, fqdn: string): Promise<Target> {
@@ -178,13 +207,13 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const zone = explicitZone.trim() || (await this.hostnames.syncConfig(providerId, fqdn)).sync_zone
     if (zone) {
       try {
-        return await this.dns.requireExplicitDnsPodZone(dnspodProviderId, zone, 'saas')
+        return await this.catalog.requireExplicit(dnspodProviderId, zone, 'saas')
       } catch (error) {
         if (!(error instanceof ApiError && error.code === 'saas_dnspod_zone_not_found')) throw error
         // 显式站点在账号中不存在：改用最长后缀匹配
       }
     }
-    return this.dns.resolveDnsPodZone(dnspodProviderId, fqdn, 'saas')
+    return this.catalog.resolve(dnspodProviderId, fqdn, 'saas')
   }
 }
 
@@ -197,21 +226,20 @@ function buildRecords(
   origin: string,
   target: Target,
   includeAll = false
-): DnsPodSyncRecord[] {
+): SaaSSyncRecord[] {
   const fqdn = hostname.hostname
   if (!fqdn) return []
-  const record = (type: string, name: string, value: string, purpose: string, line = DNSPOD_DEFAULT_LINE) => ({
-    type,
-    name,
-    value,
-    line,
-    purpose,
-    provider_id: target.dnspodProviderId,
-    dnspod_zone: target.dnspodZone,
-    remark: syncRemark(purpose, fqdn, DNSPOD_ORIGIN_LABEL),
-  })
+  const record = (type: string, name: string, value: string, purpose: string, line = DNSPOD_DEFAULT_LINE) =>
+    desiredRecord({
+      fqdn: name,
+      purpose,
+      record: { type, value, line, ttl: SAAS_RECORD_TTL, note: syncRemark(purpose, fqdn, DNSPOD_ORIGIN_LABEL) },
+      provider_type: 'dnspod',
+      provider_id: target.dnspodProviderId,
+      zone: target.dnspodZone,
+    })
 
-  const records: DnsPodSyncRecord[] = []
+  const records: SaaSSyncRecord[] = []
   if (origin) records.push(record('CNAME', fqdn, origin, 'origin_cname'))
 
   const preferred = String(hostname.custom_metadata?.preferred_domain ?? '').trim()

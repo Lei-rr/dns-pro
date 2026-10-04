@@ -14,7 +14,7 @@ import {
   invalidateSaaSHostnameDetailsCache,
 } from '../../domains/cloudflare/saas/saas.cache.js'
 import type { SaaSDnsSyncCoordinator } from './saas-dns-sync.coordinator.js'
-import type { SyncCollectedRecords, SyncRecord } from './saas-sync-records.js'
+import type { SaaSSyncRecord, SyncCollectedRecords } from './saas-sync-records.js'
 
 export type SaaSDeleteCleanupRecipe = SyncCollectedRecords
 
@@ -32,8 +32,8 @@ type SaaSDeleteOptions = {
 
 type SaaSUpdateOptions = {
   remoteApplied?: boolean
-  beforeRecords?: SyncRecord[]
-  onBeforeRecordsPrepared?: (records: SyncRecord[]) => Promise<void>
+  beforeRecords?: SaaSSyncRecord[]
+  onBeforeRecordsPrepared?: (records: SaaSSyncRecord[]) => Promise<void>
   deferListInvalidation?: boolean
 }
 

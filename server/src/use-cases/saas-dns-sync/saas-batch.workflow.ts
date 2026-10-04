@@ -21,7 +21,7 @@ import {
   readResourceKeys,
 } from '../../kernel/jobs/job-types.js'
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
-import type { SyncRecord } from './saas-sync-records.js'
+import type { SaaSSyncRecord } from './saas-sync-records.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
 type ZoneScope = { providerId: string; zoneName: string }
@@ -171,7 +171,7 @@ export class SaaSBatchWorkflow {
       progressMessage: '批量修改执行中',
       execute: async (item, hostname) => {
         const beforeRecords = Array.isArray(item.dns_before_records)
-          ? (item.dns_before_records as SyncRecord[])
+          ? (item.dns_before_records as SaaSSyncRecord[])
           : undefined
         // 补丁对象每条目复制一份，防止下游修改污染后续条目
         const patch = { ...(job.payload.patch as Record<string, unknown>) }
@@ -240,6 +240,6 @@ function cleanupRecipeOf(value: unknown): SaaSDeleteCleanupRecipe | undefined {
   const recipe = value as Record<string, unknown>
   const fqdn = String(recipe.hostname_fqdn ?? '').trim()
   return fqdn && Array.isArray(recipe.records)
-    ? { hostname_fqdn: fqdn, records: recipe.records as SyncRecord[] }
+    ? { hostname_fqdn: fqdn, records: recipe.records as SaaSSyncRecord[] }
     : undefined
 }

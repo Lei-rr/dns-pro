@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
+import { DnsWriter } from '../server/src/use-cases/derived-records/dns-writer.js'
+import { dnsPodRecordPort } from '../server/src/domains/dnspod/dns/dnspod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -331,11 +333,11 @@ try {
     }
   }
   try {
-    const cleaned = await app.ctx.modules.dnsPod.recordSync.precleanConflicts(
-      'dns-target',
-      'example.com',
-      'example.com'
-    )
+    const writer = new DnsWriter({ dnspod: dnsPodRecordPort(app.ctx.modules.dnsPod.records) })
+    const cleaned = await writer.preclean('dnspod', 'dns-target', 'example.com', {
+      fqdn: 'example.com',
+      type: 'CNAME',
+    })
     assert.deepEqual(
       cleaned.map((item) => item.record_id),
       ['11'],
