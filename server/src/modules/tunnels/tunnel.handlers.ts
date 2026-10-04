@@ -3,6 +3,7 @@ import { success } from '../../shared/http/api-response.js'
 import type { RequestOf } from '../../shared/http/request-schema.js'
 import {
   cloudflaredRouteDeleteSchema,
+  cloudflaredRouteRepairSchema,
   cloudflaredRouteStoreSchema,
   cloudflaredRouteUpdateSchema,
   cloudflaredRoutesShowSchema,
@@ -130,6 +131,17 @@ export async function deleteTunnelRouteHandler(
     request.params.tunnelId,
     request.query.hostname,
     request.query.path || ''
+  )
+  return reply.send(success(result))
+}
+
+export async function repairTunnelRouteHandler(
+  request: FastifyRequest<RequestOf<typeof cloudflaredRouteRepairSchema>>,
+  reply: FastifyReply
+) {
+  const result = await request.server.ctx.modules.tunnels.routes.repairRoutes(
+    request.params.providerId,
+    request.params.tunnelId
   )
   return reply.send(success(result))
 }

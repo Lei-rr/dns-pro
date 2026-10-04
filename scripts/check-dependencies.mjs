@@ -2,7 +2,11 @@
 import fs from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
-const result = spawnSync('npm', ['ls', '--json', '--all'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 })
+const result = spawnSync('npm', ['ls', '--json', '--all'], {
+  encoding: 'utf8',
+  maxBuffer: 32 * 1024 * 1024,
+  shell: true,
+})
 let tree
 try {
   tree = JSON.parse(result.stdout || '{}')

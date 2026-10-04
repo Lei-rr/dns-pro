@@ -4,6 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { buildApp } from '../server/src/app.js'
+import { loadAppConfig, parseCliOverrides } from '../server/src/bootstrap/app-config.js'
 import { setDataRoot } from '../server/src/platform/storage/json-store.js'
 
 const secret = 'default-config-probe-secret-at-least-32-characters'
@@ -32,8 +33,11 @@ async function run(dataDir: string, expected: { username: string; password: stri
       assert.equal(generated.auth.password, undefined, '首启不得写入明文密码')
       assert.ok(String(generated.auth.password_hash).startsWith('scrypt$'), '首启必须写入 scrypt 哈希')
       assert.ok(app.ctx.initialPassword, '首启必须返回初始密码用于日志输出')
-      const mode = (await fs.stat(path.join(dataDir, 'config.json'))).mode & 0o777
-      assert.equal(mode, 0o600)
+      // Windows 无 POSIX 权限位（chmod 仅只读位），权限断言只在 POSIX 平台生效
+      if (process.platform !== 'win32') {
+        const mode = (await fs.stat(path.join(dataDir, 'config.json'))).mode & 0o777
+        assert.equal(mode, 0o600)
+      }
       const defaultLogin = await app.inject({
         method: 'POST',
         url: '/api/session',
@@ -51,6 +55,15 @@ async function run(dataDir: string, expected: { username: string; password: stri
     await app.close()
   }
 }
+
+// 日志级别：默认开启、别名归一为 silent、非法值 fail-fast（避免传给 pino 后启动崩溃）
+assert.equal(loadAppConfig({}, {}).logLevel, 'info', '日志默认必须开启')
+assert.equal(loadAppConfig({}, { LOG_LEVEL: 'debug' }).logLevel, 'debug')
+assert.equal(loadAppConfig({}, { LOG_LEVEL: 'false' }).logLevel, 'silent')
+assert.equal(loadAppConfig({}, { LOG_LEVEL: 'OFF' }).logLevel, 'silent')
+assert.throws(() => loadAppConfig({}, { LOG_LEVEL: 'nonsense' }), /LOG_LEVEL/)
+assert.equal(parseCliOverrides(['--log-level', 'warn']).logLevel, 'warn')
+assert.throws(() => parseCliOverrides(['--log-level', 'nonsense']), /log-level/)
 
 const missingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-default-config-missing-'))
 const existingDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-default-config-existing-'))

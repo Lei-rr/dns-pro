@@ -37,6 +37,7 @@ export async function createProviderHandler(
   reply: FastifyReply
 ) {
   const provider = await request.server.ctx.workflows.providerManagement.create(request.body)
+  request.log.info({ provider_id: provider.id, provider_type: provider.type }, 'provider.created')
   return reply.status(201).send(success(provider))
 }
 
@@ -45,6 +46,7 @@ export async function updateProviderHandler(
   reply: FastifyReply
 ) {
   const provider = await request.server.ctx.workflows.providerManagement.update(request.params.id, request.body)
+  request.log.info({ provider_id: provider.id, provider_type: provider.type }, 'provider.updated')
   return reply.send(success(provider))
 }
 
@@ -52,7 +54,9 @@ export async function deleteProviderHandler(
   request: FastifyRequest<RequestOf<typeof providerIdParamsSchema>>,
   reply: FastifyReply
 ) {
-  await request.server.ctx.workflows.providerManagement.delete(request.params.id)
+  const providerId = request.params.id
+  await request.server.ctx.workflows.providerManagement.delete(providerId)
+  request.log.info({ provider_id: providerId }, 'provider.deleted')
   return reply.status(204).send(noContent())
 }
 

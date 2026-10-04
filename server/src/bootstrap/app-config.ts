@@ -18,7 +18,7 @@ export interface AppConfig {
 const DEFAULT_CONFIG: AppConfig = {
   host: '0.0.0.0',
   port: 2022,
-  logLevel: false,
+  logLevel: 'info',
   dataDir: path.resolve('data'),
   sessionSecret: '',
   sessionCookieName: 'dns_pro_session',
@@ -65,6 +65,21 @@ function envInt(env: NodeJS.ProcessEnv, key: string, min: number, max: number): 
   return num
 }
 
+const PINO_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
+
+/** 校验日志级别：false/off 归一为 silent；非法值 fail-fast（避免把错误级别传给 pino 后启动崩溃） */
+function normalizeLogLevel(source: string, value: string): string {
+  const level = value.trim().toLowerCase()
+  if (level === 'false' || level === 'off') return 'silent'
+  if (!PINO_LEVELS.has(level)) throw new Error(`${source} must be one of: ${[...PINO_LEVELS].join(', ')}`)
+  return level
+}
+
+function envLogLevel(env: NodeJS.ProcessEnv): string | undefined {
+  const value = envString(env, 'LOG_LEVEL')
+  return value === undefined ? undefined : normalizeLogLevel('LOG_LEVEL', value)
+}
+
 /**
  * 配置优先级：命令行参数 > 环境变量 > 默认值。
  * 环境变量：HOST PORT LOG_LEVEL DATA_DIR SESSION_SECRET COOKIE_SECURE COOKIE_SAMESITE TRUST_PROXY HTTP_TIMEOUT_MS
@@ -77,7 +92,7 @@ export function loadAppConfig(overrides: Partial<AppConfig> = {}, env: NodeJS.Pr
   const fromEnv: Partial<AppConfig> = {
     host: envString(env, 'HOST'),
     port: envInt(env, 'PORT', 1, 65535),
-    logLevel: envString(env, 'LOG_LEVEL'),
+    logLevel: envLogLevel(env),
     dataDir: dataDir ? path.resolve(dataDir) : undefined,
     sessionSecret: envString(env, 'SESSION_SECRET'),
     cookieSecure: envBool(env, 'COOKIE_SECURE'),
@@ -102,7 +117,7 @@ export function parseCliOverrides(args: string[]): Partial<AppConfig> {
   for (let i = 0; i < args.length; i++) {
     const value = args[i + 1]
     if (args[i] === '--log-level' && value) {
-      overrides.logLevel = value
+      overrides.logLevel = normalizeLogLevel('--log-level', value)
       i++
     } else if ((args[i] === '--port' || args[i] === '-p') && value) {
       const port = Number(value)

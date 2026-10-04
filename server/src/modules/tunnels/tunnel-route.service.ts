@@ -7,12 +7,13 @@ import {
   withProviderCache,
 } from '../../platform/cache/provider-cache.js'
 import { ApiError } from '../../shared/http/api-error.js'
-import { normalizeFqdn } from '../../shared/lib/values.js'
+import { errorMessage, normalizeFqdn } from '../../shared/lib/values.js'
 import { callProvider } from '../../shared/providers/provider-call.js'
 import { asRecord, asRecordArray } from '../../shared/providers/response-guards.js'
 import {
   buildDnsSideEffects,
   fromDnsOperationResult,
+  type DnsSideEffect,
   type DnsOperationResult,
 } from '../../shared/providers/side-effect-result.js'
 import { invalidateTunnelRouteCache } from './tunnel.cache.js'
@@ -166,6 +167,42 @@ export class TunnelRouteService {
     })
   }
 
+  /**
+   * 重新确保该隧道每条 Ingress 路由的 CNAME 指向隧道（幂等，不改 Ingress）。
+   * 与 SaaS/EdgeOne 的 dns-repair 同义：单条失败/冲突不中断其它主机名，逐条如实返回。
+   */
+  async repairRoutes(providerId: string, tunnelId: string): Promise<Record<string, unknown>> {
+    const cfProviderId = await this.cfProviderIdOf(providerId)
+    return runSerial(ingressKey(providerId, tunnelId), async () => {
+      const config = await this.fetchConfig(providerId, tunnelId)
+      const hostnames = [...new Set(config.routes.map((route) => route.hostname))]
+      const results: Array<Record<string, unknown>> = []
+      for (const hostname of hostnames) {
+        results.push(await this.repairHostname(cfProviderId, hostname, tunnelId))
+      }
+      return {
+        tunnel_id: tunnelId,
+        hostnames: results,
+        side_effects: buildDnsSideEffects({ sync: repairSideEffect(tunnelId, results) }),
+      }
+    })
+  }
+
+  /** 单个主机名：站点解析失败只影响本条，不中断整体修复 */
+  private async repairHostname(
+    cfProviderId: string,
+    hostname: string,
+    tunnelId: string
+  ): Promise<Record<string, unknown>> {
+    try {
+      const zoneId = await this.zones.bestMatchId(cfProviderId, hostname)
+      if (zoneId === '') return { hostname, zone_id: '', action: 'skipped', reason: 'zone_not_found' }
+      return { hostname, zone_id: zoneId, ...(await this.dns.ensureCname(cfProviderId, zoneId, hostname, tunnelId)) }
+    } catch (error) {
+      return { hostname, action: 'failed', error: errorMessage(error) }
+    }
+  }
+
   private cfProviderIdOf(providerId: string): Promise<string> {
     return linkedCloudflareProviderId(this.providers, providerId)
   }
@@ -239,4 +276,25 @@ function presentConfig(config: CloudflareRouteConfig): TunnelConfig {
     })
   }
   return { routes, catch_all: catchAll, version: Number(config.version ?? 0) || 0 }
+}
+
+/** repair 逐主机名结果 → 副作用摘要：有失败记失败，全跳过记跳过，其余记完成 */
+function repairSideEffect(tunnelId: string, results: Array<Record<string, unknown>>): DnsSideEffect {
+  const actionOf = (record: Record<string, unknown>) => String(record.action ?? '')
+  const count = (...actions: string[]) => results.filter((record) => actions.includes(actionOf(record))).length
+  const failed = count('failed')
+  const skipped = count('skipped', 'not_found')
+  const written = count('created', 'updated')
+  const unchanged = count('unchanged')
+  const status: DnsSideEffect['status'] = failed > 0 ? 'failed' : written + unchanged === 0 ? 'skipped' : 'completed'
+  const parts: string[] = []
+  if (written > 0) parts.push(`已同步 ${written} 条`)
+  if (unchanged > 0) parts.push(`无需变更 ${unchanged} 条`)
+  if (skipped > 0) parts.push(`跳过 ${skipped} 条`)
+  if (failed > 0) parts.push(`失败 ${failed} 条`)
+  return {
+    status,
+    message: parts.length > 0 ? parts.join('、') : '该隧道没有可修复的路由',
+    details: [{ tunnel_id: tunnelId, hostnames: results }],
+  }
 }

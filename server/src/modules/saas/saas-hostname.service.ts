@@ -248,14 +248,19 @@ export class SaaSHostnameService {
     throw new ApiError('saas_hostname_not_found', `SaaS hostname ${hostnameFqdn} not found`, 404)
   }
 
-  /** 校验优选域名在白名单内；未提交该字段返回 null，空串表示清除 */
-  private async validatedPreferredDomain(data: Record<string, unknown>): Promise<string | null> {
-    if (!('preferred_domain' in data)) return null
-    const preferred = String(data.preferred_domain ?? '').trim()
+  /** 优选域名白名单校验：一键切换（预览/创建）与单条更新共用同一判定，非法时 422 */
+  async ensurePreferredDomainAllowed(value: string): Promise<string> {
+    const preferred = String(value ?? '').trim()
     if (preferred !== '' && !(await this.preferredDomains.isAllowed(preferred))) {
       throw new ApiError('preferred_domain_not_allowed', `Preferred domain ${preferred} is not allowed`, 422)
     }
     return preferred
+  }
+
+  /** 校验优选域名在白名单内；未提交该字段返回 null，空串表示清除 */
+  private async validatedPreferredDomain(data: Record<string, unknown>): Promise<string | null> {
+    if (!('preferred_domain' in data)) return null
+    return await this.ensurePreferredDomainAllowed(String(data.preferred_domain ?? ''))
   }
 
   private async withPreference(hostname: CloudflareCustomHostname, cfId: string, hostnameId: string) {

@@ -6,7 +6,7 @@ import { summarizeJobItems, type JobItem, type JobLock, type JobRecord, type Job
 
 export type { JobRecord } from './job.types.js'
 
-type StoreShape = { items: JobRecord[] }
+export type JobsFile = { items: JobRecord[] }
 const ACTIVE: JobStatus[] = ['pending', 'running']
 const TERMINAL: JobStatus[] = ['completed', 'failed']
 const FINISHED_RETENTION = 100
@@ -41,7 +41,7 @@ export class JobService {
   private resumeStarted = false
   private closed = false
 
-  constructor(private readonly store: JsonStore<StoreShape>) {}
+  constructor(private readonly store: JsonStore<JobsFile>) {}
 
   registerRunner(type: string, runner: (job: JobRecord) => Promise<void>): void {
     this.runners.set(type, runner)

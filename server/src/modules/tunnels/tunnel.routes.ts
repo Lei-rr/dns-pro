@@ -10,9 +10,11 @@ import {
   createTunnelRouteHandler,
   updateTunnelRouteHandler,
   deleteTunnelRouteHandler,
+  repairTunnelRouteHandler,
 } from './tunnel.handlers.js'
 import {
   cloudflaredRouteDeleteSchema,
+  cloudflaredRouteRepairSchema,
   cloudflaredRouteStoreSchema,
   cloudflaredRouteUpdateSchema,
   cloudflaredRoutesShowSchema,
@@ -31,6 +33,7 @@ export async function routes(app: FastifyInstance) {
   app.post('/tunnels/:tunnelId/token/rotate', { schema: cloudflaredTunnelParamsSchema }, rotateTunnelTokenHandler)
   app.get('/tunnels/:tunnelId/routes', { schema: cloudflaredRoutesShowSchema }, getTunnelConfigHandler)
   app.post('/tunnels/:tunnelId/routes', { schema: cloudflaredRouteStoreSchema }, createTunnelRouteHandler)
+  app.post('/tunnels/:tunnelId/routes/repair', { schema: cloudflaredRouteRepairSchema }, repairTunnelRouteHandler)
   app.put('/tunnels/:tunnelId/routes', { schema: cloudflaredRouteUpdateSchema }, updateTunnelRouteHandler)
   app.delete('/tunnels/:tunnelId/routes', { schema: cloudflaredRouteDeleteSchema }, deleteTunnelRouteHandler)
 }

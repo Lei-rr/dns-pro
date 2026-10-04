@@ -1,0 +1,4 @@
+# 统一行尾符：工作区与仓库均为 LF（Windows/macOS/Linux 一致）
+# 背景：Windows 默认 core.autocrlf=true 会把检出文件转成 CRLF，
+#      导致 prettier（endOfLine: lf）在本地全量失败，CI 却通过。
+* text=auto eol=lf

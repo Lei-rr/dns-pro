@@ -58,7 +58,7 @@ export async function buildApp(config: AppConfig) {
     .withTypeProvider<TypeBoxTypeProvider>()
     .setValidatorCompiler(TypeBoxValidatorCompiler)
 
-  const ctx = await createAppContext(config)
+  const ctx = await createAppContext(config, app.log)
   await startAppContext(ctx, app.log)
 
   await app.register(appContextPlugin, { ctx })

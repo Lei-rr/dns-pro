@@ -1,17 +1,23 @@
+import type { SecretBox } from '../../platform/security/secret-box.js'
 import { JsonStore } from '../../platform/storage/json-store.js'
 import { ApiError } from '../../shared/http/api-error.js'
+import { openProviderSecrets, sealProviderSecrets } from './provider-secrets.js'
 import type { Provider, ProviderInput, ProviderType } from './provider.types.js'
 
-interface ProvidersFile {
+export interface ProvidersFile {
   items: Provider[]
 }
 
 export class ProviderRepository {
-  constructor(private readonly store: JsonStore<ProvidersFile>) {}
+  constructor(
+    private readonly store: JsonStore<ProvidersFile>,
+    private readonly secrets: SecretBox
+  ) {}
 
   async all(options: { fresh?: boolean } = {}): Promise<Provider[]> {
     const data = options.fresh ? await this.store.readFresh() : await this.store.read()
-    return Array.isArray(data.items) ? data.items : []
+    const items = Array.isArray(data.items) ? data.items : []
+    return items.map((item) => openProviderSecrets(item, this.secrets))
   }
 
   async find(id: string): Promise<Provider | null> {
@@ -29,10 +35,14 @@ export class ProviderRepository {
 
   async mutateAll(mutator: (current: Provider[]) => Provider[]): Promise<Provider[]> {
     const result = await this.store.transaction((current) => {
-      const items = Array.isArray(current.items) ? current.items : []
+      const items = (Array.isArray(current.items) ? current.items : []).map((item) =>
+        openProviderSecrets(item, this.secrets)
+      )
       const next = mutator(items)
-      const after = next.map((p) => this.normalizeForStorage(p))
-      return { next: { items: after }, result: after }
+      const plaintext = next.map((provider) => this.normalizeForStorage(provider))
+      const sealed = plaintext.map((provider) => sealProviderSecrets(provider, this.secrets))
+      // 落盘密文，返回值保持明文：mutator 与调用方的语义不变
+      return { next: { items: sealed }, result: plaintext }
     })
     return result ?? []
   }

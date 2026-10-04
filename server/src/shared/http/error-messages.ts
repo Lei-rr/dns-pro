@@ -11,6 +11,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   not_found: '接口不存在',
   http_error: '请求失败',
   server_error: '服务内部错误',
+  credential_decrypt_failed: '凭据解密失败：密钥文件（credential.key）可能已丢失或被替换',
   sync_skipped: '同步已跳过',
   internal_error: '服务内部错误',
   request_error: '请求错误',

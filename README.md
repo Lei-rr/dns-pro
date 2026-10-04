@@ -185,7 +185,7 @@ web/src/
 | ----------------- | -------------- | -------------------------------------------------------------------------------- |
 | `HOST` / `PORT`   | `0.0.0.0:2022` | 监听地址（命令行 `--port` 可覆盖）                                               |
 | `DATA_DIR`        | `./data`       | 数据目录（权限 0700，文件 0600）                                                 |
-| `LOG_LEVEL`       | 关闭           | `info` / `warn` 等（命令行 `--log-level`）；Cookie、凭据字段自动脱敏             |
+| `LOG_LEVEL`       | `info`         | `fatal`/`error`/`warn`/`info`/`debug`/`trace`/`silent`（命令行 `--log-level`）；Cookie、凭据字段自动脱敏 |
 | `SESSION_SECRET`  | 自动生成       | ≥32 位；未设置时持久化在 `data/session-secret`                                   |
 | `COOKIE_SECURE`   | `false`        | 启用 HTTPS 后务必设为 `true`                                                     |
 | `COOKIE_SAMESITE` | `lax`          | `lax` / `strict` / `none`（`none` 必须同时 `COOKIE_SECURE=true`）                |

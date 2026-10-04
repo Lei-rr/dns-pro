@@ -37,5 +37,6 @@ export async function updatePasswordHandler(
     newPassword,
     request.ip
   )
+  request.log.info('auth.password_changed')
   return reply.send(success(session))
 }

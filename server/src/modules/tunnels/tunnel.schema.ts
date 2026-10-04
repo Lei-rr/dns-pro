@@ -42,3 +42,4 @@ export const cloudflaredRouteDeleteSchema = requestSchema({
   params: tunnelParams,
   querystring: objectSchema({ hostname: domainName(), path: optionalText(2048) }, ['hostname']),
 })
+export const cloudflaredRouteRepairSchema = requestSchema({ params: tunnelParams })

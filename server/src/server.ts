@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from './app.js'
 import { loadAppConfig, parseCliOverrides, type AppConfig } from './bootstrap/app-config.js'
+import { storeSubdirectories } from './bootstrap/store-registry.js'
 import { resolveSessionSecret } from './shared/auth/session-secret.js'
 import { setDefaultHttpTimeout } from './shared/providers/http.client.js'
 import { ensureDataDirs } from './platform/storage/ensure-data-dirs.js'
@@ -11,7 +12,7 @@ const SHUTDOWN_TIMEOUT_MS = 10000
 async function prepareConfig(): Promise<AppConfig> {
   const base = loadAppConfig(parseCliOverrides(process.argv.slice(2)))
   setDataRoot(base.dataDir)
-  await ensureDataDirs(base.dataDir)
+  await ensureDataDirs(base.dataDir, storeSubdirectories())
   setDefaultHttpTimeout(base.httpTimeoutMs)
   return { ...base, sessionSecret: await resolveSessionSecret(base.dataDir, base.sessionSecret) }
 }

@@ -106,7 +106,8 @@ try {
   const stored = JSON.parse(await fs.readFile(configPath, 'utf8'))
   assert.equal(stored.auth.password, undefined, '明文密码必须被移除')
   assert.ok(String(stored.auth.password_hash).startsWith('scrypt$'), '必须落盘 scrypt 哈希')
-  assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600)
+  // Windows 无 POSIX 权限位，权限断言只在 POSIX 平台生效
+  if (process.platform !== 'win32') assert.equal((await fs.stat(configPath)).mode & 0o777, 0o600)
 } finally {
   await app.close()
 }

@@ -11,34 +11,32 @@ import { EdgeOneDomainService } from '../modules/edge-one/edge-one-domain.servic
 import { EdgeOneZoneService } from '../modules/edge-one/edge-one-zone.service.js'
 import { ProviderConnectionService } from '../modules/providers/provider-connection.service.js'
 import { ProviderIntegrity } from '../modules/providers/provider-integrity.js'
-import { ProviderRepository } from '../modules/providers/provider.repository.js'
+import { ProviderRepository, type ProvidersFile } from '../modules/providers/provider.repository.js'
 import { ProviderService } from '../modules/providers/provider.service.js'
-import { PreferredDomainService } from '../modules/saas/preferred-domain.service.js'
+import { PreferredDomainService, type PreferredDomainsFile } from '../modules/saas/preferred-domain.service.js'
 import { SaaSCustomHostnameClient } from '../modules/saas/saas-custom-hostname.client.js'
 import { SaaSFallbackOriginClient } from '../modules/saas/saas-fallback-origin.client.js'
 import { SaaSHostnameService } from '../modules/saas/saas-hostname.service.js'
-import { SaaSPreferenceService } from '../modules/saas/saas-preference.service.js'
+import { SaaSPreferenceService, type SaaSPreferencesFile } from '../modules/saas/saas-preference.service.js'
 import { SaaSSyncConfigService } from '../modules/saas/saas-sync-config.service.js'
 import { TunnelDnsService } from '../modules/tunnels/tunnel-dns.service.js'
 import { TunnelRouteService } from '../modules/tunnels/tunnel-route.service.js'
 import { TunnelService } from '../modules/tunnels/tunnel.service.js'
-import { JsonStore } from '../platform/storage/json-store.js'
+import { createSecretBox } from '../platform/security/secret-box.js'
+import { createStore } from './store-registry.js'
 
 /** 模块装配：仅做依赖注入，无业务逻辑 */
-export function createModules(config: AppConfig) {
-  const auth = new AuthService(
-    new AuthConfigRepository(new JsonStore<AuthConfigData>('config.json', { auth: { username: '' } })),
-    {
-      secret: config.sessionSecret,
-      cookieName: config.sessionCookieName,
-      maxAgeSeconds: config.sessionMaxAgeSeconds,
-      secure: config.cookieSecure,
-      sameSite: config.cookieSameSite,
-    }
-  )
+export function createModules(config: AppConfig, deps: { credentialKey: Buffer }) {
+  const auth = new AuthService(new AuthConfigRepository(createStore<AuthConfigData>('auth')), {
+    secret: config.sessionSecret,
+    cookieName: config.sessionCookieName,
+    maxAgeSeconds: config.sessionMaxAgeSeconds,
+    secure: config.cookieSecure,
+    sameSite: config.cookieSameSite,
+  })
 
   const integrity = new ProviderIntegrity()
-  const providers = new ProviderRepository(new JsonStore('providers.json', { items: [] }))
+  const providers = new ProviderRepository(createStore<ProvidersFile>('providers'), createSecretBox(deps.credentialKey))
 
   const cloudflareZones = new CloudflareZoneService(providers)
   const cloudflareRecords = new CloudflareDnsRecordService(providers)
@@ -48,9 +46,9 @@ export function createModules(config: AppConfig) {
   const edgeOneDomains = new EdgeOneDomainService(providers)
   const tunnels = new TunnelService(providers)
 
-  const preferredDomains = new PreferredDomainService(new JsonStore('saas/preferred-domains.json', { items: [] }))
+  const preferredDomains = new PreferredDomainService(createStore<PreferredDomainsFile>('preferredDomains'))
   const saasPreferences = new SaaSPreferenceService(
-    new JsonStore('saas/preferences.json', { items: {} }),
+    createStore<SaaSPreferencesFile>('saasPreferences'),
     integrity,
     providers
   )

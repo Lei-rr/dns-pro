@@ -12,19 +12,33 @@ export class TunnelDnsService {
     private readonly records: CloudflareDnsRecordService
   ) {}
 
-  /** 创建或更新 CNAME 指向隧道 */
+  /** 创建 CNAME 指向隧道；同名记录不属于本隧道时跳过，不覆盖 */
   ensureCname(cfProviderId: string, zoneId: string, hostname: string, tunnelId: string): Promise<DnsOperationResult> {
     return safely(async () => {
       const content = tunnelTarget(tunnelId)
-      const [existing] = await this.records.findExact(cfProviderId, zoneId, hostname, 'CNAME')
-      if (existing && existing.content === content) return { action: 'unchanged', record_id: existing.id ?? '' }
+      const records = await this.records.findExact(cfProviderId, zoneId, hostname, 'CNAME')
+      const owned = records.find((record) => record.content === content && record.id)
+      if (owned?.id) return { action: 'unchanged', record_id: owned.id }
 
-      const payload = { type: 'CNAME', name: hostname, content, proxied: true, ttl: 1 }
-      if (existing?.id) {
-        const updated = await this.records.update(cfProviderId, zoneId, existing.id, payload)
-        return { action: 'updated', record_id: updated.id ?? '' }
+      // 与 removeCname 相同的归属保护：只管理指向本隧道的记录，绝不覆盖其它隧道或人工记录
+      const [conflict] = records
+      if (conflict) {
+        return {
+          action: 'skipped',
+          reason: 'record_conflict',
+          record_id: conflict.id ?? '',
+          existing_content: conflict.content,
+          message: `已跳过 ${hostname}：同名 CNAME 指向 ${conflict.content ?? '未知目标'}`,
+        }
       }
-      const created = await this.records.create(cfProviderId, zoneId, payload)
+
+      const created = await this.records.create(cfProviderId, zoneId, {
+        type: 'CNAME',
+        name: hostname,
+        content,
+        proxied: true,
+        ttl: 1,
+      })
       return { action: 'created', record_id: created.id ?? '' }
     })
   }

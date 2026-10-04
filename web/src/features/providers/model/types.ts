@@ -1,18 +1,12 @@
-type ProviderType = 'dnspod' | 'cloudflare' | 'saas' | 'edgeone' | 'cloudflared'
+// 契约来源：后端 presenter 的输出类型直接引用（type-only，构建期擦除）
+import type { PresentedProvider } from '@server/modules/providers/provider.types.js'
 
-export interface Provider {
-  id: string
-  type: ProviderType
-  name: string
-  configured: boolean
-  editable_fields: string[]
-  fields: Record<string, string>
+export interface Provider extends PresentedProvider {
   dependencies?: Array<{ reason?: string; name?: string; id?: string }>
   dnspod_provider?: string
   cloudflare_provider?: string
   cloudflare_dns_provider?: string
   description?: string
-  [key: string]: unknown
 }
 
 export interface ProviderDefinition {

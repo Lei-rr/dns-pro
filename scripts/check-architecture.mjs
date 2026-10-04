@@ -6,7 +6,7 @@ import { parse as parseSfc } from '@vue/compiler-sfc'
 
 const root = process.cwd()
 const errors = []
-const finalMode = process.env.ARCH_FINAL === '1'
+const finalMode = process.env.ARCH_FINAL === '1' || process.argv.includes('--final')
 const normalize = (value) => value.replaceAll(path.sep, '/')
 const absolute = (file) => path.join(root, file)
 const exists = (file) => fs.existsSync(absolute(file))
@@ -315,7 +315,11 @@ for (const file of sourceFiles) {
     report('ARCH010', file, 1, 'EventBus platform layer and event envelopes are forbidden')
   if (
     /new JsonStore\s*(?:<|\()/.test(code) &&
-    !['server/src/bootstrap/create-context.ts', 'server/src/bootstrap/create-modules.ts'].includes(file)
+    ![
+      'server/src/bootstrap/create-context.ts',
+      'server/src/bootstrap/create-modules.ts',
+      'server/src/bootstrap/store-registry.ts',
+    ].includes(file)
   )
     report('ARCH011', file, 1, 'new JsonStore is only allowed in composition root')
   if (

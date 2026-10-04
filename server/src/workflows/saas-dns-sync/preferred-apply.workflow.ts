@@ -68,7 +68,7 @@ export class SaaSPreferredApplyWorkflow {
   }
 
   async preview(input: ApplyInput) {
-    const preferred = requirePreferred(input.preferredDomain)
+    const preferred = await this.requireAllowedPreferred(input.preferredDomain)
     const targets = await this.resolveTargets(input)
     const items = targets.map((item) => ({
       hostname: item.hostname,
@@ -88,7 +88,7 @@ export class SaaSPreferredApplyWorkflow {
 
   /** 创建切换任务；dryRun 直接生成已完成的预览任务 */
   async create(input: ApplyInput): Promise<PreferredApplyJob> {
-    const preferred = requirePreferred(input.preferredDomain)
+    const preferred = await this.requireAllowedPreferred(input.preferredDomain)
     const targets = await this.resolveTargets(input)
     if (!targets.length)
       throw new ApiError('preferred_apply_empty', 'No hostnames matched for preferred-domain apply', 422)
@@ -192,6 +192,11 @@ export class SaaSPreferredApplyWorkflow {
       items = items.filter((item) => selected.has(item.hostname.toLowerCase()))
     }
     return input.onlyAutoPreferred ? items.filter((item) => item.auto_preferred) : items
+  }
+
+  /** 预览/创建前置校验：白名单判定复用主机名写入路径，非法域名在任务创建阶段即失败 */
+  private async requireAllowedPreferred(value: string): Promise<string> {
+    return await this.hostnames.ensurePreferredDomainAllowed(requirePreferred(value))
   }
 }
 

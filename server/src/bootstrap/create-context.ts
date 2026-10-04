@@ -1,7 +1,9 @@
 import type { FastifyBaseLogger } from 'fastify'
 import { createInitialAuthConfig } from '../modules/auth/auth-config.repository.js'
-import { JobService } from '../platform/jobs/job.service.js'
-import { JsonStore } from '../platform/storage/json-store.js'
+import { JobService, type JobsFile } from '../platform/jobs/job.service.js'
+import { loadCredentialKey } from '../platform/security/credential-key.js'
+import { migrateDataRoot } from './data-migrations.js'
+import { createStore } from './store-registry.js'
 import type { AppConfig } from './app-config.js'
 import { createModules } from './create-modules.js'
 import { createWorkflows } from './create-workflows.js'
@@ -10,14 +12,18 @@ import { createWorkflows } from './create-workflows.js'
 export type AppPlatform = { jobs: JobService }
 
 /** 应用上下文：config / platform / modules / workflows 四层 */
-export async function createAppContext(config: AppConfig) {
+export async function createAppContext(config: AppConfig, log: FastifyBaseLogger) {
+  // 数据结构迁移：创建任何 store 之前完成（迁移前自动整目录备份）
+  await migrateDataRoot(config.dataDir, { info: (message) => log.info(message) })
+  // 凭据加密密钥：复用已有文件，缺失时生成
+  const credentialKey = await loadCredentialKey(config.dataDir)
   // 首次启动生成随机初始密码（只落盘哈希，明文由启动日志输出）
   const initialPassword = await createInitialAuthConfig(config.dataDir)
   // 任务文件由程序读写，紧凑写入以控制体积
   const platform: AppPlatform = {
-    jobs: new JobService(new JsonStore('jobs/jobs.json', { items: [] }, undefined, { pretty: false })),
+    jobs: new JobService(createStore<JobsFile>('jobs')),
   }
-  const modules = createModules(config)
+  const modules = createModules(config, { credentialKey })
   const workflows = createWorkflows(platform, modules)
   return { config, platform, modules, workflows, initialPassword }
 }

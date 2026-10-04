@@ -9,6 +9,11 @@ import { JsonStore, setDataRoot } from '../server/src/platform/storage/json-stor
 import type { AppConfig } from '../server/src/bootstrap/app-config.js'
 
 const mode = async (file: string) => (await fs.stat(file)).mode & 0o777
+/** Windows 无 POSIX 权限位（chmod 仅只读位），权限断言只在 POSIX 平台生效 */
+const assertPrivate = async (file: string, message: string) => {
+  if (process.platform === 'win32') return
+  assert.equal(await mode(file), 0o600, message)
+}
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-sensitive-'))
 
 try {
@@ -16,24 +21,24 @@ try {
 
   const generatedSecret = await resolveSessionSecret(root, '')
   const secretPath = path.join(root, 'session-secret')
-  assert.equal(await mode(secretPath), 0o600, 'new session secret must be private')
+  await assertPrivate(secretPath, 'new session secret must be private')
 
   await fs.chmod(secretPath, 0o644)
   const secretBefore = await fs.readFile(secretPath, 'utf8')
   assert.equal(await resolveSessionSecret(root, ''), generatedSecret)
-  assert.equal(await mode(secretPath), 0o600, 'existing session secret must be made private')
+  await assertPrivate(secretPath, 'existing session secret must be made private')
   assert.equal(await fs.readFile(secretPath, 'utf8'), secretBefore)
 
   const store = new JsonStore('jobs/jobs.json', { items: [] as Array<{ id: string }> }, root)
   await store.write({ items: [{ id: 'one' }] })
   const storePath = path.join(root, 'jobs/jobs.json')
-  assert.equal(await mode(storePath), 0o600, 'new JSON store file must be private')
+  await assertPrivate(storePath, 'new JSON store file must be private')
 
   await fs.chmod(storePath, 0o644)
   const storeBefore = await fs.readFile(storePath, 'utf8')
   store.invalidateMemory()
   assert.deepEqual(await store.read(), { items: [{ id: 'one' }] })
-  assert.equal(await mode(storePath), 0o600, 'existing JSON store file must be made private')
+  await assertPrivate(storePath, 'existing JSON store file must be made private')
   assert.equal(await fs.readFile(storePath, 'utf8'), storeBefore)
 
   const coldRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-sensitive-cold-'))
@@ -82,7 +87,7 @@ try {
     await app.close()
     for (const [file] of files) {
       const filePath = path.join(coldRoot, file)
-      assert.equal(await mode(filePath), 0o600, `${file} must be private immediately after startup`)
+      await assertPrivate(filePath, `${file} must be private immediately after startup`)
       assert.equal(await fs.readFile(filePath, 'utf8'), before.get(file))
     }
   } finally {

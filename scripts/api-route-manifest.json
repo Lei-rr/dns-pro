@@ -88,6 +88,10 @@
     "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/routes"
   },
   {
+    "method": "POST",
+    "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/routes/repair"
+  },
+  {
     "method": "GET",
     "path": "/api/cloudflared/providers/:providerId/tunnels/:tunnelId/token"
   },
