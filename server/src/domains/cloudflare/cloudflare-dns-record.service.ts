@@ -152,12 +152,7 @@ export class CloudflareDnsRecordService {
     filters: PageFilters
   ): Promise<CloudflarePage<CloudflareRecord>> {
     const cached = await withProviderCache<CloudflarePage<CloudflareRecord>>({
-      key: buildCacheKey(`${PROVIDER_TYPE}:records`, {
-        provider_id: providerId,
-        zone_id: zoneId,
-        page,
-        per_page: perPage,
-      }),
+      key: cloudflareRecordPageKey(providerId, zoneId, page, perPage, filters),
       tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, zoneId)],
       refresh: filters.refresh ?? false,
       loader: () => this.fetchPage(providerId, zoneId, page, perPage, filters),
@@ -191,6 +186,28 @@ export class CloudflareDnsRecordService {
     )
     return parseCloudflareListResponse(response, presentRecord)
   }
+}
+
+/**
+ * 记录分页缓存键：type/name 过滤条件必须参与计算。
+ * 缺了它们，不同记录类型或不同主机名的查询会命中同一缓存条目（读串）。
+ */
+export function cloudflareRecordPageKey(
+  providerId: string,
+  zoneId: string,
+  page: number,
+  perPage: number,
+  filters: { type?: string; name?: string } = {}
+): string {
+  return buildCacheKey(`${PROVIDER_TYPE}:records`, {
+    provider_id: providerId,
+    zone_id: zoneId,
+    page,
+    per_page: perPage,
+    // 与上游参数同形：类型大写、名称 punycode（大小写/IDN 变体应命中同一条）
+    type: (filters.type ?? '').trim().toUpperCase(),
+    name: toAsciiFqdn(filters.name ?? ''),
+  })
 }
 
 function toRecordPayload(data: RecordPayload | Record<string, unknown>): Record<string, unknown> {

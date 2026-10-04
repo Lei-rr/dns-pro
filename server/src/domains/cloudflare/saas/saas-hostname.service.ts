@@ -8,13 +8,14 @@ import type { PreferredDomainService } from './preferred-domain.service.js'
 import type { SaaSCustomHostnameClient, CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import type { FallbackOriginInfo, SaaSFallbackOriginClient } from './saas-fallback-origin.client.js'
 import { tryNormalizeFallbackOrigin } from './saas-hostname-rules.js'
-import type { HostnamePreference, SaaSPreferenceService } from './saas-preference.service.js'
+import { preferenceOf } from './saas-preference.service.js'
+import type { HostnameIdentity, HostnamePreference, SaaSPreferenceService } from './saas-preference.service.js'
 import type { SaaSSyncConfigService } from './saas-sync-config.service.js'
 
 const SYNC_FIELDS = ['sync_target', 'sync_provider_id', 'sync_zone', 'auto_preferred'] as const
 const NOT_FOUND = { localCodes: ['saas_hostname_not_found'] }
 
-type HostnameRef = { cloudflareProviderId: string; zoneId: string; hostnameId: string }
+type HostnameRef = { cloudflareProviderId: string; zoneId: string; zoneName: string; hostnameId: string }
 
 /**
  * Cloudflare for SaaS 自定义主机名编排：远端 CRUD + 本地偏好合并。
@@ -57,7 +58,10 @@ export class SaaSHostnameService {
       list.map((hostname) =>
         this.applyEffectiveSyncConfig(
           providerId,
-          this.syncConfigs.mergePreference(hostname, preferenceMap[hostname.id] ?? null)
+          this.syncConfigs.mergePreference(
+            hostname,
+            preferenceOf(preferenceMap, { zone: zoneName, fqdn: String(hostname.hostname ?? '') })
+          )
         )
       )
     )
@@ -104,13 +108,14 @@ export class SaaSHostnameService {
     if (hostname.id === '') return hostname
 
     // 远端已创建：本地偏好失败不回滚，作为 local_preference_error 返回
+    const identity = { zone: zoneName, fqdn: hostname.hostname }
     try {
-      if (preferred !== null) await this.preferences.setPreferredDomain(cfId, hostname.id, preferred)
+      if (preferred !== null) await this.preferences.setPreferredDomain(cfId, identity, preferred, hostname.id)
       if (normalizedSync !== null) {
-        await this.preferences.setNormalizedSyncConfig(cfId, hostname.id, normalizedSync, hostname.hostname)
+        await this.preferences.setNormalizedSyncConfig(cfId, identity, normalizedSync, hostname.id)
       }
       await this.preferences.markOwnershipTxtCleaned(cfId, hostname.id, false, hostname.hostname)
-      return this.withPreference(hostname, cfId, hostname.id)
+      return this.withPreference(hostname, cfId, identity)
     } catch (error) {
       return { ...hostname, local_preference_error: errorMessage(error) }
     }
@@ -129,7 +134,6 @@ export class SaaSHostnameService {
       hostnameId,
     } = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const preferred = await this.validatedPreferredDomain(data)
-    const existing = await this.preferences.get(cfId, hostnameId)
     const current = await this.customHostnames.show(cfId, zoneId, hostnameId)
     const remotePatch = this.syncConfigs.buildCloudflareUpdatePayload(current, data)
     const remoteChanged = Object.keys(remotePatch).length > 0
@@ -140,24 +144,26 @@ export class SaaSHostnameService {
         ? await this.customHostnames.update(cfId, zoneId, hostnameId, remotePatch)
         : current
     const fqdn = hostname.hostname || hostnameFqdn
+    const identity = { zone: zoneName, fqdn }
+    const existing = await this.preferences.get(cfId, identity)
 
     try {
-      if (preferred !== null) await this.preferences.setPreferredDomain(cfId, hostnameId, preferred)
+      if (preferred !== null) await this.preferences.setPreferredDomain(cfId, identity, preferred, hostnameId)
       if (preferred !== null || SYNC_FIELDS.some((field) => field in data)) {
         const normalized = await this.syncConfigs.normalizeSyncPreference(providerId, fqdn, existing, data)
         await this.preferences.setSyncConfig({
           cloudflareProviderId: cfId,
+          identity,
           hostnameId,
           syncTarget: normalized.sync_target,
           syncProviderId: normalized.sync_provider_id,
           syncZone: normalized.sync_zone,
           autoPreferred: normalized.auto_preferred,
-          hostname: fqdn,
         })
       }
       // 远端字段变化后可能重新需要所有权验证
       if (remoteChanged) await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, fqdn)
-      return this.withPreference(hostname, cfId, hostnameId)
+      return this.withPreference(hostname, cfId, identity)
     } catch (error) {
       return { ...hostname, local_preference_error: errorMessage(error) }
     }
@@ -179,7 +185,7 @@ export class SaaSHostnameService {
     } catch (error) {
       if (!isExplicitNotFound(error)) throw error
     }
-    await this.preferences.clear(ref.cloudflareProviderId, ref.hostnameId)
+    await this.preferences.clearForFqdn(ref.cloudflareProviderId, hostnameFqdn)
     return { id: ref.hostnameId }
   }
 
@@ -209,14 +215,16 @@ export class SaaSHostnameService {
   /** 显式（本地保存的）同步配置；优先按 FQDN 匹配本地偏好，避免远端查询 */
   async syncConfig(providerId: string, hostnameFqdn: string, zoneName = '') {
     const cfId = await this.cloudflareProviderId(providerId)
-    const byFqdn = await this.syncConfigs.preferenceForFqdn(cfId, hostnameFqdn)
+    const byFqdn = await this.syncConfigs.preferenceForFqdn(cfId, hostnameFqdn, zoneName)
     if (byFqdn) return this.syncConfigs.presentExplicit(byFqdn)
 
     const ref =
       zoneName !== ''
         ? await this.resolveHostname(providerId, zoneName, hostnameFqdn)
         : await this.resolveHostnameByFqdn(providerId, hostnameFqdn)
-    return this.syncConfigs.presentExplicit(await this.preferences.get(ref.cloudflareProviderId, ref.hostnameId))
+    return this.syncConfigs.presentExplicit(
+      await this.preferences.get(ref.cloudflareProviderId, { zone: ref.zoneName, fqdn: hostnameFqdn })
+    )
   }
 
   /** 生效的同步配置（显式配置 + 服务商默认值 + 脏数据修复） */
@@ -233,7 +241,7 @@ export class SaaSHostnameService {
   private async resolveHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<HostnameRef> {
     const { cloudflareProviderId, zoneId } = await this.resolveZoneRef(providerId, zoneName)
     const hostnameId = await this.customHostnames.idByHostname(cloudflareProviderId, zoneId, hostnameFqdn)
-    return { cloudflareProviderId, zoneId, hostnameId }
+    return { cloudflareProviderId, zoneId, zoneName, hostnameId }
   }
 
   /** 未知站点时遍历所有站点查找主机名 */
@@ -265,8 +273,11 @@ export class SaaSHostnameService {
     return await this.ensurePreferredDomainAllowed(String(data.preferred_domain ?? ''))
   }
 
-  private async withPreference(hostname: CloudflareCustomHostname, cfId: string, hostnameId: string) {
-    return this.syncConfigs.mergePreference(hostname, hostnameId ? await this.preferences.get(cfId, hostnameId) : null)
+  private async withPreference(hostname: CloudflareCustomHostname, cfId: string, identity: HostnameIdentity) {
+    return this.syncConfigs.mergePreference(
+      hostname,
+      identity.fqdn === '' ? null : await this.preferences.get(cfId, identity)
+    )
   }
 
   private async loadDetailed(
@@ -283,7 +294,10 @@ export class SaaSHostnameService {
     const enriched = { ...hostname, ssl: { ...ssl, dcv_delegation_uuid: dcvUuid } }
     return this.applyEffectiveSyncConfig(
       providerId,
-      await this.withPreference(enriched, ref.cloudflareProviderId, ref.hostnameId)
+      await this.withPreference(enriched, ref.cloudflareProviderId, {
+        zone: ref.zoneName,
+        fqdn: String(hostname.hostname ?? ''),
+      })
     )
   }
 

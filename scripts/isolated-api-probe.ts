@@ -246,12 +246,12 @@ try {
   }
   const preferenceWrite = app.ctx.modules.saas.preferences.setSyncConfig({
     cloudflareProviderId: preferenceOwnerId,
+    identity: { zone: 'example.com', fqdn: 'www.example.com' },
     hostnameId: preferenceHostnameId,
     syncTarget: 'dnspod',
     syncProviderId: 'dns-target',
     syncZone: 'example.com',
     autoPreferred: false,
-    hostname: 'www.example.com',
   })
   await ownerLookupReached.promise
   const deleteOwner = app.ctx.workflows.providerManagement.delete(preferenceOwnerId)
@@ -651,7 +651,10 @@ try {
     assert.equal(validSyncCreate.statusCode, 201, validSyncCreate.body)
     assert.ok(freshProviderReads >= 1, 'SaaS create did not validate sync references before remote create')
     assert.equal(customHostnameCreates, 1)
-    const createdPreference = await app.ctx.modules.saas.preferences.get('cf-owner', 'hostname-2')
+    const createdPreference = await app.ctx.modules.saas.preferences.get('cf-owner', {
+      zone: 'example.com',
+      fqdn: 'www.example.com',
+    })
     assert.equal(createdPreference?.sync_target, 'dnspod')
     assert.equal(createdPreference?.sync_provider_id, 'dns-target')
     assert.equal(createdPreference?.sync_zone, 'example.com')
@@ -814,12 +817,12 @@ try {
     ]) {
       await app.ctx.modules.saas.preferences.setSyncConfig({
         cloudflareProviderId: 'cf-owner',
+        identity: { zone: 'example.com', fqdn: hostname },
         hostnameId,
         syncTarget: 'dnspod',
         syncProviderId: 'dns-target',
         syncZone: 'example.com',
         autoPreferred: false,
-        hostname,
       })
     }
     const resolveFailures = [
@@ -838,31 +841,37 @@ try {
         true,
       ],
     ] as const
-    for (const [hostname, failure, preferenceId, shouldClear] of resolveFailures) {
+    for (const [hostname, failure, _preferenceId, shouldClear] of resolveFailures) {
       hostnameGateway.idByHostname = async () => {
         throw failure
       }
       const deletion = app.ctx.modules.saas.hostnames.deleteHostname('saas-owner', 'example.com', hostname)
       if (shouldClear) await deletion
       else await assert.rejects(deletion, (error: unknown) => error === failure)
-      const localPreference = await app.ctx.modules.saas.preferences.get('cf-owner', preferenceId)
+      const localPreference = await app.ctx.modules.saas.preferences.get('cf-owner', {
+        zone: 'example.com',
+        fqdn: hostname,
+      })
       assert.equal(localPreference === null, shouldClear, `${hostname} local preference clear policy`)
     }
     await app.ctx.modules.saas.preferences.setSyncConfig({
       cloudflareProviderId: 'cf-owner',
+      identity: { zone: 'example.com', fqdn: 'delete-404.example.com' },
       hostnameId: 'delete-404-pref',
       syncTarget: 'dnspod',
       syncProviderId: 'dns-target',
       syncZone: 'example.com',
       autoPreferred: false,
-      hostname: 'delete-404.example.com',
     })
     hostnameGateway.idByHostname = async () => 'delete-404-pref'
     hostnameGateway.delete = async () => {
       throw new ApiError('saas_hostname_delete_failed', 'upstream hostname missing', 502, { upstream_status: 404 })
     }
     await app.ctx.modules.saas.hostnames.deleteHostname('saas-owner', 'example.com', 'delete-404.example.com')
-    assert.equal(await app.ctx.modules.saas.preferences.get('cf-owner', 'delete-404-pref'), null)
+    assert.equal(
+      await app.ctx.modules.saas.preferences.get('cf-owner', { zone: 'example.com', fqdn: 'delete-404.example.com' }),
+      null
+    )
     hostnameGateway.idByHostname = originalIdByHostname
     hostnameGateway.delete = originalHostnameDelete
 

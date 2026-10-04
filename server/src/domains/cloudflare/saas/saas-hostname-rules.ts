@@ -32,7 +32,10 @@ export function zoneOwnsHostname(zone: string, fqdn: string): boolean {
   return h === z || h.endsWith('.' + z)
 }
 
-/** 主机名是否已激活（可清理所有权 TXT） */
+/**
+ * 主机名是否仍在管理内（可清理所有权 TXT）。
+ * `moved` 表示主机名已迁出本站点：既不算在管，也不能清掉所有权 TXT（清理后无法再次验证归属）。
+ */
 export function isHostnameActive(hostname: { status?: unknown }): boolean {
-  return ['active', 'active_renewing', 'moved'].includes(String(hostname.status ?? ''))
+  return ['active', 'active_renewing'].includes(String(hostname.status ?? ''))
 }

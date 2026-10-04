@@ -5,6 +5,7 @@ import { normalizeFqdn } from '../../../lib/values.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import { guessZoneFromFqdn, zoneOwnsHostname } from './saas-hostname-rules.js'
 import type { HostnamePreference, SaaSPreferenceService, SyncPreference } from './saas-preference.service.js'
+import { preferenceOf } from './saas-preference.service.js'
 
 export type SyncTarget = 'dnspod' | 'cloudflare_dns' | ''
 
@@ -34,20 +35,21 @@ export class SaaSSyncConfigService {
     return cfId
   }
 
-  async preferenceForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<HostnamePreference | null> {
+  /** 偏好查询：已知站点时按身份键精确命中，避免同 FQDN 跨站点互相命中；未知站点时按 FQDN 兜底 */
+  async preferenceForFqdn(
+    cloudflareProviderId: string,
+    hostnameFqdn: string,
+    zoneName = ''
+  ): Promise<HostnamePreference | null> {
     const fqdn = normalizeFqdn(hostnameFqdn)
     if (fqdn === '') return null
     const map = await this.preferences.listByProvider(cloudflareProviderId)
+    if (zoneName.trim() !== '') return preferenceOf(map, { zone: zoneName, fqdn })
     return Object.values(map).find((pref) => normalizeFqdn(pref.hostname) === fqdn) ?? null
   }
 
   async clearPreferencesForFqdn(cloudflareProviderId: string, hostnameFqdn: string): Promise<number> {
-    const fqdn = normalizeFqdn(hostnameFqdn)
-    if (fqdn === '') return 0
-    const map = await this.preferences.listByProvider(cloudflareProviderId)
-    const ids = Object.keys(map).filter((id) => normalizeFqdn(map[id]?.hostname) === fqdn)
-    for (const id of ids) await this.preferences.clear(cloudflareProviderId, id)
-    return ids.length
+    return this.preferences.clearForFqdn(cloudflareProviderId, hostnameFqdn)
   }
 
   presentExplicit(preference: Partial<HostnamePreference> | null | undefined): ExplicitSyncConfig {
