@@ -23,7 +23,8 @@ import {
 import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/src/kernel/jobs/job-types.js'
 import { DnsPodClient } from '../server/src/domains/dnspod/dns-pod.client.js'
 import { DnsPodRecordService } from '../server/src/domains/dnspod/dns-pod-record.service.js'
-import { dnsPodBatchPort } from '../server/src/use-cases/dns-batch/dns-batch.adapters.js'
+import { dnsPodRecordPort } from '../server/src/domains/dnspod/dns/dnspod-record.adapter.js'
+import { dnsRecordMatches } from '../server/src/kernel/contracts/dns-record.port.js'
 import { EdgeOneClient } from '../server/src/domains/edgeone/edge-one.client.js'
 import { CloudflareClient } from '../server/src/domains/cloudflare/cloudflare.client.js'
 import { ApiError } from '../server/src/kernel/http/api-error.js'
@@ -295,15 +296,17 @@ try {
     }
   }
   try {
-    const adapter = dnsPodBatchPort(new DnsPodRecordService(app.ctx.modules.providers.repository))
-    const exact = await adapter.findCreated('dns-target', 'example.com', {
-      subdomain: 'www',
-      record_type: 'A',
+    const port = dnsPodRecordPort(new DnsPodRecordService(app.ctx.modules.providers.repository))
+    const expected = {
+      type: 'A',
+      name: 'www',
       value: '192.0.2.1',
-      record_line: '默认',
-      record_line_id: '10=0',
+      line: '默认',
+      lineId: '10=0',
       ttl: 60,
-    })
+    }
+    const candidates = await port.find('dns-target', 'example.com', expected)
+    const exact = candidates.find((ref) => dnsRecordMatches(ref.value, expected)) ?? null
     assert.notEqual(exact, null, 'DNSPod adapter production chain did not prefer stable line_id')
   } finally {
     DnsPodClient.prototype.call = originalDnsPodCall

@@ -17,24 +17,14 @@ import {
   DNS_ZONE_JOB_TYPES,
 } from '../../kernel/jobs/job-types.js'
 import {
-  buildCreateBody,
-  buildUpdateBody,
   normalizeCreateRecords,
   normalizePatch,
   normalizeRecords,
   type BatchRecordInput,
 } from './dns-record-payload.js'
+import { dnsRecordMatches, type DnsRecordPort, type DnsRecordValue } from '../../kernel/contracts/dns-record.port.js'
 
 export type DnsProviderType = 'cloudflare' | 'dnspod'
-
-/** 统一 DNS 记录操作端口（按服务商适配） */
-export interface DnsBatchPort {
-  create(providerId: string, zone: string, data: Record<string, unknown>): Promise<{ id?: unknown }>
-  /** 重试时查找已创建的等价记录，避免重复添加 */
-  findCreated(providerId: string, zone: string, data: Record<string, unknown>): Promise<{ id?: unknown } | null>
-  update(providerId: string, zone: string, recordId: string, data: Record<string, unknown>): Promise<unknown>
-  delete(providerId: string, zone: string, recordId: string): Promise<unknown>
-}
 
 type DnsBatchJobView = BatchJobViewBase & { provider_type: string; provider_id: string; zone: string }
 type JobScope = { providerType: DnsProviderType; providerId: string; zone: string }
@@ -45,7 +35,7 @@ export class DnsBatchWorkflow {
 
   constructor(
     private readonly jobs: JobService,
-    private readonly ports: Record<DnsProviderType, DnsBatchPort>
+    private readonly ports: Record<DnsProviderType, DnsRecordPort>
   ) {
     this.kind = new BatchJobKind(jobs, {
       types: DNS_ZONE_JOB_TYPES,
@@ -132,19 +122,19 @@ export class DnsBatchWorkflow {
       progressMessage: '批量添加 DNS 记录执行中',
       progressCurrent: (item) => [item.name, item.type].filter(Boolean).join(' '),
       execute: async ({ port, scope }, item) => {
-        const body = buildCreateBody(scope.providerType, scope.zone, item)
+        const value = toRecordValue(item)
         if (Number(item.attempt || 0) > 0) {
-          const existing = await port.findCreated(scope.providerId, scope.zone, body)
+          const existing = await findExisting(port, scope, value)
           if (existing) {
             return {
               status: 'skipped',
               message: '目标记录已存在，未重复添加',
-              extra: { record_id: String(existing.id ?? '') },
+              extra: { record_id: existing.id },
             }
           }
         }
-        const created = await port.create(scope.providerId, scope.zone, body)
-        return { status: 'success', message: '已添加', extra: { record_id: String(created.id ?? '') } }
+        const created = await port.create(scope.providerId, scope.zone, value)
+        return { status: 'success', message: '已添加', extra: { record_id: created.id } }
       },
     })
   }
@@ -157,7 +147,7 @@ export class DnsBatchWorkflow {
       progressCurrent: (item, id) => [item.name, item.type, id].filter(Boolean).join(' '),
       execute: async ({ port, scope }, _item, recordId) => {
         try {
-          await port.delete(scope.providerId, scope.zone, recordId)
+          await port.remove(scope.providerId, scope.zone, recordId)
           return { status: 'success', message: '已删除' }
         } catch (error) {
           // 记录已不存在：目标状态已达成
@@ -178,12 +168,7 @@ export class DnsBatchWorkflow {
       progressMessage: '批量修改 DNS 记录执行中',
       progressCurrent: (item, id) => [item.name, item.type, id].filter(Boolean).join(' '),
       execute: async ({ port, scope }, item, recordId) => {
-        await port.update(
-          scope.providerId,
-          scope.zone,
-          recordId,
-          buildUpdateBody(scope.providerType, scope.zone, item, patch)
-        )
+        await port.update(scope.providerId, scope.zone, recordId, mergeRecordValue(item, patch))
         return { status: 'success', message: '已修改' }
       },
     })
@@ -195,7 +180,7 @@ export class DnsBatchWorkflow {
     label: string,
     options: Omit<Parameters<typeof runBatchItems>[2], 'execute'> & {
       execute: (
-        ctx: { port: DnsBatchPort; scope: JobScope },
+        ctx: { port: DnsRecordPort; scope: JobScope },
         item: Record<string, unknown>,
         key: string
       ) => Promise<BatchItemResult>
@@ -221,4 +206,51 @@ export class DnsBatchWorkflow {
     })
     await finishBatchJob(this.jobs, job.id, label)
   }
+}
+
+/** 批量条目 → 端口值（厂商字段映射由各适配器负责） */
+function toRecordValue(item: Record<string, unknown>): DnsRecordValue {
+  const value: DnsRecordValue = {
+    type: String(item.type || 'A').toUpperCase(),
+    name: String(item.name || '@') || '@',
+    value: String(item.value ?? ''),
+  }
+  if (item.ttl !== undefined && item.ttl !== '') value.ttl = Number(item.ttl)
+  if (item.line !== undefined && item.line !== '') value.line = String(item.line)
+  if (item.record_line_id !== undefined && item.record_line_id !== '') value.lineId = String(item.record_line_id)
+  if (item.priority !== undefined && item.priority !== '') value.priority = Number(item.priority)
+  if (item.remark !== undefined) value.note = String(item.remark)
+  if (item.proxied !== undefined) value.proxied = Boolean(item.proxied)
+  if (item.status !== undefined && item.status !== '') value.status = String(item.status).toUpperCase()
+  if (item.weight !== undefined && item.weight !== '') value.weight = Number(item.weight)
+  return value
+}
+
+/** 记录快照 + 修改补丁 → 端口值（item.status 是任务条目状态，记录启停状态保存在 record_status） */
+function mergeRecordValue(item: Record<string, unknown>, patch: Record<string, unknown>): DnsRecordValue {
+  const pick = (key: string, itemKey = key) => {
+    const patched = patch[key]
+    if (patched !== undefined && patched !== null && patched !== '') return patched
+    const current = item[itemKey]
+    return current !== undefined && current !== null && current !== '' ? current : undefined
+  }
+  return toRecordValue({
+    type: pick('type'),
+    name: pick('name'),
+    value: pick('value'),
+    ttl: pick('ttl'),
+    line: pick('line'),
+    record_line_id: pick('record_line_id'),
+    priority: pick('priority'),
+    remark: pick('remark'),
+    proxied: pick('proxied'),
+    status: pick('status', 'record_status'),
+    weight: pick('weight'),
+  })
+}
+
+/** 重试幂等判定：端口返回值已归一化，比较不涉及厂商字段 */
+async function findExisting(port: DnsRecordPort, scope: JobScope, value: DnsRecordValue) {
+  const candidates = await port.find(scope.providerId, scope.zone, value)
+  return candidates.find((ref) => dnsRecordMatches(ref.value, value)) ?? null
 }

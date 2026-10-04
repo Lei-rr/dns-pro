@@ -1,4 +1,5 @@
-import { dnsPodBatchPort, cloudflareBatchPort } from '../use-cases/dns-batch/dns-batch.adapters.js'
+import { cloudflareRecordPort } from '../domains/cloudflare/dns/cloudflare-record.adapter.js'
+import { dnsPodRecordPort } from '../domains/dnspod/dns/dnspod-record.adapter.js'
 import { DnsBatchWorkflow } from '../use-cases/dns-batch/dns-batch.workflow.js'
 import { EdgeOneBatchWorkflow } from '../use-cases/edge-one-dns-sync/edge-one-batch.workflow.js'
 import { EdgeOneDnsSyncWorkflow } from '../use-cases/edge-one-dns-sync/edge-one-dns-sync.workflow.js'
@@ -39,8 +40,8 @@ export function createWorkflows(platform: AppPlatform, modules: AppModules) {
     saasPreferredApply: new SaaSPreferredApplyWorkflow(platform.jobs, saasDnsSync, saas.hostnames),
     saasBatch: new SaaSBatchWorkflow(platform.jobs, saasDnsSync, saas.hostnames),
     dnsBatch: new DnsBatchWorkflow(platform.jobs, {
-      dnspod: dnsPodBatchPort(dnsPod.records),
-      cloudflare: cloudflareBatchPort(cloudflare.zones, cloudflare.records),
+      dnspod: dnsPodRecordPort(dnsPod.records),
+      cloudflare: cloudflareRecordPort(cloudflare.zones, cloudflare.records),
     }),
     edgeOneDnsSync,
     edgeOneBatch: new EdgeOneBatchWorkflow(platform.jobs, edgeOne.domains, edgeOneDnsSync),

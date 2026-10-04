@@ -1,4 +1,4 @@
-/** DNS 批量操作：统一指令 → 服务商请求体（纯函数，无 I/O） */
+/** DNS 批量操作：统一指令归一化（厂商请求体映射由 domains 侧适配器负责） */
 
 export type BatchRecordInput = {
   id?: string
@@ -21,100 +21,6 @@ type BatchRecordPatch = Partial<
     'value' | 'ttl' | 'line' | 'record_line_id' | 'priority' | 'remark' | 'proxied' | 'status' | 'weight'
   >
 >
-
-function cloudflareFqdn(nameRaw: string, zone: string): string {
-  if (nameRaw === '@') return zone
-  const lower = nameRaw.toLowerCase()
-  const zoneLower = zone.toLowerCase()
-  return lower.endsWith('.' + zoneLower) ? nameRaw : `${nameRaw}.${zone}`
-}
-
-export function buildCreateBody(
-  providerType: string,
-  zone: string,
-  item: Record<string, unknown>
-): Record<string, unknown> {
-  if (providerType === 'cloudflare') {
-    const body: Record<string, unknown> = {
-      type: String(item.type || 'A').toUpperCase(),
-      name: cloudflareFqdn(String(item.name || '@'), zone),
-      content: String(item.value ?? ''),
-      ttl: Number(item.ttl ?? 1) || 1,
-    }
-    if (item.priority !== undefined && item.priority !== '') body.priority = Number(item.priority)
-    if (item.remark !== undefined) body.comment = String(item.remark)
-    if (item.proxied !== undefined) body.proxied = Boolean(item.proxied)
-    return body
-  }
-
-  const body: Record<string, unknown> = {
-    record_type: String(item.type || 'A').toUpperCase(),
-    record_line: String(item.line || '默认'),
-    value: String(item.value ?? ''),
-    subdomain: String(item.name || '@'),
-  }
-  if (item.ttl !== undefined && item.ttl !== '') body.ttl = Number(item.ttl)
-  if (item.priority !== undefined && item.priority !== '') body.mx = Number(item.priority)
-  if (item.remark !== undefined) body.remark = String(item.remark)
-  if (item.record_line_id !== undefined && item.record_line_id !== '') {
-    body.record_line_id = String(item.record_line_id)
-  }
-  if (item.status !== undefined && item.status !== '') body.status = String(item.status).toUpperCase()
-  if (item.weight !== undefined && item.weight !== '') body.weight = Number(item.weight)
-  return body
-}
-
-/** 记录快照 + 修改补丁 → 服务商完整更新请求体 */
-export function buildUpdateBody(
-  providerType: string,
-  zone: string,
-  item: Record<string, unknown>,
-  patch: Record<string, unknown>
-): Record<string, unknown> {
-  // item.status 是任务条目状态，记录启停状态保存在 record_status
-  const pick = (key: string, itemKey = key) => {
-    const patched = patch[key]
-    if (patched !== undefined && patched !== null && patched !== '') return patched
-    const current = item[itemKey]
-    return current !== undefined && current !== null && current !== '' ? current : undefined
-  }
-
-  if (providerType === 'cloudflare') {
-    const body: Record<string, unknown> = {
-      type: String(pick('type') ?? 'A').toUpperCase(),
-      name: cloudflareFqdn(String(pick('name') ?? '@'), zone),
-      content: String(pick('value') ?? ''),
-      ttl: Number(pick('ttl') ?? 1) || 1,
-    }
-    const priority = pick('priority')
-    if (priority !== undefined) body.priority = Number(priority)
-    const remark = pick('remark')
-    if (remark !== undefined) body.comment = String(remark)
-    const proxied = pick('proxied')
-    if (proxied !== undefined) body.proxied = Boolean(proxied)
-    return body
-  }
-
-  const body: Record<string, unknown> = {
-    record_type: String(pick('type') ?? 'A').toUpperCase(),
-    record_line: String(pick('line') ?? '默认') || '默认',
-    value: String(pick('value') ?? ''),
-    subdomain: String(pick('name') ?? '@') || '@',
-  }
-  const ttl = pick('ttl')
-  if (ttl !== undefined) body.ttl = Number(ttl)
-  const priority = pick('priority')
-  if (priority !== undefined) body.mx = Number(priority)
-  const remark = pick('remark')
-  if (remark !== undefined) body.remark = String(remark)
-  const lineId = pick('record_line_id')
-  if (lineId !== undefined) body.record_line_id = String(lineId)
-  const status = pick('status', 'record_status')
-  if (status !== undefined) body.status = String(status).toUpperCase()
-  const weight = pick('weight')
-  if (weight !== undefined) body.weight = Number(weight)
-  return body
-}
 
 export function normalizeCreateRecords(records: BatchRecordInput[]): Array<BatchRecordInput & { item_key: string }> {
   const seen = new Set<string>()
