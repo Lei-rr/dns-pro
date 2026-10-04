@@ -14,14 +14,8 @@ import {
   type OwnershipPort,
   type RecordOwnership,
 } from '../../core/contracts/ownership.port.js'
-import {
-  planSync,
-  recordProbe,
-  type DesiredRecord,
-  type SyncAction,
-  type SyncPlan,
-  type SyncPlanEntry,
-} from './sync-plan.js'
+import { findCurrentRecords } from './current-records.js'
+import { planSync, type DesiredRecord, type SyncAction, type SyncPlan, type SyncPlanEntry } from './sync-plan.js'
 
 /** 冲突清理时保留的类型：CNAME 由同步覆盖，TXT 与 CNAME 不冲突 */
 const PRECLEAN_KEEP_TYPES = new Set(['CNAME', 'TXT'])
@@ -59,11 +53,8 @@ export class DnsWriter {
     desired: DesiredRecord[]
   ): Promise<WriteOutcome[]> {
     const port = this.portOf(providerType)
-    const current: DnsRecordRef[] = []
-    for (const want of desired) {
-      current.push(...(await port.find(providerId, zone, recordProbe(want.fqdn, zone, want.record.type))))
-    }
-    return this.apply(providerType, providerId, zone, planSync({ providerType, providerId, zone, desired, current }))
+    const current = await findCurrentRecords(port, providerId, zone, desired)
+    return this.apply(planSync({ providerType, providerId, zone, desired, current }))
   }
 
   /** 冲突清理：删除同名下与目标类型冲突的记录，为写入让路（保留 CNAME/TXT/NS/SOA） */
@@ -107,8 +98,9 @@ export class DnsWriter {
     return outcomes
   }
 
-  /** 执行计划（可由 planSync 产出，也可由调用方构造） */
-  async apply(providerType: string, providerId: string, zone: string, plan: SyncPlan): Promise<WriteOutcome[]> {
+  /** 执行计划（可由 planSync 产出，也可由调用方构造；写入目标随计划自带） */
+  async apply(plan: SyncPlan): Promise<WriteOutcome[]> {
+    const { providerType, providerId, zone } = plan
     const port = this.portOf(providerType)
     const needsOwnership = plan.entries.some((entry) => entry.action !== 'unchanged')
     const claims = needsOwnership ? await this.ownership.claimsFor({ providerType, providerId, zone }) : []

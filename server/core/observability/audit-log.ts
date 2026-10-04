@@ -54,7 +54,10 @@ export class AuditLog {
   }
 }
 
-/** 操作者：登录用户名（鉴权已通过），解析失败退回来源 IP */
-export async function auditActor(request: FastifyRequest): Promise<string> {
-  return (await request.server.ctx.modules.auth.service.authenticate(request)) || request.ip
+/**
+ * 操作者：鉴权钩子写入的用户名；未鉴权路径（登录/健康检查）退回来源 IP。
+ * 只读 request，不回查 modules —— core 层不得依赖运行时装配。
+ */
+export function auditActor(request: FastifyRequest): string {
+  return request.authActor || request.ip
 }

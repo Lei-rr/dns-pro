@@ -15,6 +15,12 @@ function describe(record: { type?: string; value?: string } | null | undefined) 
   if (!record) return '—'
   return `${record.type ?? ''} ${record.value ?? ''}`.trim() || '—'
 }
+
+/** 行标识：与后端 itemKey 同口径带上 purpose，同一主机名的 origin_cname 与 preferred_cname 不再撞 key */
+function rowKey(item: ReconcileItem) {
+  const { providerType, providerId, zone, fqdn } = item.target
+  return [item.source.kind, item.source.id, providerType, providerId, zone, fqdn, item.purpose].join('|')
+}
 </script>
 
 <template>
@@ -35,7 +41,7 @@ function describe(record: { type?: string; value?: string } | null | undefined) 
         </TableRow>
       </TableHeader>
       <TableBody>
-        <TableRow v-for="item in items" :key="`${item.source.kind}:${item.source.id}:${item.target.fqdn}`">
+        <TableRow v-for="item in items" :key="rowKey(item)">
           <TableCell>
             <div class="flex flex-col gap-0.5">
               <span class="text-sm font-medium">{{ sourceLabel(item.source.kind) }}</span>

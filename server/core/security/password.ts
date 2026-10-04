@@ -8,8 +8,10 @@ const PREFIX = 'scrypt'
 /** 生成随机初始密码（去除易混淆字符，便于人工抄写） */
 export function generatePassword(length = 16): string {
   const alphabet = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const bytes = crypto.randomBytes(length)
-  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
+  // 逐字符走 randomInt（拒绝采样）：字节取模会在字母表前段造成可见的概率偏置
+  let password = ''
+  for (let index = 0; index < length; index++) password += alphabet.charAt(crypto.randomInt(alphabet.length))
+  return password
 }
 
 /** 生成自描述哈希：scrypt$N$r$p$salt$hash（参数变更后可平滑升级） */

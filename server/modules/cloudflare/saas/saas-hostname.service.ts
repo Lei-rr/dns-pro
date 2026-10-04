@@ -9,8 +9,8 @@ import type { SaaSCustomHostnameClient, CloudflareCustomHostname } from './saas-
 import type { FallbackOriginInfo, SaaSFallbackOriginClient } from './saas-fallback-origin.client.js'
 import { tryNormalizeFallbackOrigin } from './saas-hostname-rules.js'
 import { preferenceOf } from './saas-preference.service.js'
-import type { HostnameIdentity, HostnamePreference, SaaSPreferenceService } from './saas-preference.service.js'
-import type { SaaSSyncConfigService } from './saas-sync-config.service.js'
+import type { HostnameIdentity, SaaSPreferenceService } from './saas-preference.service.js'
+import type { MergedHostname, SaaSSyncConfigService } from './saas-sync-config.service.js'
 
 const SYNC_FIELDS = ['sync_target', 'sync_provider_id', 'sync_zone', 'auto_preferred'] as const
 const NOT_FOUND = { localCodes: ['saas_hostname_not_found'] }
@@ -115,7 +115,7 @@ export class SaaSHostnameService {
         await this.preferences.setNormalizedSyncConfig(cfId, identity, normalizedSync, hostname.id)
       }
       await this.preferences.markOwnershipTxtCleaned(cfId, hostname.id, false, hostname.hostname)
-      return this.withPreference(hostname, cfId, identity)
+      return await this.applyEffectiveSyncConfig(providerId, await this.withPreference(hostname, cfId, identity))
     } catch (error) {
       return { ...hostname, local_preference_error: errorMessage(error) }
     }
@@ -134,7 +134,9 @@ export class SaaSHostnameService {
       hostnameId,
     } = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     const preferred = await this.validatedPreferredDomain(data)
-    const current = await this.customHostnames.show(cfId, zoneId, hostnameId)
+    // PATCH 与否由上游当前状态决定，必须新鲜读取：缓存快照可能已过期（TTL 5 分钟），
+    // 命中旧值会整段跳过 PATCH 并把缓存值当成功返回
+    const current = await this.customHostnames.show(cfId, zoneId, hostnameId, true)
     const remotePatch = this.syncConfigs.buildCloudflareUpdatePayload(current, data)
     const remoteChanged = Object.keys(remotePatch).length > 0
 
@@ -163,7 +165,7 @@ export class SaaSHostnameService {
       }
       // 远端字段变化后可能重新需要所有权验证
       if (remoteChanged) await this.preferences.markOwnershipTxtCleaned(cfId, hostnameId, false, fqdn)
-      return this.withPreference(hostname, cfId, identity)
+      return await this.applyEffectiveSyncConfig(providerId, await this.withPreference(hostname, cfId, identity))
     } catch (error) {
       return { ...hostname, local_preference_error: errorMessage(error) }
     }
@@ -273,7 +275,11 @@ export class SaaSHostnameService {
     return await this.ensurePreferredDomainAllowed(String(data.preferred_domain ?? ''))
   }
 
-  private async withPreference(hostname: CloudflareCustomHostname, cfId: string, identity: HostnameIdentity) {
+  private async withPreference(
+    hostname: CloudflareCustomHostname,
+    cfId: string,
+    identity: HostnameIdentity
+  ): Promise<MergedHostname> {
     return this.syncConfigs.mergePreference(
       hostname,
       identity.fqdn === '' ? null : await this.preferences.get(cfId, identity)
@@ -301,15 +307,16 @@ export class SaaSHostnameService {
     )
   }
 
+  /** 读/写两条路径共用的收尾：补齐生效同步配置的派生字段，保证响应形状一致 */
   private async applyEffectiveSyncConfig(
     providerId: string,
-    hostname: CloudflareCustomHostname
+    hostname: MergedHostname
   ): Promise<CloudflareCustomHostname> {
     // 列表页用已合并的偏好直接计算，避免逐条再查远端
     const effective = await this.syncConfigs.effectiveSyncConfig(
       providerId,
       hostname.hostname,
-      this.syncConfigs.presentExplicit(hostname as unknown as Partial<HostnamePreference>)
+      this.syncConfigs.presentExplicit(hostname)
     )
     return {
       ...hostname,

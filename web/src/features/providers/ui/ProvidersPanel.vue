@@ -45,12 +45,15 @@ const definitionsQuery = useResourceQuery<ProviderDefinitions>({
 const definitions = computed(() => definitionsQuery.data.value?.types ?? [])
 const labels = computed(() => definitionsQuery.data.value?.labels ?? {})
 const definitionsError = computed(() => (definitionsQuery.error.value ? '服务商定义加载失败。' : ''))
+// 列表请求失败与空列表必须可区分：失败时表格仍是「暂无服务商」空态，靠这行提示给出错误反馈
+const providersError = computed(() => (providersQuery.error.value ? '服务商列表加载失败。' : ''))
 const loading = computed(() => providersQuery.loading.value || definitionsQuery.loading.value)
 const refreshing = definitionsQuery.refreshing
 
 async function onRefresh() {
   await definitionsQuery.refresh()
-  await providersQuery.reload()
+  const result = await providersQuery.reload()
+  if (result.error) toast.error(errorMessage(result.error))
 }
 
 const filteredProviders = computed(() => {
@@ -191,6 +194,13 @@ onUnmounted(resetRowOperations)
 
     <div v-if="definitionsError" role="alert" class="text-destructive flex items-center gap-2 text-sm">
       <span>{{ definitionsError }}</span>
+      <Button type="button" variant="link" size="sm" class="text-destructive h-auto p-0" @click="onRefresh()"
+        >重试</Button
+      >
+    </div>
+
+    <div v-if="providersError" role="alert" class="text-destructive flex items-center gap-2 text-sm">
+      <span>{{ providersError }}</span>
       <Button type="button" variant="link" size="sm" class="text-destructive h-auto p-0" @click="onRefresh()"
         >重试</Button
       >

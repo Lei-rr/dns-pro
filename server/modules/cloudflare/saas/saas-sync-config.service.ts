@@ -12,6 +12,9 @@ export type SyncTarget = 'dnspod' | 'cloudflare_dns' | ''
 export type ExplicitSyncConfig = SyncPreference & { hostname: string }
 type EffectiveSyncConfig = ExplicitSyncConfig & { explicit: boolean }
 
+/** 主机名 + 本地偏好合并后的形状：读路径的生效配置与写路径的响应都由它派生 */
+export type MergedHostname = CloudflareCustomHostname & Partial<HostnamePreference>
+
 const text = (value: unknown) => String(value ?? '').trim()
 const zoneText = (value: unknown) => text(value).toLowerCase()
 
@@ -84,7 +87,7 @@ export class SaaSSyncConfigService {
     hostnameFqdn: string,
     explicit: ExplicitSyncConfig
   ): Promise<EffectiveSyncConfig> {
-    const resolved = await this.resolve(saasProviderId, hostnameFqdn, explicit, false)
+    const resolved = await this.resolve(saasProviderId, hostnameFqdn, explicit)
     return {
       ...resolved,
       hostname: explicit.hostname,
@@ -132,11 +135,11 @@ export class SaaSSyncConfigService {
         ? { ...candidate, sync_target: '', sync_provider_id: '', sync_zone: '' }
         : { ...stored, auto_preferred: candidate.auto_preferred }
     }
-    return this.resolve(saasProviderId, fqdn, candidate, true)
+    return this.resolve(saasProviderId, fqdn, candidate)
   }
 
   /** 合并 Cloudflare 主机名与本地偏好；本地偏好优先 */
-  mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): CloudflareCustomHostname {
+  mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): MergedHostname {
     const metadata = { ...(hostname.custom_metadata ?? {}) }
     const preferred =
       text(preference?.preferred_domain) || text(metadata.preferred_domain) || text(hostname.preferred_domain)
@@ -169,14 +172,13 @@ export class SaaSSyncConfigService {
 
   /**
    * 填充默认值并修复脏配置：Cloudflare 站点不覆盖主机名时，默认目标为 DNSPod 则改走 DNSPod，否则清空站点。
-   * inferCloudflareZone：保存配置时为 Cloudflare 推断站点；展示生效配置时只为 DNSPod 推断。
+   *
+   * 站点只对 DNSPod 目标做后缀猜测：DNSPod 侧按域名列表做最长后缀匹配，猜错可自愈。
+   * Cloudflare 站点必须真实存在，若把猜测值落库，读取侧会优先采用它
+   * （见 saas.planner 的 resolveCloudflareSaasTarget），多级子域会指向账号内不存在的站点而直接失败。
+   * 因此 Cloudflare 目标一律留空，交由读取侧用域名列表解析。
    */
-  private async resolve(
-    saasProviderId: string,
-    fqdnRaw: string,
-    input: SyncPreference,
-    inferCloudflareZone: boolean
-  ): Promise<SyncPreference> {
+  private async resolve(saasProviderId: string, fqdnRaw: string, input: SyncPreference): Promise<SyncPreference> {
     const fqdn = normalizeFqdn(fqdnRaw)
     let { sync_target: target, sync_provider_id: provider, sync_zone: zone } = input
 
@@ -189,7 +191,7 @@ export class SaaSSyncConfigService {
     }
     target ||= await this.defaultSyncTarget(saasProviderId)
     provider ||= await this.defaultSyncProviderId(saasProviderId, target)
-    if (zone === '' && (target === 'dnspod' || inferCloudflareZone)) zone = guessZoneFromFqdn(fqdn)
+    if (zone === '' && target === 'dnspod') zone = guessZoneFromFqdn(fqdn)
 
     return { sync_target: target, sync_provider_id: provider, sync_zone: zone, auto_preferred: input.auto_preferred }
   }

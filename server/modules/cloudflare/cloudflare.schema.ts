@@ -24,34 +24,25 @@ export const cloudflareRecordsIndexSchema = requestSchema({
   params: paramsSchema('providerId', 'zone'),
   querystring: booleanQuerySchema('refresh'),
 })
+/** 记录写入/更新共用的请求体：字段与必填项只在一处维护 */
+const recordBody = objectSchema(
+  {
+    type: text(32),
+    name: text(253),
+    content: text(65535),
+    ttl: uint,
+    proxied: bool,
+    priority: uint,
+    comment: optionalText(65535),
+  },
+  ['type', 'name', 'content']
+)
 export const cloudflareRecordWriteSchema = requestSchema({
   params: paramsSchema('providerId', 'zone'),
-  body: objectSchema(
-    {
-      type: text(32),
-      name: text(253),
-      content: text(65535),
-      ttl: uint,
-      proxied: bool,
-      priority: uint,
-      comment: optionalText(65535),
-    },
-    ['type', 'name', 'content']
-  ),
+  body: recordBody,
 })
 export const cloudflareRecordUpdateSchema = requestSchema({
   params: paramsSchema('providerId', 'zone', 'recordId'),
-  body: objectSchema(
-    {
-      type: text(32),
-      name: text(253),
-      content: text(65535),
-      ttl: uint,
-      proxied: bool,
-      priority: uint,
-      comment: optionalText(65535),
-    },
-    ['type', 'name', 'content']
-  ),
+  body: recordBody,
 })
 export const cloudflareRecordParamsSchema = requestSchema({ params: paramsSchema('providerId', 'zone', 'recordId') })

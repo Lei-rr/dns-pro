@@ -22,23 +22,24 @@ export class PreferredDomainService {
   async create(domain: string): Promise<PreferredDomain> {
     const normalized = this.normalizeDomain(domain)
 
-    await this.store.transaction((current) => {
+    // 序号在事务内取：提交后再读列表，并发写入/删除会让序号错位甚至匹配不到
+    const sort = await this.store.transaction((current) => {
       const items = this.normalizeItems(current.items)
       if (items.includes(normalized)) {
         throw new ApiError('preferred_domain_duplicate', `Preferred domain ${normalized} already exists`, 422)
       }
       items.push(normalized)
-      return { next: { items } }
+      return { next: { items }, result: items.length - 1 }
     })
 
-    return { domain: normalized, sort: await this.indexOf(normalized) }
+    return { domain: normalized, sort: requireSort(sort) }
   }
 
   async rename(oldDomain: string, newDomain: string): Promise<PreferredDomain> {
     const normalizedNew = this.normalizeDomain(newDomain)
     const normalizedOld = oldDomain.toLowerCase().trim()
 
-    await this.store.transaction((current) => {
+    const sort = await this.store.transaction((current) => {
       const items = this.normalizeItems(current.items)
       const index = this.requireIndex(normalizedOld, items)
 
@@ -47,10 +48,10 @@ export class PreferredDomainService {
       }
 
       items[index] = normalizedNew
-      return { next: { items } }
+      return { next: { items }, result: index }
     })
 
-    return { domain: normalizedNew, sort: await this.indexOf(normalizedNew) }
+    return { domain: normalizedNew, sort: requireSort(sort) }
   }
 
   async delete(domain: string): Promise<void> {
@@ -141,10 +142,12 @@ export class PreferredDomainService {
     }
     return index
   }
+}
 
-  private async indexOf(domain: string): Promise<number> {
-    const domains = await this.readDomains()
-    const index = domains.indexOf(domain)
-    return index === -1 ? 0 : index
+/** 事务未回传序号说明写入根本没发生：宁可报错也不返回会伪装成「排在首位」的 0 */
+function requireSort(sort: number | undefined): number {
+  if (sort === undefined) {
+    throw new ApiError('server_error', 'Preferred domain order was not resolved', 500)
   }
+  return sort
 }

@@ -1,7 +1,8 @@
 import { encodePath } from '@/shared/lib/path'
 
+/** 服务商详情挂在 /p/:provider 前缀下，避免与 /sync、/providers 等系统路由同名冲突（见 app/router/index.ts） */
 export function providerPath(providerId: string) {
-  return '/' + encodePath(providerId)
+  return '/p/' + encodePath(providerId)
 }
 
 export function providerTypeLabel(type: string) {

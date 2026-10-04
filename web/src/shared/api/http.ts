@@ -13,7 +13,6 @@ export type RequestError = Error & { code: string; details: unknown; status: num
 type RequestConfig = {
   params?: Record<string, unknown>
   headers?: Record<string, string>
-  signal?: AbortSignal
   timeout?: number
   data?: unknown
 }
@@ -70,15 +69,6 @@ function toRequestError(
 async function request<T = unknown>(method: string, url: string, config: RequestConfig = {}): Promise<ApiResponse<T>> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.timeout ?? DEFAULT_TIMEOUT_MS)
-  let detachSignal: (() => void) | null = null
-  if (config.signal) {
-    const onAbort = () => controller.abort()
-    if (config.signal.aborted) controller.abort()
-    else {
-      config.signal.addEventListener('abort', onAbort, { once: true })
-      detachSignal = () => config.signal?.removeEventListener('abort', onAbort)
-    }
-  }
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -134,7 +124,6 @@ async function request<T = unknown>(method: string, url: string, config: Request
     throw toRequestError((error as Error)?.message || '网络错误', { code: 'NETWORK_ERROR', status: 0 })
   } finally {
     clearTimeout(timer)
-    detachSignal?.()
   }
 }
 

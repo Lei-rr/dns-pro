@@ -163,11 +163,9 @@ function createHttpShell(config: AppConfig): FastifyInstance {
           },
         }
       : false,
-    // 数字表示信任最近 N 跳代理
-    trustProxy:
-      typeof config.trustProxy === 'number'
-        ? (_address: string, hop: number) => hop < (config.trustProxy as number)
-        : config.trustProxy,
+    // 信任策略原样交给 Fastify：数字跳数已由 config 拒绝（见 envTrustProxy），
+    // 自行实现按跳数信任会让直连客户端的 X-Forwarded-For 被采信，绕过按 IP 的限流与审计
+    trustProxy: config.trustProxy,
     // 关闭内置头解析：否则 fastify 会直接采用 X-Request-Id 原值并跳过 genReqId
     requestIdHeader: false,
     genReqId: (req) => {

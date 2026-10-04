@@ -63,11 +63,8 @@ assert.equal((edgeOne.match(/action: 'batch'/g) ?? []).length, 2, 'edgeone batch
 assert.equal((preferred.match(/action: 'batch'/g) ?? []).length, 1, 'preferred apply must be audited')
 assert.match(routes, /auditRoutes/, 'audit query endpoint must be registered')
 
-// auditActor：鉴权失败时退回来源 IP，绝不抛错
-const actor = await auditActor({
-  server: { ctx: { modules: { auth: { service: { authenticate: async () => null } } } } },
-  ip: '127.0.0.1',
-} as never)
-assert.equal(actor, '127.0.0.1')
+// auditActor：已鉴权取用户名，未鉴权路径退回来源 IP，绝不抛错
+assert.equal(auditActor({ ip: '127.0.0.1' } as never), '127.0.0.1')
+assert.equal(auditActor({ ip: '127.0.0.1', authActor: 'guolei' } as never), 'guolei')
 
 console.log('audit-probe=ok ring=newest-first actions=batch|credential_change|session_revoked wiring=registered')

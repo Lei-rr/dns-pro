@@ -50,7 +50,7 @@ const WEAK_PASSWORDS = new Set([
 export class AuthService {
   private readonly key: Buffer
   private readonly defaultCredentialCache = new Map<string, boolean>()
-  private readonly ipLocks = new Map<string, { failures: number; lockedUntil: number }>()
+  private readonly ipLocks = new Map<string, { failures: number; lockedUntil: number; lastFailureAt: number }>()
   private globalFailures = 0
   private globalLockedUntil = 0
 
@@ -68,13 +68,18 @@ export class AuthService {
 
   /** 解析请求 Cookie，返回已登录用户名或 null */
   async authenticate(request: FastifyRequest): Promise<string | null> {
+    return (await this.authenticateSession(request))?.username ?? null
+  }
+
+  /** 会话解析与会话状态读取合并为一次，供 currentSession 复用（read() 每次都会读盘并 chmod） */
+  private async authenticateSession(request: FastifyRequest): Promise<{ username: string; state: AuthState } | null> {
     const claims = this.cookieTokens(request)
       .map((token) => openSession(token, this.key))
       .find((value) => value !== null)
     if (!claims) return null
     const state = await this.repository.read()
     if (!safeEqual(claims.version, this.versionOf(state)) || claims.username !== state.username) return null
-    return claims.username
+    return { username: claims.username, state }
   }
 
   async login(reply: FastifyReply, username: string, password: string, clientIp: string): Promise<SessionState> {
@@ -100,7 +105,7 @@ export class AuthService {
       authenticated: true,
       username,
       version: APP_VERSION,
-      is_default_credential: await this.isDefaultCredential(),
+      is_default_credential: await this.isDefaultCredential(current),
     }
   }
 
@@ -129,7 +134,7 @@ export class AuthService {
       authenticated: true,
       username: updated.username,
       version: APP_VERSION,
-      is_default_credential: await this.isDefaultCredential(),
+      is_default_credential: await this.isDefaultCredential(updated),
     }
   }
 
@@ -140,39 +145,40 @@ export class AuthService {
   }
 
   async currentSession(request: FastifyRequest): Promise<SessionState> {
-    const username = await this.authenticate(request)
-    if (!username) return { authenticated: false, username: null }
+    const session = await this.authenticateSession(request)
+    if (!session) return { authenticated: false, username: null }
     return {
       authenticated: true,
-      username,
+      username: session.username,
       version: APP_VERSION,
-      is_default_credential: await this.isDefaultCredential(),
+      is_default_credential: await this.isDefaultCredential(session.state),
     }
   }
 
-  /** 是否仍在使用 admin/admin（升级后的哈希同样能识别），结果按凭据材料缓存 */
-  async isDefaultCredential(): Promise<boolean> {
-    const state = await this.repository.read()
-    if (state.username !== DEFAULT_USERNAME || state.credential === '') return false
-    const cached = this.defaultCredentialCache.get(state.credential)
+  /** 是否仍在使用 admin/admin（升级后的哈希同样能识别），结果按凭据材料缓存；可复用调用方已读到的状态 */
+  async isDefaultCredential(state?: AuthState): Promise<boolean> {
+    const current = state ?? (await this.repository.read())
+    if (current.username !== DEFAULT_USERNAME || current.credential === '') return false
+    const cached = this.defaultCredentialCache.get(current.credential)
     if (cached !== undefined) return cached
 
     const isDefault =
-      state.plaintext !== null
-        ? safeEqual(state.plaintext, DEFAULT_PASSWORD)
-        : verifyPassword(DEFAULT_PASSWORD, state.credential)
+      current.plaintext !== null
+        ? safeEqual(current.plaintext, DEFAULT_PASSWORD)
+        : verifyPassword(DEFAULT_PASSWORD, current.credential)
     // 仅密码变更时新增键，容量有限
     if (this.defaultCredentialCache.size > 8) this.defaultCredentialCache.clear()
-    this.defaultCredentialCache.set(state.credential, isDefault)
+    this.defaultCredentialCache.set(current.credential, isDefault)
     return isDefault
   }
 
   /** 登录与改密码共用：按来源 IP 计数，并有高阈值全局兜底 */
   private recordFailure(clientIp: string): void {
     const now = Date.now()
-    const entry = this.ipLocks.get(clientIp) ?? { failures: 0, lockedUntil: 0 }
+    const entry = this.ipLocks.get(clientIp) ?? { failures: 0, lockedUntil: 0, lastFailureAt: now }
     if (now >= entry.lockedUntil) entry.failures = 0
     entry.failures += 1
+    entry.lastFailureAt = now
     if (entry.failures >= IP_MAX_FAILURES) {
       entry.failures = 0
       entry.lockedUntil = now + IP_LOCK_MS
@@ -202,11 +208,22 @@ export class AuthService {
     )
   }
 
-  /** 清理已解锁且无计数的条目，避免来源 IP 多样时无限增长 */
+  /**
+   * 清理来源 IP 计数：先丢弃已解锁且无计数的条目；仍超限时按最后失败时间淘汰最旧的未锁定条目。
+   * 锁定中的条目必须保留，否则攻击者可用大量来源 IP 冲掉自己正在生效的锁定。
+   */
   private pruneIpLocks(now: number): void {
     if (this.ipLocks.size <= IP_TRACK_LIMIT) return
     for (const [ip, entry] of this.ipLocks) {
       if (now >= entry.lockedUntil && entry.failures === 0) this.ipLocks.delete(ip)
+    }
+    if (this.ipLocks.size <= IP_TRACK_LIMIT) return
+    const evictable = [...this.ipLocks]
+      .filter(([, entry]) => now >= entry.lockedUntil)
+      .sort((a, b) => a[1].lastFailureAt - b[1].lastFailureAt)
+    for (const [ip] of evictable) {
+      if (this.ipLocks.size <= IP_TRACK_LIMIT) break
+      this.ipLocks.delete(ip)
     }
   }
 

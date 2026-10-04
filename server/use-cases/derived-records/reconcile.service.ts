@@ -7,8 +7,9 @@
  *   - apply() 只把 create/update 条目交给 DnsWriter.apply，删除与人工记录永不自动处理。
  * 手动触发，无定时器（符合单用户与惰性哲学）。
  */
-import type { DnsRecordPort, DnsRecordRef } from '../../core/contracts/dns-record.port.js'
+import { relativeRecordName, type DnsRecordPort, type DnsRecordRef } from '../../core/contracts/dns-record.port.js'
 import { errorMessage } from '../../shared/values.js'
+import { findCurrentRecords } from './current-records.js'
 import type { DnsWriter, WriteOutcome } from './dns-writer.js'
 import type {
   DerivedSourcePlanner,
@@ -19,7 +20,14 @@ import type {
   ReconcileScope,
   ReconcileSummary,
 } from './derived-record.types.js'
-import { planSync, recordProbe, type SyncAction, type SyncPlan, type SyncPlanEntry } from './sync-plan.js'
+import {
+  planSync,
+  recordIdentity,
+  type DesiredRecord,
+  type SyncAction,
+  type SyncPlan,
+  type SyncPlanEntry,
+} from './sync-plan.js'
 
 /** 引擎结果：检测报告 + 执行痕迹（只读检测时 executed_at 为 null、results 为空） */
 export interface ReconcileResult extends ReconcileReport {
@@ -27,18 +35,12 @@ export interface ReconcileResult extends ReconcileReport {
   results: WriteOutcome[]
 }
 
-type TargetGroup = {
+/** 同一写入目标（服务商账号 + 站点）下的一组条目 */
+type TargetGroup<T> = {
   providerType: string
   providerId: string
   zone: string
-  planned: PlannedRecord[]
-}
-
-type ItemGroup = {
-  providerType: string
-  providerId: string
-  zone: string
-  items: ReconcileItem[]
+  rows: T[]
 }
 
 const STATUS_BY_ACTION: Record<SyncAction, DerivedStatus> = {
@@ -63,7 +65,7 @@ export class ReconcileService {
       planned.push(...(await planner.scan(scope)))
     }
     const items: ReconcileItem[] = []
-    for (const group of groupByTarget(planned)) items.push(...(await this.detectGroup(group)))
+    for (const group of groupBy(planned, (item) => item.target)) items.push(...(await this.detectGroup(group)))
     return { scanned_at: new Date().toISOString(), scope, items, summary: summarize(items) }
   }
 
@@ -71,8 +73,8 @@ export class ReconcileService {
   async apply(report: ReconcileReport): Promise<ReconcileResult> {
     const results: WriteOutcome[] = []
     const settled = new Map<string, WriteOutcome>()
-    for (const group of groupItems(report.items)) {
-      const actionable = group.items.filter((item) => item.action === 'create' || item.action === 'update')
+    for (const group of groupBy(report.items, (item) => item.target)) {
+      const actionable = group.rows.filter((item) => item.action === 'create' || item.action === 'update')
       if (actionable.length === 0) continue
       const plan: SyncPlan = {
         providerType: group.providerType,
@@ -80,7 +82,7 @@ export class ReconcileService {
         zone: group.zone,
         entries: actionable.map(toPlanEntry),
       }
-      const outcomes = await this.writer.apply(group.providerType, group.providerId, group.zone, plan)
+      const outcomes = await this.writer.apply(plan)
       actionable.forEach((item, index) => settled.set(itemKey(item), outcomes[index] ?? failedOutcome(item)))
       results.push(...outcomes)
     }
@@ -102,24 +104,20 @@ export class ReconcileService {
     return this.apply(await this.detect(scope))
   }
 
-  private async detectGroup(group: TargetGroup): Promise<ReconcileItem[]> {
+  private async detectGroup(group: TargetGroup<PlannedRecord>): Promise<ReconcileItem[]> {
     const port = this.ports[group.providerType]
     if (!port) {
       const reason = `dns_provider_unsupported: ${group.providerType}`
-      return group.planned.map((item) => failedItem(item, reason))
+      return group.rows.map((item) => failedItem(item, reason))
     }
-    const desired = group.planned.map((item) => item.desired)
+    const desired = group.rows.map((item) => item.desired)
     const current: DnsRecordRef[] = []
     try {
-      for (const want of desired) {
-        current.push(
-          ...(await port.find(group.providerId, group.zone, recordProbe(want.fqdn, group.zone, want.record.type)))
-        )
-      }
+      current.push(...(await findCurrentRecords(port, group.providerId, group.zone, desired)))
     } catch (error) {
       // 上游查询失败只影响本组：如实标记 failed，不影响其它派生关系的检测
       const reason = errorMessage(error)
-      return group.planned.map((item) => failedItem(item, reason))
+      return group.rows.map((item) => failedItem(item, reason))
     }
     const plan = planSync({
       providerType: group.providerType,
@@ -128,9 +126,19 @@ export class ReconcileService {
       desired,
       current,
     })
-    return group.planned.map((item, index) => {
-      const entry = plan.entries[index]
-      if (!entry) return failedItem(item, '计划条目缺失')
+    // planSync 对 keep:false 且无归属命中的期望不产出条目（保护人工记录），按下标对齐会把后续条目的
+    // 现状错配给相邻记录；这里按记录身份依次消费各自的计划条目
+    const pending = new Map<string, SyncPlanEntry[]>()
+    for (const entry of plan.entries) {
+      const key = entryIdentity(entry, group.zone)
+      pending.set(key, [...(pending.get(key) ?? []), entry])
+    }
+    return group.rows.map((item) => {
+      const entry = pending.get(desiredIdentity(item.desired, group.zone))?.shift()
+      if (!entry) {
+        // keep:false 且无归属命中：待清理的记录本就不存在，视为已同步
+        return { ...item, status: 'synced', lastSyncedAt: null, action: 'unchanged', current: null }
+      }
       return {
         ...item,
         status: STATUS_BY_ACTION[entry.action],
@@ -174,36 +182,29 @@ function itemKey(item: ReconcileItem): string {
   return [item.target.providerType, item.target.providerId, item.target.zone, item.target.fqdn, item.purpose].join('|')
 }
 
-function groupByTarget(planned: readonly PlannedRecord[]): TargetGroup[] {
-  const groups = new Map<string, TargetGroup>()
-  for (const item of planned) {
-    const key = [item.target.providerType, item.target.providerId, item.target.zone].join('|')
-    const group = groups.get(key) ?? {
-      providerType: item.target.providerType,
-      providerId: item.target.providerId,
-      zone: item.target.zone,
-      planned: [],
-    }
-    group.planned.push(item)
+/** 写入目标（服务商 + 站点）：检测与执行共用同一分组键 */
+type ReconcileTarget = { providerType: string; providerId: string; zone: string }
+
+/** 按写入目标分组 */
+function groupBy<T>(items: readonly T[], targetOf: (item: T) => ReconcileTarget): TargetGroup<T>[] {
+  const groups = new Map<string, TargetGroup<T>>()
+  for (const item of items) {
+    const { providerType, providerId, zone } = targetOf(item)
+    const key = [providerType, providerId, zone].join('|')
+    const group = groups.get(key) ?? { providerType, providerId, zone, rows: [] }
+    group.rows.push(item)
     groups.set(key, group)
   }
   return [...groups.values()]
 }
 
-function groupItems(items: readonly ReconcileItem[]): ItemGroup[] {
-  const groups = new Map<string, ItemGroup>()
-  for (const item of items) {
-    const key = [item.target.providerType, item.target.providerId, item.target.zone].join('|')
-    const group = groups.get(key) ?? {
-      providerType: item.target.providerType,
-      providerId: item.target.providerId,
-      zone: item.target.zone,
-      items: [],
-    }
-    group.items.push(item)
-    groups.set(key, group)
-  }
-  return [...groups.values()]
+/** 计划条目与期望记录共用同一槽位判据（类型 + 相对主机名 + 线路） */
+function entryIdentity(entry: SyncPlanEntry, zone: string): string {
+  return recordIdentity({ ...entry.record, name: relativeRecordName(entry.fqdn, zone) })
+}
+
+function desiredIdentity(desired: DesiredRecord, zone: string): string {
+  return recordIdentity({ ...desired.record, name: relativeRecordName(desired.fqdn, zone) })
 }
 
 function summarize(items: readonly ReconcileItem[]): ReconcileSummary {

@@ -1,7 +1,8 @@
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
 import type { ProviderRepository } from './provider.repository.js'
-import type { ProviderType } from './provider.types.js'
+import { requiredLinkRule } from './provider-reference.js'
+import type { Provider, ProviderType } from './provider.types.js'
 
 export type ProviderConnectionResult = {
   ok: true
@@ -63,9 +64,11 @@ export class ProviderConnectionService {
           }
         }
         case 'edgeone': {
-          const linked = provider.dnspod_provider.trim()
-          if (!linked) throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne 未关联 DNSPod', 422)
-          await this.testLinked(linked, 'dnspod', nextVisited)
+          const linked = await this.requireLinked(
+            provider,
+            { code: 'edgeone_dnspod_provider_not_found', message: 'EdgeOne 未关联 DNSPod' },
+            nextVisited
+          )
           const zones = await this.probes.edgeoneZones.zones(provider.id, true)
           return {
             ok: true,
@@ -75,9 +78,11 @@ export class ProviderConnectionService {
           }
         }
         case 'saas': {
-          const linked = provider.cloudflare_provider.trim()
-          if (!linked) throw new ApiError('saas_cloudflare_provider_missing', 'SaaS 未关联 Cloudflare', 422)
-          await this.testLinked(linked, 'cloudflare', nextVisited)
+          const linked = await this.requireLinked(
+            provider,
+            { code: 'saas_cloudflare_provider_missing', message: 'SaaS 未关联 Cloudflare' },
+            nextVisited
+          )
           return {
             ok: true,
             type: provider.type,
@@ -86,9 +91,11 @@ export class ProviderConnectionService {
           }
         }
         case 'cloudflared': {
-          const linked = provider.cloudflare_provider.trim()
-          if (!linked) throw new ApiError('cloudflared_cloudflare_provider_missing', 'Tunnel 未关联 Cloudflare', 422)
-          await this.testLinked(linked, 'cloudflare', nextVisited)
+          const linked = await this.requireLinked(
+            provider,
+            { code: 'cloudflared_cloudflare_provider_missing', message: 'Tunnel 未关联 Cloudflare' },
+            nextVisited
+          )
           const tunnels = await this.probes.tunnels.list(provider.id, true)
           return {
             ok: true,
@@ -105,6 +112,26 @@ export class ProviderConnectionService {
         type: provider.type,
       })
     }
+  }
+
+  /** 关联字段与目标类型统一取自 PROVIDER_LINK_RULES，避免各处硬编码漂移 */
+  private async requireLinked(
+    provider: Provider,
+    missing: { code: string; message: string },
+    visited: ReadonlySet<string>
+  ): Promise<string> {
+    const rule = requiredLinkRule(provider.type)
+    if (!rule) {
+      // 规则表与 provider definition 脱节属于装配错误：宁可测通失败也不静默跳过
+      throw new ApiError('provider_test_failed', `No link rule for provider type: ${provider.type}`, 422, {
+        provider_id: provider.id,
+        type: provider.type,
+      })
+    }
+    const linked = String((provider as Record<string, unknown>)[rule.field] ?? '').trim()
+    if (!linked) throw new ApiError(missing.code, missing.message, 422)
+    await this.testLinked(linked, rule.targetType, visited)
+    return linked
   }
 
   private async testLinked(

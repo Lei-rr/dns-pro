@@ -42,17 +42,40 @@ export interface SyncPlan {
   entries: SyncPlanEntry[]
 }
 
-/** 记录身份：类型 + 主机名 + 线路（同身份视为同一槽位） */
-function recordIdentity(value: DnsRecordValue): string {
+/**
+ * 线路身份两侧必须对称：厂商返回的现状记录总带 lineId（DNSPod 默认线路为 '0'），
+ * 而期望记录通常只声明可读的 line，若优先取 lineId 会让同一槽位被判成两个身份，
+ * 结果是现状永远匹配不上、每次同步都重复写入。
+ */
+function recordLine(value: DnsRecordValue): string {
+  return String(value.line ?? '').trim() || String(value.lineId ?? '').trim()
+}
+
+/** 记录身份：类型 + 主机名 + 线路（同身份视为同一槽位；planner 与对账引擎共用，避免第二份判据） */
+export function recordIdentity(value: DnsRecordValue): string {
   const name = String(value.name ?? '')
     .toLowerCase()
     .replace(/\.+$/, '')
-  return [String(value.type).toUpperCase(), name, value.lineId || value.line || ''].join('|')
+  return [String(value.type).toUpperCase(), name, recordLine(value)].join('|')
 }
 
-/** 端口查询条件：FQDN + 类型 → 相对主机记录 probe（写入与只读检测共用同一判据） */
-export function recordProbe(fqdn: string, zone: string, type: string): DnsRecordProbe {
-  return { name: relativeRecordName(fqdn, zone), type: String(type || 'A').toUpperCase() }
+/**
+ * 端口查询条件：FQDN + 类型 + 线路 → 相对主机记录 probe（写入与只读检测共用同一判据）。
+ * 线路必须随期望记录下推，否则多线路产品线（如「境内」优选）拿不到现状而反复重写。
+ */
+export function recordProbe(
+  fqdn: string,
+  zone: string,
+  record: Pick<DnsRecordValue, 'type' | 'line' | 'lineId'>
+): DnsRecordProbe {
+  const line = String(record.line ?? '').trim()
+  const lineId = String(record.lineId ?? '').trim()
+  return {
+    name: relativeRecordName(fqdn, zone),
+    type: String(record.type || 'A').toUpperCase(),
+    ...(line ? { line } : {}),
+    ...(lineId ? { lineId } : {}),
+  }
 }
 
 /**

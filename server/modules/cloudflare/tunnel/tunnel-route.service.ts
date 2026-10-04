@@ -29,11 +29,20 @@ export interface TunnelRoute {
   [key: string]: unknown
 }
 
+/**
+ * ingress 之外的 config 级字段的载体。
+ * PUT configurations 是整对象覆盖语义，写回时不带上就会被上游清空；
+ * 该字段只服务于写回，故用 Symbol 承载，不进入 GET /routes 的响应契约（JSON 序列化会忽略 Symbol 键）。
+ */
+const CONFIG_REST = Symbol('tunnelConfigRest')
+
 interface TunnelConfig {
   routes: TunnelRoute[]
   /** 兜底规则：写回时沿用原有配置，不强制重置 */
   catch_all: string
   version: number
+  /** ingress 之外的 config 级字段（originRequest、warp-routing 等），见 CONFIG_REST */
+  [CONFIG_REST]?: Record<string, unknown>
 }
 
 const CATCH_ALL_SERVICE = 'http_status:404'
@@ -86,7 +95,7 @@ export class TunnelRouteService {
       const config = await this.fetchConfig(providerId, tunnelId)
       if (config.routes.some((existing) => sameRouteKey(existing, normalized))) throw routeExists(normalized)
 
-      await this.writeIngress(providerId, tunnelId, [...config.routes, normalized], config.catch_all)
+      await this.writeIngress(providerId, tunnelId, { ...config, routes: [...config.routes, normalized] })
       invalidateTunnelRouteCache(providerId, tunnelId)
 
       const sync = await this.dns.ensureCname(zone, normalized.hostname, tunnelId)
@@ -119,7 +128,7 @@ export class TunnelRouteService {
       const next = current.map((existing, i) => (i === index ? { ...existing, ...normalized } : existing))
       if (next.filter((existing) => sameRouteKey(existing, normalized)).length > 1) throw routeExists(normalized)
 
-      await this.writeIngress(providerId, tunnelId, next, config.catch_all)
+      await this.writeIngress(providerId, tunnelId, { ...config, routes: next })
       // Ingress 已提交：先失效缓存，避免 DNS 副作用期间返回旧配置
       invalidateTunnelRouteCache(providerId, tunnelId)
 
@@ -153,7 +162,7 @@ export class TunnelRouteService {
       if (index === -1) throw new ApiError('cloudflared_route_not_found', `Route ${hostname}${path} not found`, 404)
 
       const next = current.filter((_, i) => i !== index)
-      await this.writeIngress(providerId, tunnelId, next, config.catch_all)
+      await this.writeIngress(providerId, tunnelId, { ...config, routes: next })
       invalidateTunnelRouteCache(providerId, tunnelId)
 
       // 同主机名仍有其它路径路由时保留 CNAME
@@ -212,20 +221,15 @@ export class TunnelRouteService {
     return this.getConfig(providerId, tunnelId, true)
   }
 
-  private async writeIngress(
-    providerId: string,
-    tunnelId: string,
-    routes: TunnelRoute[],
-    catchAll = CATCH_ALL_SERVICE
-  ): Promise<void> {
+  private async writeIngress(providerId: string, tunnelId: string, config: TunnelConfig): Promise<void> {
     const account = await this.access.forTunnel(providerId)
     // 原样保留规则里的扩展字段（originRequest 等），只更新本服务管理的字段
     const ingress = [
-      ...routes.map((route) => {
+      ...config.routes.map((route) => {
         const { path, ...rest } = route
         return { ...rest, ...(path ? { path } : {}) }
       }),
-      { service: catchAll },
+      { service: config.catch_all },
     ]
     await callProvider(
       {
@@ -234,7 +238,11 @@ export class TunnelRouteService {
         providerId,
         details: { tunnel_id: tunnelId },
       },
-      () => account.client.put(`${tunnelPath(account.accountId, tunnelId)}/configurations`, { config: { ingress } })
+      () =>
+        account.client.put(`${tunnelPath(account.accountId, tunnelId)}/configurations`, {
+          // config 为整对象覆盖：ingress 之外的上游字段必须一并回写，否则会被清空
+          config: { ...(config[CONFIG_REST] ?? {}), ingress },
+        })
     )
   }
 
@@ -274,9 +282,10 @@ function routeExists(route: TunnelRoute): ApiError {
 }
 
 function presentConfig(config: CloudflareRouteConfig): TunnelConfig {
+  const rawConfig = asRecord(config.config)
   const routes: TunnelRoute[] = []
   let catchAll = CATCH_ALL_SERVICE
-  for (const rule of asRecordArray(asRecord(config.config).ingress)) {
+  for (const rule of asRecordArray(rawConfig.ingress)) {
     if (!rule.hostname) {
       if (typeof rule.service === 'string') catchAll = rule.service
       continue
@@ -290,7 +299,15 @@ function presentConfig(config: CloudflareRouteConfig): TunnelConfig {
       path: typeof rule.path === 'string' ? rule.path.trim() : '',
     })
   }
-  return { routes, catch_all: catchAll, version: Number(config.version ?? 0) || 0 }
+  const rest: Record<string, unknown> = { ...rawConfig }
+  delete rest.ingress
+  return {
+    routes,
+    catch_all: catchAll,
+    version: Number(config.version ?? 0) || 0,
+    // ingress 之外的 config 级字段同样需要回写（见 CONFIG_REST）
+    [CONFIG_REST]: rest,
+  }
 }
 
 /** repair 逐主机名结果 → 副作用摘要：有失败记失败，全跳过记跳过，其余记完成 */

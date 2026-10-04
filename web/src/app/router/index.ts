@@ -3,6 +3,7 @@ import { getCachedProviderAny, loadProviders } from '@/features/providers'
 import { useSessionStore } from '@/features/auth'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { encodePath } from '@/shared/lib/path'
 
 // 静态导入：切换页面不再 lazy chunk「加载中」
 import AppLayout from '@/app/layouts/AppLayout.vue'
@@ -12,7 +13,9 @@ import ProvidersPage from '@/pages/providers/ProvidersPage.vue'
 import SyncPage from '@/pages/sync/SyncPage.vue'
 import ProviderEntryPage from '@/pages/provider-entry/ProviderEntryPage.vue'
 
-const systemRouteIds = new Set(['', 'login', 'providers', 'sync'])
+// 与后端保留字（server/core/providers/provider-normalizer.ts 的 RESERVED_PROVIDER_IDS）同一口径：
+// 这些首段永远不会是服务商 ID，守卫无需做服务商存在性校验；'p' 是服务商详情的前缀（见下方 routes）。
+const systemRouteIds = new Set(['', 'home', 'login', 'p', 'providers', 'sync', 'user'])
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -27,8 +30,17 @@ const router = createRouter({
         { path: '', component: DashboardPage },
         { path: 'providers', component: ProvidersPage },
         { path: 'sync', component: SyncPage },
-        { path: ':provider', component: ProviderEntryPage },
-        { path: ':provider/:second', component: ProviderEntryPage, props: { child: true } },
+        // 服务商页面统一加 /p 前缀：后端只保留 home/login/providers/user，任何其它 ID（含 sync）都可以创建，
+        // 前缀让服务商 ID 与 /sync、/providers 等系统路由彻底错开，否则同名服务商页面永远不可达。
+        { path: 'p', redirect: '/' },
+        { path: 'p/:provider', component: ProviderEntryPage },
+        { path: 'p/:provider/:second', component: ProviderEntryPage, props: { child: true } },
+        // 兼容旧链接（书签与其它 feature 内的相对跳转）：/:provider[/:second] → /p/:provider[/:second]
+        { path: ':provider', redirect: (to) => `/p/${encodePath(String(to.params.provider))}` },
+        {
+          path: ':provider/:second',
+          redirect: (to) => `/p/${encodePath(String(to.params.provider))}/${encodePath(String(to.params.second))}`,
+        },
       ],
     },
   ],

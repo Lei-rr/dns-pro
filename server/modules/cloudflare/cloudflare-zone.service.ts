@@ -9,6 +9,7 @@ import {
 } from '../../core/providers/provider-call.js'
 import { providerNullableString } from '../../core/providers/provider-values.js'
 import { invalidateCloudflareZoneCache } from './cloudflare.cache.js'
+import { CLOUDFLARE_PAGE_LIMIT } from './cloudflare-pagination.js'
 import type { CloudflareAccess } from './access.js'
 import {
   cloudflareZoneSchema,
@@ -18,7 +19,6 @@ import {
 } from './cloudflare-response.schema.js'
 
 const PROVIDER_TYPE = 'cloudflare'
-const PAGE_LIMIT = { limitCode: 'cloudflare_pagination_limit', limitMessage: 'Cloudflare pagination limit reached' }
 
 interface ZonePresentation {
   [key: string]: unknown
@@ -67,7 +67,7 @@ export class CloudflareZoneService {
   async listAll(providerId: string, refresh = false): Promise<ZoneListResult> {
     const items = await collectNumberedPages(
       (page, perPage) => this.page(providerId, page, perPage, '', refresh),
-      PAGE_LIMIT
+      CLOUDFLARE_PAGE_LIMIT
     )
     return toFullListResult(items)
   }
@@ -113,7 +113,7 @@ export class CloudflareZoneService {
     const normalized = normalizeFqdn(name)
     let found = ''
     await collectNumberedPages((page, perPage) => this.page(providerId, page, perPage, normalized, refresh), {
-      ...PAGE_LIMIT,
+      ...CLOUDFLARE_PAGE_LIMIT,
       stop: (items) => {
         found = items.find((zone) => normalizeFqdn(zone.name) === normalized && zone.id)?.id ?? ''
         return found !== ''

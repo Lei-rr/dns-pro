@@ -1,243 +1,62 @@
 <script setup lang="ts">
-import { computed, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { useQueryClient } from '@tanstack/vue-query'
 import { Check, Copy, Plus, RefreshCw, Wrench } from '@lucide/vue'
 import { PageHeader } from '@/shared/ui/page-header'
 import { Button, LoadingButton } from '@/shared/ui/button'
 import { Card } from '@/shared/ui/card'
 import { AppTooltip } from '@/shared/ui/tooltip'
 import { StatusBadge } from '@/shared/ui/status-badge'
-import { cloudflaredApi } from '@/features/tunnels/api/tunnel-api'
-import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
-
-import type { Tunnel as CloudflaredTunnel, TunnelRoute as CloudflaredRoute } from '@/features/tunnels/model/types'
-import { toast } from '@/shared/lib/toast'
-import { errorMessage } from '@/shared/lib/errors'
-import { useResourceQuery } from '@/shared/query'
-import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
-import { useRowBusy } from '@/shared/lib/row-busy'
+import { useLocalPagination } from '@/shared/lib/use-local-pagination'
+import { encodePath } from '@/shared/lib/path'
+import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
+import { useTunnelDetail } from '@/features/tunnels/model/use-tunnel-detail'
+import { useTunnelRoutes } from '@/features/tunnels/model/use-tunnel-routes'
 import TunnelInstallPanel from '@/features/tunnels/ui/TunnelInstallPanel.vue'
 import TunnelRoutesTable from '@/features/tunnels/ui/TunnelRoutesTable.vue'
 import TunnelRouteFormDialog from '@/features/tunnels/ui/TunnelRouteFormDialog.vue'
-import { confirmDelete } from '@/shared/ui/confirm'
-import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
-import { serverFieldErrors } from '@/shared/lib/field-errors'
-import { encodePath } from '@/shared/lib/path'
-import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
-
-type TunnelDetail = { tunnel: CloudflaredTunnel | null; routes: CloudflaredRoute[]; token: string }
 
 const props = defineProps<{ providerId: string; tunnelId: string }>()
-const mutationGeneration = createScopeGeneration()
-const rotationGeneration = createScopeGeneration()
-const client = useQueryClient()
-const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
-
-function captureMutationOwner(): GenerationOwner {
-  return mutationGeneration.capture({})
-}
-function routeKey(record: CloudflaredRoute) {
-  return `${record.hostname || ''}|${record.path || ''}`
-}
 const router = useRouter()
 
-const saving = ref(false)
-const rotating = ref(false)
-const repairing = ref(false)
-const dialogOpen = ref(false)
-const editingRoute = ref<CloudflaredRoute | null>(null)
-const routeErrors = ref<Record<string, string>>({})
-const form = reactive({
-  hostname: '',
-  service: 'http://localhost:8080',
-  path: '',
-})
+const {
+  tunnel,
+  routes,
+  token,
+  loading,
+  refreshing,
+  pageSize,
+  setPageSize,
+  refresh,
+  invalidate,
+  repairing,
+  rotating,
+  repairRoutes,
+  rotateToken,
+  isTokenCopied,
+  copyToken,
+} = useTunnelDetail(props)
+const {
+  saving,
+  dialogOpen,
+  editingRoute,
+  routeErrors,
+  form,
+  isRouteBusy,
+  openCreate,
+  openEditRoute,
+  saveRoute,
+  removeRoute,
+} = useTunnelRoutes(props, invalidate)
 
-const detailKey = () => ['tunnels', 'detail', props.providerId, props.tunnelId]
-const detailQuery = useResourceQuery<TunnelDetail>({
-  key: detailKey,
-  queryFn: async ({ refresh }) => {
-    const [tunnelRes, routesRes, tokenRes] = await Promise.all([
-      cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh }),
-      cloudflaredApi.routes(props.providerId, props.tunnelId, { refresh }),
-      cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).catch(() => null),
-    ])
-    return {
-      tunnel: tunnelRes.data,
-      routes: routesRes.data?.routes || [],
-      // 失败不清空已展示的 token；轮换期间由轮换结果负责写入
-      token: tokenRes?.data?.token || '',
-    }
-  },
-  pageSizeScope: 'cloudflared-detail',
-})
-
-const tunnel = computed(() => detailQuery.data.value?.tunnel ?? null)
-const routes = computed(() => detailQuery.data.value?.routes ?? [])
-const token = computed(() => detailQuery.data.value?.token ?? '')
 const title = computed(() => tunnel.value?.name || props.tunnelId)
-
-const { page, total, pagedItems: pagedRoutes, resetPage } = useLocalPagination(routes, detailQuery.pageSize)
+const { page, total, pagedItems: pagedRoutes, resetPage } = useLocalPagination(routes, pageSize)
 
 function onPageSizeChange(next: number) {
-  detailQuery.setPageSize(next)
+  setPageSize(next)
   resetPage()
 }
-
-function openCreate() {
-  editingRoute.value = null
-  form.hostname = ''
-  form.service = 'http://localhost:8080'
-  form.path = ''
-  routeErrors.value = {}
-  dialogOpen.value = true
-}
-
-function openEditRoute(record: CloudflaredRoute) {
-  editingRoute.value = record
-  form.hostname = String(record.hostname || '')
-  form.service = String(record.service || 'http://localhost:8080')
-  form.path = String(record.path || '')
-  routeErrors.value = {}
-  dialogOpen.value = true
-}
-
-async function saveRoute() {
-  if (saving.value) return
-  const owner = captureMutationOwner()
-  routeErrors.value = {}
-  if (!form.hostname.trim()) routeErrors.value.hostname = '请填写 Hostname'
-  if (!form.service.trim()) routeErrors.value.service = '请填写 Service'
-  if (Object.keys(routeErrors.value).length) return
-  saving.value = true
-  try {
-    const data = {
-      hostname: form.hostname.trim(),
-      service: form.service.trim(),
-      path: form.path.trim() || undefined,
-    }
-    if (editingRoute.value) {
-      const response = await cloudflaredApi.updateRoute(
-        props.providerId,
-        props.tunnelId,
-        data,
-        String(editingRoute.value.hostname || ''),
-        String(editingRoute.value.path || '')
-      )
-      if (!owner.active()) return
-      notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已更新')
-    } else {
-      const response = await cloudflaredApi.addRoute(props.providerId, props.tunnelId, data)
-      if (!owner.active()) return
-      notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已添加')
-    }
-    dialogOpen.value = false
-    await detailQuery.invalidate()
-  } catch (error) {
-    if (!owner.active()) return
-    routeErrors.value = { ...routeErrors.value, ...serverFieldErrors(error) }
-    toast.error(errorMessage(error))
-  } finally {
-    if (owner.active()) saving.value = false
-  }
-}
-
-async function removeRoute(record: CloudflaredRoute) {
-  const scopeOwner = captureMutationOwner()
-  const providerId = props.providerId
-  const tunnelId = props.tunnelId
-  const hostname = String(record.hostname || '')
-  const path = String(record.path || '')
-  if (!(await confirmDelete(hostname)) || !scopeOwner.active()) return
-  const key = routeKey(record)
-  await runBusy(key, async (owner) => {
-    if (!scopeOwner.active()) return
-    try {
-      const response = await cloudflaredApi.deleteRoute(providerId, tunnelId, hostname, path)
-      if (!scopeOwner.active() || !owner.active()) return
-      notifyDnsSideEffect(response.data?.side_effects?.dns?.cleanup, '已删除')
-      await detailQuery.invalidate()
-    } catch (error) {
-      if (scopeOwner.active() && owner.active()) toast.error(errorMessage(error))
-    }
-  })
-}
-
-/** 快赢能力（F5）：CNAME 丢失/漂移时一键修复，逐主机名结果由副作用摘要反馈。 */
-async function repairRoutes() {
-  if (repairing.value) return
-  const owner = mutationGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
-  repairing.value = true
-  try {
-    const response = await cloudflaredApi.repairRoutes(owner.value.providerId, owner.value.tunnelId)
-    if (!owner.active()) return
-    notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, 'DNS 修复完成')
-    await detailQuery.invalidate()
-  } catch (error) {
-    if (owner.active()) toast.error(errorMessage(error))
-  } finally {
-    if (owner.active()) repairing.value = false
-  }
-}
-
-async function rotateToken() {
-  if (rotating.value) return
-  const owner = rotationGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
-  rotating.value = true
-  try {
-    const response = await cloudflaredApi.rotateToken(owner.value.providerId, owner.value.tunnelId)
-    if (!owner.active()) return
-    const nextToken = response.data?.token
-    if (nextToken) {
-      client.setQueryData<TunnelDetail>(detailKey(), (previous) =>
-        previous ? { ...previous, token: nextToken } : previous
-      )
-    }
-    toast.success('Token 已轮换')
-  } catch (error) {
-    if (owner.active()) toast.error(errorMessage(error))
-  } finally {
-    if (owner.active()) rotating.value = false
-  }
-}
-
-const isTokenCopied = ref(false)
-
-async function copyToken() {
-  if (!token.value) return
-  try {
-    await navigator.clipboard.writeText(token.value)
-    isTokenCopied.value = true
-    setTimeout(() => {
-      isTokenCopied.value = false
-    }, 2000)
-    toast.success('Token 已复制')
-  } catch {
-    toast.warning('复制失败，请手动选择复制')
-  }
-}
-
-watch(
-  () => [props.providerId, props.tunnelId],
-  () => {
-    mutationGeneration.invalidate()
-    rotationGeneration.invalidate()
-    dialogOpen.value = false
-    editingRoute.value = null
-    saving.value = false
-    rotating.value = false
-    repairing.value = false
-    resetRowOperations()
-  }
-)
-
-onUnmounted(() => {
-  mutationGeneration.invalidate()
-  rotationGeneration.invalidate()
-  resetRowOperations()
-})
 </script>
 
 <template>
@@ -251,9 +70,9 @@ onUnmounted(() => {
       <LoadingButton
         variant="outline"
         size="sm"
-        :loading="detailQuery.refreshing.value"
-        :disabled="detailQuery.loading.value && !detailQuery.refreshing.value"
-        @click="detailQuery.refresh()"
+        :loading="refreshing"
+        :disabled="loading && !refreshing"
+        @click="refresh()"
       >
         <RefreshCw class="size-4" />
         刷新
@@ -268,7 +87,7 @@ onUnmounted(() => {
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <Card class="gap-1 p-4 shadow-xs">
         <div class="text-muted-foreground text-xs font-medium">活动副本</div>
-        <div class="text-2xl font-bold tracking-tight tabular-nums">{{ tunnel?.connections?.length || 0 }}</div>
+        <div class="text-2xl font-bold tracking-tight tabular-nums">{{ tunnel?.connections.length || 0 }}</div>
       </Card>
       <Card class="gap-1 p-4 shadow-xs">
         <div class="text-muted-foreground text-xs font-medium">路由</div>
@@ -316,17 +135,17 @@ onUnmounted(() => {
 
     <TunnelRoutesTable
       :routes="pagedRoutes"
-      :loading="detailQuery.loading.value"
-      :refreshing="detailQuery.refreshing.value"
-      :busy="(record) => isRowBusy(routeKey(record))"
+      :loading="loading"
+      :refreshing="refreshing"
+      :busy="isRouteBusy"
       @edit="openEditRoute"
       @remove="removeRoute"
     />
     <TablePagination
       :page="page"
-      :page-size="detailQuery.pageSize.value"
+      :page-size="pageSize"
       :total="total"
-      :disabled="detailQuery.loading.value"
+      :disabled="loading"
       @update:page="page = $event"
       @update:page-size="onPageSizeChange"
     />

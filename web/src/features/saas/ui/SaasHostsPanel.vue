@@ -7,6 +7,7 @@ import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { TablePagination } from '@/shared/ui/pagination'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldLabel } from '@/shared/ui/field'
+import { Switch } from '@/shared/ui/switch'
 import PreferredDomainsDialog from '@/features/saas/ui/PreferredDomainsDialog.vue'
 import FallbackOriginDialog from '@/features/saas/ui/FallbackOriginDialog.vue'
 import SaasDetailDialog from '@/features/saas/ui/SaasDetailDialog.vue'
@@ -35,6 +36,7 @@ const {
   batchSubmitting,
   batchPreferredDomain,
   batchPreferredError,
+  batchAutoPreferred,
   preferredOptions,
   editing,
   formErrors,
@@ -132,26 +134,12 @@ function clearSearch() {
           <Search class="size-4" />
           搜索
         </Button>
-        <template v-if="selectedCount && !jobProgress.running.value && !applyingPreferred">
-          <span class="text-muted-foreground text-sm">已选 {{ selectedCount }}</span>
-          <Button
-            variant="outline"
-            size="sm"
-            :disabled="jobProgress.running.value || batchSubmitting"
-            @click="openBatchPreferred"
-          >
-            批量改优选
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            class="text-destructive"
-            :disabled="jobProgress.running.value"
-            @click="batchDeleteSelected"
-          >
-            批量删除
-          </Button>
-        </template>
+        <span
+          v-if="selectedCount && !jobProgress.running.value && !applyingPreferred"
+          class="text-muted-foreground text-sm"
+        >
+          已选 {{ selectedCount }}
+        </span>
       </div>
 
       <SaasHostsTable
@@ -240,6 +228,10 @@ function clearSearch() {
           </SelectContent>
         </Select>
         <FieldError :errors="batchPreferredError ? [batchPreferredError] : []" />
+      </Field>
+      <Field orientation="horizontal">
+        <Switch v-model="batchAutoPreferred" />
+        <FieldLabel>同时开启自动优选</FieldLabel>
       </Field>
       <template #footer>
         <Button variant="outline" @click="batchPreferredOpen = false">取消</Button>

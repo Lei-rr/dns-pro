@@ -5,14 +5,16 @@ import type { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-
 import { DNSPOD_DEFAULT_LINE } from '../../modules/dnspod/dns-pod-record.service.js'
 import type { DnsPodAccess } from '../../modules/dnspod/access.js'
 import type { DnsPodZoneCatalog } from '../../modules/dnspod/zone-catalog.js'
+import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
 import { zoneOwnsHostname } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
 import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
 import type { SaaSSyncConfigService } from '../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import { CloudflareDnsSaaSSyncAdapter } from './cloudflare-dns-saas-sync.adapter.js'
 import { dnsZoneKey } from '../../core/jobs/job-types.js'
-import { DNSPOD_PREFERRED_LINE, DnsPodSaaSSyncAdapter } from './dns-pod-saas-sync.adapter.js'
+import { DnsPodSaaSSyncAdapter } from './dns-pod-saas-sync.adapter.js'
 import {
+  DNSPOD_PREFERRED_LINE,
   cloudflareDnsCleanupRecipe,
   dnspodSaaSCleanupRecipe,
   type SaaSSyncProviderType,
@@ -54,9 +56,10 @@ export class SaaSDnsSyncCoordinator {
     return runDnsSideEffect(() => adapter.resyncAfterUpdate(providerId, zoneName, hostnameFqdn, beforeRecords))
   }
 
-  async cleanupStale(providerId: string, zoneName: string, hostnameFqdn: string) {
+  /** 主机名快照可由调用方传入，避免同一次对账重复强制读取上游 */
+  async cleanupStale(providerId: string, zoneName: string, hostnameFqdn: string, hostname?: CloudflareCustomHostname) {
     const adapter = await this.adapterForHostname(providerId, zoneName, hostnameFqdn)
-    return runDnsSideEffect(() => adapter.cleanupStaleRecords(providerId, zoneName, hostnameFqdn))
+    return runDnsSideEffect(() => adapter.cleanupStaleRecords(providerId, zoneName, hostnameFqdn, hostname))
   }
 
   /** 清理不要求 Cloudflare 主机名仍存在（删除流程先删主机名再清 DNS） */

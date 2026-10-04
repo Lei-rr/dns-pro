@@ -43,25 +43,25 @@ data/
 
 `npm run verify` 是唯一总门禁（替换为下列顺序执行）。任一步失败即整体失败。
 
-| 步骤 | 作用 |
-| --- | --- |
-| `format:check` | Prettier 校验 `server`、`web/src`、`scripts` 与根配置 |
-| `version:check` | 根 `package.json` 版本 vs `web/package.json` vs `server/core/version.ts`，漂移即失败 |
-| `lint` | ESLint（`server`、`web/src`、`scripts`） |
-| `typecheck` | 后端 `tsc --noEmit` |
-| `typecheck:web` | 前端 `vue-tsc --noEmit` |
-| `arch:final` | 架构守卫：层矩阵 `app → use-cases → modules → core → shared`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
-| `deadcode` | knip 死代码 / 无用导出检查（配置提示也视为错误） |
-| `deps:check` | 依赖一致性脚本 + `npm audit --omit=dev --audit-level=high` |
-| `routes:check` | 路由指纹漂移门禁（`scripts/api-route-manifest.json` 与代码不一致即失败） |
-| `probe:api` | 以真实装配 + Fastify inject 验证 API 契约（含路由、鉴权、错误体） |
-| `probe:job` | 前端任务进度模型（`useJobProgress`、`runBatchJob`、行忙碌 / 选择 / 作用域代次） |
-| `probe:platform` | 平台并发、敏感文件、维护契约、数据迁移、缓存五个探针 |
-| `probe:workflow` | 任务失败重试、隧道路由、请求参数、EdgeOne 载荷、默认配置、批量请求量、上游重试 |
-| `probe:functional` | 前端审计、EdgeOne HTTPS 状态、SaaS DNS repair、稳定性断言 |
-| `probe:security` | 安全回归（会话吊销 / CSRF / 路径注入 / 信息泄露 / 暴力破解）、密码、凭据加密 |
-| `build` | esbuild 打包 `dist/server.js` + Vite 构建 `web/dist` |
-| `probe:static` | 基于构建产物的静态资源与 SPA 回退契约 |
+| 步骤               | 作用                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `format:check`     | Prettier 校验 `server`、`web/src`、`scripts` 与根配置                                                              |
+| `version:check`    | 根 `package.json` 版本 vs `web/package.json` vs `server/core/version.ts`，漂移即失败                               |
+| `lint`             | ESLint（`server`、`web/src`、`scripts`）                                                                           |
+| `typecheck`        | 后端 `tsc --noEmit`                                                                                                |
+| `typecheck:web`    | 前端 `vue-tsc --noEmit`                                                                                            |
+| `arch:final`       | 架构守卫：层矩阵 `app → use-cases → modules → core → shared`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
+| `deadcode`         | knip 死代码 / 无用导出检查（配置提示也视为错误）                                                                   |
+| `deps:check`       | 依赖一致性脚本 + `npm audit --omit=dev --audit-level=high`                                                         |
+| `routes:check`     | 路由指纹漂移门禁（`scripts/api-route-manifest.json` 与代码不一致即失败）                                           |
+| `probe:api`        | 以真实装配 + Fastify inject 验证 API 契约（含路由、鉴权、错误体）                                                  |
+| `probe:job`        | 前端任务进度模型（`useJobProgress`、`runBatchJob`、行忙碌 / 选择 / 作用域代次）                                    |
+| `probe:platform`   | 平台并发、敏感文件、维护契约、数据迁移、缓存五个探针                                                               |
+| `probe:workflow`   | 任务失败重试、隧道路由、请求参数、EdgeOne 载荷、默认配置、批量请求量、上游重试                                     |
+| `probe:functional` | 前端审计、EdgeOne HTTPS 状态、SaaS DNS repair、稳定性断言                                                          |
+| `probe:security`   | 安全回归（会话吊销 / CSRF / 路径注入 / 信息泄露 / 暴力破解）、密码、凭据加密                                       |
+| `build`            | esbuild 打包 `dist/server.js` + Vite 构建 `web/dist`                                                               |
+| `probe:static`     | 基于构建产物的静态资源与 SPA 回退契约                                                                              |
 
 单步排查示例：
 
@@ -78,32 +78,32 @@ npm run build                 # 只构建
 
 探针以仓库根为工作目录运行（内部使用相对路径 `server/...`），**必须在项目根执行**。多数探针用 `os.tmpdir()` 建临时数据目录并通过 `setDataRoot` 指向它，不读写生产 `data/`；少数探针额外读取仓库文件（如 `Dockerfile`、前端源码）做契约断言。
 
-| 探针 | 覆盖内容 |
-| --- | --- |
-| `scripts/isolated-api-probe.ts` | 真实装配 + inject 的 API 契约与路由指纹（最大的一份） |
-| `scripts/isolated-backend-safe-probe.ts` | 装配、输入归一化、presenter 输出的安全面 |
-| `scripts/isolated-backend-careful-probe.ts` | 边界值：`ApiError`、HTTP 客户端、密码哈希、厂商响应守卫 |
-| `scripts/isolated-platform-concurrency-probe.ts` | `JsonStore` 串行、内存 `JobService`、批量条目汇总 |
-| `scripts/isolated-workflow-recovery-probe.ts` | SaaS 批量任务失败重试语义（不重放已完成阶段） |
-| `scripts/isolated-tunnel-route-probe.ts` | 隧道路由写回顺序、扩展字段与 `catch_all` 保留、并发串行、CNAME 归属保护、repair 幂等 |
-| `scripts/isolated-batch-request-probe.ts` | 请求量守卫：过滤下推上游、不随条目数重复全量拉取 |
-| `scripts/isolated-provider-retry-probe.ts` | 上游限流重试与任务快照剥离（失败任务保留快照） |
-| `scripts/isolated-request-param-probe.ts` | 路径参数与 schema 校验 |
-| `scripts/isolated-edgeone-payload-probe.ts` | EdgeOne 加速域名载荷归一化 |
-| `scripts/isolated-saas-dns-repair-probe.ts` | SaaS DNS repair 编排 |
-| `scripts/isolated-frontend-audit-probe.ts` | 前端：任务恢复失败与"无活跃任务"必须可区分 |
-| `scripts/isolated-job-progress-probe.ts` | 前端任务进度 / 行忙碌 / 选择 / 作用域代次 |
-| `scripts/isolated-edgeone-https-status-probe.ts` | 前端 EdgeOne HTTPS 状态标签 |
-| `scripts/isolated-stability-readability-probe.ts` | 错误语义、厂商响应 schema、同步适配器 |
-| `scripts/isolated-default-config-probe.ts` | 配置优先级与非法值 fail-fast |
-| `scripts/isolated-security-probe.ts` | 会话吊销 / CSRF / 上游路径注入 / 信息泄露 / 暴力破解 |
-| `scripts/isolated-password-probe.ts` | 密码存储与强制改密流程 |
-| `scripts/isolated-credential-encryption-probe.ts` | 凭据加密（`enc:v1:`）与存量迁移 |
-| `scripts/isolated-sensitive-files-probe.ts` | 敏感文件权限与内容保护 |
-| `scripts/isolated-data-migration-probe.ts` | 迁移框架与备份保留策略 |
-| `scripts/isolated-cache-probe.ts` | 缓存存活时间、容量上限、标签失效、在途加载拦截 |
-| `scripts/isolated-maintenance-contract-probe.ts` | 部署契约：镜像内无 curl/wget，健康检查必须走 node |
-| `scripts/isolated-static-probe.ts` | 静态资源与 SPA 回退契约（依赖构建产物） |
+| 探针                                              | 覆盖内容                                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `scripts/isolated-api-probe.ts`                   | 真实装配 + inject 的 API 契约与路由指纹（最大的一份）                                |
+| `scripts/isolated-backend-safe-probe.ts`          | 装配、输入归一化、presenter 输出的安全面                                             |
+| `scripts/isolated-backend-careful-probe.ts`       | 边界值：`ApiError`、HTTP 客户端、密码哈希、厂商响应守卫                              |
+| `scripts/isolated-platform-concurrency-probe.ts`  | `JsonStore` 串行、内存 `JobService`、批量条目汇总                                    |
+| `scripts/isolated-workflow-recovery-probe.ts`     | SaaS 批量任务失败重试语义（不重放已完成阶段）                                        |
+| `scripts/isolated-tunnel-route-probe.ts`          | 隧道路由写回顺序、扩展字段与 `catch_all` 保留、并发串行、CNAME 归属保护、repair 幂等 |
+| `scripts/isolated-batch-request-probe.ts`         | 请求量守卫：过滤下推上游、不随条目数重复全量拉取                                     |
+| `scripts/isolated-provider-retry-probe.ts`        | 上游限流重试与任务快照剥离（失败任务保留快照）                                       |
+| `scripts/isolated-request-param-probe.ts`         | 路径参数与 schema 校验                                                               |
+| `scripts/isolated-edgeone-payload-probe.ts`       | EdgeOne 加速域名载荷归一化                                                           |
+| `scripts/isolated-saas-dns-repair-probe.ts`       | SaaS DNS repair 编排                                                                 |
+| `scripts/isolated-frontend-audit-probe.ts`        | 前端：任务恢复失败与"无活跃任务"必须可区分                                           |
+| `scripts/isolated-job-progress-probe.ts`          | 前端任务进度 / 行忙碌 / 选择 / 作用域代次                                            |
+| `scripts/isolated-edgeone-https-status-probe.ts`  | 前端 EdgeOne HTTPS 状态标签                                                          |
+| `scripts/isolated-stability-readability-probe.ts` | 错误语义、厂商响应 schema、同步适配器                                                |
+| `scripts/isolated-default-config-probe.ts`        | 配置优先级与非法值 fail-fast                                                         |
+| `scripts/isolated-security-probe.ts`              | 会话吊销 / CSRF / 上游路径注入 / 信息泄露 / 暴力破解                                 |
+| `scripts/isolated-password-probe.ts`              | 密码存储与强制改密流程                                                               |
+| `scripts/isolated-credential-encryption-probe.ts` | 凭据加密（`enc:v1:`）与存量迁移                                                      |
+| `scripts/isolated-sensitive-files-probe.ts`       | 敏感文件权限与内容保护                                                               |
+| `scripts/isolated-data-migration-probe.ts`        | 迁移框架与备份保留策略                                                               |
+| `scripts/isolated-cache-probe.ts`                 | 缓存存活时间、容量上限、标签失效、在途加载拦截                                       |
+| `scripts/isolated-maintenance-contract-probe.ts`  | 部署契约：镜像内无 curl/wget，健康检查必须走 node                                    |
+| `scripts/isolated-static-probe.ts`                | 静态资源与 SPA 回退契约（依赖构建产物）                                              |
 
 单跑方式：
 
@@ -136,7 +136,7 @@ docker run -d \
 - 容器 healthcheck 内置于镜像（Dockerfile `HEALTHCHECK`）：`fetch('http://127.0.0.1:2022/api/health')`，间隔 30s、超时 5s、重试 3 次、启动宽限 5s。镜像内**没有** `curl` / `wget`，不要用它们写探针（`isolated-maintenance-contract-probe.ts` 守卫该契约）。
 - 排查容器状态：`docker inspect --format '{{json .State.Health}}' dns-pro` 查看最近几次 healthcheck 结果与退出码；`unhealthy` 时先看应用日志（配置错误、数据目录不可写、迁移失败都会导致进程退出）。
 - 升级实例：保留 `data/` 卷 → 拉新镜像 → 重建容器 → 检查日志、`/api/health`、登录会话与静态资源。
-- 反向代理后推荐 `COOKIE_SECURE=true`、`TRUST_PROXY=1`，并把端口映射收紧为 `127.0.0.1:2022:2022`。
+- 反向代理后推荐 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（填可信代理的 IP/CIDR），并把端口映射收紧为 `127.0.0.1:2022:2022`。
 - 当前只有匿名 `GET /api/health`（仅返回 `status`）；`healthz` / `readyz` 分离与 `/api/metrics` 属于蓝图 §5 的待落地项，尚未实现。
 
 ---

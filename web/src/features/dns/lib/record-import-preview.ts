@@ -24,6 +24,9 @@ const sameType = (left: string, right: string) => left.trim().toUpperCase() === 
 /** 导入前 diff：让用户在写入前看到「新增 / 覆盖 / 重复」的确切数量与明细（F4）。 */
 export function buildImportPreview(parsed: ParsedImportRecord[], existing: DnsRecord[]): ImportPreview {
   const preview: ImportPreview = { added: [], overwritten: [], duplicates: [] }
+  // 同一条 existing 记录只能被覆盖一次：多条同名同类型导入若都指向同一 ID，
+  // 逐条 PUT 只会留下最后一条值，其余必须按新增处理，否则静默丢数据。
+  const claimedIds = new Set<string>()
   for (const incoming of parsed) {
     const candidates = existing.filter(
       (record) =>
@@ -33,9 +36,16 @@ export function buildImportPreview(parsed: ParsedImportRecord[], existing: DnsRe
       preview.duplicates.push(incoming)
       continue
     }
-    const target = candidates.find((record) => String(record.id || '').trim())
-    if (target) preview.overwritten.push({ incoming, existing: target })
-    else preview.added.push(incoming)
+    const target = candidates.find((record) => {
+      const id = String(record.id || '').trim()
+      return !!id && !claimedIds.has(id)
+    })
+    if (!target) {
+      preview.added.push(incoming)
+      continue
+    }
+    claimedIds.add(String(target.id || '').trim())
+    preview.overwritten.push({ incoming, existing: target })
   }
   return preview
 }

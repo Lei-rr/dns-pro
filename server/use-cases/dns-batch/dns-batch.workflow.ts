@@ -27,6 +27,10 @@ import type { DnsRecordPort, DnsRecordValue } from '../../core/contracts/dns-rec
 
 export type DnsProviderType = 'cloudflare' | 'dnspod'
 
+function isDnsProviderType(value: string): value is DnsProviderType {
+  return value === 'cloudflare' || value === 'dnspod'
+}
+
 type DnsBatchJobView = BatchJobViewBase & { provider_type: string; provider_id: string; zone: string }
 type JobScope = { providerType: DnsProviderType; providerId: string; zone: string }
 
@@ -182,19 +186,22 @@ export class DnsBatchWorkflow {
       ) => Promise<BatchItemResult>
     }
   ): Promise<void> {
-    const scope: JobScope = {
-      providerType: String(job.payload.provider_type ?? '') as DnsProviderType,
-      providerId: String(job.payload.provider_id ?? ''),
-      zone: String(job.payload.zone ?? ''),
-    }
-    const port = this.ports[scope.providerType]
-    if (!port) {
+    // 任务 payload 由入队时的强类型写入，恢复执行时仍显式收窄，避免任意字符串绕过端口校验
+    const requested = String(job.payload.provider_type ?? '')
+    const providerType = isDnsProviderType(requested) ? requested : undefined
+    const port = providerType ? this.ports[providerType] : undefined
+    if (!providerType || !port) {
       await this.jobs.patch(job.id, {
         status: 'failed',
-        message: `Unsupported provider type: ${scope.providerType}`,
+        message: `Unsupported provider type: ${requested}`,
         finished_at: Date.now(),
       })
       return
+    }
+    const scope: JobScope = {
+      providerType,
+      providerId: String(job.payload.provider_id ?? ''),
+      zone: String(job.payload.zone ?? ''),
     }
     await runBatchItems(this.jobs, job, {
       ...options,

@@ -1,6 +1,7 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
+import type { SideEffects } from '../../core/providers/side-effect-result.js'
 import {
   BatchJobKind,
   dnsEffectNote,
@@ -167,6 +168,15 @@ export class SaaSPreferredApplyWorkflow {
           { preferred_domain: preferred, auto_preferred: true },
           true
         )
+        // 本地偏好失败时 updateHostname 提前返回且不写 DNS：条目不能按成功上报
+        const local = (updated as { side_effects?: SideEffects }).side_effects?.local?.preference
+        if (local?.status === 'failed') {
+          return {
+            status: 'failed',
+            message: `优选已保存，但本地偏好保存失败：${local.message || '未知错误'}`,
+            extra: { preferred_domain: preferred, local_preference_status: 'failed' },
+          }
+        }
         const sync = dnsEffectOf(updated, 'sync')
         if (sync?.status === 'failed') {
           return {

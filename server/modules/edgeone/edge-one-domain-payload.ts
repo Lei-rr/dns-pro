@@ -31,21 +31,51 @@ export function normalizeAccelerationDomainPayload(data: Record<string, unknown>
   }
 }
 
-/** 构建 Create/ModifyAccelerationDomain 公共参数；端口仅按回源协议传递 */
+/**
+ * 更新路径专用：只归一化显式提供的字段。
+ * ModifyAccelerationDomain 对未提供的字段语义是「保持原有配置」，
+ * 因此这里不能像创建路径那样回填默认值，否则只改源站也会重置回源协议与 IPv6 配置。
+ */
+export function normalizeAccelerationDomainUpdatePayload(
+  data: Record<string, unknown>
+): Partial<AccelerationDomainPayload> & { domain_name: string } {
+  const domainName = String(data.domain_name ?? '')
+    .toLowerCase()
+    .trim()
+  if (domainName === '') throw new ApiError('validation_failed', 'domain_name is required', 422)
+  const payload: Partial<AccelerationDomainPayload> & { domain_name: string } = { domain_name: domainName }
+  if (data.origin !== undefined) payload.origin = String(data.origin).trim()
+  if (data.origin_type !== undefined) payload.origin_type = String(data.origin_type).toUpperCase()
+  if (data.host_header !== undefined) {
+    payload.host_header = String(data.host_header).toLowerCase().trim()
+  }
+  if (data.origin_protocol !== undefined) payload.origin_protocol = String(data.origin_protocol).toUpperCase()
+  if (data.http_origin_port !== undefined) payload.http_origin_port = Number(data.http_origin_port)
+  if (data.https_origin_port !== undefined) payload.https_origin_port = Number(data.https_origin_port)
+  if (data.ipv6_status !== undefined) payload.ipv6_status = String(data.ipv6_status).toLowerCase()
+  return payload
+}
+
+/** 构建 Create/ModifyAccelerationDomain 公共参数；未提供的字段不下发，端口仅按回源协议传递 */
 export function buildAccelerationDomainRequest(
   zoneId: string,
-  data: AccelerationDomainPayload
+  data: Partial<AccelerationDomainPayload> & { domain_name: string }
 ): Record<string, unknown> {
-  const originInfo: Record<string, unknown> = { OriginType: data.origin_type, Origin: data.origin }
-  if (data.host_header) originInfo.HostHeader = data.host_header
-  const request: Record<string, unknown> = {
-    ZoneId: zoneId,
-    DomainName: data.domain_name,
-    OriginInfo: originInfo,
-    OriginProtocol: data.origin_protocol,
-    IPv6Status: data.ipv6_status,
+  const request: Record<string, unknown> = { ZoneId: zoneId, DomainName: data.domain_name }
+  if (data.origin !== undefined || data.origin_type !== undefined || data.host_header !== undefined) {
+    const originInfo: Record<string, unknown> = {}
+    if (data.origin_type !== undefined) originInfo.OriginType = data.origin_type
+    if (data.origin !== undefined) originInfo.Origin = data.origin
+    if (data.host_header) originInfo.HostHeader = data.host_header
+    request.OriginInfo = originInfo
   }
-  if (data.origin_protocol !== 'HTTPS') request.HttpOriginPort = data.http_origin_port
-  if (data.origin_protocol !== 'HTTP') request.HttpsOriginPort = data.https_origin_port
+  if (data.origin_protocol !== undefined) request.OriginProtocol = data.origin_protocol
+  if (data.ipv6_status !== undefined) request.IPv6Status = data.ipv6_status
+  if (data.origin_protocol !== 'HTTPS' && data.http_origin_port !== undefined) {
+    request.HttpOriginPort = data.http_origin_port
+  }
+  if (data.origin_protocol !== 'HTTP' && data.https_origin_port !== undefined) {
+    request.HttpsOriginPort = data.https_origin_port
+  }
   return request
 }

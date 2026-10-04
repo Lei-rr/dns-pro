@@ -48,7 +48,10 @@ const commandOpen = ref(false)
 const isDark = ref(false)
 
 const activeProviderId = computed(() => {
-  const first = route.path.split('/').filter(Boolean)[0] || ''
+  const segments = route.path.split('/').filter(Boolean)
+  // 服务商页面统一在 /p/:provider 前缀下，取第二段；其余首段是系统页面（控制台/服务商/同步健康）
+  if (segments[0] === 'p') return segments[1] || ''
+  const first = segments[0] || ''
   if (!first || first === 'providers' || first === 'login' || first === 'sync') return ''
   return first
 })

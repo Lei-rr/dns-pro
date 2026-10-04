@@ -34,3 +34,6 @@ pnpm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# 真机测试数据（含真实凭据，禁止提交）
+data-real/

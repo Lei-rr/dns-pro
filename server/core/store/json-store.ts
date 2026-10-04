@@ -2,21 +2,22 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
+import { runSerial } from '../../shared/serial-queue.js'
 import { resolveDataPath } from './data-root.js'
-
-const memoryStore = new Map<string, unknown>()
-const queues = new Map<string, Promise<void>>()
 
 const isMissing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT'
 
 /**
  * JSON 文件存储（单进程独占数据目录）。
- * - 数据根由构造参数传入：不存在模块级可变全局（D7）
- * - 同一路径的读写串行执行
+ * - 数据根与内存缓存都由实例持有：不存在模块级可变全局（D7）
+ * - 同一路径的读写串行执行；队列键为绝对路径且跨实例共享，多个实例操作同一文件也不会交错
  * - 写入：临时文件 + fsync + rename 原子替换，权限 0600
- * - 读取：进程内内存缓存，transaction 总是基于磁盘最新内容
+ * - 读取：实例内内存缓存，transaction 总是基于磁盘最新内容
  */
 export class JsonStore<T extends object = Record<string, unknown>> {
+  /** 实例级读缓存；跨实例读同一文件各自回源磁盘（写入始终落盘） */
+  private readonly memory = new Map<string, T>()
+
   constructor(
     private readonly relativePath: string,
     private readonly defaultValue: T = {} as T,
@@ -27,27 +28,27 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   }
 
   async read(): Promise<T> {
-    const filePath = this.absolutePath()
-    if (memoryStore.has(filePath)) return structuredClone(memoryStore.get(filePath) as T)
+    const cached = this.memory.get(this.absolutePath())
+    if (cached !== undefined) return structuredClone(cached)
     return this.readFresh()
   }
 
   /** 等待此前写入完成后读取磁盘内容 */
   async readFresh(): Promise<T> {
-    return this.serialized(async () => {
+    return runSerial(this.absolutePath(), async () => {
       const data = await this.readFromDisk()
-      memoryStore.set(this.absolutePath(), structuredClone(data))
+      this.memory.set(this.absolutePath(), structuredClone(data))
       return data
     })
   }
 
   async write(data: T): Promise<void> {
-    await this.serialized(() => this.writeUnlocked(data))
+    await runSerial(this.absolutePath(), () => this.writeUnlocked(data))
   }
 
   /** 读-改-写事务；mutator 抛异常时不写入 */
   async transaction<U>(mutator: (current: T) => { next: T; result?: U }): Promise<U | undefined> {
-    return this.serialized(async () => {
+    return runSerial(this.absolutePath(), async () => {
       const { next, result } = mutator(await this.readFromDisk())
       await this.writeUnlocked(next)
       return result
@@ -55,26 +56,11 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   }
 
   invalidateMemory(): void {
-    memoryStore.delete(this.absolutePath())
+    this.memory.delete(this.absolutePath())
   }
 
   private absolutePath(): string {
     return resolveDataPath(this.dataRoot, this.relativePath)
-  }
-
-  private async serialized<U>(task: () => Promise<U>): Promise<U> {
-    const key = this.absolutePath()
-    const current = (queues.get(key) ?? Promise.resolve()).then(task)
-    const settled = current.then(
-      () => undefined,
-      () => undefined
-    )
-    queues.set(key, settled)
-    try {
-      return await current
-    } finally {
-      if (queues.get(key) === settled) queues.delete(key)
-    }
   }
 
   private async writeUnlocked(data: T): Promise<void> {
@@ -94,7 +80,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
       await fs.rm(temporary, { force: true }).catch(() => undefined)
       throw new ApiError('server_error', `Failed to write ${this.relativePath}: ${errorMessage(error)}`, 500)
     }
-    memoryStore.set(filePath, structuredClone(data))
+    this.memory.set(filePath, structuredClone(data))
   }
 
   private async readFromDisk(): Promise<T> {

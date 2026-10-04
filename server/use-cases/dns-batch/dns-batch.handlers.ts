@@ -3,7 +3,6 @@ import { success } from '../../core/http/api-response.js'
 import type { RequestOf } from '../../core/http/request-schema.js'
 import { auditActor } from '../../core/observability/audit-log.js'
 import type { DnsProviderType } from './dns-batch.workflow.js'
-import type { BatchRecordInput } from './dns-record-payload.js'
 import {
   dnsBatchCreateSchema,
   dnsBatchDeleteSchema,
@@ -21,7 +20,7 @@ export function createDnsBatchHandler(providerType: DnsProviderType) {
       providerType,
       providerId: request.params.providerId,
       zone: request.params.zone,
-      records: request.body.records as BatchRecordInput[],
+      records: request.body.records,
     })
     request.server.ctx.platform.audit.record({
       action: 'batch',
@@ -63,7 +62,7 @@ export function updateDnsBatchHandler(providerType: DnsProviderType) {
       providerType,
       providerId: request.params.providerId,
       zone: request.params.zone,
-      records: request.body.records as BatchRecordInput[],
+      records: request.body.records,
       patch: request.body.patch,
     })
     request.server.ctx.platform.audit.record({

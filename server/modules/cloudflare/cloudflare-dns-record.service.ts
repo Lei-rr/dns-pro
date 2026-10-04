@@ -8,6 +8,7 @@ import {
 } from '../../core/providers/provider-call.js'
 import { providerNullableNumber, providerNullableString } from '../../core/providers/provider-values.js'
 import { invalidateCloudflareRecordCache } from './cloudflare.cache.js'
+import { CLOUDFLARE_PAGE_LIMIT } from './cloudflare-pagination.js'
 import type { CloudflareAccess } from './access.js'
 import {
   cloudflareDnsRecordSchema,
@@ -17,7 +18,6 @@ import {
 } from './cloudflare-response.schema.js'
 
 const PROVIDER_TYPE = 'cloudflare'
-const PAGE_LIMIT = { limitCode: 'cloudflare_pagination_limit', limitMessage: 'Cloudflare pagination limit reached' }
 
 export interface CloudflareRecord {
   [key: string]: unknown
@@ -71,7 +71,7 @@ export class CloudflareDnsRecordService {
   async listAll(providerId: string, zoneId: string, refresh = false): Promise<RecordListResult> {
     const items = await collectNumberedPages(
       (page, perPage) => this.page(providerId, zoneId, page, perPage, { refresh }),
-      PAGE_LIMIT
+      CLOUDFLARE_PAGE_LIMIT
     )
     return toFullListResult(items)
   }
@@ -90,7 +90,7 @@ export class CloudflareDnsRecordService {
     const expectedType = type.trim().toUpperCase()
     const items = await collectNumberedPages(
       (page, perPage) => this.fetchPage(providerId, zoneId, page, perPage, { type: expectedType, name: expectedName }),
-      PAGE_LIMIT
+      CLOUDFLARE_PAGE_LIMIT
     )
     return items.filter(
       (record) => toAsciiFqdn(record.name) === expectedName && String(record.type ?? '').toUpperCase() === expectedType

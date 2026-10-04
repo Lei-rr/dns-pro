@@ -66,7 +66,7 @@ export class ProviderManagementWorkflow {
   }
 
   private async enrichMutation(provider: PresentedProvider): Promise<PresentedProvider> {
-    // Pass the single provider so dependency mapping skips a full provider-table scan.
-    return { ...provider, dependencies: await this.dependencies.forProvider(provider.id, [provider]) }
+    // 依赖 map 的键是「被引用方」：只扫自身永远找不到反向引用，必须与 list() 用同一份全表扫描
+    return { ...provider, dependencies: await this.dependencies.forProvider(provider.id) }
   }
 }

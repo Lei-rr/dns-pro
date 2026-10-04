@@ -13,7 +13,9 @@ export async function listDnsPodRecordsHandler(
   request: FastifyRequest<RequestOf<typeof dnspodRecordsIndexSchema>>,
   reply: FastifyReply
 ) {
-  const { providerId, zone } = request.params
+  const { providerId } = request.params
+  // 域名大小写不敏感：归一化后再查列表与归属，避免缓存键、失效标签与归属查询分裂成多份
+  const zone = request.params.zone.toLowerCase().trim()
   const result = await request.server.ctx.modules.dnsPod.records.list(providerId, zone, {
     refresh: request.query.refresh === 'true',
   })

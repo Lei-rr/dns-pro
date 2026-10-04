@@ -57,7 +57,7 @@ export function dnsPodRecordPort(records: DnsPodRecordService): DnsRecordPort {
         .toUpperCase()
       const line = String(probe.line ?? DNSPOD_DEFAULT_LINE) || DNSPOD_DEFAULT_LINE
       const lineId = String(probe.lineId ?? '')
-      // 查询现状走 query：findExact 要求 value 非空，仅适用于写入前的精确匹配
+      // 匹配依赖上游最新状态：走 query（绕过列表缓存），匹配谓词只在本适配器维护
       const rows = await records.query(providerId, zone, {
         subdomain,
         ...(recordType ? { record_type: recordType } : {}),

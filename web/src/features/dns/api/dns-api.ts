@@ -6,6 +6,44 @@ import { encodePath } from '@/shared/lib/path'
 type DnsProviderType = 'dnspod' | 'cloudflare' | 'saas'
 export type DnsProviderRef = { id: string; type: DnsProviderType; name?: string }
 
+/** 记录写载荷：DNSPod 与 Cloudflare 字段并集，由 recordPayload 归一成各上游格式 */
+type DnsRecordWriteInput = {
+  name?: string
+  type?: string
+  value?: string
+  content?: string
+  ttl?: number | string
+  line?: string
+  record_line?: string
+  record_line_id?: string
+  status?: string
+  weight?: number | string
+  remark?: string
+  comment?: string
+  priority?: number | string
+  mx?: number | string
+  proxied?: boolean
+  subdomain?: string
+  record_type?: string
+}
+
+/** 批量修改 patch：只承载用户明确要改的字段 */
+export type DnsRecordBatchPatch = {
+  value?: string
+  ttl?: number
+  line?: string
+  record_line_id?: string
+  remark?: string
+  priority?: number
+  proxied?: boolean
+}
+
+/** 域名创建载荷：DNSPod 用 domain，Cloudflare 用 name */
+type DnsZoneWriteInput = { domain?: string; name?: string }
+
+/** 写接口选项：Cloudflare 需要 zoneName 把主机记录补成全限定名 */
+type DnsWriteOptions = { zoneName?: string }
+
 const providerBase = (provider: DnsProviderRef) => `/${provider.type}/providers/${encodePath(provider.id)}`
 const zoneBase = (provider: DnsProviderRef, zone: string) => `${providerBase(provider)}/zones/${encodePath(zone)}`
 const endpoints = {
@@ -28,11 +66,11 @@ const endpoints = {
 function recordPayload(
   provider: DnsProviderRef,
   zone: string,
-  data: Record<string, unknown>,
-  options: Record<string, unknown> = {}
+  data: DnsRecordWriteInput,
+  options: DnsWriteOptions = {}
 ) {
   if (provider.type === 'cloudflare') {
-    const zoneName = (options.zoneName as string) || zone
+    const zoneName = options.zoneName || zone
     const rawName = String(data.name || '').toLowerCase()
     const name =
       data.name === '@'
@@ -126,7 +164,7 @@ export const dnsApi = {
     )
     return { ...response, data: response.data.map((domain) => presentDomain(provider, domain)) }
   },
-  createZone: (provider: DnsProviderRef, data: Record<string, unknown>): Promise<ApiResponse<Zone>> =>
+  createZone: (provider: DnsProviderRef, data: DnsZoneWriteInput): Promise<ApiResponse<Zone>> =>
     http.post(endpoints.zones(provider), provider.type === 'cloudflare' ? { name: data.domain ?? data.name } : data),
   deleteZone: (provider: DnsProviderRef, zone: string) => http.delete(endpoints.zone(provider, zone)),
   /** DNSPod 解析线路（Cloudflare 无线路概念，直接返回空） */
@@ -153,21 +191,21 @@ export const dnsApi = {
   createRecord: (
     provider: DnsProviderRef,
     domain: string,
-    data: Record<string, unknown>,
-    options?: Record<string, unknown>
+    data: DnsRecordWriteInput,
+    options?: DnsWriteOptions
   ): Promise<ApiResponse<DnsRecord>> =>
     http.post(endpoints.records(provider, domain), recordPayload(provider, domain, data, options || {})),
   updateRecord: (
     provider: DnsProviderRef,
     domain: string,
     recordId: string,
-    data: Record<string, unknown>,
-    options?: Record<string, unknown>
+    data: DnsRecordWriteInput,
+    options?: DnsWriteOptions
   ): Promise<ApiResponse<DnsRecord>> =>
     http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
   deleteRecord: (provider: DnsProviderRef, domain: string, recordId: string) =>
     http.delete(endpoints.record(provider, domain, recordId)),
-  batchCreateRecords: (provider: DnsProviderRef, domain: string, data: { records: Array<Record<string, unknown>> }) =>
+  batchCreateRecords: (provider: DnsProviderRef, domain: string, data: { records: DnsRecordWriteInput[] }) =>
     http.post(endpoints.recordsBatchCreate(provider, domain), data),
   batchDeleteRecords: (
     provider: DnsProviderRef,
@@ -177,7 +215,7 @@ export const dnsApi = {
   batchUpdateRecords: (
     provider: DnsProviderRef,
     domain: string,
-    data: { records: Array<Record<string, unknown>>; patch: Record<string, unknown> }
+    data: { records: DnsRecordWriteInput[]; patch: DnsRecordBatchPatch }
   ) => http.post(endpoints.recordsBatchUpdate(provider, domain), data),
   batchJob: (provider: DnsProviderRef, jobId: string) =>
     http.get(endpoints.recordsBatchJob(provider, jobId), { timeout: POLL_TIMEOUT_MS }),

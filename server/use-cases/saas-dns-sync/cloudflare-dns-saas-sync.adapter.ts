@@ -17,13 +17,12 @@ import {
   resolveEffectiveOrigin,
   saasDefaultCloudflareProviderId,
   saasDesiredRecords,
-  syncRecordIdentity,
   syncRemark,
   type CloudflareSaasTarget,
   type SaaSSyncRecord,
   type SaaSSyncTargetDeps,
 } from '../derived-records/planners/saas.planner.js'
-import type { SaaSSyncAdapter } from './saas-sync-records.js'
+import { orphanRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
 
 /** Cloudflare 同步记录 TTL：1 表示自动 */
 const SAAS_RECORD_TTL = 1
@@ -117,10 +116,16 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
   }
 
   /** 主机名激活后删除所有权验证 TXT */
-  async cleanupStaleRecords(providerId: string, cfZoneName: string, hostnameFqdn: string) {
-    const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
-    if (!isHostnameActive(hostname)) return { cleaned: 0, reason: 'saas_not_active' }
-    const fqdn = hostname.hostname
+  async cleanupStaleRecords(
+    providerId: string,
+    cfZoneName: string,
+    hostnameFqdn: string,
+    hostname?: CloudflareCustomHostname
+  ) {
+    // 调用方已强制读取过主机名时复用快照，避免同一次对账重复打上游
+    const current = hostname ?? (await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true))
+    if (!isHostnameActive(current)) return { cleaned: 0, reason: 'saas_not_active' }
+    const fqdn = current.hostname
     if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
     const target = await resolveCloudflareSaasTarget(this.target, providerId, fqdn, { cfZoneName })
@@ -131,7 +136,7 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
           purpose: 'ownership_verification',
           record: {
             type: 'TXT',
-            value: String(hostname.ownership_verification?.value ?? ''),
+            value: String(current.ownership_verification?.value ?? ''),
             ttl: SAAS_RECORD_TTL,
             note: syncRemark('ownership_verification', fqdn, CLOUDFLARE_ORIGIN_LABEL),
           },
@@ -167,15 +172,7 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     beforeRecords: SaaSSyncRecord[],
     afterRecords: SaaSSyncRecord[]
   ) {
-    const retained = new Set(afterRecords.map(syncRecordIdentity))
-    const seen = new Set<string>()
-    const orphans: SaaSSyncRecord[] = []
-    for (const record of beforeRecords) {
-      const key = syncRecordIdentity(record)
-      if (key === '' || seen.has(key) || retained.has(key)) continue
-      seen.add(key)
-      orphans.push(cleanupDesired(record))
-    }
+    const orphans = orphanRecords(target, beforeRecords, afterRecords)
     if (orphans.length === 0) return []
     return this.writer.sync('cloudflare', target.providerId, target.zone, orphans)
   }

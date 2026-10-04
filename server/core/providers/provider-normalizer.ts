@@ -44,7 +44,13 @@ export class ProviderNormalizer {
   }
 
   validateId(id: unknown): string {
-    const value = String(id).trim()
+    // 直接 String(undefined) 会得到 'undefined' 并通过下面的正则，先挡掉非字符串与空值
+    if (typeof id !== 'string' || id.trim() === '') {
+      throw new ApiError('validation_failed', '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）', 422, {
+        errors: { id: '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）' },
+      })
+    }
+    const value = id.trim()
 
     if (!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(value)) {
       throw new ApiError('validation_failed', '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）', 422, {

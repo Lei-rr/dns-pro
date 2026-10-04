@@ -501,21 +501,9 @@ onMounted(() => {
           <Search class="size-4" />
           搜索
         </Button>
-        <template v-if="selectedCount && !jobProgress.running.value">
-          <span class="text-muted-foreground text-sm">已选 {{ selectedCount }}</span>
-          <Button variant="outline" size="sm" :disabled="jobProgress.running.value" @click="batchDisableSelected">
-            批量停用
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            class="text-destructive"
-            :disabled="jobProgress.running.value"
-            @click="batchDeleteSelected"
-          >
-            批量删除
-          </Button>
-        </template>
+        <span v-if="selectedCount && !jobProgress.running.value" class="text-muted-foreground text-sm">
+          已选 {{ selectedCount }}
+        </span>
       </div>
 
       <AccelerationDomainsTable

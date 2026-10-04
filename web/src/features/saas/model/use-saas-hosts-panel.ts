@@ -51,6 +51,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   const batchSubmitting = ref(false)
   const batchPreferredDomain = ref('')
   const batchPreferredError = ref('')
+  /** 批量改优选的附加开关：默认关闭，避免静默打开各主机名的「自动优选」 */
+  const batchAutoPreferred = ref(false)
 
   /** 已用自定义源服务器（去重），给 AutoComplete 下拉 */
   const originSuggestions = computed(() => {
@@ -352,6 +354,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       }
       batchPreferredDomain.value = preferredOptions.value[0]?.domain || ''
       batchPreferredError.value = ''
+      batchAutoPreferred.value = false
       batchPreferredOpen.value = true
     } catch (error) {
       if (scopeOwner.active()) toast.error(errorMessage(error))
@@ -378,7 +381,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
         () =>
           saasApi.batchUpdate(scopeOwner.value.providerId, scopeOwner.value.zoneName, {
             hostnames: selectedHostnames,
-            patch: { preferred_domain: preferred, auto_preferred: true },
+            // 未勾选时不下发 auto_preferred，让后端沿用各主机名既有偏好
+            patch: { preferred_domain: preferred, ...(batchAutoPreferred.value ? { auto_preferred: true } : {}) },
             auto_sync: true,
           }),
         '批量改优选'
@@ -399,6 +403,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       detailRecord.value = null
       batchPreferredOpen.value = false
       batchSubmitting.value = false
+      batchAutoPreferred.value = false
       showPreferred.value = false
       showFallback.value = false
       preferredDialogOwner = null
@@ -417,6 +422,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     detailRequestGeneration.invalidate()
     batchPreferredOpen.value = false
     batchSubmitting.value = false
+    batchAutoPreferred.value = false
     showPreferred.value = false
     showFallback.value = false
     preferredDialogOwner = null
@@ -446,6 +452,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     batchSubmitting,
     batchPreferredDomain,
     batchPreferredError,
+    batchAutoPreferred,
     preferredOptions,
     editing,
     formErrors,

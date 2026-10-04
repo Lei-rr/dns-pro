@@ -13,7 +13,11 @@ import { asRecordArray } from '../../core/providers/response-guards.js'
 import { invalidateEdgeOneDomainCache } from './edge-one.cache.js'
 import type { EdgeOneClient } from './edge-one.client.js'
 import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
-import { buildAccelerationDomainRequest, normalizeAccelerationDomainPayload } from './edge-one-domain-payload.js'
+import {
+  buildAccelerationDomainRequest,
+  normalizeAccelerationDomainPayload,
+  normalizeAccelerationDomainUpdatePayload,
+} from './edge-one-domain-payload.js'
 import {
   edgeOneAccelerationDomainSchema,
   edgeoneAccelerationDomainCreateResponseSchema,
@@ -57,7 +61,8 @@ export class EdgeOneDomainService {
   async accelerationDomains(providerId: string, zoneId: string, refresh = false): Promise<DomainListResult> {
     const { dnspodProviderId } = await resolveEdgeOneProvider(this.providers, providerId)
     const cached = await withProviderCache<DomainListResult>({
-      key: `edgeone:modules:${providerId}:${zoneId}`,
+      // 缓存键与失效标签共用同一构造器，避免字面量各自漂移
+      key: edgeoneDomainsCacheTag(providerId, zoneId),
       tags: [
         providerCacheTag(providerId),
         providerCacheTag(dnspodProviderId),
@@ -106,7 +111,8 @@ export class EdgeOneDomainService {
     domainName: string,
     data: Record<string, unknown>
   ): Promise<DomainMutation> {
-    const normalized = normalizeAccelerationDomainPayload({ ...data, domain_name: domainName })
+    // 更新路径只下发显式提供的字段：ModifyAccelerationDomain 对缺省字段的语义是保持原配置
+    const normalized = normalizeAccelerationDomainUpdatePayload({ ...data, domain_name: domainName })
     const response = await this.mutate(providerId, zoneId, normalized.domain_name, 'update', (client) =>
       client.call('ModifyAccelerationDomain', buildAccelerationDomainRequest(zoneId, normalized))
     )

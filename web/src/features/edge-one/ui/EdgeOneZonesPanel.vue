@@ -8,7 +8,7 @@ import { Input } from '@/shared/ui/input'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
-import { edgeOneAccessLabel, edgeOneStatusLabel } from '@/features/edge-one/lib/status'
+import { edgeOneAccessLabel, edgeOneStatusLabel, edgeOneStatusVariant } from '@/features/edge-one/lib/status'
 
 import type { EdgeOneZone } from '@/features/edge-one/model/types'
 import { useResourceQuery } from '@/shared/query'
@@ -141,7 +141,9 @@ function clearSearch() {
                 <StatusBadge>{{ edgeOneAccessLabel(zone.type) }}</StatusBadge>
               </TableCell>
               <TableCell>
-                <StatusBadge>{{ edgeOneStatusLabel(String(zone.active_status || zone.status || '')) }}</StatusBadge>
+                <StatusBadge :variant="edgeOneStatusVariant(String(zone.active_status || zone.status || ''))">{{
+                  edgeOneStatusLabel(String(zone.active_status || zone.status || ''))
+                }}</StatusBadge>
               </TableCell>
               <TableCell class="text-right">
                 <Button variant="ghost" size="sm" @click="openZone(zone)">管理</Button>

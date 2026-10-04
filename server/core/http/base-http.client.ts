@@ -187,6 +187,10 @@ export class BaseHttpClient {
             retry_after_ms: parseRetryAfterMs(response.headers.get('retry-after')),
           })
         }
+        if (response.status === 401 || response.status === 403) {
+          // 上游鉴权失败单独归类：折叠为 400 http_error 会与参数错误混淆，且凭据类错误码不可达
+          throw new ApiError('provider_credentials_invalid', 'Provider credentials rejected by upstream', 400, details)
+        }
         throw new ApiError(
           'http_error',
           `Provider API error: ${response.status} ${response.statusText}`,

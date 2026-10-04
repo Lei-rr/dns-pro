@@ -1,5 +1,5 @@
 import { reactive, ref, toValue, type MaybeRefOrGetter } from 'vue'
-import { dnsApi, type DnsProviderRef } from '../api/dns-api'
+import { dnsApi, type DnsProviderRef, type DnsRecordBatchPatch } from '../api/dns-api'
 import type { DnsRecord } from '../model/types'
 import type { ImportPlan } from '../lib/record-import-preview'
 import { toast } from '@/shared/lib/toast'
@@ -108,7 +108,7 @@ export function useRecordsBatch(options: {
     const provider = toValue(options.provider)
     const zoneId = toValue(options.zoneId)
     const rows = selected()
-    const patch: Record<string, unknown> = {}
+    const patch: DnsRecordBatchPatch = {}
     let invalid = ''
     if (batchPatch.value.trim()) patch.value = batchPatch.value.trim()
     if (batchPatch.ttl.trim()) {
@@ -141,6 +141,9 @@ export function useRecordsBatch(options: {
       remark: row.remark || row.comment,
       priority: row.priority ?? row.mx,
       proxied: row.proxied,
+      // 与单条编辑同约定：不回传启停状态与权重，会被上游重置（停用记录被启用、权重归零）
+      status: String(row.status || '').toUpperCase() || undefined,
+      weight: row.weight,
     }))
     if (!payload.length) return
     batchSubmitting.value = true
@@ -178,6 +181,9 @@ export function useRecordsBatch(options: {
               priority: item.incoming.priority,
               remark: item.incoming.remark,
               proxied: item.incoming.proxied,
+              // 覆盖不清除启停状态与权重：与单条编辑同约定，漏传会被上游重置
+              status: String(item.existing.status || '').toUpperCase() || undefined,
+              weight: item.existing.weight,
             },
             { zoneName }
           )
@@ -189,7 +195,12 @@ export function useRecordsBatch(options: {
       else if (plan.overwritten.length) toast.success(`已覆盖 ${plan.overwritten.length} 条记录`)
 
       if (plan.added.length) {
-        await runDnsBatch(() => dnsApi.batchCreateRecords(provider, zoneId, { records: plan.added }), '批量导入')
+        try {
+          await runDnsBatch(() => dnsApi.batchCreateRecords(provider, zoneId, { records: plan.added }), '批量导入')
+        } catch (error) {
+          // 调用方以 void 触发，这里必须兜住，否则只有未处理的 rejection 而没有提示
+          toast.error(errorMessage(error))
+        }
       } else {
         await options.invalidate()
       }

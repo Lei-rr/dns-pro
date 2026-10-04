@@ -66,7 +66,14 @@ type SaaSUpdateOptions = StageLifecycle<SaaSUpdateStage> & {
 }
 
 // 这些字段影响 DNS 记录，修改后必须重同步
-const DNS_LINKED_FIELDS = ['preferred_domain', 'auto_preferred', 'sync_target', 'sync_zone', 'sync_provider_id']
+const DNS_LINKED_FIELDS = [
+  'preferred_domain',
+  'auto_preferred',
+  'custom_origin_server',
+  'sync_target',
+  'sync_zone',
+  'sync_provider_id',
+]
 
 /**
  * SaaS 主机名生命周期 + DNS 副作用编排。
@@ -138,7 +145,8 @@ export class SaaSDnsSyncWorkflow {
     const result = await this.hostnames.showHostname(providerId, zoneName, hostnameFqdn, true)
     if (!(await this.shouldCleanupOwnershipTxt(providerId, result))) return result
 
-    const cleanup = await this.sync.cleanupStale(providerId, zoneName, hostnameFqdn)
+    // 复用上面刚强制读取的快照，清理阶段不再重复打上游（同一次对账读到的是同一状态）
+    const cleanup = await this.sync.cleanupStale(providerId, zoneName, hostnameFqdn, result)
     // 仅当确实清理完成才记为已清理：skipped/未找到时留待下次重试
     const cleanupEffect = toCleanupSideEffect(cleanup, '已执行 DNS 清理')
     await this.preferences.markOwnershipTxtCleaned(

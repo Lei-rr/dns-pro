@@ -64,17 +64,21 @@ export async function runDnsSideEffect(fn: () => Promise<Record<string, unknown>
   }
 }
 
-/** 同步结果 → 副作用摘要 */
+/** 同步结果 → 副作用摘要；状态值经白名单归一，非法值（含上游自造串）按记录内容推断 */
 export function toSyncSideEffect(result: Record<string, unknown>, defaultMessage: string): DnsSideEffect {
-  let status = String(result.status ?? '') as SideEffectStatus | ''
-  if (status === '' || status === 'completed') {
-    if (hasFailedSideEffectItem(result)) status = 'failed'
-    else if (status === '') {
-      const hasRecords = Array.isArray(result.records) ? result.records.length > 0 : Boolean(result.record)
-      status = !hasRecords && (result.reason || result.code) ? 'skipped' : 'completed'
-    }
+  const raw = String(result.status ?? '')
+  let status: SideEffectStatus
+  if (raw === 'failed' || raw === 'skipped') {
+    status = raw
+  } else if (raw === 'completed') {
+    status = hasFailedSideEffectItem(result) ? 'failed' : 'completed'
+  } else if (hasFailedSideEffectItem(result)) {
+    status = 'failed'
+  } else {
+    const hasRecords = Array.isArray(result.records) ? result.records.length > 0 : Boolean(result.record)
+    status = !hasRecords && (result.reason || result.code) ? 'skipped' : 'completed'
   }
-  return { status: status as SideEffectStatus, message: String(result.message ?? defaultMessage), details: [result] }
+  return { status, message: String(result.message ?? defaultMessage), details: [result] }
 }
 
 /** 清理结果 → 副作用摘要；失败永不折叠为 skipped */

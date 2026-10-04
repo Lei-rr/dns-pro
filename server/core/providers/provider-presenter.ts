@@ -1,5 +1,6 @@
 import type { Provider, PresentedProvider, ProviderType } from './provider.types.js'
 import { getProviderDefinition } from './provider-definitions.js'
+import { providerLinkRulesFor, requiredLinkRule } from './provider-reference.js'
 
 export class ProviderPresenter {
   present(provider: Provider, allProviders?: Provider[]): PresentedProvider {
@@ -35,7 +36,7 @@ export class ProviderPresenter {
   ): boolean {
     if (!definition) return false
     for (const field of definition.required) {
-      if ((provider as Record<string, unknown>)[field] === '') {
+      if (String((provider as Record<string, unknown>)[field] ?? '').trim() === '') {
         return false
       }
     }
@@ -43,35 +44,24 @@ export class ProviderPresenter {
   }
 
   private isLinkedProviderConfigured(provider: Provider, allProviders: Provider[]): boolean {
-    if (provider.type === 'edgeone') {
-      return this.refConfigured(provider.dnspod_provider, 'dnspod', allProviders)
+    const rules = providerLinkRulesFor(provider.type)
+    if (!rules.length) return true
+    const definition = getProviderDefinition(provider.type)
+    if (!definition) return false
+
+    for (const rule of rules) {
+      const linked = String((provider as Record<string, unknown>)[rule.field] ?? '').trim()
+      // 必填字段必须指向已配置的关联服务商；可选字段仅在填写时校验
+      if (linked === '' && !definition.required.includes(rule.field)) continue
+      if (!this.refConfigured(linked, rule.targetType, allProviders)) return false
     }
 
-    if (provider.type === 'saas') {
-      if (!this.refConfigured(provider.cloudflare_provider, 'cloudflare', allProviders)) {
-        return false
-      }
-      if (provider.dnspod_provider && !this.refConfigured(provider.dnspod_provider, 'dnspod', allProviders)) {
-        return false
-      }
-      if (
-        provider.cloudflare_dns_provider &&
-        !this.refConfigured(provider.cloudflare_dns_provider, 'cloudflare', allProviders)
-      ) {
-        return false
-      }
-      return true
-    }
-
+    // Tunnel 建隧道需要关联账号 ID：关联服务商配置完整还不够
     if (provider.type === 'cloudflared') {
-      const linked = allProviders.find(
-        (candidate) => candidate.id === provider.cloudflare_provider && candidate.type === 'cloudflare'
-      )
-      return Boolean(
-        linked &&
-        this.refConfigured(provider.cloudflare_provider, 'cloudflare', allProviders) &&
-        String((linked as Record<string, unknown>).account_id ?? '').trim() !== ''
-      )
+      const rule = requiredLinkRule('cloudflared')
+      const linkedId = rule ? String((provider as Record<string, unknown>)[rule.field] ?? '').trim() : ''
+      const linked = allProviders.find((candidate) => candidate.id === linkedId && candidate.type === rule?.targetType)
+      return Boolean(linked && String((linked as Record<string, unknown>).account_id ?? '').trim() !== '')
     }
 
     return true
@@ -86,7 +76,7 @@ export class ProviderPresenter {
     if (!candidate) return false
 
     for (const field of definition.required) {
-      if ((candidate as Record<string, unknown>)[field] === '') {
+      if (String((candidate as Record<string, unknown>)[field] ?? '').trim() === '') {
         return false
       }
     }

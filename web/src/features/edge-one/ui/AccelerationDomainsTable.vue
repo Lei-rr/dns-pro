@@ -7,7 +7,12 @@ import { Checkbox } from '@/shared/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
-import { edgeOneHttpsStatusLabel, edgeOneStatusLabel } from '@/features/edge-one/lib/status'
+import {
+  edgeOneHttpsStatusLabel,
+  edgeOneHttpsVariant,
+  edgeOneStatusLabel,
+  edgeOneStatusVariant,
+} from '@/features/edge-one/lib/status'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
 
@@ -94,10 +99,14 @@ function toggleAll(value: boolean | 'indeterminate') {
           </TableCell>
           <TableCell class="font-medium">{{ domainName(record) }}</TableCell>
           <TableCell
-            ><StatusBadge>{{ edgeOneStatusLabel(record.status) }}</StatusBadge></TableCell
+            ><StatusBadge :variant="edgeOneStatusVariant(record.status)">{{
+              edgeOneStatusLabel(record.status)
+            }}</StatusBadge></TableCell
           >
           <TableCell
-            ><StatusBadge>{{ edgeOneHttpsStatusLabel(record.certificate) }}</StatusBadge></TableCell
+            ><StatusBadge :variant="edgeOneHttpsVariant(record.certificate)">{{
+              edgeOneHttpsStatusLabel(record.certificate)
+            }}</StatusBadge></TableCell
           >
           <TableCell class="max-w-[220px] truncate">{{ record.cname || '-' }}</TableCell>
           <TableCell class="max-w-[180px] truncate">{{ record.origin?.value || record.origin_type || '-' }}</TableCell>

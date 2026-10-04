@@ -18,7 +18,8 @@ export async function backupDataRoot(dataRoot: string, label: string): Promise<s
   const backups = path.join(dataRoot, BACKUPS_DIR)
   const target = path.join(backups, label)
   await fs.mkdir(target, { recursive: true, mode: 0o700 })
-  await copyTree(dataRoot, target, (source) => source.startsWith(backups))
+  // 按路径边界排除：backups-old 这类仅前缀相同的同级条目仍属数据，必须照常备份
+  await copyTree(dataRoot, target, (source) => source === backups || source.startsWith(`${backups}${path.sep}`))
   return target
 }
 

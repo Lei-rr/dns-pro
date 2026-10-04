@@ -49,10 +49,12 @@ export interface DnsRecord {
   provider?: string
   provider_type?: string
   fqdn?: string
+  zone_name?: string
   status?: string
+  /** DNSPod 权重：编辑与批量写回时必须原样回传，否则上游重置 */
+  weight?: number | string
   /** 归属：派生来源（saas/tunnel/edgeone）或人工记录（manual，不会被自动删除） */
   owner?: RecordOwner
-  [key: string]: unknown
 }
 
 /** D4 归属值：未命中任何派生关系即 manual */

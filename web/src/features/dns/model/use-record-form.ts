@@ -76,12 +76,14 @@ export function useRecordForm(options: {
     const provider = toValue(options.provider)
     const zoneId = toValue(options.zoneId)
     const zoneName = toValue(options.zoneName)
-    const cloudflare = toValue(options.cloudflare)
     const errors: FieldErrors = {}
     const names = parseRecordNames(form.name)
     const value = form.value.trim()
+    const ttl = Number(form.ttl)
     if (!names.length) errors.name = '主机记录不能为空'
     if (!value) errors.value = '记录值不能为空'
+    // 与批量修改同口径：非法 TTL 显式报错，不静默替换成默认值
+    if (!Number.isFinite(ttl) || ttl <= 0) errors.ttl = 'TTL 需为正整数'
     if (editing.value && names.length !== 1) errors.name = '编辑时只能填写一个主机记录'
     formErrors.value = errors
     if (Object.keys(errors).length) return
@@ -91,7 +93,7 @@ export function useRecordForm(options: {
       const base = {
         type: form.type,
         value,
-        ttl: Number(form.ttl) || (cloudflare ? 1 : 600),
+        ttl,
         line: form.line,
         record_line_id: options.lineIdOf(form.line),
         remark: form.remark,

@@ -49,3 +49,36 @@ export function edgeOneHttpsStatusLabel(certificate?: {
   const status = (certificate?.items || certificate?.list || [])[0]?.status
   return status ? certificateStatusLabel(status) : '已开启'
 }
+
+type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning'
+
+/** 状态 → 徽章色：与 edgeOneStatusLabel/certificateStatusLabel 的词表对齐 */
+const STATUS_VARIANTS: Record<string, BadgeVariant> = {
+  online: 'success',
+  active: 'success',
+  deployed: 'success',
+  process: 'warning',
+  pending: 'warning',
+  init: 'warning',
+  applying: 'warning',
+  processing: 'warning',
+  offline: 'destructive',
+  forbidden: 'destructive',
+  failed: 'destructive',
+}
+
+export function edgeOneStatusVariant(status?: string): BadgeVariant {
+  return STATUS_VARIANTS[String(status || '').toLowerCase()] || 'outline'
+}
+
+/** HTTPS 展示（判定同 edgeOneHttpsStatusLabel）→ 徽章色 */
+export function edgeOneHttpsVariant(certificate?: {
+  mode?: string
+  items?: Array<{ status?: string }>
+  list?: Array<{ status?: string }>
+}): BadgeVariant {
+  const mode = String(certificate?.mode || 'disable').toLowerCase()
+  if (mode === 'disable') return 'outline'
+  const status = (certificate?.items || certificate?.list || [])[0]?.status
+  return status ? edgeOneStatusVariant(status) : 'secondary'
+}

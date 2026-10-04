@@ -1,4 +1,4 @@
-import { normalizeFqdn } from '../../shared/values.js'
+import { normalizeFqdn, toAsciiFqdn } from '../../shared/values.js'
 import { providerCacheTag, withProviderCache, zoneCacheTag } from '../../core/cache/provider-cache.js'
 import { callProvider } from '../../core/providers/provider-call.js'
 import { parseCloudflareItemResponse } from './cloudflare-response.schema.js'
@@ -22,7 +22,8 @@ export class ZoneCatalog {
 
   /** 最长后缀匹配 FQDN 所属站点；未匹配返回 null */
   async resolve(providerId: string, fqdn: string, refresh = false): Promise<ZoneRef | null> {
-    const normalized = normalizeFqdn(fqdn)
+    // 站点名来自上游，已是 punycode：入参含非 ASCII 时必须先转 ASCII，否则恒不匹配
+    const normalized = toAsciiFqdn(fqdn)
     let best: ZoneRef | null = null
     let bestLength = -1
     for (const zone of (await this.zones.listAll(providerId, refresh)).items) {

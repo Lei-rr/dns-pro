@@ -181,19 +181,19 @@ web/src/
 
 优先级：命令行参数 > 环境变量 > 默认值。
 
-| 环境变量          | 默认值         | 说明                                                                             |
-| ----------------- | -------------- | -------------------------------------------------------------------------------- |
-| `HOST` / `PORT`   | `0.0.0.0:2022` | 监听地址（命令行 `--port` 可覆盖）                                               |
-| `DATA_DIR`        | `./data`       | 数据目录（权限 0700，文件 0600）                                                 |
+| 环境变量          | 默认值         | 说明                                                                                                     |
+| ----------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| `HOST` / `PORT`   | `0.0.0.0:2022` | 监听地址（命令行 `--port` 可覆盖）                                                                       |
+| `DATA_DIR`        | `./data`       | 数据目录（权限 0700，文件 0600）                                                                         |
 | `LOG_LEVEL`       | `info`         | `fatal`/`error`/`warn`/`info`/`debug`/`trace`/`silent`（命令行 `--log-level`）；Cookie、凭据字段自动脱敏 |
-| `SESSION_SECRET`  | 自动生成       | ≥32 位；未设置时持久化在 `data/session-secret`                                   |
-| `COOKIE_SECURE`   | `false`        | 启用 HTTPS 后务必设为 `true`                                                     |
-| `COOKIE_SAMESITE` | `lax`          | `lax` / `strict` / `none`（`none` 必须同时 `COOKIE_SECURE=true`）                |
-| `TRUST_PROXY`     | `false`        | 反向代理跳数（如 `1`）或可信代理 IP/CIDR 列表；不建议 `true`（会信任任意转发头） |
-| `HTTP_TIMEOUT_MS` | `30000`        | 服务商 API 超时                                                                  |
+| `SESSION_SECRET`  | 自动生成       | ≥32 位；未设置时持久化在 `data/session-secret`                                                           |
+| `COOKIE_SECURE`   | `false`        | 启用 HTTPS 后务必设为 `true`                                                                             |
+| `COOKIE_SAMESITE` | `lax`          | `lax` / `strict` / `none`（`none` 必须同时 `COOKIE_SECURE=true`）                                        |
+| `TRUST_PROXY`     | `false`        | 可信代理 IP/CIDR 列表（如 `127.0.0.1,10.0.0.0/8`）；不接受跳数；`true` 会信任任意转发头                  |
+| `HTTP_TIMEOUT_MS` | `30000`        | 服务商 API 超时                                                                                          |
 
 ```bash
-SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=1 node dist/server.js --port 2022
+SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=127.0.0.1 node dist/server.js --port 2022
 ```
 
 ## 常用命令
@@ -213,7 +213,7 @@ SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=1 n
 - 首次启动请从日志中获取随机初始密码；修改密码后所有已登录会话立即失效（当前设备保持登录）
 - 若仍在使用旧的 `admin/admin`：登录后会被强制要求修改密码，在此之前其它接口不可用
 - 忘记密码时：在 `data/config.json` 写入 `"auth": { "username": "admin", "password": "新密码" }` 后重启，启动时会自动转换为哈希
-- 生产环境放在 HTTPS 反向代理之后，并设置 `COOKIE_SECURE=true`、`TRUST_PROXY=1`；`compose.yaml` 默认监听 `0.0.0.0:2022`，有反向代理时建议改为 `127.0.0.1:2022:2022`
+- 生产环境放在 HTTPS 反向代理之后，并设置 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（改为可信代理的 IP/CIDR，勿用跳数）；`compose.yaml` 默认监听 `0.0.0.0:2022`，有反向代理时建议改为 `127.0.0.1:2022:2022`
 - 容器以非 root（UID 1000）、只读根文件系统、无 capability 运行；宿主机数据目录需 `chown -R 1000:1000 data`
 - 不要把 `data/`、Provider Token、Session Secret 或生产日志提交到公开仓库
 

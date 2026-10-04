@@ -30,10 +30,6 @@ interface UpstreamFilter {
   record_type?: string
 }
 
-interface RecordListFilters {
-  refresh?: boolean
-}
-
 export interface DnsPodRecordItem {
   id: number
   name: string
@@ -60,7 +56,8 @@ interface RecordListResult {
 
 export interface RecordCreateInput {
   record_type: string
-  record_line: string
+  /** 省略时按默认线路写入 */
+  record_line?: string
   value: string
   subdomain?: string
   record_line_id?: string
@@ -70,6 +67,9 @@ export interface RecordCreateInput {
   status?: 'ENABLE' | 'DISABLE'
   remark?: string
 }
+
+/** 归一化后的写入输入：线路已回填默认值 */
+type NormalizedRecordInput = RecordCreateInput & { record_line: string }
 
 interface RecordMutationResult {
   id: number
@@ -94,12 +94,13 @@ export class DnsPodRecordService {
     private readonly httpTimeoutMs?: number
   ) {}
 
-  async list(providerId: string, domain: string, filters: RecordListFilters = {}): Promise<RecordListResult> {
+  async list(providerId: string, domain: string, options: { refresh?: boolean } = {}): Promise<RecordListResult> {
+    const normalized = normalizeDomain(domain)
     const cached = await withProviderCache<RecordListResult>({
-      key: buildCacheKey(`${PROVIDER_TYPE}:records`, { provider_id: providerId, domain }),
-      tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, domain)],
-      refresh: filters.refresh ?? false,
-      loader: () => this.fetchAll(providerId, domain),
+      key: buildCacheKey(`${PROVIDER_TYPE}:records`, { provider_id: providerId, domain: normalized }),
+      tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, normalized)],
+      refresh: options.refresh ?? false,
+      loader: () => this.fetchAll(providerId, normalized),
     })
     return cached.value
   }
@@ -109,55 +110,44 @@ export class DnsPodRecordService {
    * 不走列表缓存（需要最新状态），也不写入缓存。
    */
   async query(providerId: string, domain: string, filter: UpstreamFilter): Promise<DnsPodRecordItem[]> {
-    return (await this.fetchAll(providerId, domain, filter)).items
+    return (await this.fetchAll(providerId, normalizeDomain(domain), filter)).items
   }
 
-  /** 精确匹配 主机记录 + 类型 + 线路（过滤下推上游，不经列表缓存） */
-  async findExact(
-    providerId: string,
-    domain: string,
-    input: RecordCreateInput | Record<string, unknown>
-  ): Promise<DnsPodRecordItem[]> {
-    const normalized = normalizeRecordInput(input)
-    const subdomain = (normalized.subdomain || '@').toLowerCase()
-    const items = await this.query(providerId, domain, { subdomain, record_type: normalized.record_type })
-    const lineId = String(normalized.record_line_id || '').trim()
-    return items.filter(
-      (record) =>
-        record.name.toLowerCase() === subdomain &&
-        record.type.toUpperCase() === normalized.record_type &&
-        (lineId ? record.line_id === lineId : record.line === normalized.record_line)
-    )
-  }
-
-  async create(
-    providerId: string,
-    domain: string,
-    input: RecordCreateInput | Record<string, unknown>
-  ): Promise<RecordMutationResult> {
-    const payload = buildRecordPayload(domain, normalizeRecordInput(input))
-    return this.mutate(providerId, domain, 'CreateRecord', payload, 'dnspod_record_create_failed', 'create')
+  async create(providerId: string, domain: string, input: RecordCreateInput): Promise<RecordMutationResult> {
+    const normalized = normalizeDomain(domain)
+    const payload = buildRecordPayload(normalized, normalizeRecordInput(input))
+    return this.mutate(providerId, normalized, 'CreateRecord', payload, 'dnspod_record_create_failed', 'create')
   }
 
   async update(
     providerId: string,
     domain: string,
     recordId: string,
-    input: RecordCreateInput | Record<string, unknown>
+    input: RecordCreateInput
   ): Promise<RecordMutationResult> {
-    const payload = { ...buildRecordPayload(domain, normalizeRecordInput(input)), RecordId: requireRecordId(recordId) }
-    return this.mutate(providerId, domain, 'ModifyRecord', payload, 'dnspod_record_update_failed', 'update')
+    const normalized = normalizeDomain(domain)
+    const payload = {
+      ...buildRecordPayload(normalized, normalizeRecordInput(input)),
+      RecordId: requireRecordId(recordId),
+    }
+    return this.mutate(providerId, normalized, 'ModifyRecord', payload, 'dnspod_record_update_failed', 'update')
   }
 
   async delete(providerId: string, domain: string, recordId: string): Promise<RecordMutationResult> {
+    const normalized = normalizeDomain(domain)
     const id = requireRecordId(recordId)
     const client = await this.clientFor(providerId)
     const response = await callProvider(
-      { code: 'dnspod_record_delete_failed', message: 'DNSPod record delete failed', providerId, details: { domain } },
-      () => client.call('DeleteRecord', { Domain: domain, RecordId: id })
+      {
+        code: 'dnspod_record_delete_failed',
+        message: 'DNSPod record delete failed',
+        providerId,
+        details: { domain: normalized },
+      },
+      () => client.call('DeleteRecord', { Domain: normalized, RecordId: id })
     )
     const parsed = dnspodMutationResponseSchema.parse(response)
-    invalidateDnsPodRecordCache(providerId, domain)
+    invalidateDnsPodRecordCache(providerId, normalized)
     return { id, request_id: providerOptionalString(parsed.RequestId) }
   }
 
@@ -244,8 +234,14 @@ function optionalUint(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): n
   return int
 }
 
-function normalizeRecordInput(raw: RecordCreateInput | Record<string, unknown>): RecordCreateInput {
-  const input = (raw ?? {}) as Record<string, unknown>
+/** DNSPod 域名大小写不敏感：统一小写去空白，保证缓存键与失效标签一致 */
+function normalizeDomain(domain: string): string {
+  return domain.toLowerCase().trim()
+}
+
+function normalizeRecordInput(raw: RecordCreateInput): NormalizedRecordInput {
+  // 输入可能来自 schema 之外的路径（探针/旧数据），字段逐个读取后再归一
+  const input: Partial<RecordCreateInput> = raw ?? {}
   const recordType = String(input.record_type ?? '')
     .trim()
     .toUpperCase()
@@ -272,7 +268,7 @@ function normalizeRecordInput(raw: RecordCreateInput | Record<string, unknown>):
   }
 }
 
-function buildRecordPayload(domain: string, input: RecordCreateInput): Record<string, unknown> {
+function buildRecordPayload(domain: string, input: NormalizedRecordInput): Record<string, unknown> {
   const payload: Record<string, unknown> = {
     Domain: domain,
     RecordType: input.record_type,

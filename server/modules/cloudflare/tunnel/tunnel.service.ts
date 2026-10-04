@@ -13,6 +13,7 @@ import {
   type CloudflareTunnel as RawTunnel,
 } from '../cloudflare-response.schema.js'
 import { invalidateTunnelListCache, invalidateTunnelRouteCache } from './tunnel.cache.js'
+import { cloudflarePageLimit } from '../cloudflare-pagination.js'
 import { tunnelPath } from './tunnel-path.js'
 import type { CloudflareAccess, TunnelAccount } from '../access.js'
 
@@ -45,16 +46,13 @@ export class TunnelService {
       ],
       refresh,
       loader: async () => ({
-        items: await collectNumberedPages(
-          async (page, perPage) => {
-            const response = await callProvider(
-              { code: 'cloudflared_tunnel_list_failed', message: 'Cloudflare Tunnel list failed', providerId },
-              () => account.client.get(tunnelPath(account.accountId), { is_deleted: 'false', page, per_page: perPage })
-            )
-            return parseCloudflareListResponse(response, presentTunnel)
-          },
-          { limitCode: 'cloudflared_pagination_limit', limitMessage: 'Cloudflare Tunnel pagination limit reached' }
-        ),
+        items: await collectNumberedPages(async (page, perPage) => {
+          const response = await callProvider(
+            { code: 'cloudflared_tunnel_list_failed', message: 'Cloudflare Tunnel list failed', providerId },
+            () => account.client.get(tunnelPath(account.accountId), { is_deleted: 'false', page, per_page: perPage })
+          )
+          return parseCloudflareListResponse(response, presentTunnel)
+        }, cloudflarePageLimit('cloudflared_pagination_limit')),
       }),
     })
     return cached.value

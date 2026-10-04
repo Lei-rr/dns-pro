@@ -4,7 +4,7 @@ import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 
-type ResourceQueryContext = { signal: AbortSignal; refresh: boolean }
+type ResourceQueryContext = { refresh: boolean }
 
 type ResourceQueryOptions<T> = {
   /** 查询键（含 scope），由调用方按域约定构造 */
@@ -48,7 +48,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
   const query = useQuery({
     queryKey: key,
-    queryFn: ({ signal }) => options.queryFn({ signal, refresh: refreshFlag.value }),
+    queryFn: () => options.queryFn({ refresh: refreshFlag.value }),
   })
 
   const loading = computed(() => query.isPending.value || (query.isFetching.value && query.data.value === undefined))

@@ -1,5 +1,5 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
-import { useMutation, useQueryClient } from '@tanstack/vue-query'
+import { useMutation } from '@tanstack/vue-query'
 import { useResourceQuery } from '@/shared/query'
 import { syncApi } from '../api/sync-api'
 import type {
@@ -35,18 +35,15 @@ export function useSyncHealthQuery(scope: MaybeRefOrGetter<ReconcileScope> = {})
   }
 }
 
-/** F1 一键修复 / F2 执行入口：同一语义经 POST /reconcile，完成后失效健康视图缓存 */
+/** F1 一键修复 / F2 执行入口：同一语义经 POST /reconcile，执行后由调用方显式刷新健康视图 */
 export function useReconcileRepair() {
-  const client = useQueryClient()
   const mutation = useMutation({ mutationFn: async (scope: ReconcileScope) => (await syncApi.apply(scope)).data })
 
-  async function repair(scope: ReconcileScope = {}): Promise<ReconcileResult> {
-    const result = await mutation.mutateAsync(scope)
-    await client.invalidateQueries({ queryKey: ['sync', 'health'] })
-    return result
+  return {
+    // 不再在此 invalidate：调用方拿到结果后必然 refresh()，两处叠加会触发两轮全量检测扫描
+    repair: (scope: ReconcileScope = {}): Promise<ReconcileResult> => mutation.mutateAsync(scope),
+    repairing: computed(() => mutation.isPending.value),
   }
-
-  return { repair, repairing: computed(() => mutation.isPending.value) }
 }
 
 /** F6 审计留痕读路径：最近的关键操作（批量 / 凭据变更 / 会话吊销） */

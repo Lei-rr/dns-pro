@@ -5,11 +5,11 @@ services:
     restart: unless-stopped
     ports:
       # 默认对外监听；若前置 HTTPS 反向代理，可改为 "127.0.0.1:2022:2022" 仅本机访问
-      - "2022:2022"
+      - '2022:2022'
     environment:
       # 反向代理启用 HTTPS 后打开：
       # COOKIE_SECURE: "true"
-      # TRUST_PROXY: "1"
+      # TRUST_PROXY: "127.0.0.1"   # 可信代理 IP/CIDR（不接受跳数）
       TZ: Asia/Shanghai
     volumes:
       # 首次使用宿主机目录前执行：mkdir -p data && chown -R 1000:1000 data

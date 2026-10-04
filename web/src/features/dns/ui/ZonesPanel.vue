@@ -54,6 +54,8 @@ const domainInput = ref('')
 const domainError = ref('')
 
 const title = computed(() => props.provider.name || providerId.value)
+/** SaaS 的域名列表是上游只读视图（/saas/providers/:id/zones 仅有 GET），不提供增删 */
+const canWriteZones = computed(() => props.provider.type !== 'saas')
 
 const zonesQuery = useResourceQuery<Zone[]>({
   key: () => ['dns', 'zones', props.provider.id, props.provider.type],
@@ -180,7 +182,7 @@ function clearSearch() {
         <RefreshCw class="size-4" />
         刷新
       </LoadingButton>
-      <Button size="sm" @click="openAdd">
+      <Button v-if="canWriteZones" size="sm" @click="openAdd">
         <Plus class="size-4" />
         添加域名
       </Button>
@@ -252,7 +254,7 @@ function clearSearch() {
                     @click="openRecords(zone)"
                     >管理</Button
                   >
-                  <DropdownMenu>
+                  <DropdownMenu v-if="canWriteZones">
                     <DropdownMenuTrigger as-child>
                       <Button
                         variant="ghost"

@@ -15,10 +15,9 @@ import {
 import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import { callProvider, collectNumberedPages } from '../../../core/providers/provider-call.js'
+import { CLOUDFLARE_PAGE_LIMIT } from '../cloudflare-pagination.js'
 import { providerOptionalString, providerString } from '../../../core/providers/provider-values.js'
 import { asRecord, asRecordArray } from '../../../core/providers/response-guards.js'
-
-const PAGE_LIMIT = { limitCode: 'cloudflare_pagination_limit', limitMessage: 'Cloudflare pagination limit reached' }
 
 interface DcvDelegationRecord {
   cname: string
@@ -69,7 +68,7 @@ export class SaaSCustomHostnameClient {
   async listAll(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<CloudflareCustomHostname[]> {
     return collectNumberedPages(
       (page, perPage) => this.page(cloudflareProviderId, zoneId, page, perPage, refresh),
-      PAGE_LIMIT
+      CLOUDFLARE_PAGE_LIMIT
     )
   }
 
@@ -169,7 +168,7 @@ export class SaaSCustomHostnameClient {
   private async findId(cloudflareProviderId: string, zoneId: string, fqdn: string, refresh: boolean) {
     let found = ''
     await collectNumberedPages((page, perPage) => this.page(cloudflareProviderId, zoneId, page, perPage, refresh), {
-      ...PAGE_LIMIT,
+      ...CLOUDFLARE_PAGE_LIMIT,
       stop: (items) => {
         found = items.find((item) => normalizeFqdn(item.hostname) === fqdn && item.id)?.id ?? ''
         return found !== ''

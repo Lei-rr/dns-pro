@@ -4,13 +4,15 @@ import fp from 'fastify-plugin'
 import fastifyStatic from '@fastify/static'
 import fastifyCompress from '@fastify/compress'
 
-const distDir = path.resolve(process.cwd(), 'web/dist')
+/** 未显式配置时的静态资源根目录（相对进程工作目录；探针直接构造 config 时走这里） */
+const DEFAULT_DIST_DIR = 'web/dist'
 
 /**
- * 静态资源：@fastify/compress + @fastify/static（根目录固定为 web/dist，库内置目录穿越防护，拒绝点文件）。
+ * 静态资源：@fastify/compress + @fastify/static（根目录取 config.webDistDir，库内置目录穿越防护，拒绝点文件）。
  * 使用 fp 以便错误处理插件的 SPA 回退可调用 reply.sendFile。
  */
 const staticPluginImpl: FastifyPluginAsync = async (app) => {
+  const distDir = path.resolve(app.ctx.config.webDistDir ?? DEFAULT_DIST_DIR)
   await app.register(fastifyCompress)
 
   // 带哈希的构建产物：长缓存

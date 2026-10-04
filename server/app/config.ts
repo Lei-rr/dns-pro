@@ -5,13 +5,15 @@ export interface AppConfig {
   port: number
   logLevel: string | false
   dataDir: string
+  /** 静态资源根目录；默认 <cwd>/web/dist，可用 WEB_DIST_DIR 覆盖 */
+  webDistDir?: string
   sessionSecret: string
   sessionCookieName: string
   sessionMaxAgeSeconds: number
   cookieSecure: boolean
   cookieSameSite: 'lax' | 'strict' | 'none'
-  /** false / 跳数 / 可信代理地址列表（不建议 true：会信任任意 X-Forwarded-For） */
-  trustProxy: boolean | number | string[]
+  /** false / 可信代理地址列表（不建议 true：会信任任意 X-Forwarded-For） */
+  trustProxy: boolean | string[]
   httpTimeoutMs: number
 }
 
@@ -20,6 +22,7 @@ const DEFAULT_CONFIG: AppConfig = {
   port: 2022,
   logLevel: 'info',
   dataDir: path.resolve('data'),
+  webDistDir: path.resolve('web/dist'),
   sessionSecret: '',
   sessionCookieName: 'dns_pro_session',
   sessionMaxAgeSeconds: 7 * 24 * 60 * 60,
@@ -44,11 +47,19 @@ function envBool(env: NodeJS.ProcessEnv, key: string): boolean | undefined {
   throw new Error(`${key} must be a boolean (true/false)`)
 }
 
-/** TRUST_PROXY：true/false、跳数（如 1）或逗号分隔的 IP/CIDR（如 127.0.0.1,10.0.0.0/8） */
+/**
+ * TRUST_PROXY：true/false 或逗号分隔的 IP/CIDR（如 127.0.0.1,10.0.0.0/8）。
+ * 不接受跳数：Fastify 5 对数字 trustProxy 采取 fail-closed，若改成按跳数信任，
+ * 直连客户端只要带一个 X-Forwarded-For 就能冒充来源 IP，绕开按 IP 的登录锁定与审计。
+ */
 function envTrustProxy(env: NodeJS.ProcessEnv): AppConfig['trustProxy'] | undefined {
   const value = envString(env, 'TRUST_PROXY')
   if (value === undefined) return undefined
-  if (/^\d+$/.test(value)) return Number(value)
+  if (/^\d+$/.test(value)) {
+    throw new Error(
+      'TRUST_PROXY must not be a hop count; use a trusted proxy IP/CIDR list instead (e.g. 127.0.0.1,10.0.0.0/8)'
+    )
+  }
   const lower = value.toLowerCase()
   if (['true', 'false'].includes(lower)) return lower === 'true'
   return value
@@ -82,18 +93,20 @@ function envLogLevel(env: NodeJS.ProcessEnv): string | undefined {
 
 /**
  * 配置优先级：命令行参数 > 环境变量 > 默认值。
- * 环境变量：HOST PORT LOG_LEVEL DATA_DIR SESSION_SECRET COOKIE_SECURE COOKIE_SAMESITE TRUST_PROXY HTTP_TIMEOUT_MS
+ * 环境变量：HOST PORT LOG_LEVEL DATA_DIR WEB_DIST_DIR SESSION_SECRET COOKIE_SECURE COOKIE_SAMESITE TRUST_PROXY HTTP_TIMEOUT_MS
  */
 export function loadAppConfig(overrides: Partial<AppConfig> = {}, env: NodeJS.ProcessEnv = process.env): AppConfig {
   const sameSite = envString(env, 'COOKIE_SAMESITE')?.toLowerCase()
   if (sameSite !== undefined && !SAME_SITE.has(sameSite)) throw new Error('COOKIE_SAMESITE must be lax, strict or none')
   const dataDir = envString(env, 'DATA_DIR')
+  const webDistDir = envString(env, 'WEB_DIST_DIR')
 
   const fromEnv: Partial<AppConfig> = {
     host: envString(env, 'HOST'),
     port: envInt(env, 'PORT', 1, 65535),
     logLevel: envLogLevel(env),
     dataDir: dataDir ? path.resolve(dataDir) : undefined,
+    webDistDir: webDistDir ? path.resolve(webDistDir) : undefined,
     sessionSecret: envString(env, 'SESSION_SECRET'),
     cookieSecure: envBool(env, 'COOKIE_SECURE'),
     cookieSameSite: sameSite as AppConfig['cookieSameSite'] | undefined,
@@ -111,19 +124,28 @@ export function loadAppConfig(overrides: Partial<AppConfig> = {}, env: NodeJS.Pr
   return config
 }
 
-/** 解析命令行：--port/-p <n>  --log-level <level> */
+/**
+ * 解析命令行：--port/-p <n>  --log-level <level>。
+ * 未知选项与缺值直接抛错（与 loadAppConfig 对非法环境变量的 fail-fast 一致，避免拼错后按默认值静默启动）；
+ * 位置参数继续忽略：npm run dev 会注入 watch 与脚本名。
+ */
 export function parseCliOverrides(args: string[]): Partial<AppConfig> {
   const overrides: Partial<AppConfig> = {}
   for (let i = 0; i < args.length; i++) {
+    const arg = args[i]
+    if (!arg || !arg.startsWith('-')) continue
     const value = args[i + 1]
-    if (args[i] === '--log-level' && value) {
+    if (!value || value.startsWith('-')) throw new Error(`${arg} requires a value`)
+    if (arg === '--log-level') {
       overrides.logLevel = normalizeLogLevel('--log-level', value)
       i++
-    } else if ((args[i] === '--port' || args[i] === '-p') && value) {
+    } else if (arg === '--port' || arg === '-p') {
       const port = Number(value)
       if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid port: ${value}`)
       overrides.port = port
       i++
+    } else {
+      throw new Error(`Unknown option: ${arg}`)
     }
   }
   return overrides

@@ -13,6 +13,8 @@ const TERMINAL: JobStatus[] = ['completed', 'failed']
  * 失败任务保留（重试需要更新前的 DNS 快照）。
  */
 const EXECUTION_SNAPSHOT_FIELDS = ['dns_before_records', 'cleanup_recipe'] as const
+/** 终态任务保留上限：超出后按结束时间淘汰最旧，避免长进程内存无界增长 */
+const MAX_TERMINAL_JOBS = 500
 
 type ItemExecutionClaim = { state: 'execute'; item: Record<string, unknown> } | { state: 'skip' | 'uncertain' }
 
@@ -107,13 +109,13 @@ export class JobService {
     const job = this.jobs.get(id)
     if (!job) return null
     if (ACTIVE.includes(job.status)) this.requestStart(job.id)
-    return { ...job }
+    return cloneJob(job)
   }
 
   async listActive(type?: string): Promise<JobRecord[]> {
     return this.list()
       .filter((job) => ACTIVE.includes(job.status) && (!type || job.type === type))
-      .map((job) => ({ ...job }))
+      .map((job) => cloneJob(job))
   }
 
   async patch(id: string, patch: Partial<JobRecord>): Promise<JobRecord | null> {
@@ -244,7 +246,7 @@ export class JobService {
       return
     }
     try {
-      await runner(job)
+      await runner(cloneJob(job))
       const after = this.jobs.get(jobId)
       if (after && ACTIVE.includes(after.status)) {
         await this.patch(jobId, {
@@ -267,7 +269,20 @@ export class JobService {
   private put(job: JobRecord): JobRecord {
     const next = job.status === 'completed' ? stripExecutionSnapshots(job) : job
     this.jobs.set(next.id, next)
+    this.pruneTerminalJobs()
     return next
+  }
+
+  /** 终态任务只保留最近 MAX_TERMINAL_JOBS 条（活跃任务不参与淘汰） */
+  private pruneTerminalJobs(): void {
+    if (this.jobs.size <= MAX_TERMINAL_JOBS) return
+    const terminal = [...this.jobs.values()].filter((job) => TERMINAL.includes(job.status))
+    const overflow = terminal.length - MAX_TERMINAL_JOBS
+    if (overflow <= 0) return
+    terminal
+      .sort((a, b) => (a.finished_at ?? a.updated_at) - (b.finished_at ?? b.updated_at))
+      .slice(0, overflow)
+      .forEach((job) => this.jobs.delete(job.id))
   }
 
   private list(): JobRecord[] {
@@ -297,6 +312,11 @@ function hasResourceConflict(job: JobRecord, resourceKeys: string[]): boolean {
   if (!Array.isArray(existing)) return false
   const wanted = new Set(resourceKeys)
   return existing.some((key) => wanted.has(String(key)))
+}
+
+/** 对外副本：items 元素也复制，防止调用方原地修改绕过 put() 污染内部状态 */
+function cloneJob(job: JobRecord): JobRecord {
+  return { ...job, items: job.items.map((item) => ({ ...item })) }
 }
 
 /** 剥离已完成任务的执行期快照字段（无字段时原样返回，避免无谓的对象重建） */

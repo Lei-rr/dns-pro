@@ -18,7 +18,7 @@ import { isHostnameActive, zoneOwnsHostname } from '../../../modules/cloudflare/
 import type { SaaSHostnameService } from '../../../modules/cloudflare/saas/saas-hostname.service.js'
 import type { SaaSSyncConfigService } from '../../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { DerivedSourcePlanner, PlannedRecord } from '../derived-record.types.js'
-import type { DesiredRecord } from '../sync-plan.js'
+import { recordIdentity, type DesiredRecord } from '../sync-plan.js'
 
 /** SaaS 同步目标厂商：DNSPod 与 Cloudflare DNS */ export type SaaSSyncProviderType = 'dnspod' | 'cloudflare'
 
@@ -154,15 +154,9 @@ export function desiredRecord(input: {
 /** 清理配方：记录归属已由备注/值证明，keep=false 让写入口只删"自己的"记录 */
 export const cleanupDesired = (record: SaaSSyncRecord): SaaSSyncRecord => ({ ...record, keep: false })
 
-/** 记录稳定身份：类型|全名|线路（值变化视为同一记录原地更新） */
-export function syncRecordIdentity(record: SaaSSyncRecord): string {
-  const type = String(record.record.type ?? '')
-    .trim()
-    .toUpperCase()
-  const name = record.fqdn.trim().toLowerCase().replace(/\.+$/, '')
-  if (type === '' || name === '') return ''
-  return [type, name, String(record.record.line ?? '').trim()].join('|')
-}
+/** 记录稳定身份：类型|全名|线路（值与备注变化视为同一记录原地更新；判据来自 sync-plan，与对账检测同口径） */
+export const syncRecordIdentity = (record: SaaSSyncRecord): string =>
+  recordIdentity({ ...record.record, name: record.fqdn })
 
 /** 统计删除条数（写入口回执） */
 export const countDeleted = (results: Array<{ status?: unknown }>) =>

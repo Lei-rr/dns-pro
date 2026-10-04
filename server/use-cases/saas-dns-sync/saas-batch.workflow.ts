@@ -1,6 +1,7 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
+import type { SideEffects } from '../../core/providers/side-effect-result.js'
 import {
   BatchJobKind,
   dedupeStrings,
@@ -177,8 +178,7 @@ export class SaaSBatchWorkflow {
           onStage: (_stage, stagePatch) => persistItemStage(this.jobs, job.id, byHostname(hostname), stagePatch),
         })
 
-        const local = (updated as { side_effects?: { local?: { preference?: { status?: string; message?: string } } } })
-          .side_effects?.local?.preference
+        const local = (updated as { side_effects?: SideEffects }).side_effects?.local?.preference
         if (local?.status === 'failed') {
           return {
             status: 'failed',

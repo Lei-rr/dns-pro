@@ -8,9 +8,12 @@ import { ApiError } from '../http/api-error.js'
  */
 export async function authRequired(request: FastifyRequest): Promise<void> {
   const auth = request.server.ctx.modules.auth.service
-  if (!(await auth.authenticate(request))) throw new ApiError('unauthenticated', '请先登录', 401)
+  const actor = await auth.authenticate(request)
+  if (!actor) throw new ApiError('unauthenticated', '请先登录', 401)
+  // 会话已解析，把操作者留在请求上：审计等下游只读 request，不再回查 modules
+  request.authActor = actor
 
-  const config = request.routeOptions?.config as { allowDefaultCredential?: boolean } | undefined
+  const config = request.routeOptions?.config
   if (!config?.allowDefaultCredential && (await auth.isDefaultCredential())) {
     throw new ApiError('password_change_required', '仍在使用默认账号密码，请先修改密码', 403)
   }

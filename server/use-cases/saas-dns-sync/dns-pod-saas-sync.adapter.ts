@@ -8,7 +8,6 @@ import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hos
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
   DNSPOD_ORIGIN_LABEL,
-  DNSPOD_PREFERRED_LINE,
   cleanupDesired,
   countDeleted,
   desiredRecord,
@@ -20,15 +19,12 @@ import {
   resolveEffectiveOrigin,
   saasDesiredRecords,
   saasDnsPodProviderId,
-  syncRecordIdentity,
   syncRemark,
   type SaaSDnsPodTargetDeps,
   type SaaSDnsTarget,
   type SaaSSyncRecord,
 } from '../derived-records/planners/saas.planner.js'
-import type { SaaSSyncAdapter } from './saas-sync-records.js'
-
-export { DNSPOD_PREFERRED_LINE }
+import { orphanRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
 
 /** DNSPod 同步记录 TTL（沿用历史默认值） */
 const SAAS_RECORD_TTL = 600
@@ -125,13 +121,19 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
   }
 
   /** 主机名激活后删除所有权验证 TXT */
-  async cleanupStaleRecords(providerId: string, cfZoneName: string, hostnameFqdn: string) {
-    const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
-    if (!isHostnameActive(hostname)) return { cleaned: 0, reason: 'saas_not_active' }
-    const fqdn = hostname.hostname
+  async cleanupStaleRecords(
+    providerId: string,
+    cfZoneName: string,
+    hostnameFqdn: string,
+    hostname?: CloudflareCustomHostname
+  ) {
+    // 调用方已强制读取过主机名时复用快照，避免同一次对账重复打上游
+    const current = hostname ?? (await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true))
+    if (!isHostnameActive(current)) return { cleaned: 0, reason: 'saas_not_active' }
+    const fqdn = current.hostname
     if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
-    const target = await optionalDnsPodSaasTarget(this.target, providerId, hostname, fqdn)
+    const target = await optionalDnsPodSaasTarget(this.target, providerId, current, fqdn)
     if ('reason' in target) return { cleaned: 0, reason: target.reason }
     const deleted = await this.writer.sync('dnspod', target.providerId, target.zone, [
       cleanupDesired(
@@ -186,15 +188,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
 
   /** 更新后不再需要的记录：按身份差集一次清理（值或备注可证明归属） */
   private async deleteRemoved(target: SaaSDnsTarget, beforeRecords: SaaSSyncRecord[], afterRecords: SaaSSyncRecord[]) {
-    const retained = new Set(afterRecords.map(syncRecordIdentity))
-    const seen = new Set<string>()
-    const orphans: SaaSSyncRecord[] = []
-    for (const record of beforeRecords) {
-      const key = syncRecordIdentity(record)
-      if (key === '' || seen.has(key) || retained.has(key)) continue
-      seen.add(key)
-      orphans.push(cleanupDesired(record))
-    }
+    const orphans = orphanRecords(target, beforeRecords, afterRecords)
     if (orphans.length === 0) return []
     return this.writer.sync('dnspod', target.providerId, target.zone, orphans)
   }

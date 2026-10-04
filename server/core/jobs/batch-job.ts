@@ -159,9 +159,6 @@ export async function runBatchItems(
   }
 ): Promise<void> {
   for (const raw of job.items) {
-    const fresh = await jobs.get(job.id)
-    if (!fresh) break
-
     const key = options.itemKey(raw)
     if (!key || raw.status === 'success' || raw.status === 'skipped') continue
 
@@ -189,7 +186,6 @@ export async function persistItemStage(
   patch: Record<string, unknown>
 ): Promise<void> {
   await jobs.patchItem(jobId, match, patch)
-  await jobs.get(jobId)
 }
 
 /** JobRecord → 对外视图骨架 */

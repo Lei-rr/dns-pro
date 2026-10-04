@@ -30,11 +30,13 @@ export function statusLabel(status?: string | null) {
   return STATUS_LABELS[String(status).toLowerCase()] || '状态未知'
 }
 
-export function statusVariant(status?: string | null): 'default' | 'secondary' | 'outline' | 'destructive' {
+export function statusVariant(
+  status?: string | null
+): 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning' {
   if (!status) return 'outline'
-  if (GREEN.has(status)) return 'secondary'
+  if (GREEN.has(status)) return 'success'
   if (RED.has(status)) return 'destructive'
-  if (GOLD.has(status)) return 'secondary'
+  if (GOLD.has(status)) return 'warning'
   return 'outline'
 }
 

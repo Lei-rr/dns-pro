@@ -5,14 +5,14 @@ export type BatchRecordInput = {
   name?: string
   type?: string
   value?: string
-  ttl?: number | string
+  ttl?: number
   line?: string
   record_line_id?: string
-  priority?: number | string
+  priority?: number
   remark?: string
   proxied?: boolean
   status?: string
-  weight?: number | string
+  weight?: number
 }
 
 type BatchRecordPatch = Partial<

@@ -53,7 +53,12 @@ function onPageSizeChange(next: number) {
 }
 
 function openDetail(record: CloudflaredTunnel) {
-  router.push(`/${encodePath(props.providerId)}/${encodePath(String(record.id || record.name))}`)
+  router.push(`/${encodePath(props.providerId)}/${encodePath(tunnelRowKey(record))}`)
+}
+
+/** 行标识：id 缺失（仅名称可辨）时退回名称，行 key、busy key 与详情路由参数统一走此处 */
+function tunnelRowKey(record: CloudflaredTunnel) {
+  return record.id || record.name
 }
 
 function openCreate() {
@@ -89,8 +94,8 @@ async function createTunnel() {
 async function removeTunnel(record: CloudflaredTunnel) {
   const scopeOwner = providerGeneration.capture({ providerId: props.providerId })
   const tunnelId = String(record.id || '')
-  const tunnelKey = String(record.id || record.name)
-  if (!(await confirmDelete(String(record.name || record.id || ''))) || !scopeOwner.active()) return
+  const tunnelKey = tunnelRowKey(record)
+  if (!(await confirmDelete(record.name || record.id)) || !scopeOwner.active()) return
   await runBusy(tunnelKey, async (owner) => {
     try {
       await cloudflaredApi.deleteTunnel(scopeOwner.value.providerId, tunnelId)
@@ -104,7 +109,7 @@ async function removeTunnel(record: CloudflaredTunnel) {
 }
 
 function replicaCount(record: CloudflaredTunnel) {
-  return Array.isArray(record.connections) ? record.connections.length : 0
+  return record.connections.length
 }
 
 watch(
@@ -163,12 +168,12 @@ onUnmounted(() => {
               </div>
             </TableCell>
           </TableRow>
-          <TableRow v-for="record in pagedTunnels" :key="String(record.id || record.name)">
+          <TableRow v-for="record in pagedTunnels" :key="tunnelRowKey(record)">
             <TableCell class="px-4">
               <Button
                 variant="link"
                 class="h-auto px-0 py-0 font-medium"
-                :disabled="isRowBusy(String(record.id || record.name))"
+                :disabled="isRowBusy(tunnelRowKey(record))"
                 @click="openDetail(record)"
                 >{{ record.name }}</Button
               >
@@ -183,25 +188,20 @@ onUnmounted(() => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  :disabled="isRowBusy(String(record.id || record.name))"
+                  :disabled="isRowBusy(tunnelRowKey(record))"
                   @click="openDetail(record)"
                   >管理</Button
                 >
                 <DropdownMenu>
                   <DropdownMenuTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="size-8"
-                      :disabled="isRowBusy(String(record.id || record.name))"
-                    >
+                    <Button variant="ghost" size="icon" class="size-8" :disabled="isRowBusy(tunnelRowKey(record))">
                       <EllipsisVertical class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem
                       variant="destructive"
-                      :disabled="isRowBusy(String(record.id || record.name))"
+                      :disabled="isRowBusy(tunnelRowKey(record))"
                       @click="removeTunnel(record)"
                       >删除</DropdownMenuItem
                     >

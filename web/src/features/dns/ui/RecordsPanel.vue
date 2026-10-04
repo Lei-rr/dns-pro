@@ -162,10 +162,14 @@ async function handleRefresh() {
 }
 
 async function removeRecord(record: DnsRecord) {
-  const key = String(record.id || `${record.name}-${record.type}-${record.value || ''}`)
   const recordId = String(record.id || '')
+  // 缺少 ID 时请求会落到集合路径（404），与编辑路径同约定：明确报错并要求刷新
+  if (!recordId) {
+    toast.error('该记录缺少 ID，无法删除，请刷新后重试')
+    return
+  }
   if (!(await confirmDelete(`${record.name} · ${record.type}`))) return
-  await runBusy(key, async (owner) => {
+  await runBusy(dnsRecordRowKey(record), async (owner) => {
     try {
       await dnsApi.deleteRecord(props.provider, props.zoneId, recordId)
       if (!owner.active()) return

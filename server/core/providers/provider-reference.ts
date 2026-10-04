@@ -1,4 +1,5 @@
 import { ApiError } from '../http/api-error.js'
+import { getProviderDefinition } from './provider-definitions.js'
 import type { Provider, ProviderType } from './provider.types.js'
 
 type ProviderLinkRule = {
@@ -25,6 +26,18 @@ export const PROVIDER_LINK_RULES: ProviderLinkRule[] = [
     targetType: 'cloudflare',
   },
 ]
+
+/** 某类型的全部关联字段规则：校验、配置判定与连通性测试共用同一事实来源 */
+export function providerLinkRulesFor(type: ProviderType): ProviderLinkRule[] {
+  return PROVIDER_LINK_RULES.filter((rule) => rule.appliesTo.includes(type))
+}
+
+/** 必填关联规则：字段须在 provider definition 的 required 中登记 */
+export function requiredLinkRule(type: ProviderType): ProviderLinkRule | undefined {
+  const definition = getProviderDefinition(type)
+  if (!definition) return undefined
+  return PROVIDER_LINK_RULES.find((rule) => rule.appliesTo.includes(type) && definition.required.includes(rule.field))
+}
 
 export function validateProviderReferences(candidate: Provider, providers: Provider[]): void {
   for (const rule of PROVIDER_LINK_RULES) {
