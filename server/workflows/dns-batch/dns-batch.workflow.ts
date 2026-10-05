@@ -17,7 +17,7 @@ import {
   ZONE_WRITE_JOB_TYPES,
   dnsZoneKey,
   readResourceKeys,
-} from '../../core/jobs/job-types.js'
+} from '../../core/jobs/job-registry.js'
 import {
   normalizeCreateRecords,
   normalizePatch,

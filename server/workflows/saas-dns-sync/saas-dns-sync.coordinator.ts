@@ -11,7 +11,7 @@ import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hos
 import type { SaaSSyncConfigService } from '../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import { CloudflareDnsSaaSSyncAdapter } from './cloudflare-dns-saas-sync.adapter.js'
-import { dnsZoneKey } from '../../core/jobs/job-types.js'
+import { dnsZoneKey } from '../../core/jobs/job-registry.js'
 import { DnsPodSaaSSyncAdapter } from './dns-pod-saas-sync.adapter.js'
 import {
   DNSPOD_PREFERRED_LINE,

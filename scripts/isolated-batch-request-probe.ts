@@ -6,12 +6,12 @@ import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.ada
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/app/build.js'
+import { buildApp } from '../server/app/lifecycle.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
 import { invalidateSaaSHostnameCache } from '../server/modules/cloudflare/saas/saas.cache.js'
-import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-types.js'
+import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-registry.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-requests-'))
 await fs.writeFile(

@@ -7,7 +7,7 @@ import { asRecordArray } from '../../core/providers/response-guards.js'
 import { normalizeFqdn } from '../../shared/values.js'
 import { invalidateEdgeOneDomainCache } from './edge-one.cache.js'
 import type { EdgeOneClient } from './edge-one.client.js'
-import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
+import { edgeOneClientFor, resolveEdgeOneProvider } from './access.js'
 import {
   buildAccelerationDomainRequest,
   normalizeAccelerationDomainPayload,

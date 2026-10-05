@@ -8,7 +8,7 @@ import {
   type JobLock,
   type JobRecord,
 } from './job.types.js'
-import { peekResourceKeys } from './job-types.js'
+import { peekResourceKeys } from './job-registry.js'
 
 /** 批量任务对外视图公共字段 */
 export type BatchJobViewBase = {

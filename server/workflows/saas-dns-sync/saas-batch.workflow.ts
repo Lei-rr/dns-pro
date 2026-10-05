@@ -18,7 +18,7 @@ import {
   SAAS_ZONE_LOCK_MESSAGE,
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
-} from '../../core/jobs/job-types.js'
+} from '../../core/jobs/job-registry.js'
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'

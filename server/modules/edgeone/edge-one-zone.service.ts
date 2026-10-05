@@ -4,7 +4,7 @@ import { ApiError } from '../../core/http/api-error.js'
 import { parseBool } from '../../shared/values.js'
 import { callProvider, collectOffsetPages, toFullListResult } from '../../core/providers/provider-call.js'
 import { providerOptionalString, providerString } from '../../core/providers/provider-values.js'
-import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
+import { edgeOneClientFor, resolveEdgeOneProvider } from './access.js'
 import {
   edgeOneZoneSchema,
   edgeoneZoneListResponseSchema,

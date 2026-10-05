@@ -52,8 +52,8 @@ const STARTUP_STAGES = [
   { name: 'ready', run: ready },
 ] as const
 
-/** 用已解析配置装配应用（探针与测试直接注入配置） */
-export async function assembleApp(config: AppConfig): Promise<FastifyInstance> {
+/** 探针与测试的装配入口：注入已解析配置（进程入口走 bootServer，见下） */
+export async function buildApp(config: AppConfig): Promise<FastifyInstance> {
   const boot = new Boot()
   boot.config = config
   await runStartupStages(boot)

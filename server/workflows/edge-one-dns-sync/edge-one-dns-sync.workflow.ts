@@ -15,7 +15,7 @@ import { edgeOneCnameDesired } from '../derived-records/planners/edgeone.planner
 import type { EdgeOneDomainService } from '../../modules/edgeone/edge-one-domain.service.js'
 import { normalizeAccelerationDomainPayload } from '../../modules/edgeone/edge-one-domain-payload.js'
 import { invalidateEdgeOneDomainCache } from '../../modules/edgeone/edge-one.cache.js'
-import { dnsZoneKey, edgeOneZoneKey } from '../../core/jobs/job-types.js'
+import { dnsZoneKey, edgeOneZoneKey } from '../../core/jobs/job-registry.js'
 
 /** 删除加速域名的阶段序列（顺序不可逆；重试从第一个未完成阶段继续） */
 const EDGEONE_DELETE_STAGES = ['primary-deleted'] as const

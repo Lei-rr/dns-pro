@@ -12,7 +12,7 @@ import {
   SAAS_BATCH_DELETE_JOB,
   peekResourceKeys,
   readResourceKeys,
-} from '../server/core/jobs/job-types.js'
+} from '../server/core/jobs/job-registry.js'
 import { ApiError } from '../server/core/http/api-error.js'
 import { invalidateProviderCache, withProviderCache } from '../server/core/cache/provider-cache.js'
 

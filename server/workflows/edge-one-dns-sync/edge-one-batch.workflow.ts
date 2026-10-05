@@ -18,7 +18,7 @@ import {
   EDGEONE_ZONE_JOB_TYPES,
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
-} from '../../core/jobs/job-types.js'
+} from '../../core/jobs/job-registry.js'
 import { completedEdgeOneDeleteStages, type EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
 
 type EdgeOneBatchJobView = BatchJobViewBase & { provider_id: string; zone_id: string }

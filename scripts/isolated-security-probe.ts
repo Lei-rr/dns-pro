@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { buildApp } from '../server/app/build.js'
+import { buildApp } from '../server/app/lifecycle.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-security-'))

@@ -9,7 +9,7 @@ import {
   SAAS_ZONE_LOCK_MESSAGE,
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
-} from '../../core/jobs/job-types.js'
+} from '../../core/jobs/job-registry.js'
 import { effectivePreferredDomain } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
 import { invalidateSaasZoneListCache } from './saas-zone-cache.js'
