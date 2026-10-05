@@ -7,6 +7,12 @@ import { Button, LoadingButton } from '@/shared/ui/button'
 import { FloatingSelectionBar } from '@/shared/ui/floating-selection-bar'
 import { Input } from '@/shared/ui/input'
 import { edgeOneApi } from '@/features/edge-one/api/edge-one-api'
+import {
+  STATUS_POLL_FIRST_MS,
+  nextStatusPollDelayMs,
+  nextStatusPollRateLimitDelayMs,
+  statusPollRateLimit,
+} from '@/features/edge-one/model/status-poll-policy'
 
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/features/edge-one/model/types'
 import type { EdgeOneDomainSubmitPayload } from '@/features/edge-one/model/domain-command'
@@ -234,21 +240,23 @@ async function saveCertificate(payload: Record<string, unknown>) {
  *  - 没有待定指令时页面静止，不发任何定时请求（不是常驻轮询）；
  *  - 一直轮询到状态落定或用户离开，不设总时长/轮询次数上限（只放缓间隔降压）；
  *  - 以「用户在看页面」为前提：页面不可见时停表，恢复可见时立即补一次静默刷新再继续；
+ *  - 遇到限流（HTTP 429 / 腾讯云业务限流码）改用更长的退避间隔，不按原节奏继续打；
  *  - 顶部「刷新」按钮保留，用户想手动刷新随时可用。 */
 
 /** 待落定的上下线指令：目标状态 + 是否已观察到上游进入 process（用于识别失败回退） */
 type PendingStatusTransition = { target: 'online' | 'offline'; enteredTransition: boolean }
 
-/** 轮询间隔：起步 3s 便于尽快看到落定，持续未落定时线性放缓到 10s 降压；这里只放缓间隔，不设轮询上限 */
-const STATUS_POLL_FIRST_MS = 3000
-const STATUS_POLL_STEP_MS = 1000
-const STATUS_POLL_MAX_MS = 10000
+/** 轮询间隔与限流退避的取值依据（腾讯云 20 次/秒、Cloudflare 1200 次/5 分钟、
+ *  本仓 base-http.client.ts 的 MAX_RETRY_AFTER_MS）集中在 model/status-poll-policy.ts：
+ *  起步 3s、每轮 +1s 线性放缓、10s 封顶；限流时另走 60s 起、300s 封顶的退避。 */
 
 const pendingStatusTransitions = ref(new Map<string, PendingStatusTransition>())
 const { visible: pageVisible } = usePageVisibility()
 const statusPollGeneration = createScopeGeneration()
 let statusPollTimer: ReturnType<typeof setTimeout> | null = null
 let statusPollDelayMs = STATUS_POLL_FIRST_MS
+/** 连续限流时的退避间隔（0 = 未限流）；成功刷新一轮后清零，回到常规节奏 */
+let statusPollRateLimitDelayMs = 0
 
 function clearStatusPollTimer() {
   if (statusPollTimer === null) return
@@ -256,20 +264,29 @@ function clearStatusPollTimer() {
   statusPollTimer = null
 }
 
-/** 单轮：静默强制刷新（必须绕过服务端缓存，否则 5 分钟缓存会让轮询白跑）→ 未落定且页面可见才排下一轮 */
+/** 单轮：静默强制刷新（必须绕过服务端缓存，否则 5 分钟缓存会让轮询白跑）→ 未落定且页面可见才排下一轮。
+ *  刷新失败会被 TanStack 记到 domainsQuery.error（refetch 不抛出），限流时按服务端等待语义退避。 */
 async function runStatusPoll(owner: GenerationOwner) {
   if (!owner.active() || !pendingStatusTransitions.value.size || !pageVisible.value) return
   clearStatusPollTimer()
   await domainsQuery.refreshSilently()
   if (!owner.active() || !pendingStatusTransitions.value.size || !pageVisible.value) return
+  const limited = statusPollRateLimit(domainsQuery.error.value)
+  if (limited) {
+    statusPollRateLimitDelayMs = nextStatusPollRateLimitDelayMs(statusPollRateLimitDelayMs, limited.retryAfterMs)
+    statusPollTimer = setTimeout(() => void runStatusPoll(owner), statusPollRateLimitDelayMs)
+    return
+  }
+  statusPollRateLimitDelayMs = 0
   statusPollTimer = setTimeout(() => void runStatusPoll(owner), statusPollDelayMs)
-  statusPollDelayMs = Math.min(STATUS_POLL_MAX_MS, statusPollDelayMs + STATUS_POLL_STEP_MS)
+  statusPollDelayMs = nextStatusPollDelayMs(statusPollDelayMs)
 }
 
 /** 启动（或重启）轮询：换代让旧轮次在下个检查点自行退出，避免两条循环并发打上游 */
 function startStatusPolling() {
   clearStatusPollTimer()
   statusPollDelayMs = STATUS_POLL_FIRST_MS
+  statusPollRateLimitDelayMs = 0
   void runStatusPoll(statusPollGeneration.claim())
 }
 
@@ -279,6 +296,7 @@ function resetStatusPolling() {
   statusPollGeneration.invalidate()
   pendingStatusTransitions.value = new Map()
   statusPollDelayMs = STATUS_POLL_FIRST_MS
+  statusPollRateLimitDelayMs = 0
 }
 
 /** 落定判定：等于目标态即落定；已进过 process 又离开过渡态（上游给了结论，如失败回退）同样落定。
