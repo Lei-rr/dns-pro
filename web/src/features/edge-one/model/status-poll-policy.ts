@@ -15,7 +15,7 @@
 export const STATUS_POLL_FIRST_MS = 3000
 
 /** 每轮 +1s 线性放缓：长时间未落定时逐步降压，配合「页面不可见即停表」控制请求总量 */
-export const STATUS_POLL_STEP_MS = 1000
+const STATUS_POLL_STEP_MS = 1000
 
 /**
  * 稳态上限 10s：与 base-http.client.ts 的 MAX_RETRY_AFTER_MS 同值是有意对齐，不是巧合 ——
