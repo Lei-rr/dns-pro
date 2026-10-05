@@ -6,16 +6,15 @@ import {
   toSyncSideEffect,
   type SideEffects,
 } from '../../core/providers/side-effect-result.js'
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { isHostnameActive } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
-import type { SaaSPreferenceService } from '../../modules/cloudflare/saas/saas-preference.service.js'
-import {
-  invalidateSaaSHostnameCache,
-  invalidateSaaSHostnameDetailsCache,
-} from '../../modules/cloudflare/saas/saas.cache.js'
+import type { SaaSHostnameCachePort } from '../../core/contracts/saas-hostname-cache.port.js'
+import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
+import type { SaaSPreferencePort } from '../../core/contracts/saas-preference.port.js'
 import type { SaaSDnsSyncCoordinator } from './saas-dns-sync.coordinator.js'
-import type { SaaSSyncRecord, SyncCollectedRecords } from '../derived-records/planners/saas.planner.js'
+import type {
+  SaaSPlannerHostnames,
+  SaaSSyncRecord,
+  SyncCollectedRecords,
+} from '../derived-records/planners/saas.planner.js'
 
 export type SaaSDeleteCleanupRecipe = SyncCollectedRecords
 
@@ -81,8 +80,8 @@ const DNS_LINKED_FIELDS = [
  */
 export class SaaSDnsSyncWorkflow {
   constructor(
-    private readonly hostnames: SaaSHostnameService,
-    private readonly preferences: SaaSPreferenceService,
+    private readonly hostnames: SaaSPlannerHostnames & SaaSHostnameCachePort,
+    private readonly preferences: SaaSPreferencePort,
     private readonly sync: SaaSDnsSyncCoordinator
   ) {}
 
@@ -96,7 +95,7 @@ export class SaaSDnsSyncWorkflow {
     if (autoSync) await this.sync.preflight(providerId, String(data.hostname ?? ''), data)
 
     const result = await this.hostnames.createHostname(providerId, zoneName, data)
-    invalidateSaaSHostnameCache(owner.cloudflareProviderId, owner.zoneId, true)
+    this.hostnames.invalidateHostnameCache(owner.cloudflareProviderId, owner.zoneId, true)
     if (!autoSync || !result.hostname || hasLocalError(result)) return presentMutation(result)
 
     const sync = await this.sync.sync(providerId, zoneName, result.hostname)
@@ -224,23 +223,22 @@ export class SaaSDnsSyncWorkflow {
 
   /** 批量任务逐条只清详情缓存；非批量（或任务收尾）清列表 + 详情 */
   private invalidateHostnameCache(owner: { cloudflareProviderId: string; zoneId: string }, deferList = false): void {
-    if (deferList) invalidateSaaSHostnameDetailsCache(owner.cloudflareProviderId, owner.zoneId)
-    else invalidateSaaSHostnameCache(owner.cloudflareProviderId, owner.zoneId, true)
+    this.hostnames.invalidateHostnameCache(owner.cloudflareProviderId, owner.zoneId, !deferList)
   }
 
-  private async shouldCleanupOwnershipTxt(providerId: string, hostname: CloudflareCustomHostname) {
-    if (!isHostnameActive(hostname) || !hostname.id) return false
+  private async shouldCleanupOwnershipTxt(providerId: string, hostname: SaaSHostnameValue) {
+    if (!this.hostnames.isHostnameActive(hostname) || !hostname.id) return false
     const cfId = await this.hostnames.cloudflareProviderId(providerId)
     return !(await this.preferences.ownershipTxtCleaned(cfId, hostname.id))
   }
 }
 
-function hasLocalError(result: Record<string, unknown>): boolean {
+function hasLocalError(result: SaaSHostnameValue): boolean {
   return String(result.local_preference_error ?? '') !== ''
 }
 
 /** 本地偏好保存失败转为 side_effects.local */
-function presentMutation(result: Record<string, unknown>): Record<string, unknown> {
+function presentMutation(result: SaaSHostnameValue): Record<string, unknown> {
   const { local_preference_error: localError, ...data } = result
   if (!localError) return data
   return {
@@ -251,7 +249,7 @@ function presentMutation(result: Record<string, unknown>): Record<string, unknow
   }
 }
 
-function withDnsEffects(result: Record<string, unknown>, dns: NonNullable<SideEffects['dns']>) {
+function withDnsEffects(result: SaaSHostnameValue, dns: NonNullable<SideEffects['dns']>) {
   const presented = presentMutation(result)
   const existing = (presented.side_effects ?? {}) as SideEffects
   return { ...presented, side_effects: { ...existing, dns: { ...existing.dns, ...dns } } }

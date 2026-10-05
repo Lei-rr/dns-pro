@@ -11,7 +11,7 @@ import {
   runBatchItems,
   type BatchJobViewBase,
 } from '../../core/jobs/batch-job.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
+import type { SaaSHostnameCachePort } from '../../core/contracts/saas-hostname-cache.port.js'
 import {
   SAAS_BATCH_DELETE_JOB,
   SAAS_BATCH_UPDATE_JOB,
@@ -23,7 +23,7 @@ import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sy
 import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
 import { invalidateSaasZoneListCache } from './saas-zone.cache.js'
-import type { SaaSSyncRecord } from '../derived-records/planners/saas.planner.js'
+import type { SaaSPlannerHostnames, SaaSSyncRecord } from '../derived-records/planners/saas.planner.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
 type ZoneScope = { providerId: string; zoneName: string }
@@ -40,7 +40,7 @@ export class SaaSBatchWorkflow {
   constructor(
     private readonly jobs: JobService,
     private readonly workflow: SaaSDnsSyncWorkflow,
-    private readonly hostnames: SaaSHostnameService
+    private readonly hostnames: SaaSPlannerHostnames & SaaSHostnameCachePort
   ) {
     this.kind = new BatchJobKind(jobs, {
       types: [SAAS_BATCH_DELETE_JOB, SAAS_BATCH_UPDATE_JOB],

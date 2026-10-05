@@ -6,9 +6,8 @@
  */
 import { ApiError } from '../../../core/http/api-error.js'
 import type { DnsRecordValue } from '../../../core/contracts/dns-record.port.js'
-import { DNSPOD_DEFAULT_LINE } from '../../../modules/dnspod/dns-pod-record.service.js'
-import type { CloudflareCustomHostname } from '../../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { effectivePreferredDomain, isHostnameActive } from '../../../modules/cloudflare/saas/saas-hostname-rules.js'
+import type { SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
+import type { SaaSHostnameValue } from '../../../core/contracts/saas-hostname.port.js'
 import { recordIdentity, type DesiredRecord } from '../sync-plan.js'
 
 /** SaaS 同步目标厂商：DNSPod 与 Cloudflare DNS */ export type SaaSSyncProviderType = 'dnspod' | 'cloudflare'
@@ -37,7 +36,12 @@ export const ownershipTxtName = (fqdn: string) => `_cf-custom-hostname.${fqdn}`
 export const DNSPOD_ORIGIN_LABEL = '默认回源'
 export const CLOUDFLARE_ORIGIN_LABEL = '业务接入'
 
-/** DNSPod 分线路：默认线路指向业务回源，境内线路指向优选域名 */
+/**
+ * DNSPod 分线路（编排参数）：默认线路指向业务回源，境内线路指向优选域名。
+ * 线路参与记录身份判据（类型丨名称丨线路），期望记录必须自带线路身份，故由编排侧声明；
+ * 厂商侧的默认线路名（省略线路时回填）在 modules/dnspod 内自持，两者角色不同。
+ */
+export const DNSPOD_DEFAULT_LINE = '默认'
 export const DNSPOD_PREFERRED_LINE = '境内'
 
 /** 同步记录 TTL：DNSPod 沿用历史默认值；Cloudflare 1 表示自动 */
@@ -55,7 +59,7 @@ export function syncRemark(purpose: string, fqdn: string, originLabel: string): 
   return `${label ?? '自定义主机名'}丨${fqdn}`
 }
 
-export function requireFqdn(hostname: CloudflareCustomHostname): string {
+export function requireFqdn(hostname: SaaSHostnameValue): string {
   if (!hostname.hostname) throw new ApiError('saas_fqdn_missing', 'SaaS hostname FQDN missing', 422)
   return hostname.hostname
 }
@@ -67,7 +71,7 @@ export function requireBusinessTarget(target: string): string {
 }
 
 /** DCV 委派 CNAME：优先使用 Cloudflare 返回的记录，否则用 UUID 推导 */
-function dcvDelegationRecords(hostname: CloudflareCustomHostname): Array<{ name: string; value: string }> {
+function dcvDelegationRecords(hostname: SaaSHostnameValue): Array<{ name: string; value: string }> {
   const ssl = hostname.ssl ?? {}
   const explicit = (ssl.dcv_delegation_records ?? [])
     .map((record) => ({ name: String(record.cname ?? ''), value: String(record.cname_target ?? '') }))
@@ -79,7 +83,7 @@ function dcvDelegationRecords(hostname: CloudflareCustomHostname): Array<{ name:
 }
 
 /** 所有权验证 TXT；forceName 时即使无值也输出（用于按名称清理） */
-function ownershipRecord(hostname: CloudflareCustomHostname, forceName = false) {
+function ownershipRecord(hostname: SaaSHostnameValue, forceName = false) {
   const ownership = hostname.ownership_verification
   if (ownership?.name && ownership.value) return { name: ownership.name, value: ownership.value }
   return forceName && hostname.hostname ? { name: ownershipTxtName(hostname.hostname), value: '' } : null
@@ -164,15 +168,17 @@ export function dnspodSaaSCleanupRecipe(
 /**
  * 主机名应有的全部 DNS 记录（写入路径与对账检测共用）。
  * includeAll：用于清理快照/检测，强制包含所有权 TXT（即使已激活）。
+ * rules：主机名判定规则端口（优选域名取值与在管状态由端口实现委派，写入与读取共用同一判据）。
  */
 export function saasDesiredRecords(input: {
-  hostname: CloudflareCustomHostname
+  hostname: SaaSHostnameValue
   providerType: SaaSSyncProviderType
   providerId: string
   zone: string
   /** 站点回源（业务 CNAME 的兜底目标） */
   origin: string
   includeAll?: boolean
+  rules: SaaSHostnameRulesPort
 }): SaaSSyncRecord[] {
   const fqdn = input.hostname.hostname
   if (!fqdn) return []
@@ -196,7 +202,7 @@ export function saasDesiredRecords(input: {
     })
 
   const records: SaaSSyncRecord[] = []
-  const preferred = effectivePreferredDomain(input.hostname)
+  const preferred = input.rules.effectivePreferredDomain(input.hostname)
   if (dnspod) {
     if (input.origin) records.push(record('CNAME', fqdn, input.origin, 'origin_cname'))
     if (input.hostname.auto_preferred && preferred) {
@@ -213,7 +219,7 @@ export function saasDesiredRecords(input: {
 
   // 已激活的主机名不再写入所有权 TXT（DNSPod 快照模式强制包含，Cloudflare 仅快照包含）
   const includeOwnership = dnspod
-    ? Boolean(input.includeAll) || !isHostnameActive(input.hostname)
+    ? Boolean(input.includeAll) || !input.rules.isHostnameActive(input.hostname)
     : Boolean(input.includeAll)
   if (includeOwnership) {
     const ownership = ownershipRecord(input.hostname, dnspod && Boolean(input.includeAll))

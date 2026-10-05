@@ -1,12 +1,10 @@
 import { ApiError } from '../../core/http/api-error.js'
-import { DNSPOD_DEFAULT_LINE } from '../../modules/dnspod/dns-pod-record.service.js'
-import type { DnsPodAccess } from '../../modules/dnspod/access.js'
-import type { DnsPodZoneCatalog } from '../../modules/dnspod/zone-catalog.js'
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { isHostnameActive } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
+import type { DnsZoneCatalogPort } from '../../core/contracts/dns-zone-catalog.port.js'
+import type { LinkedDnsAccountPort } from '../../core/contracts/linked-dns-account.port.js'
+import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
+  DNSPOD_DEFAULT_LINE,
   DNSPOD_ORIGIN_LABEL,
   cleanupDesired,
   countDeleted,
@@ -19,6 +17,7 @@ import {
   resolveEffectiveOrigin,
   saasDnsPodProviderId,
   syncRemark,
+  type SaaSPlannerHostnames,
   type SaaSDnsPodTargetDeps,
   type SaaSSyncRecord,
 } from '../derived-records/planners/saas.planner.js'
@@ -32,9 +31,9 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
   private readonly target: SaaSDnsPodTargetDeps
 
   constructor(
-    private readonly hostnames: SaaSHostnameService,
-    access: DnsPodAccess,
-    catalog: DnsPodZoneCatalog,
+    private readonly hostnames: SaaSPlannerHostnames,
+    access: LinkedDnsAccountPort,
+    catalog: DnsZoneCatalogPort,
     private readonly writer: DnsWriter
   ) {
     this.target = { hostnames, access, catalog }
@@ -60,7 +59,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const target = await resolveDnsPodSaasTarget(this.target, providerId, hostname, fqdn)
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
 
-    const records = saasTargetRecords('dnspod', hostname, target, origin)
+    const records = saasTargetRecords('dnspod', hostname, target, origin, this.hostnames)
     const precleaned = await this.writer.preclean(
       'dnspod',
       target.providerId,
@@ -84,7 +83,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     if (!target.ok) return { cleaned: 0, records: [], deleted: [], reason: target.reason }
 
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
-    const afterRecords = saasTargetRecords('dnspod', hostname, target, origin)
+    const afterRecords = saasTargetRecords('dnspod', hostname, target, origin, this.hostnames)
     const deleted = await deleteRemovedRecords(this.writer, 'dnspod', target, beforeRecords, afterRecords)
     const precleaned =
       afterRecords.length === 0
@@ -123,11 +122,11 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     providerId: string,
     cfZoneName: string,
     hostnameFqdn: string,
-    hostname?: CloudflareCustomHostname
+    hostname?: SaaSHostnameValue
   ) {
     // 调用方已强制读取过主机名时复用快照，避免同一次对账重复打上游
     const current = hostname ?? (await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true))
-    if (!isHostnameActive(current)) return { cleaned: 0, reason: 'saas_not_active' }
+    if (!this.hostnames.isHostnameActive(current)) return { cleaned: 0, reason: 'saas_not_active' }
     const fqdn = current.hostname
     if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
@@ -169,6 +168,6 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     // 域名未匹配到 DNSPod 站点：同样返回空快照，不写入无站点归属的记录
     if (!target.ok) return { hostname_fqdn: fqdn, records: [] }
     const origin = await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname)
-    return { hostname_fqdn: fqdn, records: saasTargetRecords('dnspod', hostname, target, origin, true) }
+    return { hostname_fqdn: fqdn, records: saasTargetRecords('dnspod', hostname, target, origin, this.hostnames, true) }
   }
 }

@@ -4,10 +4,20 @@ import { ApiError } from '../../../core/http/api-error.js'
 import { errorMessage, normalizeFqdn } from '../../../shared/values.js'
 import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import { toFullListResult } from '../../../core/providers/provider-call.js'
+import type { SaaSHostnameCachePort } from '../../../core/contracts/saas-hostname-cache.port.js'
+import type { SaaSHostnamePort } from '../../../core/contracts/saas-hostname.port.js'
+import type { SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
+import type { SaaSSyncConfigPort } from '../../../core/contracts/saas-sync-config.port.js'
 import type { PreferredDomainService } from './preferred-domain.service.js'
 import type { SaaSCustomHostnameClient, CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import type { FallbackOriginInfo, SaaSFallbackOriginClient } from './saas-fallback-origin.client.js'
-import { tryNormalizeFallbackOrigin } from './saas-hostname-rules.js'
+import {
+  effectivePreferredDomain,
+  isHostnameActive,
+  tryNormalizeFallbackOrigin,
+  zoneOwnsHostname,
+} from './saas-hostname-rules.js'
+import { invalidateSaaSHostnameCache, invalidateSaaSHostnameDetailsCache } from './saas.cache.js'
 import { preferenceOf } from './saas-preference.service.js'
 import type { HostnameIdentity, SaaSPreferenceService } from './saas-preference.service.js'
 import type { MergedHostname, SaaSSyncConfigService } from './saas-sync-config.service.js'
@@ -20,8 +30,11 @@ type HostnameRef = { cloudflareProviderId: string; zoneId: string; zoneName: str
 /**
  * Cloudflare for SaaS 自定义主机名编排：远端 CRUD + 本地偏好合并。
  * DNS 同步配置解析见 SaaSSyncConfigService。
+ * 编排依赖的四个端口（读写 / 同步配置 / 判定规则 / 缓存失效）由本类实现，方法委派模块内既有实现。
  */
-export class SaaSHostnameService {
+export class SaaSHostnameService
+  implements SaaSHostnamePort, SaaSSyncConfigPort, SaaSHostnameRulesPort, SaaSHostnameCachePort
+{
   constructor(
     private readonly cloudflareZones: CloudflareZoneService,
     private readonly zoneCatalog: ZoneCatalog,
@@ -237,6 +250,36 @@ export class SaaSHostnameService {
 
   defaultSyncTarget(providerId: string): Promise<string> {
     return this.syncConfigs.defaultSyncTarget(providerId)
+  }
+
+  /** 端口 SaaSHostnameRulesPort：生效优选域名（读接口 / DNS 写回 / 一键切换共用同一取值顺序） */
+  effectivePreferredDomain(
+    hostname: { preferred_domain?: unknown; custom_metadata?: unknown },
+    preference?: { preferred_domain?: unknown } | null
+  ): string {
+    return effectivePreferredDomain(hostname, preference)
+  }
+
+  /** 端口 SaaSHostnameRulesPort：在管状态判定（moved 已迁出，不算在管） */
+  isHostnameActive(hostname: { status?: unknown }): boolean {
+    return isHostnameActive(hostname)
+  }
+
+  /** 端口 SaaSHostnameRulesPort：站点归属判定（同名或为其子域） */
+  zoneOwnsHostname(zone: string, fqdn: string): boolean {
+    return zoneOwnsHostname(zone, fqdn)
+  }
+
+  /** 端口 SaaSHostnameCachePort：按站点身份失效；includeList=false 只失效详情（批量逐条用） */
+  invalidateHostnameCache(cloudflareProviderId: string, zoneId: string, includeList: boolean): void {
+    if (includeList) invalidateSaaSHostnameCache(cloudflareProviderId, zoneId, true)
+    else invalidateSaaSHostnameDetailsCache(cloudflareProviderId, zoneId)
+  }
+
+  /** 端口 SaaSHostnameCachePort：按 SaaS 服务商 + 站点名解析站点后失效 */
+  async invalidateZoneCache(providerId: string, zoneName: string, includeList: boolean): Promise<void> {
+    const zone = await this.resolveZoneRef(providerId, zoneName)
+    this.invalidateHostnameCache(zone.cloudflareProviderId, zone.zoneId, includeList)
   }
 
   /** 解析主机名 ID：列表走缓存（变更由标签精确失效），详情刷新由调用方决定 */

@@ -17,6 +17,7 @@ import {
 import { invalidateTunnelRouteCache } from './tunnel.cache.js'
 import { runSerial } from '../../../shared/serial-queue.js'
 import { tunnelPath } from './tunnel-path.js'
+import type { TunnelRoutePort } from '../../../core/contracts/tunnel.port.js'
 import type { CloudflareAccess } from '../access.js'
 import type { ZoneCatalog, ZoneRef } from '../zone-catalog.js'
 import type { TunnelDnsService } from './tunnel-dns.service.js'
@@ -53,8 +54,8 @@ const sameRouteKey = (a: TunnelRoute, b: { hostname: string; path: string }) =>
 /** 同一隧道的 Ingress 写入必须串行，否则后写者会整体覆盖先写者 */
 const ingressKey = (providerId: string, tunnelId: string) => `tunnel-ingress:${providerId}:${tunnelId}`
 
-/** 隧道 Ingress 路由管理；写入路由后同步 Cloudflare CNAME */
-export class TunnelRouteService {
+/** 隧道 Ingress 路由管理；写入路由后同步 Cloudflare CNAME；配置读取经端口 TunnelRoutePort 供编排消费 */
+export class TunnelRouteService implements TunnelRoutePort {
   constructor(
     private readonly access: CloudflareAccess,
     private readonly catalog: ZoneCatalog,

@@ -19,6 +19,10 @@ import {
   type DnsPodRecord,
 } from './dns-pod-response.schema.js'
 
+/**
+ * DNSPod 默认线路名（厂商侧兜底：写入/查询省略线路时回填）。
+ * 编排侧另有线路槽位参数（期望记录自带线路身份），声明在 workflows/derived-records/planners/saas-records.ts。
+ */
 export const DNSPOD_DEFAULT_LINE = '默认'
 
 /** 下推到 DNSPod 的查询过滤 */

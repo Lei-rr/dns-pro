@@ -5,15 +5,14 @@
  * 对账扫描共用同一判据。对外仍经 saas.planner 再导出，调用方不感知。
  */
 import { ApiError } from '../../../core/http/api-error.js'
+import type { CloudflareZonePort } from '../../../core/contracts/cloudflare-zone.port.js'
+import type { DnsZoneCatalogPort } from '../../../core/contracts/dns-zone-catalog.port.js'
+import type { LinkedDnsAccountPort } from '../../../core/contracts/linked-dns-account.port.js'
+import type { SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
+import type { SaaSHostnamePort, SaaSHostnameValue } from '../../../core/contracts/saas-hostname.port.js'
+import type { SaaSSyncConfigPort, SaaSSyncDefaultsPort } from '../../../core/contracts/saas-sync-config.port.js'
 import type { ProviderRepository } from '../../../core/providers/provider.repository.js'
 import { normalizeFqdn } from '../../../shared/values.js'
-import type { DnsPodAccess } from '../../../modules/dnspod/access.js'
-import type { DnsPodZoneCatalog } from '../../../modules/dnspod/zone-catalog.js'
-import type { CloudflareZoneService } from '../../../modules/cloudflare/cloudflare-zone.service.js'
-import type { CloudflareCustomHostname } from '../../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { zoneOwnsHostname } from '../../../modules/cloudflare/saas/saas-hostname-rules.js'
-import type { SaaSHostnameService } from '../../../modules/cloudflare/saas/saas-hostname.service.js'
-import type { SaaSSyncConfigService } from '../../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { SaaSSyncProviderType } from './saas-records.js'
 
 export interface SaaSDnsTarget {
@@ -22,18 +21,25 @@ export interface SaaSDnsTarget {
   zone: string
 }
 
-/** DNSPod 目标解析依赖（DNSPod 写入适配器注入自身字段即可） */
+/**
+ * 主机名侧端口族：目标解析与期望记录构造都要读主机名、解析同步配置并判定状态，
+ * 由同一实例（SaaSHostnameService）实现，装配时一次注入。
+ */
+export type SaaSPlannerHostnames = SaaSHostnamePort & SaaSSyncConfigPort & SaaSHostnameRulesPort
+
+/** DNSPod 目标解析依赖（DNSPod 写入适配器注入自身字段即可；底座能力只经端口） */
 export interface SaaSDnsPodTargetDeps {
-  hostnames: SaaSHostnameService
-  access: DnsPodAccess
-  catalog: DnsPodZoneCatalog
+  hostnames: SaaSPlannerHostnames
+  access: LinkedDnsAccountPort
+  catalog: DnsZoneCatalogPort
 }
 
 /** Cloudflare DNS 目标解析依赖 */
 export interface SaaSSyncTargetDeps {
-  hostnames: SaaSHostnameService
-  syncConfigs: SaaSSyncConfigService
-  cloudflareZones: CloudflareZoneService
+  hostnames: SaaSPlannerHostnames
+  /** 服务商默认同步目标：只看服务商关联字段，不读主机名偏好 */
+  syncDefaults: SaaSSyncDefaultsPort
+  cloudflareZones: CloudflareZonePort
 }
 
 /** 对账 planner 依赖：两条目标解析路径 + 服务商仓库 */
@@ -41,10 +47,10 @@ export type SaaSDerivedPlannerDeps = SaaSDnsPodTargetDeps & SaaSSyncTargetDeps &
 
 /** 业务回源：主机名自定义回源优先，否则站点默认回源 */
 export async function resolveEffectiveOrigin(
-  hostnames: SaaSHostnameService,
+  hostnames: SaaSHostnamePort,
   providerId: string,
   cfZoneName: string,
-  hostname: CloudflareCustomHostname
+  hostname: SaaSHostnameValue
 ): Promise<string> {
   const custom = String(hostname.custom_origin_server ?? '').trim()
   return custom || ((await hostnames.fallbackOrigin(providerId, cfZoneName)) ?? '')
@@ -54,14 +60,14 @@ export async function resolveEffectiveOrigin(
 export async function saasDnsPodProviderId(
   deps: SaaSDnsPodTargetDeps,
   providerId: string,
-  hostname: CloudflareCustomHostname
+  hostname: SaaSHostnameValue
 ): Promise<string> {
   return String(hostname.sync_provider_id ?? '').trim() || deps.access.linkedProviderId(providerId, 'saas', 'SaaS')
 }
 
 /** SaaS 服务商默认的 Cloudflare DNS 服务商 */
 export async function saasDefaultCloudflareProviderId(deps: SaaSSyncTargetDeps, providerId: string): Promise<string> {
-  const id = await deps.syncConfigs.defaultSyncProviderId(providerId, 'cloudflare_dns')
+  const id = await deps.syncDefaults.defaultSyncProviderId(providerId, 'cloudflare_dns')
   if (id === '') {
     throw new ApiError(
       'saas_cloudflare_dns_provider_missing',
@@ -80,7 +86,7 @@ export async function saasDefaultCloudflareProviderId(deps: SaaSSyncTargetDeps, 
 export async function resolveDnsPodSaasTarget(
   deps: SaaSDnsPodTargetDeps,
   providerId: string,
-  hostname: CloudflareCustomHostname | null,
+  hostname: SaaSHostnameValue | null,
   fqdn: string,
   explicitZone = '',
   explicitProvider = ''
@@ -120,7 +126,7 @@ export type DnsPodSaasTargetResolution = (SaaSDnsTarget & { ok: true }) | { ok: 
 export async function optionalDnsPodSaasTarget(
   deps: SaaSDnsPodTargetDeps,
   providerId: string,
-  hostname: CloudflareCustomHostname,
+  hostname: SaaSHostnameValue,
   fqdn: string
 ): Promise<DnsPodSaasTargetResolution> {
   if ((await saasDnsPodProviderId(deps, providerId, hostname)) === '') {
@@ -158,13 +164,13 @@ export async function resolveCloudflareSaasTarget(
   const cloudflareProviderId =
     explicit.provider?.trim() || sync?.sync_provider_id || (await saasDefaultCloudflareProviderId(deps, providerId))
   let zoneName = (explicit.zone?.trim() || sync?.sync_zone || '').toLowerCase()
-  if (zoneName !== '' && !zoneOwnsHostname(zoneName, hostnameFqdn)) zoneName = ''
+  if (zoneName !== '' && !deps.hostnames.zoneOwnsHostname(zoneName, hostnameFqdn)) zoneName = ''
   zoneName ||= normalizeFqdn(cfZoneName)
   if (zoneName === '') {
     throw new ApiError('saas_cloudflare_sync_zone_missing', 'Cloudflare DNS sync zone is required', 422)
   }
   const fqdn = normalizeFqdn(hostnameFqdn)
-  if (!zoneOwnsHostname(zoneName, fqdn)) {
+  if (!deps.hostnames.zoneOwnsHostname(zoneName, fqdn)) {
     throw new ApiError(
       'saas_cloudflare_sync_zone_mismatch',
       `Cloudflare DNS sync zone ${zoneName} does not match hostname ${fqdn}`,
@@ -184,7 +190,7 @@ export async function resolveCloudflareSaasTarget(
 export async function resolveSaaSSyncTarget(
   deps: SaaSDnsPodTargetDeps & SaaSSyncTargetDeps,
   providerId: string,
-  hostname: CloudflareCustomHostname,
+  hostname: SaaSHostnameValue,
   fqdn: string,
   cfZoneName: string
 ): Promise<SaaSDnsTarget> {

@@ -1,7 +1,7 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import type { Provider } from '../../core/providers/provider.types.js'
 import { PROVIDER_LINK_RULES } from '../../core/providers/provider-reference.js'
-import type { SaaSPreferenceService } from '../../modules/cloudflare/saas/saas-preference.service.js'
+import type { SaaSPreferencePort } from '../../core/contracts/saas-preference.port.js'
 
 interface ProviderDependency {
   kind: string
@@ -17,7 +17,7 @@ type ProviderReference = Pick<Provider, 'id' | 'name' | 'type'> & Record<string,
 export class ProviderDependencyWorkflow {
   constructor(
     private readonly providers: ProviderRepository,
-    private readonly hostnamePreferences: SaaSPreferenceService
+    private readonly hostnamePreferences: SaaSPreferencePort
   ) {}
 
   async map(

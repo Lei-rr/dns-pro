@@ -13,7 +13,11 @@ import { CloudflareAccess } from '../server/modules/cloudflare/access.js'
 import { CloudflareZoneService } from '../server/modules/cloudflare/cloudflare-zone.service.js'
 import { TunnelService } from '../server/modules/cloudflare/tunnel/tunnel.service.js'
 import { SaaSSyncConfigService } from '../server/modules/cloudflare/saas/saas-sync-config.service.js'
-import { effectivePreferredDomain } from '../server/modules/cloudflare/saas/saas-hostname-rules.js'
+import {
+  effectivePreferredDomain,
+  isHostnameActive,
+  zoneOwnsHostname,
+} from '../server/modules/cloudflare/saas/saas-hostname-rules.js'
 import { saasDesiredRecords } from '../server/workflows/derived-records/planners/saas.planner.js'
 import {
   PreferredDomainService,
@@ -349,6 +353,7 @@ try {
     providerId: 'cf-dns-1',
     zone: 'example.com',
     origin: 'origin.example.net',
+    rules: { effectivePreferredDomain, isHostnameActive, zoneOwnsHostname },
   })
   assert.equal(
     cfRecords.find((record) => record.purpose === 'origin_cname')?.record.value,

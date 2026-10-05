@@ -2,6 +2,7 @@ import type { ProviderRepository } from '../../../core/providers/provider.reposi
 import type { SaaSProvider } from '../../../core/providers/provider.types.js'
 import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
+import type { SaaSSyncDefaultsPort } from '../../../core/contracts/saas-sync-config.port.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import { guessZoneFromFqdn, zoneOwnsHostname, effectivePreferredDomain } from './saas-hostname-rules.js'
 import type { HostnamePreference, SaaSPreferenceService, SyncPreference } from './saas-preference.service.js'
@@ -18,8 +19,8 @@ export type MergedHostname = CloudflareCustomHostname & Partial<HostnamePreferen
 const text = (value: unknown) => String(value ?? '').trim()
 const zoneText = (value: unknown) => text(value).toLowerCase()
 
-/** SaaS DNS 同步配置解析与脏数据修复（与主机名 CRUD 解耦） */
-export class SaaSSyncConfigService {
+/** SaaS DNS 同步配置解析与脏数据修复（与主机名 CRUD 解耦）；服务商默认值经端口 SaaSSyncDefaultsPort 供编排消费 */
+export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
   constructor(
     private readonly providers: ProviderRepository,
     private readonly preferences: SaaSPreferenceService

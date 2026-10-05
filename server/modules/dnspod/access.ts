@@ -1,16 +1,17 @@
 import { ApiError } from '../../core/http/api-error.js'
+import type { LinkedDnsAccountPort, LinkedDnsAccountSource } from '../../core/contracts/linked-dns-account.port.js'
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import type { EdgeOneProvider, SaaSProvider } from '../../core/providers/provider.types.js'
 
-/** 关联 DNSPod 的来源：EdgeOne 与 SaaS 各有一个 dnspod_provider 字段 */
-export type DnsPodLinkSource = 'edgeone' | 'saas'
+/** 关联 DNSPod 的来源：EdgeOne 与 SaaS 各有一个 dnspod_provider 字段（取值即端口层的关联来源） */
+export type DnsPodLinkSource = LinkedDnsAccountSource
 
 /**
- * D3-2 底座：provider → 关联 DNSPod 账号 的解析。
+ * D3-2 底座：provider → 关联 DNSPod 账号 的解析（`LinkedDnsAccountPort` 实现）。
  * EdgeOne / SaaS 两条产品线只依赖本类；edgeone 模块不得反向引用本模块，
  * 故 edgeone/access.ts 内保留一份等效实现（错误码与归一方式与其保持一致）。
  */
-export class DnsPodAccess {
+export class DnsPodAccess implements LinkedDnsAccountPort {
   constructor(private readonly providers: ProviderRepository) {}
 
   /** 读取关联的 DNSPod 服务商 ID；未关联返回空串 */

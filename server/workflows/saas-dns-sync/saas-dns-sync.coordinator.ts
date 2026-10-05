@@ -1,22 +1,21 @@
 import { ApiError } from '../../core/http/api-error.js'
+import type { CloudflareZonePort } from '../../core/contracts/cloudflare-zone.port.js'
+import type { DnsZoneCatalogPort } from '../../core/contracts/dns-zone-catalog.port.js'
+import type { LinkedDnsAccountPort } from '../../core/contracts/linked-dns-account.port.js'
+import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
+import type { SaaSSyncDefaultsPort } from '../../core/contracts/saas-sync-config.port.js'
 import { normalizeFqdn } from '../../shared/values.js'
 import { runDnsSideEffect } from '../../core/providers/side-effect-result.js'
-import type { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-zone.service.js'
-import { DNSPOD_DEFAULT_LINE } from '../../modules/dnspod/dns-pod-record.service.js'
-import type { DnsPodAccess } from '../../modules/dnspod/access.js'
-import type { DnsPodZoneCatalog } from '../../modules/dnspod/zone-catalog.js'
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { zoneOwnsHostname } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
-import type { SaaSSyncConfigService } from '../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import { CloudflareDnsSaaSSyncAdapter } from './cloudflare-dns-saas-sync.adapter.js'
 import { dnsZoneKey } from '../../core/jobs/job-registry.js'
 import { DnsPodSaaSSyncAdapter } from './dns-pod-saas-sync.adapter.js'
 import {
+  DNSPOD_DEFAULT_LINE,
   DNSPOD_PREFERRED_LINE,
   cloudflareDnsCleanupRecipe,
   dnspodSaaSCleanupRecipe,
+  type SaaSPlannerHostnames,
   type SaaSSyncRecord,
   type SyncCollectedRecords,
 } from '../derived-records/planners/saas.planner.js'
@@ -28,20 +27,20 @@ export class SaaSDnsSyncCoordinator {
   private readonly cloudflareDns: SaaSSyncAdapter
 
   constructor(
-    private readonly hostnames: SaaSHostnameService,
-    private readonly syncConfigs: SaaSSyncConfigService,
-    private readonly access: DnsPodAccess,
-    private readonly catalog: DnsPodZoneCatalog,
-    cloudflareZones: CloudflareZoneService,
+    private readonly hostnames: SaaSPlannerHostnames,
+    private readonly syncDefaults: SaaSSyncDefaultsPort,
+    private readonly access: LinkedDnsAccountPort,
+    private readonly catalog: DnsZoneCatalogPort,
+    cloudflareZones: CloudflareZonePort,
     writer: DnsWriter
   ) {
     this.dnspod = new DnsPodSaaSSyncAdapter(hostnames, access, catalog, writer)
-    this.cloudflareDns = new CloudflareDnsSaaSSyncAdapter(hostnames, syncConfigs, cloudflareZones, writer)
+    this.cloudflareDns = new CloudflareDnsSaaSSyncAdapter(hostnames, syncDefaults, cloudflareZones, writer)
   }
 
   /** 创建前预检同步目标 */
   async preflight(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}) {
-    const target = String(data.sync_target ?? '').trim() || (await this.hostnames.defaultSyncTarget(providerId))
+    const target = String(data.sync_target ?? '').trim() || (await this.syncDefaults.defaultSyncTarget(providerId))
     return this.adapterFor(target).preflight(providerId, hostnameFqdn, data)
   }
 
@@ -56,7 +55,7 @@ export class SaaSDnsSyncCoordinator {
   }
 
   /** 主机名快照可由调用方传入，避免同一次对账重复强制读取上游 */
-  async cleanupStale(providerId: string, zoneName: string, hostnameFqdn: string, hostname?: CloudflareCustomHostname) {
+  async cleanupStale(providerId: string, zoneName: string, hostnameFqdn: string, hostname?: SaaSHostnameValue) {
     const adapter = await this.adapterForHostname(providerId, zoneName, hostnameFqdn)
     return runDnsSideEffect(() => adapter.cleanupStaleRecords(providerId, zoneName, hostnameFqdn, hostname))
   }
@@ -99,7 +98,7 @@ export class SaaSDnsSyncCoordinator {
     if (cloudflareId && zone) keys.add(dnsZoneKey('cloudflare', cloudflareId, zone))
 
     const dnspodId = await this.access.linkedProviderId(providerId, 'saas', 'SaaS').catch(() => '')
-    const defaultCloudflareDnsId = await this.syncConfigs
+    const defaultCloudflareDnsId = await this.syncDefaults
       .defaultSyncProviderId(providerId, 'cloudflare_dns')
       .catch(() => '')
     const addFallbackKeys = () => {
@@ -125,7 +124,7 @@ export class SaaSDnsSyncCoordinator {
       if (config.sync_target === 'cloudflare_dns') {
         const provider = explicitProvider || defaultCloudflareDnsId || cloudflareId
         // 站点不覆盖主机名时与写入路径一致地回退到主机名所在站点
-        const dnsZone = zoneOwnsHostname(explicitZone, fqdn) ? explicitZone : zone
+        const dnsZone = this.hostnames.zoneOwnsHostname(explicitZone, fqdn) ? explicitZone : zone
         if (provider && dnsZone) keys.add(dnsZoneKey('cloudflare', provider, dnsZone))
         continue
       }
@@ -169,13 +168,13 @@ export class SaaSDnsSyncCoordinator {
     if (fqdn === '') return empty
 
     const config = await this.hostnames.effectiveSyncConfig(providerId, fqdn).catch(() => null)
-    const target = config?.sync_target || (await this.hostnames.defaultSyncTarget(providerId))
+    const target = config?.sync_target || (await this.syncDefaults.defaultSyncTarget(providerId))
 
     if (target === 'cloudflare_dns') {
       const zone = config?.sync_zone ?? ''
       const provider =
         config?.sync_provider_id || (await this.hostnames.cloudflareProviderId(providerId).catch(() => ''))
-      if (!provider || !zone || !zoneOwnsHostname(zone, fqdn)) return empty
+      if (!provider || !zone || !this.hostnames.zoneOwnsHostname(zone, fqdn)) return empty
       return { hostname_fqdn: fqdn, records: cloudflareDnsCleanupRecipe(fqdn, provider, zone) }
     }
 

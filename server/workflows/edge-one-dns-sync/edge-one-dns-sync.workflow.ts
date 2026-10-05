@@ -8,8 +8,8 @@ import {
   toCleanupSideEffect,
   toSyncSideEffect,
 } from '../../core/providers/side-effect-result.js'
-import type { DnsPodAccess } from '../../modules/dnspod/access.js'
-import type { DnsPodZoneCatalog } from '../../modules/dnspod/zone-catalog.js'
+import type { DnsZoneCatalogPort } from '../../core/contracts/dns-zone-catalog.port.js'
+import type { LinkedDnsAccountPort } from '../../core/contracts/linked-dns-account.port.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import { edgeOneCnameDesired } from '../derived-records/planners/edge-one.planner.js'
 import type { AccelerationDomainPort } from '../../core/contracts/acceleration-domain.port.js'
@@ -41,10 +41,10 @@ type DeleteOptions = StageLifecycle<EdgeOneDeleteStage> & {
 export class EdgeOneDnsSyncWorkflow {
   constructor(
     private readonly domains: AccelerationDomainPort,
-    /** 关联 DNSPod 账号解析（D3-2 底座） */
-    private readonly access: DnsPodAccess,
-    /** FQDN → DNSPod 域名 解析（D3-2 底座） */
-    private readonly catalog: DnsPodZoneCatalog,
+    /** 关联 DNSPod 账号解析（D3-2 底座端口） */
+    private readonly access: LinkedDnsAccountPort,
+    /** FQDN → DNSPod 域名 解析（D3-2 底座端口） */
+    private readonly catalog: DnsZoneCatalogPort,
     private readonly writer: DnsWriter
   ) {}
 

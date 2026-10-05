@@ -5,10 +5,9 @@
  * 与之相同的判据也用于隧道 repair：期望记录只有一处定义。
  */
 import { normalizeFqdn } from '../../../shared/values.js'
+import type { CloudflareZonePort } from '../../../core/contracts/cloudflare-zone.port.js'
 import type { ProviderRepository } from '../../../core/providers/provider.repository.js'
-import type { ZoneCatalog } from '../../../modules/cloudflare/zone-catalog.js'
-import type { TunnelService } from '../../../modules/cloudflare/tunnel/tunnel.service.js'
-import type { TunnelRouteService } from '../../../modules/cloudflare/tunnel/tunnel-route.service.js'
+import type { TunnelListPort, TunnelRoutePort } from '../../../core/contracts/tunnel.port.js'
 import type { DerivedSourcePlanner, PlannedRecord } from '../derived-record.types.js'
 import type { DesiredRecord } from '../sync-plan.js'
 
@@ -29,9 +28,9 @@ function tunnelCnameDesired(fqdn: string, tunnelId: string): DesiredRecord {
 /** 隧道路由扫描：cloudflared 服务商 → 隧道 → Ingress 主机名 → Cloudflare CNAME（只读） */
 export function tunnelDerivedPlanner(deps: {
   providers: ProviderRepository
-  tunnels: TunnelService
-  routes: TunnelRouteService
-  catalog: ZoneCatalog
+  tunnels: TunnelListPort
+  routes: TunnelRoutePort
+  catalog: CloudflareZonePort
 }): DerivedSourcePlanner {
   return {
     kind: 'tunnel-route',

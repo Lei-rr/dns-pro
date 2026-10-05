@@ -1,6 +1,7 @@
 import { normalizeFqdn, toAsciiFqdn } from '../../shared/values.js'
 import { providerCacheTag, withProviderCache, zoneCacheTag } from '../../core/cache/provider-cache.js'
 import { callProvider } from '../../core/providers/provider-call.js'
+import type { CloudflareZonePort } from '../../core/contracts/cloudflare-zone.port.js'
 import { parseCloudflareItemResponse } from './cloudflare-response.schema.js'
 import { CLOUDFLARE_PROVIDER_TYPE } from './cloudflare.cache.js'
 import type { CloudflareAccess } from './access.js'
@@ -12,12 +13,17 @@ export interface ZoneRef {
   zoneName: string
 }
 
-/** D2 底座：FQDN → 所属站点 的唯一定义（最长后缀匹配 + DCV 委派） */
-export class ZoneCatalog {
+/** D2 底座：FQDN → 所属站点 的唯一定义（最长后缀匹配 + DCV 委派）；站点标识解析经端口 CloudflareZonePort 供编排消费 */
+export class ZoneCatalog implements CloudflareZonePort {
   constructor(
     private readonly access: CloudflareAccess,
     private readonly zones: CloudflareZoneService
   ) {}
+
+  /** 端口 CloudflareZonePort：站点名 → 站点 ID（账号内无此站点抛 404 cloudflare_zone_not_found） */
+  idByName(providerId: string, zoneName: string): Promise<string> {
+    return this.zones.idByName(providerId, zoneName)
+  }
 
   /** 最长后缀匹配 FQDN 所属站点；未匹配返回 null */
   async resolve(providerId: string, fqdn: string, refresh = false): Promise<ZoneRef | null> {

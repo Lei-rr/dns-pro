@@ -2,15 +2,15 @@ import { ApiError } from '../../core/http/api-error.js'
 import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
 import { BatchJobKind, finishBatchJob, runBatchItems, type BatchJobViewBase } from '../../core/jobs/batch-job.js'
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
+import type { SaaSHostnameCachePort } from '../../core/contracts/saas-hostname-cache.port.js'
+import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
 import {
   PREFERRED_APPLY_JOB,
   SAAS_ZONE_LOCK_MESSAGE,
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
 } from '../../core/jobs/job-registry.js'
-import { effectivePreferredDomain } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
+import type { SaaSPlannerHostnames } from '../derived-records/planners/saas.planner.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
 import { invalidateSaasZoneListCache } from './saas-zone.cache.js'
 import type { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
@@ -30,8 +30,6 @@ type ApplyInput = {
   onlyAutoPreferred?: boolean
 }
 
-const currentPreferred = (item: CloudflareCustomHostname) => effectivePreferredDomain(item)
-
 /** 优选域名一键切换（与 SaaS 批量共用站点互斥锁） */
 export class SaaSPreferredApplyWorkflow {
   private readonly kind: BatchJobKind<PreferredApplyJob>
@@ -39,7 +37,7 @@ export class SaaSPreferredApplyWorkflow {
   constructor(
     private readonly jobs: JobService,
     private readonly workflow: SaaSDnsSyncWorkflow,
-    private readonly hostnames: SaaSHostnameService
+    private readonly hostnames: SaaSPlannerHostnames & SaaSHostnameCachePort
   ) {
     this.kind = new BatchJobKind(jobs, {
       types: [PREFERRED_APPLY_JOB],
@@ -64,9 +62,9 @@ export class SaaSPreferredApplyWorkflow {
     const targets = await this.resolveTargets(input)
     const items = targets.map((item) => ({
       hostname: item.hostname,
-      current_preferred: currentPreferred(item),
+      current_preferred: this.currentPreferred(item),
       auto_preferred: Boolean(item.auto_preferred),
-      will_change: currentPreferred(item) !== preferred,
+      will_change: this.currentPreferred(item) !== preferred,
     }))
     return {
       preferred_domain: preferred,
@@ -99,7 +97,7 @@ export class SaaSPreferredApplyWorkflow {
     const items = targets.map((item) => ({
       hostname: item.hostname,
       preferred_domain: preferred,
-      current_preferred: currentPreferred(item),
+      current_preferred: this.currentPreferred(item),
       auto_preferred: Boolean(item.auto_preferred),
     }))
     return this.kind.present(
@@ -154,13 +152,18 @@ export class SaaSPreferredApplyWorkflow {
     await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
   }
 
-  private async resolveTargets(input: ApplyInput): Promise<CloudflareCustomHostname[]> {
+  private async resolveTargets(input: ApplyInput): Promise<SaaSHostnameValue[]> {
     let items = (await this.hostnames.hostnames(input.providerId, input.zoneName)).items
     if (input.hostnames?.length) {
       const selected = new Set(input.hostnames.map((hostname) => hostname.toLowerCase().trim()))
       items = items.filter((item) => selected.has(item.hostname.toLowerCase()))
     }
     return input.onlyAutoPreferred ? items.filter((item) => item.auto_preferred) : items
+  }
+
+  /** 当前生效优选域名：与 DNS 写回、读接口同一取值顺序（走主机名规则端口） */
+  private currentPreferred(item: SaaSHostnameValue): string {
+    return this.hostnames.effectivePreferredDomain(item)
   }
 
   /** 预览/创建前置校验：白名单判定复用主机名写入路径，非法域名在任务创建阶段即失败 */

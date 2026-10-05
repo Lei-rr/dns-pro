@@ -7,6 +7,7 @@ import { callProvider, collectNumberedPages, wrapProviderError } from '../../../
 import { providerOptionalString, providerString } from '../../../core/providers/provider-values.js'
 import { asRecord, asRecordArray } from '../../../core/providers/response-guards.js'
 import type { SideEffects } from '../../../core/providers/side-effect-result.js'
+import type { TunnelListPort } from '../../../core/contracts/tunnel.port.js'
 import {
   parseCloudflareItemResponse,
   parseCloudflareListResponse,
@@ -31,8 +32,8 @@ interface CloudflaredTunnel {
 
 const newTunnelSecret = () => crypto.randomBytes(32).toString('base64')
 
-/** Cloudflare Tunnel 生命周期与令牌管理 */
-export class TunnelService {
+/** Cloudflare Tunnel 生命周期与令牌管理；清单读取经端口 TunnelListPort 供编排消费 */
+export class TunnelService implements TunnelListPort {
   constructor(private readonly access: CloudflareAccess) {}
 
   async list(providerId: string, refresh = false): Promise<{ items: CloudflaredTunnel[] }> {

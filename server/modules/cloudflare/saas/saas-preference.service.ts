@@ -4,6 +4,7 @@ import type { Provider } from '../../../core/providers/provider.types.js'
 import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import type { JsonStore } from '../../../core/store/json-store.js'
+import type { SaaSPreferencePort } from '../../../core/contracts/saas-preference.port.js'
 import { zoneOwnsHostname } from './saas-hostname-rules.js'
 
 export interface HostnamePreference {
@@ -64,8 +65,9 @@ export function preferenceOf(
  * 键：`<cloudflareProviderId>:<zone>:<fqdn>`（站点未知时 `<zone>` 为空）；
  * 旧版 `<cloudflareProviderId>:<hostnameId>` 行在启动 `pruneOrphans` 或下次写入时按行内 hostname 收编，不丢数据。
  * 所有写入在 ProviderIntegrity 串行锁内校验引用。
+ * 存储读写经端口 SaaSPreferencePort 供编排消费（删除流程的清理标记、服务商依赖反查）。
  */
-export class SaaSPreferenceService {
+export class SaaSPreferenceService implements SaaSPreferencePort {
   constructor(
     private readonly store: JsonStore<SaaSPreferencesFile>,
     private readonly integrity: ProviderIntegrity,

@@ -36,7 +36,7 @@ export function createWorkflows(platform: AppPlatform, domains: AppModules) {
       saas.syncConfigs,
       dnsPod.access,
       dnsPod.catalog,
-      cloudflare.zones,
+      cloudflare.catalog,
       dnsWriter
     )
   )
@@ -48,10 +48,10 @@ export function createWorkflows(platform: AppPlatform, domains: AppModules) {
       saasDerivedPlanner({
         providers: providers.repository,
         hostnames: saas.hostnames,
-        syncConfigs: saas.syncConfigs,
+        syncDefaults: saas.syncConfigs,
         access: dnsPod.access,
         catalog: dnsPod.catalog,
-        cloudflareZones: cloudflare.zones,
+        cloudflareZones: cloudflare.catalog,
       }),
       tunnelDerivedPlanner({
         providers: providers.repository,

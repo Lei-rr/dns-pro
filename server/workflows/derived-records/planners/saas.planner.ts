@@ -18,6 +18,7 @@ import {
 
 export {
   CLOUDFLARE_ORIGIN_LABEL,
+  DNSPOD_DEFAULT_LINE,
   DNSPOD_ORIGIN_LABEL,
   DNSPOD_PREFERRED_LINE,
   cleanupDesired,
@@ -46,6 +47,7 @@ export {
   type SaaSDerivedPlannerDeps,
   type SaaSDnsPodTargetDeps,
   type SaaSSyncTargetDeps,
+  type SaaSPlannerHostnames,
 } from './saas-targets.js'
 
 /** @public 对外契约：无内部引用但拆分前即已导出，必须保留（knip 会把无引用的再导出判为 unused exported types） */
@@ -81,6 +83,7 @@ export function saasDerivedPlanner(deps: SaaSDerivedPlannerDeps): DerivedSourceP
               providerId: target.providerId,
               zone: target.zone,
               origin,
+              rules: deps.hostnames,
             })) {
               records.push({
                 source: { kind: 'saas-hostname', providerId: provider.id, id: String(hostname.id ?? '') || fqdn },

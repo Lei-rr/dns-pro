@@ -1,9 +1,7 @@
 import { ApiError } from '../../core/http/api-error.js'
-import type { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-zone.service.js'
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { effectivePreferredDomain, isHostnameActive } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
-import type { SaaSSyncConfigService } from '../../modules/cloudflare/saas/saas-sync-config.service.js'
+import type { CloudflareZonePort } from '../../core/contracts/cloudflare-zone.port.js'
+import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
+import type { SaaSSyncDefaultsPort } from '../../core/contracts/saas-sync-config.port.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
   CLOUDFLARE_ORIGIN_LABEL,
@@ -17,6 +15,7 @@ import {
   resolveEffectiveOrigin,
   saasDefaultCloudflareProviderId,
   syncRemark,
+  type SaaSPlannerHostnames,
   type SaaSSyncRecord,
   type SaaSSyncTargetDeps,
 } from '../derived-records/planners/saas.planner.js'
@@ -33,12 +32,12 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
   private readonly target: SaaSSyncTargetDeps
 
   constructor(
-    private readonly hostnames: SaaSHostnameService,
-    syncConfigs: SaaSSyncConfigService,
-    zones: CloudflareZoneService,
+    private readonly hostnames: SaaSPlannerHostnames,
+    syncDefaults: SaaSSyncDefaultsPort,
+    zones: CloudflareZonePort,
     private readonly writer: DnsWriter
   ) {
-    this.target = { hostnames, syncConfigs, cloudflareZones: zones }
+    this.target = { hostnames, syncDefaults, cloudflareZones: zones }
   }
 
   /** 创建前预检：主机名尚未创建，不查询其偏好 */
@@ -64,7 +63,8 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
       'cloudflare',
       hostname,
       target,
-      await this.businessTarget(providerId, cfZoneName, hostname, true)
+      await this.businessTarget(providerId, cfZoneName, hostname, true),
+      this.hostnames
     )
     const results = await this.writer.sync('cloudflare', target.providerId, target.zone, records)
     return {
@@ -89,7 +89,8 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
       'cloudflare',
       hostname,
       target,
-      await this.businessTarget(providerId, cfZoneName, hostname, true)
+      await this.businessTarget(providerId, cfZoneName, hostname, true),
+      this.hostnames
     )
     const deleted = await deleteRemovedRecords(this.writer, 'cloudflare', target, beforeRecords, afterRecords)
     const results = await this.writer.sync('cloudflare', target.providerId, target.zone, afterRecords)
@@ -124,11 +125,11 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     providerId: string,
     cfZoneName: string,
     hostnameFqdn: string,
-    hostname?: CloudflareCustomHostname
+    hostname?: SaaSHostnameValue
   ) {
     // 调用方已强制读取过主机名时复用快照，避免同一次对账重复打上游
     const current = hostname ?? (await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true))
-    if (!isHostnameActive(current)) return { cleaned: 0, reason: 'saas_not_active' }
+    if (!this.hostnames.isHostnameActive(current)) return { cleaned: 0, reason: 'saas_not_active' }
     const fqdn = current.hostname
     if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
@@ -166,19 +167,15 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
         hostname,
         { providerId: sync.sync_provider_id || (await this.defaultDnsProviderId(providerId)), zone: sync.sync_zone },
         business,
+        this.hostnames,
         true
       ),
     }
   }
 
   /** 业务 CNAME 目标：优选域名 > 自定义回源 > 默认回源 */
-  private async businessTarget(
-    providerId: string,
-    cfZoneName: string,
-    hostname: CloudflareCustomHostname,
-    required: boolean
-  ) {
-    const preferred = effectivePreferredDomain(hostname)
+  private async businessTarget(providerId: string, cfZoneName: string, hostname: SaaSHostnameValue, required: boolean) {
+    const preferred = this.hostnames.effectivePreferredDomain(hostname)
     const target = preferred || (await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
     return required ? requireBusinessTarget(target) : target
   }

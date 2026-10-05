@@ -8,9 +8,9 @@ import { normalizeFqdn } from '../../../shared/values.js'
 import type { ProviderRepository } from '../../../core/providers/provider.repository.js'
 import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import type { EdgeOneProvider } from '../../../core/providers/provider.types.js'
-import { DNSPOD_DEFAULT_LINE } from '../../../modules/dnspod/dns-pod-record.service.js'
-import type { DnsPodZoneCatalog } from '../../../modules/dnspod/zone-catalog.js'
+import { DNSPOD_DEFAULT_LINE } from './saas-records.js'
 import type { AccelerationDomainPort } from '../../../core/contracts/acceleration-domain.port.js'
+import type { DnsZoneCatalogPort } from '../../../core/contracts/dns-zone-catalog.port.js'
 import type { ZoneListPort } from '../../../core/contracts/zone-list.port.js'
 import type { DerivedSourcePlanner, PlannedRecord } from '../derived-record.types.js'
 import type { DesiredRecord } from '../sync-plan.js'
@@ -40,7 +40,7 @@ export function edgeOneDerivedPlanner(deps: {
   providers: ProviderRepository
   zones: ZoneListPort
   domains: AccelerationDomainPort
-  catalog: DnsPodZoneCatalog
+  catalog: DnsZoneCatalogPort
 }): DerivedSourcePlanner {
   return {
     kind: 'edgeone-domain',

@@ -4,7 +4,8 @@
  * 期望记录构造与目标解析的唯一实现在 `derived-records/planners/saas.planner.ts`：
  * 写入适配器与对账检测共用同一判据，避免"同步"与"对账"两套语义漂移。
  */
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
+import type { SaaSHostnameRulesPort } from '../../core/contracts/saas-hostname-rules.port.js'
+import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
 import type { DnsWriter, WriteOutcome } from '../derived-records/dns-writer.js'
 import {
   cleanupDesired,
@@ -76,7 +77,7 @@ export interface SaaSSyncAdapter {
     cfZoneName: string,
     hostnameFqdn: string,
     /** 调用方已取到的新鲜快照；缺省时自行强制刷新读取 */
-    hostname?: CloudflareCustomHostname
+    hostname?: SaaSHostnameValue
   ): Promise<SaaSSyncStaleCleanupResult>
   collectRecordsFor(providerId: string, cfZoneName: string, hostnameFqdn: string): Promise<SyncCollectedRecords>
 }
@@ -84,9 +85,11 @@ export interface SaaSSyncAdapter {
 /** 期望记录：写入与对账共用 saasDesiredRecords（单一来源），两个适配器只差 providerType */
 export function saasTargetRecords(
   providerType: SaaSSyncProviderType,
-  hostname: CloudflareCustomHostname,
+  hostname: SaaSHostnameValue,
   target: { providerId: string; zone: string },
   origin: string,
+  /** 主机名判定规则（与对账扫描同一实现，避免两套取值顺序） */
+  rules: SaaSHostnameRulesPort,
   includeAll = false
 ): SaaSSyncRecord[] {
   return saasDesiredRecords({
@@ -96,6 +99,7 @@ export function saasTargetRecords(
     zone: target.zone,
     origin,
     includeAll,
+    rules,
   })
 }
 

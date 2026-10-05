@@ -1,4 +1,5 @@
 import { ApiError } from '../../core/http/api-error.js'
+import type { DnsZoneCatalogPort } from '../../core/contracts/dns-zone-catalog.port.js'
 import { toAsciiFqdn } from '../../shared/values.js'
 import type { DnsPodZoneService } from './dns-pod-zone.service.js'
 
@@ -16,10 +17,10 @@ function longestMatchingZone(fqdn: string, zoneNames: string[]): string {
 }
 
 /**
- * D3-2 底座：FQDN → DNSPod 域名 的唯一解析（最长后缀匹配）。
+ * D3-2 底座：FQDN → DNSPod 域名 的唯一解析（最长后缀匹配），`DnsZoneCatalogPort` 实现。
  * 与 Cloudflare 的 ZoneCatalog 对称；两条产品线不各自实现。
  */
-export class DnsPodZoneCatalog {
+export class DnsPodZoneCatalog implements DnsZoneCatalogPort {
   constructor(private readonly zones: DnsPodZoneService) {}
 
   /** 账号内全部域名（小写 punycode） */

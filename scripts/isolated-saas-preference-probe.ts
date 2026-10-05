@@ -127,7 +127,8 @@ assert.equal(isHostnameActive({}), false)
 // 8. B7 门槛：moved 时连偏好查询都不该发生（清理流程整体不进入）
 const lookups: string[] = []
 const gate = new SaaSDnsSyncWorkflow(
-  { cloudflareProviderId: async () => 'cf-owner' } as never,
+  // 规则端口用真实判定实现：门槛必须与主机名状态判定同口径，mock 只固定服务商解析
+  { cloudflareProviderId: async () => 'cf-owner', isHostnameActive } as never,
   {
     ownershipTxtCleaned: async (_cfId: string, hostnameId: string) => {
       lookups.push(hostnameId)

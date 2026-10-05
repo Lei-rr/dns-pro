@@ -17,11 +17,9 @@ import {
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import type { EdgeOneProvider, SaaSProvider } from '../../core/providers/provider.types.js'
 import type { AccelerationDomainPort } from '../../core/contracts/acceleration-domain.port.js'
+import type { SaaSHostnamePort, SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
+import type { TunnelListPort, TunnelRoutePort } from '../../core/contracts/tunnel.port.js'
 import type { ZoneListPort } from '../../core/contracts/zone-list.port.js'
-import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
-import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import type { TunnelRouteService } from '../../modules/cloudflare/tunnel/tunnel-route.service.js'
-import type { TunnelService } from '../../modules/cloudflare/tunnel/tunnel.service.js'
 
 /** 一个产品线对某个 DNS 目标的主机名声明 */
 export interface OwnershipSource {
@@ -47,8 +45,8 @@ export class OwnershipService implements OwnershipPort {
 /** 隧道路由 → Cloudflare DNS 归属（仅 cloudflare 目标；路由读取走 provider 缓存） */
 export function tunnelOwnershipSource(deps: {
   providers: ProviderRepository
-  tunnels: TunnelService
-  routes: TunnelRouteService
+  tunnels: TunnelListPort
+  routes: TunnelRoutePort
 }): OwnershipSource {
   return {
     async claimsFor(target) {
@@ -76,7 +74,7 @@ export function tunnelOwnershipSource(deps: {
 /** SaaS 主机名 → DNS 归属（主机名 + DCV 挑战 + 所有权 TXT 同属 saas） */
 export function saasOwnershipSource(deps: {
   providers: ProviderRepository
-  hostnames: SaaSHostnameService
+  hostnames: SaaSHostnamePort
 }): OwnershipSource {
   return {
     async claimsFor(target) {
@@ -144,7 +142,7 @@ function saasTargets(provider: SaaSProvider, target: OwnershipTarget): boolean {
 
 /** 待扫描站点：Cloudflare 目标就是写入站点；DNSPod 目标需遍历主机名所在站点 */
 async function zonesToScan(
-  hostnames: SaaSHostnameService,
+  hostnames: SaaSHostnamePort,
   providerId: string,
   target: OwnershipTarget
 ): Promise<string[]> {
@@ -156,7 +154,7 @@ async function zonesToScan(
 }
 
 /** 主机名生效同步目标是否落在该 DNS 目标上 */
-function hostnameTargets(hostname: CloudflareCustomHostname, target: OwnershipTarget): boolean {
+function hostnameTargets(hostname: SaaSHostnameValue, target: OwnershipTarget): boolean {
   const type = String(hostname.effective_sync_target ?? '')
   const provider = String(hostname.effective_sync_provider_id ?? '')
   if (target.providerType === 'cloudflare') return type === 'cloudflare_dns' && provider === target.providerId
