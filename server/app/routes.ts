@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { authRequired } from '../core/security/auth-required.js'
-import { routes as systemPublicRoutes } from '../modules/system/health/system.routes.js'
+import { routes as systemPublicRoutes } from '../modules/system/health/health.routes.js'
 import { protectedRoutes as authProtectedRoutes, routes as authRoutes } from '../modules/system/auth/auth.routes.js'
 import { routes as providerRoutes } from '../workflows/provider-management/provider-management.routes.js'
 import { routes as cloudflareRoutes } from '../modules/cloudflare/cloudflare.routes.js'

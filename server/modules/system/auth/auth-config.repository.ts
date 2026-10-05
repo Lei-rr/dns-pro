@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { JsonStore } from '../../../core/store/json-store.js'
+import { storePath } from '../../../core/store/store-registry.js'
 import { generatePassword, hashPassword } from '../../../core/security/password.js'
 
 export interface AuthConfigData {
@@ -23,7 +24,8 @@ export interface AuthState {
   sessionEpoch: number
 }
 
-const CONFIG_FILE = 'config.json'
+// 数据文件路径的权威在 store 注册表：首启写路径与 JsonStore 读路径共用同一来源
+const CONFIG_FILE = storePath('auth')
 
 /** 会话代次：非安全整数或负数一律归零，避免脏数据进入自增链 */
 function normalizeEpoch(value: unknown): number {

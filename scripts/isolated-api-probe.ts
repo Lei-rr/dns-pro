@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { DnsWriter } from '../server/workflows/derived-records/dns-writer.js'
-import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
+import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dns-pod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -13,7 +13,7 @@ import { PREFERRED_APPLY_JOB, SAAS_BATCH_DELETE_JOB, SAAS_BATCH_UPDATE_JOB } fro
 import { EDGEONE_BATCH_DELETE_JOB, EDGEONE_BATCH_DISABLE_JOB } from '../server/core/jobs/job-registry.js'
 import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { DnsPodRecordService } from '../server/modules/dnspod/dns-pod-record.service.js'
-import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
+import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dns-pod-record.adapter.js'
 import { dnsRecordMatches } from '../server/core/contracts/dns-record.port.js'
 import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'

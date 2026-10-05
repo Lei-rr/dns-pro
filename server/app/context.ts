@@ -4,6 +4,7 @@ import type { AppModules } from './modules.js'
 import { createWorkflows } from './workflows.js'
 import type { JobService } from '../core/jobs/job.service.js'
 import type { AuditLog } from '../core/observability/audit-log.js'
+import { storePath } from '../core/store/store-registry.js'
 
 /** 平台设施：单进程内存任务执行器 + 关键操作审计（F6）+ 只读会话判定 */
 export type AppPlatform = { jobs: JobService; audit: AuditLog; session: SessionProbe }
@@ -35,13 +36,13 @@ export async function startAppContext(ctx: AppContext, log: FastifyBaseLogger): 
 
   // 升级旧版本遗留的明文密码
   if (await ctx.modules.auth.service.upgradePlaintextCredential()) {
-    log.info('upgraded plaintext credential in data/config.json to a scrypt hash')
+    log.info(`upgraded plaintext credential in data/${storePath('auth')} to a scrypt hash`)
   }
   if (ctx.initialPassword) {
     // 密码单独成行，便于从日志中复制
     const lines = [
       `[SECURITY] 已生成初始密码："${ctx.initialPassword}"`,
-      '[SECURITY] 请登录后立即修改；如遗失，可在 data/config.json 写入 auth.password 后重启重置',
+      `[SECURITY] 请登录后立即修改；如遗失，可在 data/${storePath('auth')} 写入 auth.password 后重启重置`,
     ]
     for (const line of lines) log.warn(line)
     console.warn(lines.map((line) => `\x1b[33m${line}\x1b[0m`).join('\n'))

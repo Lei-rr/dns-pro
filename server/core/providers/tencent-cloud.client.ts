@@ -1,7 +1,7 @@
 import { ApiError } from '../http/api-error.js'
 import { BaseHttpClient, withRateLimitRetry } from '../http/base-http.client.js'
 import { asRecord } from './response-guards.js'
-import { signTencentTc3, TENCENT_CONTENT_TYPE } from '../http/tc3-signer.js'
+import { signTencentTc3, TENCENT_CONTENT_TYPE } from './tc3-signer.js'
 
 interface TencentCloudCredentials {
   secretId: string

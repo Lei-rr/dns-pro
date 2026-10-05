@@ -22,7 +22,7 @@ import {
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
-import { invalidateSaasZoneListCache } from './saas-zone-cache.js'
+import { invalidateSaasZoneListCache } from './saas-zone.cache.js'
 import type { SaaSSyncRecord } from '../derived-records/planners/saas.planner.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }

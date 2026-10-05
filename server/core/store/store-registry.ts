@@ -39,3 +39,12 @@ export function storeSubdirectories(): string[] {
 export function storePaths(): string[] {
   return Object.values(storeSpecs).map((spec) => spec.path)
 }
+
+/**
+ * 单个数据文件的相对路径。
+ * 供需要自行读写该文件的模块复用（例如首启以 wx 独占创建 config.json），
+ * 使读路径、写路径与报错文案共用同一权威，避免改路径时漏改其中一处。
+ */
+export function storePath(name: StoreName): string {
+  return storeSpecs[name].path
+}

@@ -12,7 +12,7 @@ import {
 } from '../../core/jobs/job-registry.js'
 import { effectivePreferredDomain } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
-import { invalidateSaasZoneListCache } from './saas-zone-cache.js'
+import { invalidateSaasZoneListCache } from './saas-zone.cache.js'
 import type { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 
 type PreferredApplyJob = BatchJobViewBase & {

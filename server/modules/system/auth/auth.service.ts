@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { ApiError } from '../../../core/http/api-error.js'
 import { deriveSessionKey, openSession, sealSession, sessionVersion } from '../../../core/security/session-token.js'
 import { safeEqual, verifyPassword } from '../../../core/security/password.js'
+import { storePath } from '../../../core/store/store-registry.js'
 import { APP_VERSION } from '../../../core/version.js'
 import type { AuthConfigRepository, AuthState } from './auth-config.repository.js'
 
@@ -87,7 +88,7 @@ export class AuthService {
 
     const state = await this.repository.read()
     if (state.username === '' || state.credential === '') {
-      throw new ApiError('server_error', 'Authentication is not configured in data/config.json', 500)
+      throw new ApiError('server_error', `Authentication is not configured in data/${storePath('auth')}`, 500)
     }
     // 两项都比较，避免短路造成时序差异
     const userOk = safeEqual(state.username, username)

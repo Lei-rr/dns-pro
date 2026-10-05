@@ -11,7 +11,7 @@ import {
 import type { DnsPodAccess } from '../../modules/dnspod/access.js'
 import type { DnsPodZoneCatalog } from '../../modules/dnspod/zone-catalog.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
-import { edgeOneCnameDesired } from '../derived-records/planners/edgeone.planner.js'
+import { edgeOneCnameDesired } from '../derived-records/planners/edge-one.planner.js'
 import type { EdgeOneDomainService } from '../../modules/edgeone/edge-one-domain.service.js'
 import { normalizeAccelerationDomainPayload } from '../../modules/edgeone/edge-one-domain-payload.js'
 import { invalidateEdgeOneDomainCache } from '../../modules/edgeone/edge-one.cache.js'

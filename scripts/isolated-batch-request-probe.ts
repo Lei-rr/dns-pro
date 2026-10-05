@@ -2,7 +2,7 @@
 // 请求量守卫：确认同步/批量路径把过滤下推上游，且不随条目数重复全量拉取
 import assert from 'node:assert/strict'
 import { DnsWriter } from '../server/workflows/derived-records/dns-writer.js'
-import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
+import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dns-pod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
