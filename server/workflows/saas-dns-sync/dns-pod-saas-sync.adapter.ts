@@ -6,6 +6,7 @@ import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
   DNSPOD_DEFAULT_LINE,
   DNSPOD_ORIGIN_LABEL,
+  DNSPOD_RECORD_TTL,
   cleanupDesired,
   countDeleted,
   desiredRecord,
@@ -22,9 +23,6 @@ import {
   type SaaSSyncRecord,
 } from '../derived-records/planners/saas.planner.js'
 import { deleteRemovedRecords, saasTargetRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
-
-/** DNSPod 同步记录 TTL（沿用历史默认值） */
-const SAAS_RECORD_TTL = 600
 
 /** SaaS 主机名 → DNSPod 解析同步 */
 export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
@@ -142,7 +140,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
             type: 'TXT',
             value: '',
             line: DNSPOD_DEFAULT_LINE,
-            ttl: SAAS_RECORD_TTL,
+            ttl: DNSPOD_RECORD_TTL,
             note: syncRemark('ownership_verification', fqdn, DNSPOD_ORIGIN_LABEL),
           },
           provider_type: 'dnspod',

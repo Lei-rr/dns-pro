@@ -1,6 +1,7 @@
 import * as crypto from 'node:crypto'
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
+import { jobConflictsWith } from './job-registry.js'
 import {
   EXECUTION_SNAPSHOT_FIELDS,
   summarizeJobItems,
@@ -136,8 +137,8 @@ export class JobService {
   }
 
   async listActive(type?: string): Promise<JobRecord[]> {
-    return this.list()
-      .filter((job) => ACTIVE.includes(job.status) && (!type || job.type === type))
+    return this.activeJobs()
+      .filter((job) => !type || job.type === type)
       .map((job) => cloneJob(job))
   }
 
@@ -220,7 +221,7 @@ export class JobService {
 
   async stats(): Promise<{ total: number; active: number; finished: number }> {
     const items = this.list()
-    const active = items.filter((job) => ACTIVE.includes(job.status)).length
+    const active = this.activeJobs().length
     return { total: items.length, active, finished: items.length - active }
   }
 
@@ -312,29 +313,32 @@ export class JobService {
     return [...this.jobs.values()]
   }
 
+  /** 「活跃」的唯一同步定义：检查与写入之间不能有 await 间隙，否则并发创建会同时通过互斥检查 */
+  private activeJobs(): JobRecord[] {
+    return this.list().filter((job) => ACTIVE.includes(job.status))
+  }
+
   private assertNoActiveConflict(lock: JobLock | undefined, excludeId?: string): void {
     if (!lock) return
-    const active = this.list().find((job) => {
-      if (job.id === excludeId) return false
-      if (!ACTIVE.includes(job.status) || !lock.types.includes(job.type)) return false
-      // 资源键优先：跨工作流按底层写入目标是否重叠判定
-      if (lock.resourceKeys?.length) return hasResourceConflict(job, lock.resourceKeys)
-      return Object.entries(lock.scope ?? {}).every(([key, value]) => String(job.payload?.[key] ?? '') === value)
-    })
+    const active = this.findActiveConflict(lock, excludeId)
     if (active) {
       throw new ApiError('batch_job_running', lock.message || 'A batch job is already running for this scope', 409, {
         job_id: active.id,
       })
     }
   }
-}
 
-/** 资源键是否有交集：payload.resource_keys 与目标键集合交叉即冲突 */
-function hasResourceConflict(job: JobRecord, resourceKeys: string[]): boolean {
-  const existing = job.payload?.resource_keys
-  if (!Array.isArray(existing)) return false
-  const wanted = new Set(resourceKeys)
-  return existing.some((key) => wanted.has(String(key)))
+  /**
+   * 与目标资源冲突的活跃作业：互斥判定的唯一实现。
+   * 创建/重试（assertNoActiveConflict）与面板反查（BatchJobKind.active）都只能走这里，
+   * 「活跃」也复用同一份定义，于是「反查说没有作业」与「创建被 409 拒绝」不可能出自两个口径。
+   */
+  findActiveConflict(lock: JobLock, excludeId?: string): JobRecord | undefined {
+    const conflict = this.activeJobs().find(
+      (job) => job.id !== excludeId && lock.types.includes(job.type) && jobConflictsWith(job, lock)
+    )
+    return conflict ? cloneJob(conflict) : undefined
+  }
 }
 
 /** 对外副本：items 元素也复制，防止调用方原地修改绕过 put() 污染内部状态 */

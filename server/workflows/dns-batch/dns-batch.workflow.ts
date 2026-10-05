@@ -36,7 +36,7 @@ function isDnsProviderType(value: string): value is DnsProviderType {
 type DnsBatchJobView = BatchJobViewBase & { provider_type: string; provider_id: string; zone: string }
 type JobScope = { providerType: DnsProviderType; providerId: string; zone: string }
 
-/** DNS 记录批量 添加/删除/修改（DNSPod + Cloudflare），同一站点内互斥 */
+/** DNS 记录批量 添加/删除/修改（DNSPod + Cloudflare）；互斥按底层站点资源键，与 SaaS / EdgeOne 写入共用一把锁 */
 export class DnsBatchWorkflow {
   private readonly kind: BatchJobKind<DnsBatchJobView>
 
@@ -96,13 +96,22 @@ export class DnsBatchWorkflow {
     return this.kind.find(id, { provider_type: providerType, provider_id: providerId })
   }
 
-  active(providerType: string, providerId: string, zone: string) {
-    // 面板反查与本族详情端点同口径：只返回本族任务；跨工作流互斥在创建路径按资源键判定
-    return this.kind.active({ provider_type: providerType, provider_id: providerId, zone })
+  active(providerType: DnsProviderType, providerId: string, zone: string) {
+    // 反查与创建同一口径：同一站点资源键 + 共享互斥范围，跨工作流（SaaS / EdgeOne）命中也照实返回
+    const scope = { providerType, providerId, zone }
+    return this.kind.active({ provider_id: providerId, zone }, this.resourceKeys(scope))
   }
 
   retryFailed(id: string, providerType?: string, providerId?: string) {
     return this.kind.retryFailed(id, { provider_type: providerType, provider_id: providerId })
+  }
+
+  /**
+   * 本工作流会写入的底层资源键：入队时写进 payload，反查时现算，
+   * 两处共用这一份推导，探测与创建才不会再次分叉。
+   */
+  private resourceKeys(scope: JobScope): string[] {
+    return [dnsZoneKey(scope.providerType, scope.providerId, scope.zone)]
   }
 
   private async enqueue(
@@ -119,7 +128,7 @@ export class DnsBatchWorkflow {
       provider_type: scope.providerType,
       provider_id: scope.providerId,
       zone: scope.zone,
-      resource_keys: [dnsZoneKey(scope.providerType, scope.providerId, scope.zone)],
+      resource_keys: this.resourceKeys(scope),
       ...extra,
     }
     const job = await this.jobs.createExclusive(type, payload, items, this.kind.lock(payload), { message })

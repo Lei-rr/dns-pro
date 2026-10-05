@@ -1,4 +1,4 @@
-import { AuthConfigRepository, type AuthConfigData } from '../modules/system/auth/auth-config.repository.js'
+import { AuthConfigRepository } from '../modules/system/auth/auth-config.repository.js'
 import type { AppConfig } from './config.js'
 import { AuthService } from '../modules/system/auth/auth.service.js'
 import { CloudflareAccess } from '../modules/cloudflare/access.js'
@@ -14,16 +14,13 @@ import { EdgeOneDomainService } from '../modules/edge-one/edge-one-domain.servic
 import { EdgeOneZoneService } from '../modules/edge-one/edge-one-zone.service.js'
 import { ProviderConnectionService } from '../core/providers/provider-connection.service.js'
 import { ProviderIntegrity } from '../core/providers/provider-integrity.js'
-import { ProviderRepository, type ProvidersFile } from '../core/providers/provider.repository.js'
+import { ProviderRepository } from '../core/providers/provider.repository.js'
 import { ProviderService } from '../core/providers/provider.service.js'
-import {
-  PreferredDomainService,
-  type PreferredDomainsFile,
-} from '../modules/cloudflare/saas/preferred-domain.service.js'
+import { PreferredDomainService } from '../modules/cloudflare/saas/preferred-domain.service.js'
 import { SaaSCustomHostnameClient } from '../modules/cloudflare/saas/saas-custom-hostname.client.js'
 import { SaaSFallbackOriginClient } from '../modules/cloudflare/saas/saas-fallback-origin.client.js'
 import { SaaSHostnameService } from '../modules/cloudflare/saas/saas-hostname.service.js'
-import { SaaSPreferenceService, type SaaSPreferencesFile } from '../modules/cloudflare/saas/saas-preference.service.js'
+import { SaaSPreferenceService } from '../modules/cloudflare/saas/saas-preference.service.js'
 import { SaaSSyncConfigService } from '../modules/cloudflare/saas/saas-sync-config.service.js'
 import { cloudflareRecordPort } from '../modules/cloudflare/dns/cloudflare-record.adapter.js'
 import { TunnelDnsService } from '../modules/cloudflare/tunnel/tunnel-dns.service.js'
@@ -42,7 +39,7 @@ import { createStore } from '../core/store/store-registry.js'
 export function createModules(config: AppConfig, deps: { credentialKey: Buffer }) {
   // 数据根由装配层传入各 store（D7：不存在模块级可变全局）
   const dataRoot = config.dataDir
-  const auth = new AuthService(new AuthConfigRepository(createStore<AuthConfigData>('auth', dataRoot)), {
+  const auth = new AuthService(new AuthConfigRepository(createStore('auth', dataRoot)), {
     secret: config.sessionSecret,
     cookieName: config.sessionCookieName,
     maxAgeSeconds: config.sessionMaxAgeSeconds,
@@ -51,10 +48,7 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
   })
 
   const integrity = new ProviderIntegrity()
-  const providers = new ProviderRepository(
-    createStore<ProvidersFile>('providers', dataRoot),
-    createSecretBox(deps.credentialKey)
-  )
+  const providers = new ProviderRepository(createStore('providers', dataRoot), createSecretBox(deps.credentialKey))
 
   const cloudflareAccess = new CloudflareAccess(providers, config.httpTimeoutMs)
   const cloudflareZones = new CloudflareZoneService(cloudflareAccess)
@@ -66,12 +60,8 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
   const edgeOneDomains = new EdgeOneDomainService(providers, config.httpTimeoutMs)
   const tunnels = new TunnelService(cloudflareAccess)
 
-  const preferredDomains = new PreferredDomainService(createStore<PreferredDomainsFile>('preferredDomains', dataRoot))
-  const saasPreferences = new SaaSPreferenceService(
-    createStore<SaaSPreferencesFile>('saasPreferences', dataRoot),
-    integrity,
-    providers
-  )
+  const preferredDomains = new PreferredDomainService(createStore('preferredDomains', dataRoot))
+  const saasPreferences = new SaaSPreferenceService(createStore('saasPreferences', dataRoot), integrity, providers)
   const saasSyncConfigs = new SaaSSyncConfigService(providers, saasPreferences)
   const saasHostnames = new SaaSHostnameService(
     cloudflareZones,

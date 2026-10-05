@@ -1,6 +1,6 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
-import type { DnsPodProvider, EdgeOneProvider } from '../../core/providers/provider.types.js'
+import type { EdgeOneProvider } from '../../core/providers/provider.types.js'
 import { EdgeOneClient } from './edge-one.client.js'
 
 /** EdgeOne 服务商及其关联 DNSPod（提供腾讯云密钥） */
@@ -8,7 +8,7 @@ export async function resolveEdgeOneProvider(
   providers: ProviderRepository,
   edgeoneProviderId: string
 ): Promise<{ provider: EdgeOneProvider; dnspodProviderId: string }> {
-  const provider = await providers.requireType<EdgeOneProvider>(
+  const provider = await providers.requireType(
     edgeoneProviderId,
     'edgeone',
     'EdgeOne provider not found',
@@ -28,7 +28,7 @@ export async function edgeOneClientFor(
   if (dnspodProviderId === '') {
     throw new ApiError('edgeone_dnspod_provider_not_found', 'EdgeOne provider is not linked to a DNSPod provider', 422)
   }
-  const dnspod = await providers.requireType<DnsPodProvider>(
+  const dnspod = await providers.requireType(
     dnspodProviderId,
     'dnspod',
     'DNSPod provider not found',

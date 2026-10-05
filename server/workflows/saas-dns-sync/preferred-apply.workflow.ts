@@ -86,7 +86,7 @@ export class SaaSPreferredApplyWorkflow {
     const payload = {
       provider_id: input.providerId,
       zone_name: input.zoneName,
-      resource_keys: await this.workflow.resourceKeys(
+      resource_keys: await this.resourceKeys(
         input.providerId,
         input.zoneName,
         targets.map((item) => String(item.hostname ?? '')).filter(Boolean)
@@ -113,12 +113,20 @@ export class SaaSPreferredApplyWorkflow {
   }
 
   async active(providerId: string, zoneName: string) {
-    // 同 SaaS 批量：面板反查只认本族任务（与详情端点同口径），跨工作流冲突由创建路径判定
-    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
+    // 与创建同一口径：同一份资源键推导 + 共享互斥范围，跨工作流命中也照实返回
+    return this.kind.active(
+      { provider_id: providerId, zone_name: zoneName },
+      await this.resourceKeys(providerId, zoneName)
+    )
   }
 
   retryFailed(id: string, providerId: string) {
     return this.kind.retryFailed(id, { provider_id: providerId })
+  }
+
+  /** 与 SaaS 批量共用 coordinator 的资源键推导：入队按选中主机名，反查按站点兜底键 */
+  private resourceKeys(providerId: string, zoneName: string, hostnames?: string[]): Promise<string[]> {
+    return this.workflow.resourceKeys(providerId, zoneName, hostnames)
   }
 
   private async runJob(job: JobRecord): Promise<void> {

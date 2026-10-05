@@ -1,15 +1,14 @@
 import type { JsonStore } from '../../../core/store/json-store.js'
+import type { PreferredDomainsFile } from '../../../core/store/store-shapes.js'
+import { ApiError } from '../../../core/http/api-error.js'
 
 interface PreferredDomain {
   domain: string
   sort: number
 }
 
-/** data/saas/preferred-domains.json：有序域名列表 */
-export interface PreferredDomainsFile {
-  items: string[]
-}
-import { ApiError } from '../../../core/http/api-error.js'
+/** 形状权威在 store 注册表同层；此处再导出，既有导入路径不变 */
+export type { PreferredDomainsFile } from '../../../core/store/store-shapes.js'
 
 export class PreferredDomainService {
   constructor(private readonly store: JsonStore<PreferredDomainsFile>) {}

@@ -29,7 +29,7 @@ export async function dnsPodClientFor(
   providerId: string,
   timeoutMs?: number
 ): Promise<DnsPodClient> {
-  const provider = await providers.requireType<DnsPodProvider>(
+  const provider = await providers.requireType(
     providerId,
     'dnspod',
     'DNSPod provider not found',

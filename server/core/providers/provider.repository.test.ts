@@ -26,7 +26,7 @@ afterEach(async () => {
 const providersFile = () => path.join(dataRoot, 'providers.json')
 
 function repository(): ProviderRepository {
-  return new ProviderRepository(createStore<ProvidersFile>('providers', dataRoot), createSecretBox(Buffer.alloc(32, 7)))
+  return new ProviderRepository(createStore('providers', dataRoot), createSecretBox(Buffer.alloc(32, 7)))
 }
 
 /** 断言拒绝原因是对应的 ApiError：实例类型 + 错误码 + 状态码 */

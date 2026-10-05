@@ -206,12 +206,7 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
   }
 
   private requireSaaS(saasProviderId: string): Promise<SaaSProvider> {
-    return this.providers.requireType<SaaSProvider>(
-      saasProviderId,
-      'saas',
-      'SaaS provider not found',
-      'saas_provider_not_found'
-    )
+    return this.providers.requireType(saasProviderId, 'saas', 'SaaS provider not found', 'saas_provider_not_found')
   }
 }
 

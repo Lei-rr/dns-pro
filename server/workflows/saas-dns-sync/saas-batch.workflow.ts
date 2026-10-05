@@ -90,12 +90,24 @@ export class SaaSBatchWorkflow {
   }
 
   async active(providerId: string, zoneName: string) {
-    // 面板反查只认本族任务（与详情端点同口径）；跨工作流冲突由创建路径按资源键 409 拦截
-    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
+    // 反查与创建同一口径：同一份资源键推导 + 共享互斥范围，跨工作流（DNS 批量 / EdgeOne）命中也照实返回
+    return this.kind.active(
+      { provider_id: providerId, zone_name: zoneName },
+      await this.resourceKeys(providerId, zoneName)
+    )
   }
 
   retryFailed(id: string, providerId: string) {
     return this.kind.retryFailed(id, { provider_id: providerId })
+  }
+
+  /**
+   * 本工作流会写入的底层资源键，反查与创建共用 coordinator 的同一份推导：
+   * 入队按选中主机名算，反查不知道待处理主机名、也不做上游全量拉取，取站点级兜底键，
+   * 因此只有个别主机名的自定义写入目标（sync_provider_id / sync_zone）只在创建路径参与判定。
+   */
+  private resourceKeys(providerId: string, zoneName: string, hostnames?: string[]): Promise<string[]> {
+    return this.workflow.resourceKeys(providerId, zoneName, hostnames)
   }
 
   private items(hostnames: string[], extra: Record<string, unknown>) {
@@ -115,7 +127,7 @@ export class SaaSBatchWorkflow {
     const payload = {
       provider_id: scope.providerId,
       zone_name: scope.zoneName,
-      resource_keys: await this.workflow.resourceKeys(scope.providerId, scope.zoneName, hostnames),
+      resource_keys: await this.resourceKeys(scope.providerId, scope.zoneName, hostnames),
       ...extra,
     }
     return this.kind.present(

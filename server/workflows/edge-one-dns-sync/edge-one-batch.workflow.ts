@@ -69,12 +69,20 @@ export class EdgeOneBatchWorkflow {
   }
 
   async active(providerId: string, zoneId: string) {
-    // 面板反查只认本族任务（与详情端点同口径）；跨工作流冲突由创建路径按资源键 409 拦截
-    return this.kind.active({ provider_id: providerId, zone_id: zoneId })
+    // 与创建同一口径：同一份资源键推导 + 共享互斥范围
+    return this.kind.active({ provider_id: providerId, zone_id: zoneId }, await this.resourceKeys(providerId, zoneId))
   }
 
   retryFailed(id: string, providerId?: string) {
     return this.kind.retryFailed(id, { provider_id: providerId })
+  }
+
+  /**
+   * 与创建共用 dnsSync 的同一份资源键推导：入队按待处理域名算，反查拿不到域名清单、
+   * 也不为探测付一次上游全量拉取，只取站点自身键，因此域名关联的 DNSPod 域名键只在创建路径参与判定。
+   */
+  private resourceKeys(providerId: string, zoneId: string, domains: string[] = []): Promise<string[]> {
+    return this.dnsSync.resourceKeys(providerId, zoneId, domains)
   }
 
   private items(domains: string[], extra: () => Record<string, unknown>) {
@@ -94,7 +102,7 @@ export class EdgeOneBatchWorkflow {
     const payload = {
       provider_id: scope.providerId,
       zone_id: scope.zoneId,
-      resource_keys: await this.dnsSync.resourceKeys(scope.providerId, scope.zoneId, itemDomains),
+      resource_keys: await this.resourceKeys(scope.providerId, scope.zoneId, itemDomains),
       ...extra,
     }
     return this.kind.present(

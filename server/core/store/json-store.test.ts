@@ -24,7 +24,7 @@ describe('JsonStore 的结构损坏判定', () => {
   it('顶层是数组：读取报错，事务拒绝写入且文件未被覆盖', async () => {
     const file = path.join(dataRoot, 'providers.json')
     await fs.writeFile(file, '[]')
-    const store = createStore<{ items: unknown[] }>('providers', dataRoot)
+    const store = createStore('providers', dataRoot)
 
     await expect(store.read()).rejects.toBeInstanceOf(ApiError)
     await expect(store.transaction(() => ({ next: { items: [] } }))).rejects.toMatchObject({
@@ -36,7 +36,7 @@ describe('JsonStore 的结构损坏判定', () => {
   it('顶层是标量：同样按损坏处理，不返回默认值', async () => {
     const file = path.join(dataRoot, 'providers.json')
     await fs.writeFile(file, '42')
-    const store = createStore<{ items: unknown[] }>('providers', dataRoot)
+    const store = createStore('providers', dataRoot)
 
     await expect(store.readFresh()).rejects.toMatchObject({ code: 'server_error' })
     expect(await fs.readFile(file, 'utf8')).toBe('42')

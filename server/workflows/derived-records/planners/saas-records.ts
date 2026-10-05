@@ -44,9 +44,22 @@ export const CLOUDFLARE_ORIGIN_LABEL = '业务接入'
 export const DNSPOD_DEFAULT_LINE = '默认'
 export const DNSPOD_PREFERRED_LINE = '境内'
 
-/** 同步记录 TTL：DNSPod 沿用历史默认值；Cloudflare 1 表示自动 */
-const DNSPOD_RECORD_TTL = 600
-const CLOUDFLARE_RECORD_TTL = 1
+/**
+ * 同步记录 TTL：按上游体系取值，写入路径与清理路径共用本定义，不各自写死数字。
+ *
+ * 两个值不可"统一"：
+ * - DNSPod 没有「自动」档，沿用历史默认 600s；
+ * - Cloudflare 的 1 就是「自动」，改成 600 会把代理记录钉在固定 TTL，并与既有记录判等失败。
+ * TTL 参与记录判等（dnsRecordMatches），规划侧与清理侧取了不同的值，同一条记录就会被判成两个版本。
+ */
+export const DNSPOD_RECORD_TTL = 600
+export const CLOUDFLARE_RECORD_TTL = 1
+
+/** 按同步厂商取记录 TTL：新增厂商时 Record 的穷尽性会强制在此补齐，避免漏档后静默回退 */
+const RECORD_TTL_BY_PROVIDER: Record<SaaSSyncProviderType, number> = {
+  dnspod: DNSPOD_RECORD_TTL,
+  cloudflare: CLOUDFLARE_RECORD_TTL,
+}
 
 const acmeChallengeName = (fqdn: string) => `_acme-challenge.${fqdn}`
 
@@ -193,7 +206,7 @@ export function saasDesiredRecords(input: {
         type,
         value,
         ...(dnspod ? { line: line ?? DNSPOD_DEFAULT_LINE } : {}),
-        ttl: dnspod ? DNSPOD_RECORD_TTL : CLOUDFLARE_RECORD_TTL,
+        ttl: RECORD_TTL_BY_PROVIDER[input.providerType],
         note: syncRemark(purpose, fqdn, dnspod ? DNSPOD_ORIGIN_LABEL : CLOUDFLARE_ORIGIN_LABEL),
       },
       provider_type: input.providerType,

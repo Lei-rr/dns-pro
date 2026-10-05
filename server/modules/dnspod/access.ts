@@ -1,7 +1,6 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { LinkedDnsAccountPort, LinkedDnsAccountSource } from '../../core/contracts/linked-dns-account.port.js'
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
-import type { EdgeOneProvider, SaaSProvider } from '../../core/providers/provider.types.js'
 
 /** 关联 DNSPod 的来源：EdgeOne 与 SaaS 各有一个 dnspod_provider 字段（取值即端口层的关联来源） */
 export type DnsPodLinkSource = LinkedDnsAccountSource
@@ -19,10 +18,10 @@ export class DnsPodAccess implements LinkedDnsAccountPort {
     const message = `${label} provider not found`
     const code = `${source}_provider_not_found`
     if (source === 'edgeone') {
-      const provider = await this.providers.requireType<EdgeOneProvider>(providerId, 'edgeone', message, code)
+      const provider = await this.providers.requireType(providerId, 'edgeone', message, code)
       return String(provider.dnspod_provider ?? '').trim()
     }
-    const provider = await this.providers.requireType<SaaSProvider>(providerId, 'saas', message, code)
+    const provider = await this.providers.requireType(providerId, 'saas', message, code)
     return String(provider.dnspod_provider ?? '').trim()
   }
 

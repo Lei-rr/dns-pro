@@ -1,19 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { JsonStore } from '../../../core/store/json-store.js'
+import type { AuthConfigData } from '../../../core/store/store-shapes.js'
 import { storePath } from '../../../core/store/store-registry.js'
 import { generatePassword, hashPassword } from '../../../core/security/password.js'
 
-export interface AuthConfigData {
-  auth: {
-    username: string
-    /** 仅用于兼容手工编辑；启动时自动转换为 password_hash 并删除明文 */
-    password?: string
-    password_hash?: string
-  }
-  /** 会话代次：登出时递增，使所有已签发会话失效 */
-  session_epoch?: number
-}
+/** 形状权威在 store 注册表同层（各数据文件的形状清单）；此处再导出，既有导入路径不变 */
+export type { AuthConfigData } from '../../../core/store/store-shapes.js'
 
 export interface AuthState {
   username: string

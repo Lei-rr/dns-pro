@@ -4,6 +4,7 @@ import type { Provider } from '../../../core/providers/provider.types.js'
 import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import type { JsonStore } from '../../../core/store/json-store.js'
+import type { SaaSPreferencesFile } from '../../../core/store/store-shapes.js'
 import type { SaaSPreferencePort } from '../../../core/contracts/saas-preference.port.js'
 import { zoneOwnsHostname } from './saas-hostname-rules.js'
 
@@ -21,10 +22,8 @@ export interface HostnamePreference {
   ownership_txt_cleaned: boolean
 }
 
-/** data/saas/preferences.json */
-export interface SaaSPreferencesFile {
-  items: Record<string, unknown>
-}
+/** 形状权威在 store 注册表同层；此处再导出，既有导入路径不变 */
+export type { SaaSPreferencesFile } from '../../../core/store/store-shapes.js'
 
 export type SyncPreference = Pick<
   HostnamePreference,

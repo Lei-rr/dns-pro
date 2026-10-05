@@ -1083,7 +1083,7 @@ try {
     }
   }
 
-  // 反查（active）返回的每一条都必须能被同 providerId 的详情端点取到：HTTP 级组合链路
+  // 反查（active）与创建同一口径：按资源键交集判定（本族任务同样必须被本 providerId 的详情端点取到）
   const liveJob = await app.ctx.platform.jobs.create(
     DNS_BATCH_CREATE_JOB,
     {
@@ -1115,7 +1115,8 @@ try {
     headers: { cookie },
   })
   assert.equal(foreignActive.statusCode, 200, `SaaS active => ${foreignActive.statusCode}: ${foreignActive.body}`)
-  assert.equal(foreignActive.json().data, null, '别族面板不得反查出本族任务')
+  // SaaS 探测对不存在的服务商解析不出任何资源键，退化为 payload 字段判定：DNS 任务的 payload 没有 zone_name，不命中
+  assert.equal(foreignActive.json().data, null, 'SaaS 探测解析不出资源键时不得命中字段不同的别族任务')
 
   const validation = await app.inject({ method: 'POST', url: '/api/providers', headers: { cookie }, payload: {} })
   assert.equal(validation.statusCode, 400)

@@ -5,17 +5,14 @@ import os from 'node:os'
 import path from 'node:path'
 import { migrateDataRoot } from '../server/core/store/migrations.js'
 import { createStore } from '../server/core/store/store-registry.js'
-import { ProviderRepository, type ProvidersFile } from '../server/core/providers/provider.repository.js'
+import { ProviderRepository } from '../server/core/providers/provider.repository.js'
 import { loadCredentialKey } from '../server/core/security/credential-key.js'
 import { createSecretBox } from '../server/core/crypto/secret-box.js'
 
 const log = { info: () => undefined }
 const readJson = async (target: string) => JSON.parse(await fs.readFile(target, 'utf8')) as Record<string, unknown>
 const repositoryAt = async (root: string) => {
-  return new ProviderRepository(
-    createStore<ProvidersFile>('providers', root),
-    createSecretBox(await loadCredentialKey(root))
-  )
+  return new ProviderRepository(createStore('providers', root), createSecretBox(await loadCredentialKey(root)))
 }
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-credential-'))
@@ -66,10 +63,7 @@ try {
   }
 
   // 4. 密钥不匹配：显式失败，绝不静默降级为密文
-  const rotated = new ProviderRepository(
-    createStore<ProvidersFile>('providers', root),
-    createSecretBox(Buffer.alloc(32, 7))
-  )
+  const rotated = new ProviderRepository(createStore('providers', root), createSecretBox(Buffer.alloc(32, 7)))
   await assert.rejects(() => rotated.all({ fresh: true }), /decrypt/i, '密钥不匹配必须显式报错')
 
   console.log(

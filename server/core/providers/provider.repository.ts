@@ -1,11 +1,23 @@
 import type { SecretBox } from '../crypto/secret-box.js'
 import { JsonStore } from '../store/json-store.js'
+import type { ProvidersFile } from '../store/store-shapes.js'
 import { ApiError } from '../http/api-error.js'
 import { openProviderSecrets, sealProviderSecrets } from './provider-secrets.js'
 import type { Provider, ProviderInput, ProviderType } from './provider.types.js'
 
-export interface ProvidersFile {
-  items: Provider[]
+/** providers.json 的形状权威在 store 注册表同层；这里再导出，既有导入路径保持不变 */
+export type { ProvidersFile } from '../store/store-shapes.js'
+
+/** type 判别键 → Provider 子类型；requireType 的返回类型由此推导，调用方不必再手写泛型 */
+type ProviderByType<T extends ProviderType> = Extract<Provider, { type: T }>
+
+/**
+ * 判别收窄：type 与子类型一一对应，T 由实参推导。
+ * 这样 requireType(id, 'dnspod') 的返回类型必定是 DnsPodProvider——写错类型在调用点就无法编译，
+ * 而不是靠 T 与 type 各自为政、再由 as 断言把不一致抹平。
+ */
+function isProviderOfType<T extends ProviderType>(provider: Provider, type: T): provider is ProviderByType<T> {
+  return provider.type === type
 }
 
 export class ProviderRepository {
@@ -24,12 +36,17 @@ export class ProviderRepository {
     return providers.find((p) => p.id === id) ?? null
   }
 
-  async requireType<T extends Provider>(id: string, type: ProviderType, message?: string, code?: string): Promise<T> {
+  async requireType<T extends ProviderType>(
+    id: string,
+    type: T,
+    message?: string,
+    code?: string
+  ): Promise<ProviderByType<T>> {
     const provider = await this.find(id)
-    if (!provider || provider.type !== type) {
+    if (provider === null || !isProviderOfType(provider, type)) {
       throw new ApiError(code ?? 'provider_not_found', message ?? 'Provider not found', 404)
     }
-    return provider as T
+    return provider
   }
 
   async mutateAll(mutator: (current: Provider[]) => Provider[]): Promise<Provider[]> {

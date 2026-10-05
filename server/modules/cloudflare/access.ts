@@ -32,7 +32,7 @@ export class CloudflareAccess {
 
   /** 解析 Cloudflare 服务商的账号与客户端 */
   async forProvider(providerId: string): Promise<CloudflareAccount> {
-    const provider = await this.providers.requireType<CloudflareProvider>(
+    const provider = await this.providers.requireType(
       providerId,
       'cloudflare',
       'Cloudflare provider not found',
@@ -47,7 +47,8 @@ export class CloudflareAccess {
 
   /** 隧道服务商 → 其关联的 Cloudflare 服务商 ID */
   async linkedProviderId(providerId: string): Promise<string> {
-    const tunnelProvider = await this.providers.requireType<CloudflaredProvider>(
+    // 显式标注：本模块消费的正是 cloudflared 行的形状，判别键映射变化会在这里暴露
+    const tunnelProvider: CloudflaredProvider = await this.providers.requireType(
       providerId,
       'cloudflared',
       'Cloudflare Tunnel provider not found',

@@ -22,14 +22,17 @@ export type JobRecord = {
 }
 
 /**
- * 互斥锁：
- * - 提供 resourceKeys 时，只要 types 中任一活跃任务的资源键有交集就拒绝（跨工作流共享底层资源）
- * - 否则退化为 scope 相等判定
+ * 互斥判定输入：只描述「哪些作业类型 + 哪些底层资源」，判定实现只有 job-registry.jobConflictsWith 一份。
+ * 创建/重试从 payload 取键，面板反查（BatchJobKind.active）现算键，两处构造出的都是本类型，
+ * 因此不存在「两套口径」：同一组资源事实必然得到同一结论。
  */
 export type JobLock = {
+  /** 互斥范围：会写同一底层资源的全部任务类型 */
   types: readonly string[]
+  /** 唯一主判据：本次会写入的底层资源键，与活跃作业的 resource_keys 相交即互斥 */
+  resourceKeys?: readonly string[]
+  /** 降级判据：作业没有 resource_keys（早于资源键机制的记录）时的 payload 同名字段相等 */
   scope?: Record<string, string>
-  resourceKeys?: string[]
   message?: string
 }
 

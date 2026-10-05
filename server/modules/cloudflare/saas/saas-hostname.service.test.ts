@@ -5,17 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../../core/http/api-error.js'
 import { createSecretBox } from '../../../core/crypto/secret-box.js'
 import { ProviderIntegrity } from '../../../core/providers/provider-integrity.js'
-import { ProviderRepository, type ProvidersFile } from '../../../core/providers/provider.repository.js'
+import { ProviderRepository } from '../../../core/providers/provider.repository.js'
 import type { Provider } from '../../../core/providers/provider.types.js'
 import { createStore } from '../../../core/store/store-registry.js'
 import { SaaSHostnameService } from './saas-hostname.service.js'
-import { SaaSPreferenceService, type SaaSPreferencesFile } from './saas-preference.service.js'
+import type { CustomHostnameIndex } from './saas-custom-hostname.client.js'
+import { SaaSPreferenceService } from './saas-preference.service.js'
 import { SaaSSyncConfigService } from './saas-sync-config.service.js'
 
 /**
  * 删除的站点归属校验与更新的校验前置 / 偏好单事务：
  * 删除混入别的站点 FQDN 时绝不能清那站点的偏好、也绝不能报成功；
  * 更新时非法同步配置必须在写偏好与远端 PATCH 之前整体失败，而不是降级成 200 部分失败。
+ * 多站点查找另有一组：每个站点只取一次快照，不因未命中而重复强制刷新。
  */
 
 let dataRoot = ''
@@ -42,13 +44,28 @@ const seededProviders: Provider[] = [
   { type: 'saas', id: 'saas-1', name: 'SaaS', cloudflare_provider: 'cf-1' },
 ]
 
+/** 测试用的站点主机名快照：与 client 的 CustomHostnameIndex 同形，只做 FQDN → ID 查表 */
+function indexOf(byFqdn: Record<string, string> = {}): CustomHostnameIndex {
+  return { findId: (hostnameFqdn: string) => byFqdn[hostnameFqdn] }
+}
+
 async function createHarness(
-  options: { idByHostname?: () => Promise<string>; current?: Record<string, unknown> } = {}
+  options: {
+    idByHostname?: (
+      cloudflareProviderId: string,
+      zoneId: string,
+      hostnameFqdn: string,
+      refresh: boolean
+    ) => Promise<string>
+    current?: Record<string, unknown>
+    zones?: Array<{ id: string; name: string }>
+    hostnameIndex?: (cloudflareProviderId: string, zoneId: string, refresh?: boolean) => Promise<CustomHostnameIndex>
+  } = {}
 ) {
-  const providerStore = createStore<ProvidersFile>('providers', dataRoot)
+  const providerStore = createStore('providers', dataRoot)
   await providerStore.write({ items: seededProviders })
   const providers = new ProviderRepository(providerStore, createSecretBox(Buffer.alloc(32, 7)))
-  const prefStore = createStore<SaaSPreferencesFile>('saasPreferences', dataRoot)
+  const prefStore = createStore('saasPreferences', dataRoot)
   const preferences = new SaaSPreferenceService(prefStore, new ProviderIntegrity(), providers)
   const syncConfigs = new SaaSSyncConfigService(providers, preferences)
 
@@ -59,17 +76,24 @@ async function createHarness(
     status: 'active',
     ssl: {},
   }
+  const defaultIdByHostname = options.idByHostname ?? (async () => 'h-1')
+  const idByHostnameCalls: Array<{ zoneId: string; refresh: boolean }> = []
   const customHostnames = {
-    idByHostname: options.idByHostname ?? (async () => 'h-1'),
+    idByHostname: async (cloudflareProviderId: string, zoneId: string, fqdn: string, refresh = false) => {
+      idByHostnameCalls.push({ zoneId, refresh })
+      return defaultIdByHostname(cloudflareProviderId, zoneId, fqdn, refresh)
+    },
+    hostnameIndex: options.hostnameIndex ?? (() => Promise.resolve(indexOf())),
     show: async () => current,
     update: vi.fn(async () => current),
     delete: vi.fn(async () => ({ id: 'h-1' })),
     listAll: async () => [current],
   }
+  const zones = options.zones ?? [{ id: 'zone-1', name: 'example.com' }]
   const service = new SaaSHostnameService(
     {
       idByName: async () => 'zone-1',
-      listAll: async () => ({ items: [{ id: 'zone-1', name: 'example.com' }] }),
+      listAll: async () => ({ items: zones }),
     } as never,
     { dcvDelegationUuid: async () => '' } as never,
     customHostnames as never,
@@ -84,7 +108,7 @@ async function createHarness(
     preferences,
     syncConfigs
   )
-  return { service, preferences, prefStore, customHostnames }
+  return { service, preferences, prefStore, customHostnames, idByHostnameCalls }
 }
 
 describe('SaaS 主机名删除：站点归属校验', () => {
@@ -177,5 +201,74 @@ describe('SaaS 主机名更新：校验前置与偏好单事务', () => {
     expect(row.sync_target).toBe('dnspod')
     expect(row.sync_provider_id).toBe('dnspod-1')
     expect(row.sync_zone).toBe('example.com')
+  })
+})
+
+describe('SaaS 多站点查找：每站点一次快照、命中即止', () => {
+  it('归属站点先查且命中即止：不为前面站点的未命中强制刷新重拉', async () => {
+    const calls: Array<{ cloudflareProviderId: string; zoneId: string; refresh: boolean }> = []
+    const harness = await createHarness({
+      zones: [
+        { id: 'zone-other', name: 'other.com' },
+        { id: 'zone-example', name: 'example.com' },
+      ],
+      hostnameIndex: async (cloudflareProviderId, zoneId, refresh) => {
+        calls.push({ cloudflareProviderId, zoneId, refresh: refresh === true })
+        return indexOf(zoneId === 'zone-example' ? { 'www.example.com': 'h-1' } : {})
+      },
+    })
+
+    await harness.service.syncConfig('saas-1', 'www.example.com')
+
+    // 归属站点直接命中：非归属站点一次都没问，更没有被逐个强制刷新
+    expect(calls).toEqual([])
+    expect(harness.idByHostnameCalls).toEqual([{ zoneId: 'zone-example', refresh: false }])
+  })
+
+  it('归属站点没有时：确认过再问其余站点，外部域名托管在非归属站点仍能找到', async () => {
+    const calls: Array<{ cloudflareProviderId: string; zoneId: string; refresh: boolean }> = []
+    const harness = await createHarness({
+      zones: [
+        { id: 'zone-example', name: 'example.com' },
+        { id: 'zone-vendor', name: 'vendor.net' },
+      ],
+      idByHostname: async () => {
+        throw new ApiError('saas_hostname_not_found', 'Hostname www.example.com not found', 404)
+      },
+      hostnameIndex: async (cloudflareProviderId, zoneId, refresh) => {
+        calls.push({ cloudflareProviderId, zoneId, refresh: refresh === true })
+        return indexOf(zoneId === 'zone-vendor' ? { 'www.example.com': 'h-vendor' } : {})
+      },
+    })
+
+    await harness.service.syncConfig('saas-1', 'www.example.com')
+
+    expect(harness.idByHostnameCalls).toEqual([{ zoneId: 'zone-example', refresh: false }])
+    expect(calls).toEqual([{ cloudflareProviderId: 'cf-1', zoneId: 'zone-vendor', refresh: false }])
+  })
+
+  it('FQDN 不在任何站点：每个站点只取一次快照且全程不刷新，遍历完才 404', async () => {
+    const calls: Array<{ cloudflareProviderId: string; zoneId: string; refresh: boolean }> = []
+    const harness = await createHarness({
+      zones: [
+        { id: 'zone-1', name: 'example.com' },
+        { id: 'zone-2', name: 'other.com' },
+      ],
+      hostnameIndex: async (cloudflareProviderId, zoneId, refresh) => {
+        calls.push({ cloudflareProviderId, zoneId, refresh: refresh === true })
+        return indexOf()
+      },
+    })
+
+    const error = await harness.service.syncConfig('saas-1', 'missing.example.net').then(
+      () => null,
+      (reason: unknown) => reason
+    )
+
+    expect(error).toMatchObject({ code: 'saas_hostname_not_found', statusCode: 404 })
+    expect(calls).toEqual([
+      { cloudflareProviderId: 'cf-1', zoneId: 'zone-1', refresh: false },
+      { cloudflareProviderId: 'cf-1', zoneId: 'zone-2', refresh: false },
+    ])
   })
 })

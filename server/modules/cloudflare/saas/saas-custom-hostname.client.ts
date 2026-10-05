@@ -81,6 +81,15 @@ export interface CloudflareCustomHostname {
   [key: string]: unknown
 }
 
+/**
+ * 站点主机名索引快照：一次拉取、多次匹配，匹配本身不再产生上游请求。
+ * 批量查找（一个 FQDN 对多个站点）靠它把「刷新策略」挡在查找之外，
+ * 否则每个未命中的站点都会各自决定刷新一次。
+ */
+export interface CustomHostnameIndex {
+  findId(hostnameFqdn: string): string | undefined
+}
+
 const hostnamesPath = (zoneId: string, hostnameId?: string) =>
   `zones/${encodeURIComponent(zoneId)}/custom_hostnames${hostnameId ? `/${encodeURIComponent(hostnameId)}` : ''}`
 
@@ -118,12 +127,31 @@ export class SaaSCustomHostnameClient {
     return cached.value
   }
 
-  /** FQDN → 主机名 ID；缓存未命中时强制刷新再查一次 */
-  async idByHostname(cloudflareProviderId: string, zoneId: string, hostnameFqdn: string, refresh = false) {
+  /**
+   * 站点主机名索引快照：一次分页拉取 → 任意次按 FQDN 匹配。
+   * 把「取列表」与「按 FQDN 找」拆开，是为了让「这次未命中要不要再打一遍上游」由调用形态决定：
+   * 单站点写路径可以接受一次刷新确认，遍历全部站点的批量查找不能——那会放大成每站点一次全量重拉。
+   */
+  async hostnameIndex(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<CustomHostnameIndex> {
+    return new HostnameIndex(await this.listAll(cloudflareProviderId, zoneId, refresh))
+  }
+
+  /**
+   * 单次查找（单站点用）：快照未命中时用一次强制刷新确认「上游确实没有」。
+   * 这次刷新不能省：列表缓存只是某次拉取的快照，主机名可能在缓存写入之后才出现
+   * （控制台手工创建、其它实例写入、失效标签没打到），只看缓存会把刚创建的主机名误判成 404。
+   */
+  async idByHostname(
+    cloudflareProviderId: string,
+    zoneId: string,
+    hostnameFqdn: string,
+    refresh = false
+  ): Promise<string> {
     const fqdn = normalizeFqdn(hostnameFqdn)
+    const snapshot = await this.hostnameIndex(cloudflareProviderId, zoneId, refresh)
     const found =
-      (await this.findId(cloudflareProviderId, zoneId, fqdn, refresh)) ||
-      (!refresh ? await this.findId(cloudflareProviderId, zoneId, fqdn, true) : '')
+      snapshot.findId(fqdn) ??
+      (refresh ? undefined : (await this.hostnameIndex(cloudflareProviderId, zoneId, true)).findId(fqdn))
     if (found) return found
     throw new ApiError('saas_hostname_not_found', `Hostname ${hostnameFqdn} not found`, 404)
   }
@@ -188,18 +216,6 @@ export class SaaSCustomHostnameClient {
     return cached.value
   }
 
-  private async findId(cloudflareProviderId: string, zoneId: string, fqdn: string, refresh: boolean) {
-    let found = ''
-    await collectNumberedPages((page, perPage) => this.page(cloudflareProviderId, zoneId, page, perPage, refresh), {
-      ...CLOUDFLARE_PAGE_LIMIT,
-      stop: (items) => {
-        found = items.find((item) => normalizeFqdn(item.hostname) === fqdn && item.id)?.id ?? ''
-        return found !== ''
-      },
-    })
-    return found
-  }
-
   private async call<T>(
     cloudflareProviderId: string,
     action: SaasHostnameAction,
@@ -216,6 +232,28 @@ export class SaaSCustomHostnameClient {
       },
       () => fn(client)
     )
+  }
+}
+
+/**
+ * 索引实现：构建期做完归一化与去重，匹配期只做一次哈希查表。
+ * 同一 FQDN 有多条时保留首个，与旧的「逐页查找、首个命中即返回」结果一致。
+ */
+class HostnameIndex implements CustomHostnameIndex {
+  private readonly byFqdn: ReadonlyMap<string, string>
+
+  constructor(hostnames: readonly CloudflareCustomHostname[]) {
+    const byFqdn = new Map<string, string>()
+    for (const hostname of hostnames) {
+      const fqdn = normalizeFqdn(hostname.hostname)
+      if (hostname.id === '' || fqdn === '' || byFqdn.has(fqdn)) continue
+      byFqdn.set(fqdn, hostname.id)
+    }
+    this.byFqdn = byFqdn
+  }
+
+  findId(hostnameFqdn: string): string | undefined {
+    return this.byFqdn.get(normalizeFqdn(hostnameFqdn))
   }
 }
 

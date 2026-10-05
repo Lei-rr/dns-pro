@@ -1,30 +1,40 @@
 import path from 'node:path'
 import { JsonStore } from './json-store.js'
+import type { AuthConfigData, PreferredDomainsFile, ProvidersFile, SaaSPreferencesFile } from './store-shapes.js'
 
-/** 数据文件规格：路径、默认值的唯一来源 */
-interface StoreSpec {
+/** StoreName → 数据形状 的唯一映射：createStore 由名字推导返回类型，调用点不再手写泛型 */
+export type StoreShapes = {
+  auth: AuthConfigData
+  providers: ProvidersFile
+  preferredDomains: PreferredDomainsFile
+  saasPreferences: SaaSPreferencesFile
+}
+
+export type StoreName = keyof StoreShapes
+
+/** 数据文件规格：路径 + 默认值。defaults 必须匹配 StoreShapes 声明的形状，写错形状在这里就编译失败 */
+interface StoreSpec<K extends StoreName> {
   readonly path: string
-  readonly defaults: Record<string, unknown>
+  readonly defaults: StoreShapes[K]
 }
 
 /**
  * JsonStore 管理的业务数据文件登记表；新增业务数据文件必须在此登记（建目录由此派生）。
- * credential.key、session-secret、__meta.json、backups/ 等运行时文件由各自模块直接读写，
- * 既不在此表内，也不参与建目录与迁移判定。
+ * 键集由 StoreShapes 决定：漏登记、多登记、形状与 defaults 不一致都在编译期报错，
+ * 路径与形状不再各说各话。credential.key、session-secret、__meta.json、backups/ 等
+ * 运行时文件由各自模块直接读写，既不在此表内，也不参与建目录与迁移判定。
  */
-const storeSpecs = {
+const storeSpecs: { [K in StoreName]: StoreSpec<K> } = {
   auth: { path: 'config.json', defaults: { auth: { username: '' } } },
   providers: { path: 'providers.json', defaults: { items: [] } },
   preferredDomains: { path: 'saas/preferred-domains.json', defaults: { items: [] } },
   saasPreferences: { path: 'saas/preferences.json', defaults: { items: {} } },
-} satisfies Record<string, StoreSpec>
+}
 
-export type StoreName = keyof typeof storeSpecs
-
-/** 按注册表创建 store；数据根由装配层传入，调用方以类型参数声明自己的数据形状 */
-export function createStore<T extends object>(name: StoreName, dataRoot: string): JsonStore<T> {
-  const spec: StoreSpec = storeSpecs[name]
-  return new JsonStore<T>(spec.path, spec.defaults as T, dataRoot)
+/** 按注册表创建 store；数据根由装配层传入，形状由 StoreName 推导，不再由调用方声明 */
+export function createStore<K extends StoreName>(name: K, dataRoot: string): JsonStore<StoreShapes[K]> {
+  const spec = storeSpecs[name]
+  return new JsonStore(spec.path, spec.defaults, dataRoot)
 }
 
 /** 注册表派生的数据子目录（相对 data 根），供启动建目录 */

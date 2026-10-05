@@ -18,9 +18,11 @@ import {
 
 export {
   CLOUDFLARE_ORIGIN_LABEL,
+  CLOUDFLARE_RECORD_TTL,
   DNSPOD_DEFAULT_LINE,
   DNSPOD_ORIGIN_LABEL,
   DNSPOD_PREFERRED_LINE,
+  DNSPOD_RECORD_TTL,
   cleanupDesired,
   cloudflareDnsCleanupRecipe,
   countDeleted,

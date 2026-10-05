@@ -8,7 +8,7 @@ import {
   type JobLock,
   type JobRecord,
 } from './job.types.js'
-import { peekResourceKeys } from './job-registry.js'
+import { peekResourceKeys, payloadMatchesScope } from './job-registry.js'
 
 /** 批量任务对外视图公共字段 */
 export type BatchJobViewBase = {
@@ -38,18 +38,18 @@ export type BatchItemResult = {
 // 内部执行字段不对外暴露（执行期快照清单与 job.service 的内存剥离共用一份）
 const INTERNAL_ITEM_FIELDS = new Set(['attempt', 'item_key', ...EXECUTION_SNAPSHOT_FIELDS])
 
-/** 批量任务族：同一 scope 内互斥的一组任务类型 */
+/** 批量任务族：互斥范围与资源键同族共享，创建/重试/反查共用同一份互斥判定 */
 export class BatchJobKind<View> {
   constructor(
     private readonly jobs: JobService,
     private readonly options: {
-      /** 本族可查询的任务类型 */
+      /** 本族可查询的任务类型：详情/重试的取值与归属范围；不参与互斥判定（反查可能命中别族任务） */
       types: readonly string[]
-      /** 互斥锁类型：参与同一底层资源竞争的全部任务类型 */
+      /** 互斥范围：参与同一底层资源竞争的全部任务类型（创建/重试/反查共用） */
       lockTypes: readonly string[]
-      /** payload 中构成互斥范围的字段（用于按站点查询/展示） */
+      /** payload 中构成站点标识的字段（展示取值与老作业降级判定共用同一套投影） */
       scopeKeys: readonly string[]
-      /** 本次任务会写入的底层资源键；跨工作流以交集判定互斥 */
+      /** 创建路径的资源键：payload 里已经算好的键；跨工作流以交集判定互斥 */
       resourceKeys?: (payload: Record<string, unknown>) => string[]
       lockMessage?: string
       notFoundCode?: string
@@ -70,10 +70,14 @@ export class BatchJobKind<View> {
     return this.buildLock(payload, peekResourceKeys(payload))
   }
 
-  private buildLock(payload: Record<string, unknown>, resourceKeys: string[] | undefined): JobLock {
+  /**
+   * 互斥输入的唯一构造点：站点标识一律按 scopeKeys 投影，资源键由调用方给出，
+   * 创建、重试、反查三条路径构造出的都是同一个 JobLock，判定交给 JobService.findActiveConflict。
+   */
+  private buildLock(source: Record<string, unknown>, resourceKeys: readonly string[] | undefined): JobLock {
     return {
       types: this.options.lockTypes,
-      scope: this.scopeOf(payload),
+      scope: this.scopeOf(source),
       resourceKeys,
       message: this.options.lockMessage,
     }
@@ -91,14 +95,15 @@ export class BatchJobKind<View> {
   }
 
   /**
-   * 查找本族活跃任务：判定与详情端点（findRecord / require）完全同口径——本族 types + scope 字段相等，
-   * 保证反查返回的每一条都能被同族详情端点与重试端点取到。
-   * 跨工作流对同一底层资源的互斥只在创建/重试路径判定（见 lock / assertNoActiveConflict），
-   * 不在反查里跨族展示：详情端点按本族 types 过滤，跨族任务取不到。
+   * 查找该站点上的活跃作业：与创建/重试同一口径——同一互斥范围（lockTypes）+ 资源键交集，
+   * 判定由 JobService.findActiveConflict 给出，所以不可能再出现「反查说没有作业、创建却 409」。
+   * 跨工作流命中的作业也照实返回（视图骨架相同，其 payload 字段名不同处取空串）：
+   * 面板要看的正是「这块底层资源上有没有作业在跑」，而不是「有没有本族的作业」。
+   * @param scope 站点事实，字段名与 scopeKeys 一致（与创建路径从 payload 取值的投影规则相同）
+   * @param resourceKeys 该站点会写入的底层资源键：必须与创建时写进 payload.resource_keys 的是同一份推导
    */
-  async active(scope: Record<string, string>): Promise<View | null> {
-    const active = await this.jobs.listActive()
-    const job = active.find((item) => this.options.types.includes(item.type) && matchesScope(item, scope))
+  async active(scope: Record<string, string>, resourceKeys: readonly string[]): Promise<View | null> {
+    const job = this.jobs.findActiveConflict(this.buildLock(scope, resourceKeys))
     return job ? this.present(job) : null
   }
 
@@ -120,14 +125,16 @@ export class BatchJobKind<View> {
     return job
   }
 
+  /** 详情端点的归属校验：只认本族类型 + payload 字段匹配（与互斥判定无关，见 payloadMatchesScope） */
   private async findRecord(id: string, scope: Record<string, string | undefined>): Promise<JobRecord | null> {
     const job = await this.jobs.get(id)
     if (!job || !this.options.types.includes(job.type)) return null
-    return matchesScope(job, scope) ? job : null
+    return payloadMatchesScope(job, scope) ? job : null
   }
 
-  private scopeOf(payload: Record<string, unknown>): Record<string, string> {
-    return Object.fromEntries(this.options.scopeKeys.map((key) => [key, String(payload[key] ?? '')]))
+  /** 站点标识投影：payload 与查询 scope 共用同一套字段名，创建与反查落在同一份互斥输入上 */
+  private scopeOf(source: Record<string, unknown>): Record<string, string> {
+    return Object.fromEntries(this.options.scopeKeys.map((key) => [key, String(source[key] ?? '')]))
   }
 }
 
@@ -148,13 +155,6 @@ export async function finishBatchJob(jobs: JobService, jobId: string, label: str
       ? `${label}完成：成功 ${success}，失败 ${failed}，跳过 ${skipped}`
       : `${label}完成：成功 ${success}，跳过 ${skipped}`,
   })
-}
-
-/** 查询/详情共用的 scope 判定：payload 同名字段相等（undefined 值不参与判定） */
-function matchesScope(job: JobRecord, scope: Record<string, string | undefined>): boolean {
-  return Object.entries(scope).every(
-    ([key, value]) => value === undefined || String(job.payload?.[key] ?? '') === value
-  )
 }
 
 /** 失败项改回 pending 并重新入队 */

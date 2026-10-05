@@ -5,6 +5,7 @@ import type { SaaSSyncDefaultsPort } from '../../core/contracts/saas-sync-config
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import {
   CLOUDFLARE_ORIGIN_LABEL,
+  CLOUDFLARE_RECORD_TTL,
   cleanupDesired,
   countDeleted,
   desiredRecord,
@@ -20,9 +21,6 @@ import {
   type SaaSSyncTargetDeps,
 } from '../derived-records/planners/saas.planner.js'
 import { deleteRemovedRecords, saasTargetRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
-
-/** Cloudflare 同步记录 TTL：1 表示自动 */
-const SAAS_RECORD_TTL = 1
 
 /**
  * SaaS 主机名 → Cloudflare DNS 同步。
@@ -144,7 +142,7 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
           record: {
             type: 'TXT',
             value: String(current.ownership_verification?.value ?? ''),
-            ttl: SAAS_RECORD_TTL,
+            ttl: CLOUDFLARE_RECORD_TTL,
             note: syncRemark('ownership_verification', fqdn, CLOUDFLARE_ORIGIN_LABEL),
           },
           provider_type: 'cloudflare',

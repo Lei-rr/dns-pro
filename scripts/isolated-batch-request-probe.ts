@@ -12,6 +12,16 @@ import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { EdgeOneClient } from '../server/modules/edge-one/edge-one.client.js'
 import { invalidateSaaSHostnameCache } from '../server/modules/cloudflare/saas/saas.cache.js'
 import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-registry.js'
+import type { DesiredRecord } from '../server/workflows/derived-records/sync-plan.js'
+import {
+  DNSPOD_DEFAULT_LINE,
+  DNSPOD_ORIGIN_LABEL,
+  DNSPOD_PREFERRED_LINE,
+  cleanupDesired,
+  countDeleted,
+  dnspodSaaSCleanupRecipe,
+  syncRemark,
+} from '../server/workflows/derived-records/planners/saas.planner.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-requests-'))
 await fs.writeFile(
@@ -130,6 +140,90 @@ try {
   )
   const lineCall = dnsPodCalls.find((call) => call.action === 'DescribeRecordLineList')
   assert.equal(lineCall?.payload.DomainGrade, 'D_FREE', '线路查询需要带域名套餐等级')
+
+  // ---- 1b. 非默认线路（境内）端到端：记录身份判据 / 同步幂等 / 按线路清理配方 ----
+  // 上游桩按写入内容回包厂商形态（Line + LineId + Remark），而不是一律回 '默认'：
+  // 桩只回默认线路时，非默认线路的期望记录永远进不了 current——检测恒报 missing、
+  // 每次同步重复写入、按线路的清理配方匹配不到目标（历史审计问题的根因在这里没有覆盖）
+  const lineRecords: Array<Record<string, unknown>> = []
+  const lineWrites: Array<Record<string, unknown>> = []
+  const lineDeletes: number[] = []
+  // 覆盖前保存第 1 节的桩：1b 的桩只回包非默认线路，后续批量路径（SaaS 删除清理等）还要用回原桩
+  const upstreamFilterStub = DnsPodClient.prototype.call
+  DnsPodClient.prototype.call = async function (
+    action: string,
+    payload: Record<string, unknown> = {}
+  ): Promise<unknown> {
+    if (action === 'DescribeRecordList') {
+      return { RecordList: lineRecords, RecordCountInfo: { TotalCount: lineRecords.length }, RequestId: 'lines' }
+    }
+    if (action === 'CreateRecord') {
+      lineWrites.push(payload)
+      lineRecords.push({
+        RecordId: 4242,
+        Name: String(payload.SubDomain ?? ''),
+        Type: String(payload.RecordType ?? ''),
+        Value: String(payload.Value ?? ''),
+        Line: String(payload.RecordLine ?? ''),
+        // 厂商回包的非默认线路形态：线路名与线路 ID 同时在场，身份判据必须仍然对得上
+        LineId: '10=0',
+        TTL: Number(payload.TTL),
+        Remark: String(payload.Remark ?? ''),
+      })
+      return { RecordId: 4242, RequestId: 'created' }
+    }
+    if (action === 'DeleteRecord') {
+      lineDeletes.push(Number(payload.RecordId))
+      const index = lineRecords.findIndex((row) => Number(row.RecordId) === Number(payload.RecordId))
+      if (index >= 0) lineRecords.splice(index, 1)
+      return { RecordId: Number(payload.RecordId), RequestId: 'deleted' }
+    }
+    assert.fail(`unexpected DNSPod action: ${action}`)
+  }
+
+  // 期望记录取 planner 的线路定义与备注文案：探针不再复制第二份线路判据
+  const preferredLineRecord: DesiredRecord = {
+    purpose: 'preferred_cname',
+    fqdn: 'www.example.com',
+    owner: 'saas',
+    refId: 'probe-hostname',
+    record: {
+      type: 'CNAME',
+      value: 'preferred.example.net',
+      line: DNSPOD_PREFERRED_LINE,
+      ttl: 600,
+      note: syncRemark('preferred_cname', 'www.example.com', DNSPOD_ORIGIN_LABEL),
+    },
+  }
+
+  const createdLine = await writer.sync('dnspod', 'dns-target', 'example.com', [preferredLineRecord])
+  assert.equal(createdLine[0]?.status, 'created', `非默认线路首次同步必须写入：${JSON.stringify(createdLine)}`)
+  assert.equal(
+    lineWrites[0]?.RecordLine,
+    DNSPOD_PREFERRED_LINE,
+    '非默认线路必须下推到写入 payload，不能被回填成默认线路'
+  )
+
+  // 上游同槽位已在场（含 LineId）：再次同步必须判定 unchanged，证明线路判据在真实端口上闭合
+  const resyncedLine = await writer.sync('dnspod', 'dns-target', 'example.com', [preferredLineRecord])
+  assert.equal(resyncedLine[0]?.status, 'unchanged', `非默认线路的同步必须幂等：${JSON.stringify(resyncedLine)}`)
+  assert.equal(lineWrites.length, 1, 'unchanged 判定下不得重复写入非默认线路记录')
+
+  // 清理配方按线路逐条声明：默认线路配方不得误删境内记录，境内配方必须命中并删除它
+  const lineCleanup = await writer.sync(
+    'dnspod',
+    'dns-target',
+    'example.com',
+    dnspodSaaSCleanupRecipe('www.example.com', 'dns-target', 'example.com', {
+      default: DNSPOD_DEFAULT_LINE,
+      preferred: DNSPOD_PREFERRED_LINE,
+    }).map(cleanupDesired)
+  )
+  assert.equal(countDeleted(lineCleanup), 1, `按线路的清理配方必须删除境内记录：${JSON.stringify(lineCleanup)}`)
+  assert.deepEqual(lineDeletes, [4242], '清理只能命中线路相符的记录')
+  assert.equal(lineRecords.length, 0, '清理必须真的删除上游的境内记录')
+  // 1b 的桩只认识非默认线路用例涉及的 action：立刻还原，避免后续批量路径的上游调用无桩可依
+  DnsPodClient.prototype.call = upstreamFilterStub
 
   // ---- 2. Cloudflare 精确匹配：使用 name 参数，不再用模糊 search ----
   const cloudflareHostnames = ['a.example.com', 'b.example.com', 'c.example.com']
@@ -328,29 +422,30 @@ try {
     )
   assert.equal(conflict?.code, 'batch_job_running', '同一底层 DNS 域名上的 SaaS 批量必须被互斥拦截')
 
-  // 反查与本族详情端点同口径：面板只显示本族任务（详情端点取得到的任务）；
-  // 跨工作流写入冲突已由上面的创建路径 409 断言覆盖，不通过跨族反查展示（别族任务在详情端点取不到）。
+  // 反查与创建同一口径（lockTypes + 资源键交集）：跨工作流写同一底层资源时，面板必须看到那条任务，
+  // 否则用户会「看到没有作业在运行，创建却被 409 拒绝」
   const dnsActive = await app.ctx.workflows.dnsBatch.active('dnspod', 'dns-target', 'example.com')
   assert.equal(dnsActive?.id, dnsJob.id, 'DNS 面板必须能查到本工作流的活跃任务')
   assert.equal(
     (await app.ctx.workflows.dnsBatch.find(String(dnsActive?.id), 'dnspod', 'dns-target'))?.id,
     dnsJob.id,
-    '反查返回的任务必须能被同 providerId 的详情端点取到'
+    '反查返回的本族任务必须能被同 providerId 的详情端点取到'
   )
   assert.equal(
     (await app.ctx.workflows.saasBatch.active('saas-owner', 'example.com'))?.id,
-    undefined,
-    'SaaS 面板不得反查出别族任务（其详情端点取不到）'
+    dnsJob.id,
+    'SaaS 面板必须反查出写同一底层 DNSPod 域名的 DNS 批量任务（创建路径同样会 409）'
   )
   assert.equal(
     (await app.ctx.workflows.saasPreferredApply.active('saas-owner', 'example.com'))?.id,
-    undefined,
-    '优选切换面板不得反查出别族任务'
+    dnsJob.id,
+    '优选切换与 SaaS 批量共用同一份资源键推导，反查结论必须一致'
   )
+  // EdgeOne 反查只覆盖站点自身键（待处理域名清单在探测阶段不可得），因此不命中 DNS 域名的键
   assert.equal(
     (await app.ctx.workflows.edgeOneBatch.active('edge-owner', 'zone-1'))?.id,
     undefined,
-    'EdgeOne 面板不得反查出别族任务'
+    'EdgeOne 反查按站点级键判定：关联 DNSPod 域名的键只在创建路径参与判定'
   )
 
   // 不同站点不应被误锁
@@ -518,7 +613,7 @@ try {
   )
 
   console.log(
-    'batch-request-probe=ok dnspod=upstream-filter cloudflare=exact-name saas=o(n) edgeone=snapshot lock=resource-keys dns-batch=record-status idempotency=skip-existing preferred-apply=o(n)'
+    'batch-request-probe=ok dnspod=upstream-filter dnspod-line=preferred-identity+cleanup cloudflare=exact-name saas=o(n) edgeone=snapshot lock=resource-keys dns-batch=record-status idempotency=skip-existing preferred-apply=o(n)'
   )
 } finally {
   // 断言失败时可能有任务仍在等待上游：close 加超时，保证失败能正常退出

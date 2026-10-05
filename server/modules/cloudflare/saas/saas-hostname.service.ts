@@ -298,28 +298,68 @@ export class SaaSHostnameService
     this.invalidateHostnameCache(zone.cloudflareProviderId, zone.zoneId, includeList)
   }
 
-  /** 解析主机名 ID：列表走缓存（变更由标签精确失效），详情刷新由调用方决定 */
+  /**
+   * 单站点解析主机名 ID：走「单次查找」入口——快照未命中时它会强制刷新确认一次再判 404。
+   * 写路径（更新 / 删除 / 详情重试）要的正是这个语义：不接受「缓存里没有」作为最终答案。
+   */
   private async resolveHostname(providerId: string, zoneName: string, hostnameFqdn: string): Promise<HostnameRef> {
     const { cloudflareProviderId, zoneId } = await this.resolveZoneRef(providerId, zoneName)
     const hostnameId = await this.customHostnames.idByHostname(cloudflareProviderId, zoneId, hostnameFqdn)
     return { cloudflareProviderId, zoneId, zoneName, hostnameId }
   }
 
-  /** 未知站点时遍历所有站点查找主机名 */
+  /**
+   * 未知站点时遍历所有站点查找主机名。
+   *
+   * 分两批，因为「未命中要不要刷新确认」只对归属站点有意义：
+   * - 拥有该 FQDN 的站点（自己或父域）走单次查找，未命中时刷新确认一次。外部（控制台 / 其它实例）
+   *   刚创建的主机名就落在这些站点上，缓存快照滞后时只有刷新能立刻看见它；候选数量由域名层级决定，
+   *   与站点总数无关，代价可控。
+   * - 其余站点只按缓存快照匹配，不再逐个刷新。逐站点刷新正是原实现的放大点：每个不含该 FQDN 的站点
+   *   都被全量重拉一遍，而 refresh 会跳过缓存读与在途去重，请求量随站点数（× 站点分页数）增长。
+   *
+   * 归属判定复用 zoneOwnsHostname 这一份规则，不另立第二套「站点该不该管这个 FQDN」；
+   * 批次只决定先问谁、不决定结果——非归属站点照样会被问完，外部域名托管在别的站点时仍能找到。
+   */
   private async resolveHostnameByFqdn(providerId: string, hostnameFqdn: string): Promise<HostnameRef> {
     const fqdn = normalizeFqdn(hostnameFqdn)
     const cloudflareProviderId = await this.cloudflareProviderId(providerId)
-    for (const zone of (await this.cloudflareZones.listAll(cloudflareProviderId)).items) {
-      if (!zone.id || !zone.name) continue
-      try {
-        // 站点 ID 已在手：直接查主机名，省掉 idByName（带 name 过滤、与 listAll 不同键）对每个站点的一次上游往返
-        const hostnameId = await this.customHostnames.idByHostname(cloudflareProviderId, zone.id, fqdn)
-        return { cloudflareProviderId, zoneId: zone.id, zoneName: zone.name, hostnameId }
-      } catch (error) {
-        if (!isExplicitNotFound(error, NOT_FOUND)) throw error
-      }
-    }
+    const zones = (await this.cloudflareZones.listAll(cloudflareProviderId)).items
+    const owned = zones.filter((zone) => zoneOwnsHostname(String(zone.name ?? ''), fqdn))
+    const rest = zones.filter((zone) => !zoneOwnsHostname(String(zone.name ?? ''), fqdn))
+
+    const found =
+      (await this.findHostname(cloudflareProviderId, fqdn, owned, true)) ??
+      (await this.findHostname(cloudflareProviderId, fqdn, rest, false))
+    if (found) return found
     throw new ApiError('saas_hostname_not_found', `SaaS hostname ${hostnameFqdn} not found`, 404)
+  }
+
+  /**
+   * 在一批站点里按 FQDN 取主机名 ID；confirm 批次对未命中站点刷新确认一次，其余批次只用缓存快照。
+   * 站点 ID 已在手：直接查主机名，省掉 idByName（带 name 过滤、与 listAll 不同键）对每个站点的一次上游往返。
+   */
+  private async findHostname(
+    cloudflareProviderId: string,
+    fqdn: string,
+    zones: ZoneListResult['items'],
+    confirm: boolean
+  ): Promise<HostnameRef | null> {
+    for (const zone of zones) {
+      if (!zone.id || !zone.name) continue
+      let hostnameId = ''
+      if (confirm) {
+        try {
+          hostnameId = await this.customHostnames.idByHostname(cloudflareProviderId, zone.id, fqdn)
+        } catch (error) {
+          if (!isExplicitNotFound(error, NOT_FOUND)) throw error
+        }
+      } else {
+        hostnameId = (await this.customHostnames.hostnameIndex(cloudflareProviderId, zone.id)).findId(fqdn) ?? ''
+      }
+      if (hostnameId) return { cloudflareProviderId, zoneId: zone.id, zoneName: zone.name, hostnameId }
+    }
+    return null
   }
 
   /**

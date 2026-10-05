@@ -10,6 +10,7 @@ import { summarizeJobItems } from '../server/core/jobs/job.types.js'
 import {
   DNS_BATCH_CREATE_JOB,
   SAAS_BATCH_DELETE_JOB,
+  dnsZoneKey,
   peekResourceKeys,
   readResourceKeys,
 } from '../server/core/jobs/job-registry.js'
@@ -229,8 +230,8 @@ try {
   assert.throws(() => new JsonStore('../escaped.json', {}, dataDir), /data root/)
   assert.throws(() => new JsonStore(path.join(dataDir, 'absolute.json'), {}, dataDir), /relative to data root/)
 
-  // 面板反查（active）只认本族任务：与详情端点（find/require）同口径，保证反查返回的每条都能取到；
-  // 跨工作流对同一底层资源的竞争只在创建路径按资源键判定（lockTypes + 交集），不进入面板反查。
+  // 互斥判定只有一份：面板反查（active）与创建路径同口径——同一互斥范围（lockTypes）+ 资源键交集，
+  // 判定统一由 JobService.findActiveConflict 给出，跨工作流命中同一底层资源时两边结论必须一致。
   const lockJobs = new JobService()
   const lockKind = new BatchJobKind<string>(lockJobs, {
     types: [DNS_BATCH_CREATE_JOB],
@@ -253,13 +254,14 @@ try {
     [{ hostname: 'a.example.com' }],
     { start: false }
   )
-  // 别族任务不得出现在本族反查结果里：详情端点按本族 types 过滤，返回了也取不到
+  const sharedZoneKeys = [dnsZoneKey('cloudflare', 'cf-1', 'example.com')]
+  // 别族任务必须出现在本族反查结果里：两族写的是同一底层站点，反查说「没有作业」而创建被 409 就是口径分叉
   assert.equal(
-    await lockKind.active({ provider_type: 'cloudflare', provider_id: 'cf-1', zone: 'example.com' }),
-    null,
-    '别族任务不得出现在本族反查结果中'
+    await lockKind.active({ provider_type: 'cloudflare', provider_id: 'cf-1', zone: 'example.com' }, sharedZoneKeys),
+    saasJob.id,
+    '同一底层资源上的跨工作流活跃任务必须被本族反查命中'
   )
-  // 创建路径的跨工作流互斥不受反查收敛影响：资源键与活跃任务有交集时仍被 409 拒绝
+  // 创建路径与反查同源：资源键与活跃任务有交集时仍被 409 拒绝（同一份判定函数）
   await assert.rejects(
     () =>
       lockJobs.createExclusive(
@@ -282,18 +284,18 @@ try {
     (error: unknown) => error instanceof ApiError && error.code === 'batch_job_running',
     '同一底层站点上的跨工作流任务必须仍在创建路径被 409 拒绝'
   )
-  // 本族面板：反查命中后，同 providerId 的详情端点必须能取到同一条任务
-  const saasActiveId = await saasKind.active({ provider_id: 'cf-1', zone_name: 'example.com' })
+  // 本族面板：反查命中后，同 providerId 的详情端点必须能取到本族任务
+  const saasActiveId = await saasKind.active({ provider_id: 'cf-1', zone_name: 'example.com' }, sharedZoneKeys)
   assert.equal(saasActiveId, saasJob.id, 'SaaS 面板必须能反查到本族活跃任务')
   assert.equal(
     await saasKind.find(String(saasActiveId), { provider_id: 'cf-1' }),
     saasJob.id,
-    '反查返回的每个任务 id 都必须能被同 providerId 的详情端点取到'
+    '本族任务必须能被同 providerId 的详情端点取到'
   )
   assert.equal(
     await saasKind.find(String(saasActiveId), { provider_id: 'cf-2' }),
     null,
-    '反查命中的任务在别族服务商详情端点上仍必须取不到'
+    '别族服务商的详情端点仍必须取不到该任务'
   )
 
   // 服务商/站点刻意用独立取值，避免干扰后面「历史 payload 重试」的 scope 判定
@@ -308,19 +310,22 @@ try {
     [{ name: 'www', type: 'A', value: '192.0.2.1' }],
     { start: false }
   )
-  const dnsActiveId = await lockKind.active({
-    provider_type: 'dnspod',
-    provider_id: 'dns-2',
-    zone: 'locks.example.com',
-  })
+  const dnsActiveId = await lockKind.active(
+    { provider_type: 'dnspod', provider_id: 'dns-2', zone: 'locks.example.com' },
+    [dnsZoneKey('dnspod', 'dns-2', 'locks.example.com')]
+  )
   assert.equal(dnsActiveId, dnsJob.id, '本族活跃任务必须能被面板反查命中')
   assert.equal(
-    await lockKind.active({ provider_type: 'dnspod', provider_id: 'dns-2', zone: 'other.example.com' }),
+    await lockKind.active({ provider_type: 'dnspod', provider_id: 'dns-2', zone: 'other.example.com' }, [
+      dnsZoneKey('dnspod', 'dns-2', 'other.example.com'),
+    ]),
     null,
     '同一服务商的不同站点不得误报为活跃冲突'
   )
   assert.equal(
-    await lockKind.active({ provider_type: 'dnspod', provider_id: 'dns-3', zone: 'locks.example.com' }),
+    await lockKind.active({ provider_type: 'dnspod', provider_id: 'dns-3', zone: 'locks.example.com' }, [
+      dnsZoneKey('dnspod', 'dns-3', 'locks.example.com'),
+    ]),
     null,
     '不同服务商的同名站点不得误报为活跃冲突'
   )
@@ -337,6 +342,51 @@ try {
     '缺少 resource_keys 的任务载荷必须显式报错'
   )
   assert.deepEqual(peekResourceKeys({ provider_id: 'cf-1' }), [], '重试路径遇缺字段应退化为空集合')
+
+  // 老作业没有 resource_keys：降级为 payload 同名字段判定（更窄但确定），
+  // 一律当作不互斥会让同一站点被重复写入；反查与创建必须走同一份降级口径
+  const legacyActive = await lockJobs.create(
+    DNS_BATCH_CREATE_JOB,
+    { provider_type: 'dnspod', provider_id: 'dns-4', zone: 'legacy.example.com' },
+    [{ name: 'legacy-active' }],
+    { start: false }
+  )
+  assert.equal(
+    await lockKind.active({ provider_type: 'dnspod', provider_id: 'dns-4', zone: 'legacy.example.com' }, [
+      dnsZoneKey('dnspod', 'dns-4', 'legacy.example.com'),
+    ]),
+    legacyActive.id,
+    '缺资源键的历史作业必须按站点字段降级命中反查'
+  )
+  assert.equal(
+    await lockKind.active({ provider_type: 'dnspod', provider_id: 'dns-4', zone: 'other.example.com' }, [
+      dnsZoneKey('dnspod', 'dns-4', 'other.example.com'),
+    ]),
+    null,
+    '降级判定同样不得跨站点误报'
+  )
+  await assert.rejects(
+    () =>
+      lockJobs.createExclusive(
+        DNS_BATCH_CREATE_JOB,
+        {
+          provider_type: 'dnspod',
+          provider_id: 'dns-4',
+          zone: 'legacy.example.com',
+          resource_keys: [dnsZoneKey('dnspod', 'dns-4', 'legacy.example.com')],
+        },
+        [],
+        lockKind.lock({
+          provider_type: 'dnspod',
+          provider_id: 'dns-4',
+          zone: 'legacy.example.com',
+          resource_keys: [dnsZoneKey('dnspod', 'dns-4', 'legacy.example.com')],
+        }),
+        { start: false }
+      ),
+    (error: unknown) => error instanceof ApiError && error.code === 'batch_job_running',
+    '缺资源键的历史作业在创建路径同样必须判定为互斥'
+  )
 
   // 早于资源键字段的历史 payload 必须仍可重试：退化到 scope 判定，而不是让任务卡死在重试接口。
   // 注册真实 runner 并等执行到终态：缺键只影响互斥范围，不得影响执行链路

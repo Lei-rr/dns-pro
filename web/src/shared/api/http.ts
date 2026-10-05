@@ -5,8 +5,16 @@
  * - returns API JSON body directly
  * - supports { params }
  * - 401 → unauthorizedHandler
+ * - 中断语义：内部超时 → TIMEOUT（用户可见）；外部 signal 取消 → CANCELED（消费侧静默），见 transport-errors.ts
  */
 import type { ApiResponse, ListResponse } from '@/shared/api/types'
+import {
+  CANCELED_CODE,
+  NETWORK_ERROR_CODE,
+  TIMEOUT_CODE,
+  TRANSPORT_ERROR_HINTS,
+  type InterruptSource,
+} from '@/shared/api/transport-errors'
 
 export type RequestError = Error & { code: string; details: unknown; status: number }
 
@@ -15,7 +23,10 @@ type RequestConfig = {
   headers?: Record<string, string>
   timeout?: number
   data?: unknown
-  /** 外部取消信号（组件卸载 / TanStack 查询取消），与超时共用同一个 AbortController */
+  /**
+   * 外部取消信号（组件卸载 / 作用域切换 / TanStack 查询取消）。
+   * 与内部超时合并进同一个 AbortController，但语义不同：超时是失败，取消不是错误。
+   */
   signal?: AbortSignal
 }
 
@@ -57,26 +68,45 @@ async function parseBody(response: Response): Promise<unknown> {
   }
 }
 
+/** fetch 的失败形态不可控（DOMException / TypeError / 字符串）：只在确为 Error 时取 message */
+function errorMessageOf(error: unknown): string {
+  return error instanceof Error ? error.message : ''
+}
+
 function toRequestError(
   message: string,
   init: { code?: string; details?: unknown; status?: number } = {}
 ): RequestError {
-  const error = new Error(message) as RequestError
-  error.code = init.code || 'REQUEST_FAILED'
-  error.details = init.details || {}
-  error.status = init.status || 0
-  return error
+  // Object.assign 让附加字段的类型在构造处推断，不需要用 as 断言骗过类型系统
+  return Object.assign(new Error(message), {
+    code: init.code || 'REQUEST_FAILED',
+    details: init.details || {},
+    status: init.status || 0,
+  })
 }
 
 async function request<T = unknown>(method: string, url: string, config: RequestConfig = {}): Promise<ApiResponse<T>> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), config.timeout ?? DEFAULT_TIMEOUT_MS)
+
+  /**
+   * 中断来源必须在这里显式记录：超时与取消都只会让 fetch 抛出一模一样的 AbortError，
+   * 事后按 error.name 反推会把「用户切页取消」显示成「请求超时」。
+   * 先到者胜出——取消之后超时定时器才到期，也不得把语义改写回超时。
+   */
+  let interrupt: InterruptSource | null = null
+  const abortWith = (source: InterruptSource) => {
+    if (interrupt) return
+    interrupt = source
+    controller.abort()
+  }
+
+  const timer = setTimeout(() => abortWith('timeout'), config.timeout ?? DEFAULT_TIMEOUT_MS)
 
   // fetch 只接受一个 signal，外部取消与超时必须合并到同一个 controller
   const external = config.signal
-  const abortFromExternal = () => controller.abort()
+  const abortFromExternal = () => abortWith('canceled')
   if (external) {
-    if (external.aborted) controller.abort()
+    if (external.aborted) abortWith('canceled')
     else external.addEventListener('abort', abortFromExternal, { once: true })
   }
 
@@ -129,11 +159,18 @@ async function request<T = unknown>(method: string, url: string, config: Request
     }
     return payload as ApiResponse<T>
   } catch (error) {
-    if (error && typeof error === 'object' && 'status' in error && 'code' in error) throw error
-    if ((error as Error)?.name === 'AbortError') {
-      throw toRequestError('请求超时或已取消', { code: 'TIMEOUT', status: 0 })
+    // 本层构造的 RequestError（HTTP 状态错误）：原样上抛，不再按中断或网络重新分类
+    if (error instanceof Error && 'code' in error && 'status' in error) throw error
+
+    if (interrupt === 'canceled') {
+      throw toRequestError(TRANSPORT_ERROR_HINTS[CANCELED_CODE], { code: CANCELED_CODE })
     }
-    throw toRequestError((error as Error)?.message || '网络错误', { code: 'NETWORK_ERROR', status: 0 })
+    if (interrupt === 'timeout') {
+      throw toRequestError(TRANSPORT_ERROR_HINTS[TIMEOUT_CODE], { code: TIMEOUT_CODE })
+    }
+    throw toRequestError(errorMessageOf(error) || TRANSPORT_ERROR_HINTS[NETWORK_ERROR_CODE], {
+      code: NETWORK_ERROR_CODE,
+    })
   } finally {
     clearTimeout(timer)
     external?.removeEventListener('abort', abortFromExternal)

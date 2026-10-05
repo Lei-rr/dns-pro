@@ -1,5 +1,6 @@
 import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue'
 import { useQuery, useQueryClient, type QueryKey } from '@tanstack/vue-query'
+import { isCanceledError } from '@/shared/api/transport-errors'
 import { loadPageSize, savePageSize } from '@/shared/lib/page-size'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -81,7 +82,10 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
   // 读取失败即时反馈一次；重试由用户显式触发
   watch(query.error, (error) => {
-    if (error) toast.error(errorMessage(error))
+    // 取消不是错误：切页 / 切换作用域会中断在飞请求，用户什么都没做，提示只会是噪音；
+    // 超时是真实失败，码值在 transport 层已分流，照常提示。
+    if (!error || isCanceledError(error)) return
+    toast.error(errorMessage(error))
   })
 
   async function refresh() {
