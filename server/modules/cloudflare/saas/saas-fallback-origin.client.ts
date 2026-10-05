@@ -5,6 +5,7 @@ import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import { callProvider, wrapProviderError } from '../../../core/providers/provider-call.js'
 import { providerNullableString } from '../../../core/providers/provider-values.js'
 import { invalidateSaaSFallbackOriginCache } from './saas.cache.js'
+import { CLOUDFLARE_PROVIDER_TYPE } from '../cloudflare.cache.js'
 
 export type FallbackOriginInfo = { origin: string | null; status: string | null }
 
@@ -16,7 +17,7 @@ export class SaaSFallbackOriginClient {
 
   async show(cloudflareProviderId: string, zoneId: string, refresh = false): Promise<FallbackOriginInfo> {
     const cached = await withProviderCache<FallbackOriginInfo>({
-      key: `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`,
+      key: `${CLOUDFLARE_PROVIDER_TYPE}:fallback_origin:${cloudflareProviderId}:${zoneId}`,
       tags: [providerCacheTag(cloudflareProviderId), fallbackOriginCacheTag(cloudflareProviderId, zoneId)],
       refresh,
       loader: async () => {

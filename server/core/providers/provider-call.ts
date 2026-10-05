@@ -35,17 +35,7 @@ export async function callProvider<T>(context: CallContext, call: () => Promise<
   }
 }
 
-/**
- * 解析上游 total 字段：非法值返回 null。
- * 注意：total 只用于日志与提前结束判断，不作为唯一终止条件（DNSPod 官方说明计数有延迟）。
- */
-export function parseUpstreamTotal(value: unknown): number | null {
-  if (value == null || value === '') return null
-  const total = Number(value)
-  return Number.isFinite(total) && total >= 0 ? total : null
-}
-
-type OffsetPage<T> = { items: T[]; sourceCount: number; total: number | null; requestId?: string }
+type OffsetPage<T> = { items: T[]; sourceCount: number; requestId?: string }
 
 /** Offset 分页全量采集（腾讯云系接口） */
 export async function collectOffsetPages<T>(

@@ -23,7 +23,8 @@ export async function getHealthHandler(
   const writable = await isWritable(ctx.config.dataDir)
   if (!writable) return reply.status(503).send(error('health_check_failed', 503, 'health_check_failed'))
 
-  if (!(await ctx.modules.auth.service.authenticate(request))) return reply.send(success({ status: 'ok' }))
+  // 会话判定由装配层注入（platform.session），health 模块不直接引用 auth 模块
+  if (!(await ctx.platform.session(request))) return reply.send(success({ status: 'ok' }))
 
   const jobs = await ctx.platform.jobs.stats().catch(() => null)
   return reply.send(success({ status: 'ok', version: APP_VERSION, cache: providerCacheStats(), jobs }))

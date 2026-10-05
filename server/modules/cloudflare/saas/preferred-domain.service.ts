@@ -37,7 +37,9 @@ export class PreferredDomainService {
 
   async rename(oldDomain: string, newDomain: string): Promise<PreferredDomain> {
     const normalizedNew = this.normalizeDomain(newDomain)
-    const normalizedOld = oldDomain.toLowerCase().trim()
+    // 查旧值必须与 create/isAllowed 共用同一份归一化：'x.com.' / 'https://x.com' 只在写入侧判真、
+    // 在改名侧落到 404，会让用户看到「刚提交成功的域名却不存在」；归一化失败按不存在处理
+    const normalizedOld = this.normalize(oldDomain) ?? ''
 
     const sort = await this.store.transaction((current) => {
       const items = this.normalizeItems(current.items)
@@ -55,7 +57,8 @@ export class PreferredDomainService {
   }
 
   async delete(domain: string): Promise<void> {
-    const normalized = domain.toLowerCase().trim()
+    // 同 rename：删除键与写入键必须等价，非法/空值统一落到 not_found（见 requireIndex）
+    const normalized = this.normalize(domain) ?? ''
 
     await this.store.transaction((current) => {
       const items = this.normalizeItems(current.items)
@@ -72,7 +75,8 @@ export class PreferredDomainService {
       const ordered: string[] = []
 
       for (const value of domains) {
-        const domain = value.trim().toLowerCase()
+        // 与 create/rename/delete 共用归一化，避免带尾点、协议前缀等等价写法在排序时被静默忽略
+        const domain = this.normalize(value) ?? ''
         if (domain === '' || seen.has(domain)) continue
         if (items.includes(domain)) {
           ordered.push(domain)

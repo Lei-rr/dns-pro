@@ -10,6 +10,7 @@ import {
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
 } from '../../core/jobs/job-types.js'
+import { effectivePreferredDomain } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
 import { invalidateSaasZoneListCache } from './saas-zone-cache.js'
 import type { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
@@ -19,7 +20,6 @@ type PreferredApplyJob = BatchJobViewBase & {
   zone_name: string
   preferred_domain: string
   only_auto_preferred: boolean
-  dry_run: boolean
 }
 
 type ApplyInput = {
@@ -28,11 +28,9 @@ type ApplyInput = {
   preferredDomain: string
   hostnames?: string[]
   onlyAutoPreferred?: boolean
-  dryRun?: boolean
 }
 
-const currentPreferred = (item: CloudflareCustomHostname) =>
-  String(item.preferred_domain ?? item.custom_metadata?.preferred_domain ?? '')
+const currentPreferred = (item: CloudflareCustomHostname) => effectivePreferredDomain(item)
 
 /** 优选域名一键切换（与 SaaS 批量共用站点互斥锁） */
 export class SaaSPreferredApplyWorkflow {
@@ -56,7 +54,6 @@ export class SaaSPreferredApplyWorkflow {
         zone_name: String(job.payload.zone_name ?? ''),
         preferred_domain: String(job.payload.preferred_domain ?? ''),
         only_auto_preferred: Boolean(job.payload.only_auto_preferred),
-        dry_run: Boolean(job.payload.dry_run),
       }),
     })
     jobs.registerRunner(PREFERRED_APPLY_JOB, (job) => this.runJob(job))
@@ -81,7 +78,7 @@ export class SaaSPreferredApplyWorkflow {
     }
   }
 
-  /** 创建切换任务；dryRun 直接生成已完成的预览任务 */
+  /** 创建切换任务：目标主机名已在前置校验中确定，入队后由后台执行 */
   async create(input: ApplyInput): Promise<PreferredApplyJob> {
     const preferred = await this.requireAllowedPreferred(input.preferredDomain)
     const targets = await this.resolveTargets(input)
@@ -98,7 +95,6 @@ export class SaaSPreferredApplyWorkflow {
       ),
       preferred_domain: preferred,
       only_auto_preferred: Boolean(input.onlyAutoPreferred),
-      dry_run: Boolean(input.dryRun),
     }
     const items = targets.map((item) => ({
       hostname: item.hostname,
@@ -106,50 +102,31 @@ export class SaaSPreferredApplyWorkflow {
       current_preferred: currentPreferred(item),
       auto_preferred: Boolean(item.auto_preferred),
     }))
-    const lock = this.kind.lock(payload)
-
-    if (!input.dryRun) {
-      return this.kind.present(
-        await this.jobs.createExclusive(PREFERRED_APPLY_JOB, payload, items, lock, {
-          message: '任务已创建，等待后台执行',
-        })
-      )
-    }
-
-    const previewItems = items.map((item) => {
-      const willChange = item.current_preferred !== preferred
-      return {
-        ...item,
-        status: willChange ? 'success' : 'skipped',
-        message: willChange ? `将切换为 ${preferred}` : '已是目标优选域名',
-      }
-    })
-    const success = previewItems.filter((item) => item.status === 'success').length
-    const skipped = previewItems.length - success
-    const job = await this.jobs.createTerminalExclusive(PREFERRED_APPLY_JOB, payload, previewItems, lock, {
-      status: 'completed',
-      success,
-      skipped,
-      failed: 0,
-      message: `预览完成：将切换 ${success} 个，跳过 ${skipped} 个`,
-    })
-    return this.kind.present(job)
+    return this.kind.present(
+      await this.jobs.createExclusive(PREFERRED_APPLY_JOB, payload, items, this.kind.lock(payload), {
+        message: '任务已创建，等待后台执行',
+      })
+    )
   }
 
-  find(id: string, providerId?: string) {
-    return this.kind.find(id, { provider_id: providerId })
+  /** 归属校验按 SaaS 服务商：providerId 必填，缺失即不匹配（查不到走本族 not_found） */
+  require(id: string, providerId: string) {
+    return this.kind.require(id, { provider_id: providerId })
   }
 
-  active(providerId: string, zoneName: string) {
-    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
+  async active(providerId: string, zoneName: string) {
+    // 同 SaaS 批量：查询的 provider_id 是 SaaS 服务商，只有按底层 DNS 资源键比对才能发现 DNS 批量任务
+    return this.kind.active(
+      { provider_id: providerId, zone_name: zoneName },
+      await this.workflow.zoneResourceKeys(providerId, zoneName)
+    )
   }
 
-  retryFailed(id: string, providerId?: string) {
+  retryFailed(id: string, providerId: string) {
     return this.kind.retryFailed(id, { provider_id: providerId })
   }
 
   private async runJob(job: JobRecord): Promise<void> {
-    if (job.payload.dry_run) return
     const providerId = String(job.payload.provider_id ?? '')
     const zoneName = String(job.payload.zone_name ?? '')
     const preferred = String(job.payload.preferred_domain ?? '')

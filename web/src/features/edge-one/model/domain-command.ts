@@ -55,7 +55,7 @@ export function edgeOneDomainFormValues(
   }
 }
 
-/** 提交给后端的字段：host_header 仅在「IP/域名 + 自定义 HOST」时存在 */
+/** 提交给后端的字段：IP/域名源站总带 host_header（自定义填值、加速域名模式显式空串以清空旧值） */
 export interface EdgeOneDomainSubmitValues {
   origin_type: string
   origin: string
@@ -92,6 +92,10 @@ export function edgeOneDomainSubmitValues(values: {
   }
   if (values.origin_type === 'IP_DOMAIN' && values.host_header_mode === 'custom' && values.host_header.trim()) {
     payload.host_header = values.host_header.trim()
+  } else if (values.origin_type === 'IP_DOMAIN') {
+    // 显式空串表达「切回加速域名 HOST / 清空自定义」：省略字段会被后端视为「保持原有配置」。
+    // 需后端把空串按「清空」下发后才会真正生效（见 blocked 说明）
+    payload.host_header = ''
   }
   return payload
 }

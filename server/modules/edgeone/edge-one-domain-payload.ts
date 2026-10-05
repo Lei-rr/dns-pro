@@ -56,17 +56,29 @@ export function normalizeAccelerationDomainUpdatePayload(
   return payload
 }
 
-/** 构建 Create/ModifyAccelerationDomain 公共参数；未提供的字段不下发，端口仅按回源协议传递 */
+/** 加速域名写入路径：创建没有旧值可清空，更新必须能把 HOST 清回加速域名 */
+type AccelerationDomainRequestMode = 'create' | 'update'
+
+/**
+ * 构建 Create/ModifyAccelerationDomain 公共参数；未提供的字段不下发，端口仅按回源协议传递。
+ *
+ * HostHeader 用显式 `!== undefined` 判定：空串是前端「切回加速域名 HOST / 清空自定义」的表达，
+ * falsy 判定会把它静默丢掉，而 ModifyAccelerationDomain 对未提供字段的语义是「保持原有配置」——
+ * 用户点清空后旧值会原样留在上游。创建路径没有旧值可清空，仍省略空串（避免上游对空串报错）。
+ */
 export function buildAccelerationDomainRequest(
   zoneId: string,
-  data: Partial<AccelerationDomainPayload> & { domain_name: string }
+  data: Partial<AccelerationDomainPayload> & { domain_name: string },
+  mode: AccelerationDomainRequestMode = 'create'
 ): Record<string, unknown> {
   const request: Record<string, unknown> = { ZoneId: zoneId, DomainName: data.domain_name }
   if (data.origin !== undefined || data.origin_type !== undefined || data.host_header !== undefined) {
     const originInfo: Record<string, unknown> = {}
     if (data.origin_type !== undefined) originInfo.OriginType = data.origin_type
     if (data.origin !== undefined) originInfo.Origin = data.origin
-    if (data.host_header) originInfo.HostHeader = data.host_header
+    if (data.host_header !== undefined && (data.host_header !== '' || mode === 'update')) {
+      originInfo.HostHeader = data.host_header
+    }
     request.OriginInfo = originInfo
   }
   if (data.origin_protocol !== undefined) request.OriginProtocol = data.origin_protocol

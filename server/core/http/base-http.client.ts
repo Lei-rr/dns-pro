@@ -27,7 +27,7 @@ function buildUrl(baseURL: string, path: string, params?: Record<string, unknown
   const base = new URL(baseURL.endsWith('/') ? baseURL : `${baseURL}/`)
   const relative = path.startsWith('/') ? path.slice(1) : path
   const segments = relative === '' ? [] : relative.split('/')
-  if (segments.some((segment) => segment === '' || /^(?:\.|%2e){1,2}$/i.test(segment))) {
+  if (segments.some(isUnsafeSegment)) {
     throw new ApiError('invalid_upstream_path', 'Invalid upstream request path', 400)
   }
   const url = new URL(relative, base)
@@ -43,6 +43,23 @@ function buildUrl(baseURL: string, path: string, params?: Record<string, unknown
   }
 
   return url.toString()
+}
+
+/**
+ * 段级校验：先按百分号解码再判定，因为上游可能对路径二次解码 ——
+ * `%2e%2e` 会还原成 `..`，`%2f` / `%5c` 会还原成新的路径分隔符，两者都能让路径逃出 baseURL。
+ * 解码失败（非法编码序列）时按原文判定：它不可能被上游解析成分隔符。
+ */
+function isUnsafeSegment(segment: string): boolean {
+  if (segment === '') return true
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(segment)
+  } catch {
+    return false
+  }
+  if (decoded.includes('/') || decoded.includes('\\')) return true
+  return /^(?:\.{1,2})$/.test(decoded)
 }
 
 const MAX_RETRIES = 2
@@ -82,14 +99,15 @@ function retryDelayMs(error: unknown, attempt: number): number | null {
 
 /**
  * 业务层限流重试：用于「HTTP 200 + 业务错误码」的供应商（腾讯云）。
- * HTTP 层限流已由 request() 处理，这里只处理业务错误码。
+ * HTTP 层限流已由 request() 处理，这里只处理业务错误码：若错误本身就是 HTTP 429，
+ * 说明 request() 已经用掉自己的重试预算，再叠加会放大成 3×3 次上游请求。
  */
 export async function withRateLimitRetry<T>(task: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await task()
     } catch (error) {
-      if (attempt >= MAX_RETRIES || !hasRateLimitCode(error)) throw error
+      if (attempt >= MAX_RETRIES || isHttpRateLimited(error) || !hasRateLimitCode(error)) throw error
       const delay = retryDelayMs(error, attempt + 1)
       if (delay === null) throw error
       await sleep(delay)

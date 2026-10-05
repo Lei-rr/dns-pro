@@ -1,6 +1,8 @@
+import type { BadgeVariants } from '@/shared/ui/badge'
 import type { AuditAction, DerivedStatus, SourceKind, SyncAction } from '../model/types'
 
-type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning'
+/** 徽章色与 Badge 组件的变体同源，避免手抄联合类型随组件增删而漂移（cva 的变体含 null/undefined，此处收窄） */
+type BadgeVariant = NonNullable<BadgeVariants['variant']>
 
 /** 派生记录状态 → 中文标签与徽章色（与后端 status 词汇一一对应） */
 const STATUS_META: Record<DerivedStatus, { label: string; variant: BadgeVariant }> = {
@@ -41,6 +43,7 @@ const AUDIT_META: Record<AuditAction, { label: string; variant: BadgeVariant }> 
   batch: { label: '批量操作', variant: 'secondary' },
   credential_change: { label: '凭据变更', variant: 'warning' },
   session_revoked: { label: '会话吊销', variant: 'destructive' },
+  reconcile: { label: '对账修复', variant: 'outline' },
 }
 
 /** 未知来源只回中文兜底，原始值由调用方放进 title 便于排查 */

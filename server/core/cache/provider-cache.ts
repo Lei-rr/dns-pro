@@ -1,4 +1,4 @@
-import { memoryCache } from './memory-cache.js'
+import { activeMemoryCache } from './memory-cache.js'
 
 type CachedResult<T> = {
   value: T
@@ -14,26 +14,74 @@ type ProviderCacheOptions<T> = {
   loader: () => Promise<T>
 }
 
-// 代次仅用于拦截「失效后才完成的在途加载」。映射有容量上限：
-// 超限淘汰后比较结果不相等，只会放弃写入（失败方向是安全的）。
-const GENERATION_LIMIT = 4096
-const tagGenerations = new Map<string, number>()
-const loadGenerations = new Map<string, number>()
-
-/** 有上限的写入：超出后淘汰最早插入的键 */
-function bumpGeneration(map: Map<string, number>, key: string): void {
-  map.set(key, (map.get(key) ?? 0) + 1)
-  while (map.size > GENERATION_LIMIT) {
-    const oldest = map.keys().next().value
-    if (oldest === undefined) break
-    map.delete(oldest)
-  }
-}
 type InflightEntry = {
   promise: Promise<CachedResult<unknown>>
   tagGenerations: ReadonlyArray<readonly [string, number]>
 }
-const inflight = new Map<string, InflightEntry>()
+
+/**
+ * 代次与在途状态：封装成实例，装配层/探针可整体重置，不再散落成模块级可变 Map。
+ * 代次仅用于拦截「失效后才完成的在途加载」。
+ */
+class ProviderCacheState {
+  /** 容量上限：超限淘汰后比较结果不相等，只会放弃写入（失败方向是安全的）。 */
+  private static readonly GENERATION_LIMIT = 4096
+
+  private readonly tagGenerations = new Map<string, number>()
+  private readonly loadGenerations = new Map<string, number>()
+  private readonly inflight = new Map<string, InflightEntry>()
+
+  tagGeneration(tag: string): number {
+    return this.tagGenerations.get(tag) ?? 0
+  }
+
+  loadGeneration(key: string): number {
+    return this.loadGenerations.get(key) ?? 0
+  }
+
+  pending(key: string): InflightEntry | undefined {
+    return this.inflight.get(key)
+  }
+
+  bumpTag(tag: string): void {
+    this.bump(this.tagGenerations, tag)
+  }
+
+  bumpLoad(key: string): void {
+    this.bump(this.loadGenerations, key)
+  }
+
+  track(key: string, entry: InflightEntry): void {
+    this.inflight.set(key, entry)
+  }
+
+  release(key: string, entry: InflightEntry): void {
+    if (this.inflight.get(key) === entry) this.inflight.delete(key)
+  }
+
+  reset(): void {
+    this.tagGenerations.clear()
+    this.loadGenerations.clear()
+    this.inflight.clear()
+  }
+
+  /** 有上限的写入：超出后淘汰最早插入的键 */
+  private bump(map: Map<string, number>, key: string): void {
+    map.set(key, (map.get(key) ?? 0) + 1)
+    while (map.size > ProviderCacheState.GENERATION_LIMIT) {
+      const oldest = map.keys().next().value
+      if (oldest === undefined) break
+      map.delete(oldest)
+    }
+  }
+}
+
+const state = new ProviderCacheState()
+
+/** 清空代次与在途记录：同一进程内重复装配（探针）时从干净状态开始 */
+export function resetProviderCacheState(): void {
+  state.reset()
+}
 
 /**
  * 供应商查询：缓存优先。冷缺失回填，refresh 绕过并覆盖。
@@ -42,50 +90,51 @@ const inflight = new Map<string, InflightEntry>()
 export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Promise<CachedResult<T>> {
   const key = resolveKey(options.key)
   const tags = options.tags ?? []
+  const cache = activeMemoryCache()
 
   if (!options.refresh) {
-    const hit = memoryCache.get<T>(key)
+    const hit = cache.get<T>(key)
     if (hit !== undefined) {
       return { value: hit, hit: true }
     }
-    const pending = inflight.get(key)
-    if (pending && pending.tagGenerations.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))) {
+    const pending = state.pending(key)
+    if (pending && pending.tagGenerations.every(([tag, generation]) => generation === state.tagGeneration(tag))) {
       return pending.promise as Promise<CachedResult<T>>
     }
   }
 
   const fence = {
-    tags: tags.map((tag) => [tag, tagGenerations.get(tag) ?? 0] as const),
-    load: (loadGenerations.get(key) ?? 0) + 1,
+    tags: tags.map((tag) => [tag, state.tagGeneration(tag)] as const),
+    load: state.loadGeneration(key) + 1,
   }
-  bumpGeneration(loadGenerations, key)
+  state.bumpLoad(key)
   const loading = (async (): Promise<CachedResult<T>> => {
     const value = await options.loader()
     const current =
-      fence.load === (loadGenerations.get(key) ?? 0) &&
-      fence.tags.every(([tag, generation]) => generation === (tagGenerations.get(tag) ?? 0))
-    if (current) memoryCache.set(key, value, tags)
+      fence.load === state.loadGeneration(key) &&
+      fence.tags.every(([tag, generation]) => generation === state.tagGeneration(tag))
+    if (current) cache.set(key, value, tags)
 
     return { value, hit: false }
   })()
   const inflightEntry: InflightEntry = { promise: loading, tagGenerations: fence.tags }
-  if (!options.refresh) inflight.set(key, inflightEntry)
+  if (!options.refresh) state.track(key, inflightEntry)
   try {
     return await loading
   } finally {
-    if (inflight.get(key) === inflightEntry) inflight.delete(key)
+    state.release(key, inflightEntry)
   }
 }
 
 /** 按标签失效：标签覆盖 provider/zone/record 等维度，同时拦截在途加载的写入 */
 export function invalidateProviderCache(options: { tags?: string[] }): void {
   const tags = options.tags ?? []
-  for (const tag of tags) bumpGeneration(tagGenerations, tag)
-  memoryCache.invalidateTags(tags)
+  for (const tag of tags) state.bumpTag(tag)
+  activeMemoryCache().invalidateTags(tags)
 }
 
 export function providerCacheStats(): { size: number } {
-  return memoryCache.stats()
+  return activeMemoryCache().stats()
 }
 
 export function buildCacheKey(prefix: string, parts: Record<string, unknown>): string {
@@ -146,10 +195,6 @@ export function customHostnameDetailsCacheTag(cloudflareProviderId: string, zone
 
 export function fallbackOriginCacheTag(cloudflareProviderId: string, zoneId: string): string {
   return `cloudflare:fallback_origin:${cloudflareProviderId}:${zoneId}`
-}
-
-export function edgeoneZonesCacheTag(providerId: string): string {
-  return `edgeone:zones:${providerId}`
 }
 
 export function edgeoneDomainsCacheTag(providerId: string, zoneId: string): string {

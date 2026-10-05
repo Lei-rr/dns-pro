@@ -7,6 +7,7 @@ import { errorMessage } from '@/shared/lib/errors'
 import { Button } from '@/shared/ui/button'
 import { Spinner } from '@/shared/ui/spinner'
 import type { ProviderPageProps } from './provider-page-props'
+import type { ProviderType } from '@server/core/providers/provider.types.js'
 import ZonesListPage from '../zones/ZonesListPage.vue'
 import DnsRecordsPage from '../dns/DnsRecordsPage.vue'
 import SaasHostsPage from '../saas/SaasHostsPage.vue'
@@ -28,8 +29,8 @@ const unconfigured = computed(() => (current.value ? null : getCachedProviderAny
 /** 加载失败与「没有这个类型」是两回事，不能都落到「暂未接入」 */
 const loadError = computed(() => (error.value ? errorMessage(error.value) : ''))
 
-/** 声明式页面注册表：provider.type → { 列表页, 详情页 }，取代原来的 if 链分派。 */
-const PAGE_REGISTRY: Record<string, { list: Component; detail: Component }> = {
+/** 声明式页面注册表：provider.type → { 列表页, 详情页 }，取代原来的 if 链分派。全键覆盖由类型强制。 */
+const PAGE_REGISTRY: Record<ProviderType, { list: Component; detail: Component }> = {
   dnspod: { list: ZonesListPage, detail: DnsRecordsPage },
   cloudflare: { list: ZonesListPage, detail: DnsRecordsPage },
   saas: { list: ZonesListPage, detail: SaasHostsPage },
@@ -38,8 +39,9 @@ const PAGE_REGISTRY: Record<string, { list: Component; detail: Component }> = {
 }
 
 const page = computed<Component | null>(() => {
-  const entry = PAGE_REGISTRY[current.value?.type || '']
-  if (!entry) return null
+  const type = current.value?.type
+  if (!type) return null
+  const entry = PAGE_REGISTRY[type]
   return props.child ? entry.detail : entry.list
 })
 

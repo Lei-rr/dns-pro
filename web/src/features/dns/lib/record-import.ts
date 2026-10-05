@@ -97,6 +97,8 @@ function parseCsvRows(text: string): string[][] {
 /**
  * 表头列名（归一化后精确比对）。不能沿用子串匹配：`mx` / `line` 这类短词会命中数据行，
  * 无表头 CSV 首行 `mail,MX,10 mx.example.com` 曾被整行当表头吞掉。
+ * 刻意不含 `mx`：它是唯一可能出现在记录类型列的短词，主机名恰为 mx 的无表头数据
+ * （`mx,MX,...`）会凑出两列命中再次被误判；正常表头总有 name/type/value 等其它列兜底。
  */
 const CSV_HEADER_LABELS = new Set([
   'name',
@@ -114,7 +116,6 @@ const CSV_HEADER_LABELS = new Set([
   'remark',
   'comment',
   'priority',
-  'mx',
   '主机',
   '主机记录',
   '名称',
@@ -141,7 +142,7 @@ function normalizeHeaderCell(cell: string): string {
     .replace(/[\s_-]+/g, '')
 }
 
-/** 至少两列命中才判为表头：数据行里出现单个 `mx` 之类的值很常见，单列命中不能作为依据 */
+/** 至少两列命中才判为表头：数据行的某个值命中表头词很常见（如主机名就叫 host），单列命中不能作为依据 */
 function isCsvHeader(cells: string[]): boolean {
   return cells.filter((cell) => CSV_HEADER_LABELS.has(normalizeHeaderCell(cell))).length >= 2
 }

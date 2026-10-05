@@ -1,12 +1,7 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import { edgeoneDomainsCacheTag, providerCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
 import { ApiError } from '../../core/http/api-error.js'
-import {
-  callProvider,
-  collectOffsetPages,
-  parseUpstreamTotal,
-  toFullListResult,
-} from '../../core/providers/provider-call.js'
+import { callProvider, collectOffsetPages, toFullListResult } from '../../core/providers/provider-call.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../core/providers/provider-values.js'
 import { asRecordArray } from '../../core/providers/response-guards.js'
 import { normalizeFqdn } from '../../shared/values.js'
@@ -25,6 +20,17 @@ import {
   edgeoneMutationResponseSchema,
   type EdgeOneAccelerationDomain as RawDomain,
 } from './edge-one-response.schema.js'
+
+/** 变更动作 → 错误码；模板拼接的码无法静态穷举，集中声明为映射常量供架构守卫 ARCH028 收集 */
+const EDGEONE_DOMAIN_ACTION_ERROR_CODES = {
+  create: 'edgeone_domain_create_failed',
+  update: 'edgeone_domain_update_failed',
+  delete: 'edgeone_domain_delete_failed',
+  status: 'edgeone_domain_status_failed',
+  certificate: 'edgeone_domain_certificate_failed',
+} as const
+
+type EdgeOneDomainAction = keyof typeof EDGEONE_DOMAIN_ACTION_ERROR_CODES
 
 interface EdgeOneAccelerationDomain {
   zone_id: string
@@ -109,31 +115,36 @@ export class EdgeOneDomainService {
     domainName: string,
     data: Record<string, unknown>
   ): Promise<DomainMutation> {
-    // 更新路径只下发显式提供的字段：ModifyAccelerationDomain 对缺省字段的语义是保持原配置
-    const normalized = normalizeAccelerationDomainUpdatePayload({ ...data, domain_name: domainName })
+    // 更新路径只下发显式提供的字段：ModifyAccelerationDomain 对缺省字段的语义是保持原配置。
+    // 组装用 update 模式：空串 HostHeader 表示清空自定义 HOST，必须下发而不是省略（见 buildAccelerationDomainRequest）
+    const name = normalizeFqdn(domainName)
+    const normalized = normalizeAccelerationDomainUpdatePayload({ ...data, domain_name: name })
     const response = await this.mutate(providerId, zoneId, normalized.domain_name, 'update', (client) =>
-      client.call('ModifyAccelerationDomain', buildAccelerationDomainRequest(zoneId, normalized))
+      client.call('ModifyAccelerationDomain', buildAccelerationDomainRequest(zoneId, normalized, 'update'))
     )
     return { name: normalized.domain_name, request_id: requestIdOf(response) }
   }
 
   async deleteAccelerationDomain(providerId: string, zoneId: string, domainName: string): Promise<DomainMutation> {
-    const response = await this.mutate(providerId, zoneId, domainName, 'delete', (client) =>
-      client.call('DeleteAccelerationDomains', { ZoneId: zoneId, DomainNames: [domainName], Force: false })
+    // 与 create/assignedCname 同源：路径参数域名先归一，否则大小写或尾点不同的 URL 会被上游判为不存在
+    const name = normalizeFqdn(domainName)
+    const response = await this.mutate(providerId, zoneId, name, 'delete', (client) =>
+      client.call('DeleteAccelerationDomains', { ZoneId: zoneId, DomainNames: [name], Force: false })
     )
-    return { name: domainName, request_id: requestIdOf(response) }
+    return { name, request_id: requestIdOf(response) }
   }
 
   async updateAccelerationDomainStatus(providerId: string, zoneId: string, domainName: string, status: string) {
-    const response = await this.mutate(providerId, zoneId, domainName, 'status', (client) =>
+    const name = normalizeFqdn(domainName)
+    const response = await this.mutate(providerId, zoneId, name, 'status', (client) =>
       client.call('ModifyAccelerationDomainStatuses', {
         ZoneId: zoneId,
-        DomainNames: [domainName],
+        DomainNames: [name],
         Status: status,
         Force: false,
       })
     )
-    return { name: domainName, status, request_id: requestIdOf(response) }
+    return { name, status, request_id: requestIdOf(response) }
   }
 
   async updateCertificate(providerId: string, zoneId: string, domainName: string, data: Record<string, unknown>) {
@@ -142,12 +153,13 @@ export class EdgeOneDomainService {
     if (httpsMode === 'sslcert' && certId === '') {
       throw new ApiError('validation_failed', 'Certificate id is required when https_mode is sslcert', 422)
     }
-    const payload: Record<string, unknown> = { ZoneId: zoneId, Hosts: [domainName], Mode: httpsMode }
+    const name = normalizeFqdn(domainName)
+    const payload: Record<string, unknown> = { ZoneId: zoneId, Hosts: [name], Mode: httpsMode }
     if (httpsMode === 'sslcert') payload.ServerCertInfo = [{ CertId: certId }]
-    const response = await this.mutate(providerId, zoneId, domainName, 'certificate', (client) =>
+    const response = await this.mutate(providerId, zoneId, name, 'certificate', (client) =>
       client.call('ModifyHostsCertificate', payload)
     )
-    return { name: domainName, https_mode: httpsMode, request_id: requestIdOf(response) }
+    return { name, https_mode: httpsMode, request_id: requestIdOf(response) }
   }
 
   /** 统一执行变更：错误码包装 + 缓存失效 */
@@ -155,13 +167,13 @@ export class EdgeOneDomainService {
     providerId: string,
     zoneId: string,
     domainName: string,
-    action: 'create' | 'update' | 'delete' | 'status' | 'certificate',
+    action: EdgeOneDomainAction,
     call: (client: EdgeOneClient) => Promise<Record<string, unknown>>
   ): Promise<Record<string, unknown>> {
     const client = await edgeOneClientFor(this.providers, providerId, this.httpTimeoutMs)
     const response = await callProvider(
       {
-        code: `edgeone_domain_${action}_failed`,
+        code: EDGEONE_DOMAIN_ACTION_ERROR_CODES[action],
         message: `EdgeOne acceleration domain ${action} failed`,
         providerId,
         details: { zone: zoneId, domain: domainName },
@@ -191,7 +203,6 @@ export class EdgeOneDomainService {
             presentDomain(edgeOneAccelerationDomainSchema.parse(domain), zoneId)
           ),
           sourceCount: Number(parsed.SourceCount ?? 0),
-          total: parseUpstreamTotal(parsed.TotalCount),
           requestId: parsed.RequestId ?? undefined,
         }
       },

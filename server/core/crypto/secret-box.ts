@@ -37,12 +37,11 @@ export function createSecretBox(key: Buffer): SecretBox {
         ]).toString('utf8')
         return plaintext
       } catch (error) {
-        // 绝不静默降级为密文/空值：密钥丢失或数据损坏必须显式失败
-        throw new ApiError(
-          'credential_decrypt_failed',
-          `Failed to decrypt stored credential: ${errorMessage(error)}`,
-          500
-        )
+        // 绝不静默降级为密文/空值：密钥丢失或数据损坏必须显式失败。
+        // 底层库报错文本只进 details（对外被 PUBLIC_DETAIL_KEYS 拦下，日志里仍可排查）
+        throw new ApiError('credential_decrypt_failed', 'Failed to decrypt stored credential', 500, {
+          error: errorMessage(error),
+        })
       }
     },
   }

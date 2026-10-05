@@ -155,5 +155,68 @@ assert.equal(
 )
 assert.deepEqual(lookups, ['h-1'], 'active 主机名必须查询所有权标记')
 
+// 9. 优选域名白名单：写入侧（create）收下的等价写法，必须在改名/删除/校验侧命中同一身份。
+// 带尾点/协议/大小写的写法若在改名或删除时落到 not_found，用户会看到「刚创建成功的域名不存在」。
+const preferredDomains = modules.saas.preferredDomains
+await preferredDomains.create('https://Pref.Example.com/some/path')
+assert.deepEqual(
+  await preferredDomains.list(),
+  [{ domain: 'pref.example.com', sort: 0 }],
+  '白名单写入必须落归一化裸域名'
+)
+assert.equal(await preferredDomains.isAllowed(' PREF.EXAMPLE.COM. '), true, '尾点/大小写/空白等价写法必须判真')
+
+// 改名的旧值用等价写法必须命中；新值同样归一化；改完后新旧域名的判定必须翻转
+assert.deepEqual(
+  await preferredDomains.rename('PREF.EXAMPLE.COM.', 'Second.Example.com.'),
+  { domain: 'second.example.com', sort: 0 },
+  '改名必须接受带尾点/大小写的等价旧值，并把新值归一化落盘'
+)
+assert.equal(await preferredDomains.isAllowed('https://second.example.com/x'), true, '改名后的新域名必须判真')
+assert.equal(await preferredDomains.isAllowed('pref.example.com.'), false, '改名后的旧域名不得再判真')
+
+// 排序的归一化分支：带尾点/协议/大小写/空白的等价写法必须命中已有域名，重复/空白/未知/非法值忽略
+await preferredDomains.create('third.example.com')
+assert.deepEqual(
+  (
+    await preferredDomains.reorder([
+      ' https://THIRD.example.com/some/path ',
+      'second.example.com.',
+      'SECOND.example.com',
+      'https://',
+      ' ',
+      'unknown.example.com',
+    ])
+  ).map((item) => item.domain),
+  ['third.example.com', 'second.example.com'],
+  '排序必须接受带尾点/协议/大小写/空白的等价写法，并保持重复/未知/非法值忽略的原语义'
+)
+
+// 删除键同样接受等价写法；删除后判定必须翻转；非法/空值统一落 not_found 而不是 500
+await preferredDomains.delete(' second.example.com. ')
+assert.equal(await preferredDomains.isAllowed('second.example.com'), false, '删除键带尾点/空白必须命中并清除')
+assert.deepEqual(
+  (await preferredDomains.list()).map((item) => item.domain),
+  ['third.example.com'],
+  '删除后只应留下未受影响的域名'
+)
+const preferredErrorCode = (run: () => Promise<unknown>) =>
+  run().then(
+    () => null,
+    (error: unknown) => (error as { code?: string }).code
+  )
+assert.equal(
+  await preferredErrorCode(() => preferredDomains.rename('https://', 'fourth.example.com')),
+  'preferred_domain_not_found',
+  '改名的非法旧值必须落到 not_found'
+)
+assert.equal(
+  await preferredErrorCode(() => preferredDomains.delete('')),
+  'preferred_domain_not_found',
+  '删除的空值必须落到 not_found'
+)
+
 await fs.rm(dataDir, { recursive: true, force: true })
-console.log('saas-preference-probe=ok key=identity migrate=legacy adopt=on-write ownership=id-addressed moved=excluded')
+console.log(
+  'saas-preference-probe=ok key=identity migrate=legacy adopt=on-write ownership=id-addressed moved=excluded preferred=create/rename/delete/reorder-normalized'
+)

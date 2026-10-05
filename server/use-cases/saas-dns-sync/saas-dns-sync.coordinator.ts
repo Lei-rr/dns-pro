@@ -17,7 +17,6 @@ import {
   DNSPOD_PREFERRED_LINE,
   cloudflareDnsCleanupRecipe,
   dnspodSaaSCleanupRecipe,
-  type SaaSSyncProviderType,
   type SaaSSyncRecord,
   type SyncCollectedRecords,
 } from '../derived-records/planners/saas.planner.js'
@@ -68,9 +67,12 @@ export class SaaSDnsSyncCoordinator {
    */
   async cleanup(providerId: string, _zoneName: string, hostnameFqdn: string, records: SaaSSyncRecord[]) {
     return runDnsSideEffect(() => {
-      const providerType = records[0]?.provider_type
+      const providerType = String(records[0]?.provider_type ?? '')
       if (!providerType) return Promise.resolve({ cleaned: 0, records: [] })
-      return this.adapterForProvider(providerType).cleanup(providerId, hostnameFqdn, records)
+      const adapter = this.adapterForProvider(providerType)
+      // 厂商未知说明清理配方被脏数据污染：显式跳过，不能默认按 DNSPod 误写
+      if (!adapter) return Promise.resolve({ cleaned: 0, records: [], reason: 'unsupported_provider_type' })
+      return adapter.cleanup(providerId, hostnameFqdn, records)
     })
   }
 
@@ -148,9 +150,11 @@ export class SaaSDnsSyncCoordinator {
     return target === 'cloudflare_dns' ? this.cloudflareDns : this.dnspod
   }
 
-  /** 记录自带的厂商类型 → 适配器 */
-  private adapterForProvider(type: SaaSSyncProviderType): SaaSSyncAdapter {
-    return type === 'cloudflare' ? this.cloudflareDns : this.dnspod
+  /** 记录自带的厂商类型 → 适配器；未知厂商返回 null（由调用方显式拒绝） */
+  private adapterForProvider(type: string): SaaSSyncAdapter | null {
+    if (type === 'cloudflare') return this.cloudflareDns
+    if (type === 'dnspod') return this.dnspod
+    return null
   }
 
   private async adapterForHostname(providerId: string, zoneName: string, hostnameFqdn: string) {

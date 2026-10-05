@@ -24,7 +24,7 @@ export async function deleteSessionHandler(
   reply: FastifyReply
 ) {
   // 操作者必须在注销前解析（注销会清空会话 Cookie）
-  const actor = await auditActor(request)
+  const actor = auditActor(request)
   await request.server.ctx.modules.auth.service.logout(request, reply)
   request.server.ctx.platform.audit.record({
     action: 'session_revoked',
@@ -40,7 +40,7 @@ export async function updatePasswordHandler(
   reply: FastifyReply
 ) {
   const { current_password: currentPassword, new_password: newPassword } = request.body
-  const actor = await auditActor(request)
+  const actor = auditActor(request)
   const session = await request.server.ctx.modules.auth.service.changePassword(
     reply,
     currentPassword,

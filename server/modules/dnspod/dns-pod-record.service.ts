@@ -5,12 +5,11 @@ import { parseBool } from '../../shared/values.js'
 import {
   callProvider,
   collectOffsetPages,
-  parseUpstreamTotal,
   TENCENT_PAGE_SIZE,
   toFullListResult,
 } from '../../core/providers/provider-call.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../core/providers/provider-values.js'
-import { invalidateDnsPodRecordCache } from './dns-pod.cache.js'
+import { DNSPOD_PROVIDER_TYPE, invalidateDnsPodRecordCache } from './dns-pod.cache.js'
 import { DnsPodClient, dnsPodClientFor } from './dns-pod.client.js'
 import {
   dnspodMutationResponseSchema,
@@ -20,7 +19,6 @@ import {
   type DnsPodRecord,
 } from './dns-pod-response.schema.js'
 
-const PROVIDER_TYPE = 'dnspod'
 export const DNSPOD_DEFAULT_LINE = '默认'
 
 /** 下推到 DNSPod 的查询过滤 */
@@ -92,8 +90,8 @@ export class DnsPodRecordService {
   async list(providerId: string, domain: string, options: { refresh?: boolean } = {}): Promise<RecordListResult> {
     const normalized = normalizeDomain(domain)
     const cached = await withProviderCache<RecordListResult>({
-      key: buildCacheKey(`${PROVIDER_TYPE}:records`, { provider_id: providerId, domain: normalized }),
-      tags: [providerCacheTag(providerId), recordCacheTag(PROVIDER_TYPE, providerId, normalized)],
+      key: buildCacheKey(`${DNSPOD_PROVIDER_TYPE}:records`, { provider_id: providerId, domain: normalized }),
+      tags: [providerCacheTag(providerId), recordCacheTag(DNSPOD_PROVIDER_TYPE, providerId, normalized)],
       refresh: options.refresh ?? false,
       loader: () => this.fetchAll(providerId, normalized),
     })
@@ -184,7 +182,6 @@ export class DnsPodRecordService {
         return {
           items: (parsed.RecordList as unknown[]).map((record) => presentRecord(dnspodRecordSchema.parse(record))),
           sourceCount: Number(parsed.SourceCount ?? 0),
-          total: parseUpstreamTotal(parsed.RecordCountInfo?.TotalCount),
           requestId: parsed.RequestId,
         }
       },

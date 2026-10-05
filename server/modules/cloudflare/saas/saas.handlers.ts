@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../../core/http/api-response.js'
-import { trimmedParam } from '../../../core/http/route-params.js'
 import type { RequestOf } from '../../../core/http/request-schema.js'
 import {
   saasFallbackShowSchema,
@@ -28,7 +27,7 @@ export async function listSaaSHostnamesHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.hostnames(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
+    request.params.zoneName,
     request.query.refresh === 'true'
   )
   return reply.send(success(result))
@@ -40,8 +39,8 @@ export async function getSaaSHostnameHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.showHostname(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
-    trimmedParam(request, 'hostnameFqdn'),
+    request.params.zoneName,
+    request.params.hostnameFqdn,
     request.query.refresh === 'true'
   )
   return reply.send(success(result))
@@ -53,7 +52,7 @@ export async function getFallbackOriginHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.fallbackOriginInfo(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
+    request.params.zoneName,
     request.query.refresh === 'true'
   )
   return reply.send(success(result))
@@ -65,7 +64,7 @@ export async function updateFallbackOriginHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.setFallbackOrigin(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
+    request.params.zoneName,
     request.body.origin
   )
   return reply.send(success(result))
@@ -77,7 +76,7 @@ export async function deleteFallbackOriginHandler(
 ) {
   const result = await request.server.ctx.modules.saas.hostnames.deleteFallbackOrigin(
     request.params.providerId,
-    trimmedParam(request, 'zoneName')
+    request.params.zoneName
   )
   return reply.send(success(result))
 }

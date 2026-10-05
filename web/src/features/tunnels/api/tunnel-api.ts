@@ -13,7 +13,8 @@ type RouteMutationResult = CloudflaredRoute & { side_effects?: SideEffects }
 /** 路由写入载荷：与 cloudflaredRouteStoreSchema / cloudflaredRouteUpdateSchema 的 body 对齐 */
 export type TunnelRouteInput = { hostname: string; service: string; path?: string }
 
-type RefreshOptions = { refresh?: boolean }
+/** 读接口选项：signal 由 useResourceQuery 的 queryFn 注入 */
+type RefreshOptions = { refresh?: boolean; signal?: AbortSignal }
 
 const providerBase = (provider: string) => `/cloudflared/providers/${encodePath(provider)}`
 const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provider)}/tunnels/${encodePath(tunnelId)}`
@@ -21,22 +22,28 @@ const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provi
 export const cloudflaredApi = {
   tunnels: async (provider: string, options: RefreshOptions = {}): Promise<ApiResponse<CloudflaredTunnel[]>> =>
     unwrapItems<CloudflaredTunnel[]>(
-      await http.get(`${providerBase(provider)}/tunnels`, withRefresh({ refresh: options.refresh }))
+      await http.get(`${providerBase(provider)}/tunnels`, {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     ),
   tunnel: (provider: string, tunnelId: string, options: RefreshOptions = {}) =>
-    http.get<CloudflaredTunnel>(tunnelBase(provider, tunnelId), withRefresh({ refresh: options.refresh })),
+    http.get<CloudflaredTunnel>(tunnelBase(provider, tunnelId), {
+      ...withRefresh({ refresh: options.refresh }),
+      signal: options.signal,
+    }),
   createTunnel: (provider: string, name: string) =>
     http.post<TunnelCreateResult>(`${providerBase(provider)}/tunnels`, { name }),
   deleteTunnel: (provider: string, tunnelId: string) => http.delete(tunnelBase(provider, tunnelId)),
-  tunnelToken: (provider: string, tunnelId: string) =>
-    http.get<{ token: string }>(`${tunnelBase(provider, tunnelId)}/token`),
+  tunnelToken: (provider: string, tunnelId: string, options: RefreshOptions = {}) =>
+    http.get<{ token: string }>(`${tunnelBase(provider, tunnelId)}/token`, { signal: options.signal }),
   rotateToken: (provider: string, tunnelId: string) =>
     http.post<{ token: string }>(`${tunnelBase(provider, tunnelId)}/token/rotate`),
   routes: (provider: string, tunnelId: string, options: RefreshOptions = {}) =>
-    http.get<{ routes: CloudflaredRoute[] }>(
-      `${tunnelBase(provider, tunnelId)}/routes`,
-      withRefresh({ refresh: options.refresh })
-    ),
+    http.get<{ routes: CloudflaredRoute[] }>(`${tunnelBase(provider, tunnelId)}/routes`, {
+      ...withRefresh({ refresh: options.refresh }),
+      signal: options.signal,
+    }),
   addRoute: (provider: string, tunnelId: string, data: TunnelRouteInput) =>
     http.post<RouteMutationResult>(`${tunnelBase(provider, tunnelId)}/routes`, data),
   /** 与 SaaS / EdgeOne 的 dns-repair 同义：为隧道全部路由补齐/修正 CNAME */

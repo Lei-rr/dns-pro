@@ -31,8 +31,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   const routeZoneName = computed(() => props.zoneName)
   const hostnamesQuery = useResourceQuery<SaaSHostname[]>({
     key: () => ['saas', 'hostnames', props.providerId, routeZoneName.value],
-    queryFn: async ({ refresh }) =>
-      (await saasApi.hostnames(props.providerId, routeZoneName.value, { refresh })).data || [],
+    queryFn: async ({ refresh, signal }) =>
+      (await saasApi.hostnames(props.providerId, routeZoneName.value, { refresh, signal })).data || [],
     pageSizeScope: 'saas-hosts',
   })
   /** 视图镜像：保留面板内的局部 patch 反馈，写后统一由 invalidate 收敛到服务端真相 */

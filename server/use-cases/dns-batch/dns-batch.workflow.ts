@@ -97,7 +97,9 @@ export class DnsBatchWorkflow {
   }
 
   active(providerType: string, providerId: string, zone: string) {
-    return this.kind.active({ provider_type: providerType, provider_id: providerId, zone })
+    // 资源键显式传入：命中判定不再依赖 scope.provider_id 与键内服务商相同（SaaS/EdgeOne 任务的键带的是被关联的 DNS 服务商）
+    const keys = isDnsProviderType(providerType) ? [dnsZoneKey(providerType, providerId, zone)] : []
+    return this.kind.active({ provider_type: providerType, provider_id: providerId, zone }, keys)
   }
 
   retryFailed(id: string, providerType?: string, providerId?: string) {

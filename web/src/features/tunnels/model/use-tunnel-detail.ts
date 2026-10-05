@@ -30,14 +30,14 @@ export function useTunnelDetail(props: TunnelDetailScope) {
   const detailKey = () => ['tunnels', 'detail', props.providerId, props.tunnelId]
   const detailQuery = useResourceQuery<TunnelDetail>({
     key: detailKey,
-    queryFn: async ({ refresh }) => {
+    queryFn: async ({ refresh, signal }) => {
       // 取 token 失败不清空已展示的 token：旧缓存兜底，轮换结果（setQueryData）也在此保留。
       // 失败转成 tokenFailed 标记而非抛错：详情整体仍算成功，由面板显式提示并可重试。
       const previous = client.getQueryData<TunnelDetail>(detailKey())
       const [tunnelRes, routesRes, tokenRes] = await Promise.all([
-        cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh }),
-        cloudflaredApi.routes(props.providerId, props.tunnelId, { refresh }),
-        cloudflaredApi.tunnelToken(props.providerId, props.tunnelId).then(
+        cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh, signal }),
+        cloudflaredApi.routes(props.providerId, props.tunnelId, { refresh, signal }),
+        cloudflaredApi.tunnelToken(props.providerId, props.tunnelId, { signal }).then(
           (response) => ({ token: response.data?.token || '', failed: false }),
           () => ({ token: '', failed: true })
         ),

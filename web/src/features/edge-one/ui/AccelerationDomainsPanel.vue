@@ -70,10 +70,10 @@ type EdgeOneDomainsData = { domains: EdgeOneAccelerationDomain[]; zoneMeta: Edge
 
 const domainsQuery = useResourceQuery<EdgeOneDomainsData>({
   key: () => ['edgeone', 'domains', props.providerId, props.zoneId],
-  queryFn: async ({ refresh }) => {
+  queryFn: async ({ refresh, signal }) => {
     const [response, meta] = await Promise.all([
-      edgeOneApi.accelerationDomains(props.providerId, props.zoneId, { refresh }),
-      loadZoneMeta(refresh),
+      edgeOneApi.accelerationDomains(props.providerId, props.zoneId, { refresh, signal }),
+      loadZoneMeta(refresh, signal),
     ])
     return { domains: response.data || [], zoneMeta: meta }
   },
@@ -116,15 +116,15 @@ function domainName(record: EdgeOneAccelerationDomain) {
   return String(record.domain_name || record.name || '')
 }
 
-async function loadZoneMeta(refresh = false): Promise<EdgeOneZone | null> {
+async function loadZoneMeta(refresh = false, signal?: AbortSignal): Promise<EdgeOneZone | null> {
   try {
     // Prefer list match so we get name without extra endpoint failures
-    const response = await edgeOneApi.zones(props.providerId, { refresh })
+    const response = await edgeOneApi.zones(props.providerId, { refresh, signal })
     const list = response.data || []
     const matched = list.find((z) => String(z.id) === props.zoneId || String(z.name) === props.zoneId) || null
     if (matched) return matched
     try {
-      const one = await edgeOneApi.zone(props.providerId, props.zoneId, { refresh })
+      const one = await edgeOneApi.zone(props.providerId, props.zoneId, { refresh, signal })
       return one.data || null
     } catch {
       return null
@@ -176,7 +176,8 @@ async function save(payload: EdgeOneDomainSubmitPayload) {
       data.https_origin_port = Number(payload.https_origin_port)
     }
     if (payload.ipv6_status) data.ipv6_status = payload.ipv6_status
-    if (payload.host_header) data.host_header = payload.host_header
+    // 空串也是有效载荷：它是「清空自定义 HOST」的唯一载体，falsy 判断会吞掉清空意图
+    if (payload.host_header !== undefined) data.host_header = payload.host_header
 
     if (editingName) {
       const response = await edgeOneApi.updateAccelerationDomain(

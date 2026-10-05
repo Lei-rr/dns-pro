@@ -20,8 +20,7 @@ const EMPTY_SUMMARY: ReconcileSummary = { total: 0, synced: 0, drifted: 0, missi
 export function useSyncHealthQuery(scope: MaybeRefOrGetter<ReconcileScope> = {}) {
   const query = useResourceQuery<ReconcileReport>({
     key: () => ['sync', 'health', toValue(scope).providerId ?? '', toValue(scope).kind ?? ''],
-    queryFn: async ({ refresh }) => (await syncApi.detect(toValue(scope), { refresh })).data,
-    pageSizeScope: 'sync-health',
+    queryFn: async ({ refresh, signal }) => (await syncApi.detect(toValue(scope), { refresh, signal })).data,
     refreshNotice: '同步状态已刷新',
   })
 
@@ -50,8 +49,7 @@ export function useReconcileRepair() {
 export function useAuditTrailQuery() {
   const query = useResourceQuery<AuditEvent[]>({
     key: () => ['sync', 'audit'],
-    queryFn: async ({ refresh }) => (await syncApi.audit({ refresh })).data.items ?? [],
-    pageSizeScope: 'sync-audit',
+    queryFn: async ({ refresh, signal }) => (await syncApi.audit({ refresh, signal })).data.items ?? [],
     refreshNotice: '',
   })
 

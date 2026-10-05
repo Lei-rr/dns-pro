@@ -10,10 +10,11 @@ import { localPreferenceSideEffectFromData, notifyDnsSideEffect } from '@/shared
 import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
 import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
 
+/** 生效的优选域名：与后端 effectivePreferredDomain 同序（顶层优先，回退 custom_metadata） */
 export function preferredDomainOf(record: SaaSHostname | null | undefined): string {
   if (!record) return ''
   const metadata = record.custom_metadata as Record<string, unknown> | null | undefined
-  return String(metadata?.preferred_domain || record.preferred_domain || '').trim()
+  return String(record.preferred_domain || metadata?.preferred_domain || '').trim()
 }
 
 export function useSaasHostEditor(options: {

@@ -28,10 +28,10 @@ export function useSaasHostJobs(options: {
     const owner = applyOwnership.claim()
     applyingPreferred.value = true
     try {
+      // dry_run 不再是创建端点的语义：预览单独走 preview 端点，创建体里不能出现该字段
       const body = {
         preferred_domain: payload.domain,
         only_auto_preferred: !!payload.onlyAutoPreferred,
-        dry_run: !!payload.dryRun,
       }
       if (payload.dryRun) {
         if (!scopeOwner.active()) return
@@ -51,8 +51,9 @@ export function useSaasHostJobs(options: {
           scopeOwner.active()
             ? saasApi.preferredApply(scopeOwner.value.providerId, scopeOwner.value.zoneName, body)
             : Promise.resolve({ data: undefined }),
-        fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as Record<string, unknown>) || {},
-        retry: (id) => saasApi.preferredApplyRetry(id),
+        fetchJob: async (id) =>
+          ((await saasApi.preferredApplyJob(scopeOwner.value.providerId, id)).data as Record<string, unknown>) || {},
+        retry: (id) => saasApi.preferredApplyRetry(scopeOwner.value.providerId, id),
         onDone: () => (scopeOwner.active() ? options.reload() : undefined),
         failureUnit: '个',
         jobProgress,
@@ -69,8 +70,9 @@ export function useSaasHostJobs(options: {
     return runBatchJob({
       label,
       create: () => (scopeOwner.active() ? create() : Promise.resolve({ data: undefined })),
-      fetchJob: async (id) => ((await saasApi.batchJob(id)).data as Record<string, unknown>) || {},
-      retry: (id) => saasApi.batchRetry(id),
+      fetchJob: async (id) =>
+        ((await saasApi.batchJob(scopeOwner.value.providerId, id)).data as Record<string, unknown>) || {},
+      retry: (id) => saasApi.batchRetry(scopeOwner.value.providerId, id),
       clearSelection: () => {
         if (scopeOwner.active()) options.clearSelection()
       },
@@ -92,14 +94,14 @@ export function useSaasHostJobs(options: {
       {
         label: '优选切换',
         fetchActive: () => saasApi.preferredApplyActive(options.providerId(), options.zoneName()),
-        fetchJob: async (id) => ((await saasApi.preferredApplyJob(id)).data as JobLike) || {},
-        retry: (id) => saasApi.preferredApplyRetry(id),
+        fetchJob: async (id) => ((await saasApi.preferredApplyJob(options.providerId(), id)).data as JobLike) || {},
+        retry: (id) => saasApi.preferredApplyRetry(options.providerId(), id),
       },
       {
         label: 'SaaS 批量',
         fetchActive: () => saasApi.batchActive(options.providerId(), options.zoneName()),
-        fetchJob: async (id) => ((await saasApi.batchJob(id)).data as JobLike) || {},
-        retry: (id) => saasApi.batchRetry(id),
+        fetchJob: async (id) => ((await saasApi.batchJob(options.providerId(), id)).data as JobLike) || {},
+        retry: (id) => saasApi.batchRetry(options.providerId(), id),
       },
     ]
     for (const item of fetchers) {

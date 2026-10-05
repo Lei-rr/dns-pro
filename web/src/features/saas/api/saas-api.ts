@@ -6,26 +6,38 @@ import { encodePath } from '@/shared/lib/path'
 const providerBase = (provider: string) => `/saas/providers/${encodePath(provider)}`
 const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/zones/${encodePath(zone)}`
 
+/** 读接口选项：signal 由 useResourceQuery 的 queryFn 注入 */
+type SaasReadOptions = { refresh?: boolean; signal?: AbortSignal }
+
+/**
+ * 优选切换请求体：预览与创建共用。
+ * 不含 dry_run——预览走独立的 preview 端点，创建端点收到 dry_run 不会再退化成预览。
+ */
+export type PreferredApplyPayload = { preferred_domain: string; only_auto_preferred: boolean }
+
 export const saasApi = {
   hostnames: async (
     provider: string,
     zone: string,
-    options: Record<string, unknown> = {}
+    options: SaasReadOptions = {}
   ): Promise<ApiResponse<SaaSHostname[]>> =>
     unwrapItems<SaaSHostname[]>(
-      await http.get(`${zoneBase(provider, zone)}/hostnames`, withRefresh({ refresh: options?.refresh }))
+      await http.get(`${zoneBase(provider, zone)}/hostnames`, {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     ),
   hostname: async (
     provider: string,
     zone: string,
     hostname: string,
-    options: Record<string, unknown> = {}
+    options: SaasReadOptions = {}
   ): Promise<ApiResponse<SaaSHostname>> =>
     unwrapItems<SaaSHostname>(
-      await http.get(
-        `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
-        withRefresh({ refresh: options?.refresh })
-      )
+      await http.get(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`, {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     ),
   createHostname: (
     provider: string,
@@ -63,29 +75,36 @@ export const saasApi = {
   fallbackOrigin: (
     provider: string,
     zone: string,
-    options: Record<string, unknown> = {}
+    options: SaasReadOptions = {}
   ): Promise<ApiResponse<SaaSFallbackOrigin>> =>
-    http.get(`${zoneBase(provider, zone)}/fallback-origin`, withRefresh({ refresh: options?.refresh })),
+    http.get(`${zoneBase(provider, zone)}/fallback-origin`, {
+      ...withRefresh({ refresh: options.refresh }),
+      signal: options.signal,
+    }),
   setFallbackOrigin: (provider: string, zone: string, origin: string): Promise<ApiResponse<SaaSFallbackOrigin>> =>
     http.put(`${zoneBase(provider, zone)}/fallback-origin`, { origin }),
   deleteFallbackOrigin: (provider: string, zone: string) => http.delete(`${zoneBase(provider, zone)}/fallback-origin`),
-  preferredApplyPreview: (provider: string, zone: string, data: Record<string, unknown>) =>
+  preferredApplyPreview: (provider: string, zone: string, data: PreferredApplyPayload) =>
     http.post(`${zoneBase(provider, zone)}/preferred-apply/preview`, data),
-  preferredApply: (provider: string, zone: string, data: Record<string, unknown>) =>
+  preferredApply: (provider: string, zone: string, data: PreferredApplyPayload) =>
     http.post(`${zoneBase(provider, zone)}/preferred-apply`, data),
   preferredApplyActive: (provider: string, zone: string) =>
     http.get(`${zoneBase(provider, zone)}/preferred-apply/active`, { timeout: POLL_TIMEOUT_MS }),
-  preferredApplyJob: (jobId: string) =>
-    http.get(`/saas/preferred-apply/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
-  preferredApplyRetry: (jobId: string) => http.post(`/saas/preferred-apply/${encodePath(jobId)}/retry`),
+  // 任务端点挂在服务商作用域下：归属校验要求路径带 providerId
+  preferredApplyJob: (provider: string, jobId: string) =>
+    http.get(`${providerBase(provider)}/preferred-apply/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
+  preferredApplyRetry: (provider: string, jobId: string) =>
+    http.post(`${providerBase(provider)}/preferred-apply/${encodePath(jobId)}/retry`),
   batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/delete`, data),
   batchUpdate: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/update`, data),
   batchActive: (provider: string, zone: string) =>
     http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: POLL_TIMEOUT_MS }),
-  batchJob: (jobId: string) => http.get(`/saas/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
-  batchRetry: (jobId: string) => http.post(`/saas/batch/${encodePath(jobId)}/retry`),
+  batchJob: (provider: string, jobId: string) =>
+    http.get(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
+  batchRetry: (provider: string, jobId: string) =>
+    http.post(`${providerBase(provider)}/batch/${encodePath(jobId)}/retry`),
 }
 
 export const preferredDomainApi = {

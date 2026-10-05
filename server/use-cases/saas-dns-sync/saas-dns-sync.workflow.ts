@@ -91,6 +91,17 @@ export class SaaSDnsSyncWorkflow {
     return this.sync.resourceKeys(providerId, zoneName, hostnames)
   }
 
+  /**
+   * 站点级资源键：活跃任务反查只有服务商 + 站点，没有主机名清单。
+   * 用站点全部主机名解析，才能覆盖主机名级同步站点（显式 sync_zone）指向的底层 DNS 域名；
+   * 主机名列表不可用时退回服务商级默认键（resourceKeys 自带兜底），不让读接口失败。
+   */
+  async zoneResourceKeys(providerId: string, zoneName: string): Promise<string[]> {
+    const list = await this.hostnames.hostnames(providerId, zoneName).catch(() => null)
+    const hostnames = (list?.items ?? []).map((item) => String(item.hostname ?? '')).filter(Boolean)
+    return this.resourceKeys(providerId, zoneName, hostnames)
+  }
+
   async createHostname(providerId: string, zoneName: string, data: Record<string, unknown>, autoSync = false) {
     const owner = await this.hostnames.resolveZoneRef(providerId, zoneName)
     if (autoSync) await this.sync.preflight(providerId, String(data.hostname ?? ''), data)

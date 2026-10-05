@@ -33,6 +33,22 @@ export function zoneOwnsHostname(zone: string, fqdn: string): boolean {
 }
 
 /**
+ * 生效的优选域名：本地偏好 → 顶层字段 → custom_metadata。
+ *
+ * 三个来源顺序必须唯一：合并写入侧（mergePreference）、派生记录侧（saas.planner）与前端
+ * （use-saas-host-editor）各写一遍顺序时，同一条主机名会出现「读接口说 A、DNS 写回用 B」。
+ * 顶层字段优先于 custom_metadata：合并后的顶层即最终值，远端元数据只作未合并时的兜底。
+ */
+export function effectivePreferredDomain(
+  hostname: { preferred_domain?: unknown; custom_metadata?: unknown },
+  preference?: { preferred_domain?: unknown } | null
+): string {
+  const local = String(preference?.preferred_domain ?? '').trim()
+  const metadata = hostname.custom_metadata as Record<string, unknown> | null | undefined
+  return local || String(hostname.preferred_domain ?? '').trim() || String(metadata?.preferred_domain ?? '').trim()
+}
+
+/**
  * 主机名是否仍在管理内（可清理所有权 TXT）。
  * `moved` 表示主机名已迁出本站点：既不算在管，也不能清掉所有权 TXT（清理后无法再次验证归属）。
  */

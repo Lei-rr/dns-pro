@@ -28,6 +28,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   batch_job_not_found: '批量任务不存在',
   batch_no_failed: '没有失败项可重试',
   batch_provider_unsupported: '当前服务商不支持该批量操作',
+  batch_resource_keys_missing: '任务缺少资源键，无法判定互斥范围',
 
   // Provider 通用
   provider_not_found: '服务商不存在',
@@ -48,6 +49,14 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   cloudflare_invalid_response: 'Cloudflare 返回数据无效',
   cloudflare_request_failed: 'Cloudflare 请求失败',
   cloudflare_pagination_limit: 'Cloudflare 返回页数超过安全上限',
+  cloudflare_zone_list_failed: 'Cloudflare 站点列表获取失败',
+  cloudflare_zone_create_failed: 'Cloudflare 站点添加失败',
+  cloudflare_zone_delete_failed: 'Cloudflare 站点删除失败',
+  cloudflare_record_create_failed: 'Cloudflare 记录创建失败',
+  cloudflare_record_update_failed: 'Cloudflare 记录更新失败',
+  cloudflare_record_delete_failed: 'Cloudflare 记录删除失败',
+  cloudflare_record_list_failed: 'Cloudflare 记录列表获取失败',
+  cloudflare_dcv_failed: 'Cloudflare DCV 委派记录获取失败',
 
   // DNSPod
   dnspod_provider_not_found: 'DNSPod 服务商不存在',
@@ -66,9 +75,18 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   // EdgeOne
   edgeone_provider_not_found: 'EdgeOne 服务商不存在',
   edgeone_dnspod_provider_not_found: '关联的 DNSPod 服务商不存在',
+  // DnsPodAccess 以 `${source}_dnspod_provider_missing` 模板拼码，edgeone 来源对应本项
+  edgeone_dnspod_provider_missing: 'EdgeOne 未关联 DNSPod 服务商',
   edgeone_dnspod_zone_not_found: 'DNSPod 中找不到与该加速域名匹配的域名',
   edgeone_zone_not_found: 'EdgeOne 站点不存在',
   edgeone_zone_list_failed: 'EdgeOne 站点列表获取失败',
+  edgeone_domain_list_failed: 'EdgeOne 加速域名列表获取失败',
+  edgeone_domain_create_failed: 'EdgeOne 加速域名创建失败',
+  edgeone_domain_update_failed: 'EdgeOne 加速域名更新失败',
+  edgeone_domain_delete_failed: 'EdgeOne 加速域名删除失败',
+  edgeone_domain_status_failed: 'EdgeOne 加速域名状态变更失败',
+  edgeone_domain_certificate_failed: 'EdgeOne 加速域名证书配置失败',
+  edgeone_fqdn_empty: 'EdgeOne 加速域名不能为空',
   edgeone_cname_empty: 'EdgeOne 加速域名尚未生成 CNAME',
   edgeone_acceleration_domain_not_found: 'EdgeOne 加速域名不存在',
   edgeone_request_failed: 'EdgeOne 请求失败',
@@ -84,8 +102,17 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   saas_dnspod_provider_missing: 'SaaS 未关联 DNSPod 服务商',
   saas_dnspod_zone_not_found: 'DNSPod 中找不到与该主机名匹配的域名',
   saas_fqdn_missing: '主机名 FQDN 缺失',
+  saas_fqdn_empty: '主机名 FQDN 不能为空',
   saas_not_active: '该主机名当前未激活',
   saas_hostname_not_found: 'SaaS 主机名不存在',
+  saas_hostname_list_failed: 'SaaS 主机名列表获取失败',
+  saas_hostname_show_failed: 'SaaS 主机名详情获取失败',
+  saas_hostname_create_failed: 'SaaS 主机名创建失败',
+  saas_hostname_update_failed: 'SaaS 主机名更新失败',
+  saas_hostname_delete_failed: 'SaaS 主机名删除失败',
+  saas_fallback_origin_show_failed: 'SaaS 默认回源获取失败',
+  saas_fallback_origin_set_failed: 'SaaS 默认回源设置失败',
+  saas_fallback_origin_delete_failed: 'SaaS 默认回源删除失败',
 
   // Preferred Domain
   preferred_domain_duplicate: '该优选域名已存在',
@@ -116,6 +143,15 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   cloudflared_pagination_limit: 'Cloudflare Tunnel 返回页数超过安全上限',
   cloudflared_tunnel_token_invalid: 'Cloudflare Tunnel 返回的令牌无效',
   cloudflared_zone_not_found: '找不到与该主机名匹配的 Cloudflare 站点',
+  cloudflared_tunnel_list_failed: 'Cloudflare Tunnel 隧道列表获取失败',
+  cloudflared_tunnel_show_failed: 'Cloudflare Tunnel 隧道详情获取失败',
+  cloudflared_tunnel_create_failed: 'Cloudflare Tunnel 隧道创建失败',
+  cloudflared_tunnel_delete_failed: 'Cloudflare Tunnel 隧道删除失败',
+  cloudflared_tunnel_connections_delete_failed: 'Cloudflare Tunnel 隧道连接清理失败',
+  cloudflared_tunnel_token_rotate_failed: 'Cloudflare Tunnel 隧道令牌轮换失败',
+  cloudflared_tunnel_token_failed: 'Cloudflare Tunnel 隧道令牌获取失败',
+  cloudflared_route_list_failed: 'Cloudflare Tunnel 路由列表获取失败',
+  cloudflared_route_write_failed: 'Cloudflare Tunnel 路由写入失败',
 }
 
 export function translateError(code: string): string | null {

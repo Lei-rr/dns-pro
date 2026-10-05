@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../core/http/api-response.js'
-import { trimmedParam } from '../../core/http/route-params.js'
 import type { RequestOf } from '../../core/http/request-schema.js'
 import {
   edgeoneCertificateSchema,
@@ -28,7 +27,7 @@ export async function updateEdgeOneDomainHandler(
   const result = await request.server.ctx.modules.edgeOne.domains.updateAccelerationDomain(
     request.params.providerId,
     request.params.zoneId,
-    trimmedParam(request, 'domainName'),
+    request.params.domainName,
     request.body
   )
   return reply.send(success(result))
@@ -41,7 +40,7 @@ export async function updateEdgeOneDomainStatusHandler(
   const result = await request.server.ctx.modules.edgeOne.domains.updateAccelerationDomainStatus(
     request.params.providerId,
     request.params.zoneId,
-    trimmedParam(request, 'domainName'),
+    request.params.domainName,
     request.body.status
   )
   return reply.send(success(result))
@@ -54,7 +53,7 @@ export async function updateEdgeOneCertificateHandler(
   const result = await request.server.ctx.modules.edgeOne.domains.updateCertificate(
     request.params.providerId,
     request.params.zoneId,
-    trimmedParam(request, 'domainName'),
+    request.params.domainName,
     request.body
   )
   return reply.send(success(result))

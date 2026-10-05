@@ -41,7 +41,7 @@ export async function createProviderHandler(
   request.log.info({ provider_id: provider.id, provider_type: provider.type }, 'provider.created')
   request.server.ctx.platform.audit.record({
     action: 'credential_change',
-    actor: await auditActor(request),
+    actor: auditActor(request),
     target: provider.id,
     detail: { operation: 'create', provider_type: provider.type },
   })
@@ -56,7 +56,7 @@ export async function updateProviderHandler(
   request.log.info({ provider_id: provider.id, provider_type: provider.type }, 'provider.updated')
   request.server.ctx.platform.audit.record({
     action: 'credential_change',
-    actor: await auditActor(request),
+    actor: auditActor(request),
     target: provider.id,
     detail: { operation: 'update', provider_type: provider.type },
   })
@@ -68,7 +68,7 @@ export async function deleteProviderHandler(
   reply: FastifyReply
 ) {
   const providerId = request.params.id
-  const actor = await auditActor(request)
+  const actor = auditActor(request)
   await request.server.ctx.workflows.providerManagement.delete(providerId)
   request.log.info({ provider_id: providerId }, 'provider.deleted')
   request.server.ctx.platform.audit.record({

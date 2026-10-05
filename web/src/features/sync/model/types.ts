@@ -77,8 +77,8 @@ type WriteOutcomeView = {
 /** 执行结果：在检测报告之上补齐执行时间与逐条写入结果 */
 export type ReconcileResult = ReconcileReport & { executed_at: string; results: WriteOutcomeView[] }
 
-/** F6 审计动作：批量 / 凭据变更 / 会话吊销 */
-export type AuditAction = 'batch' | 'credential_change' | 'session_revoked'
+/** F6 审计动作：批量 / 凭据变更 / 会话吊销 / 派生记录对账 */
+export type AuditAction = 'batch' | 'credential_change' | 'session_revoked' | 'reconcile'
 
 export type AuditEvent = {
   id: string

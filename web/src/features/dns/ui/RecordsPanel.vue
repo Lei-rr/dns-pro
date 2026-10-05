@@ -62,7 +62,6 @@ function lineIdOf(line: string): string | undefined {
   return linesQuery.lines.value.find((option) => option.value === line)?.lineId
 }
 
-/** 保证当前编辑/批量选择中的线路始终可选项，避免历史线路值丢失 */
 const keyword = ref('')
 const typeFilter = ref('all')
 const typeOptions = ['A', 'AAAA', 'CNAME', 'TXT', 'MX']
@@ -229,6 +228,8 @@ watch([providerId, () => props.provider.type, () => props.zoneId], () => {
   resetRowOperations()
   selection.clear()
   expandedHosts.value = {}
+  // 搜索词属于上一个域名：不清理会让新记录列表被旧关键词过滤成空表
+  keyword.value = ''
   resetPage()
   void batch.resumeJobs()
 })

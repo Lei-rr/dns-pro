@@ -10,6 +10,7 @@ import { buildApp } from '../server/app/build.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
+import { invalidateSaaSHostnameCache } from '../server/modules/cloudflare/saas/saas.cache.js'
 import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-types.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-requests-'))
@@ -199,7 +200,7 @@ try {
     autoCleanup: true,
   })
   await app.ctx.platform.jobs.drain()
-  const finished = await app.ctx.workflows.saasBatch.find(batch.id)
+  const finished = await app.ctx.workflows.saasBatch.require(batch.id, 'saas-owner')
   assert.equal(finished?.status, 'completed', finished?.message)
   assert.equal(listGets(), 1, `主机名列表应只拉取一次，实际 ${listGets()} 次`)
   assert.ok(detailGets() <= cloudflareHostnames.length, `详情请求应每主机名一次，实际 ${detailGets()} 次`)
@@ -314,6 +315,29 @@ try {
     )
   assert.equal(conflict?.code, 'batch_job_running', '同一底层 DNS 域名上的 SaaS 批量必须被互斥拦截')
 
+  // 反查：正在跑的 DNS 批量任务必须能被其它工作流的 active 查询看见。
+  // 这些查询的 provider_id 是 SaaS / EdgeOne 服务商，只有按底层资源键交集比对才能命中（此前整片漏报）
+  assert.equal(
+    (await app.ctx.workflows.dnsBatch.active('dnspod', 'dns-target', 'example.com'))?.id,
+    dnsJob.id,
+    'DNS 面板必须能查到本工作流的活跃任务'
+  )
+  assert.equal(
+    (await app.ctx.workflows.saasBatch.active('saas-owner', 'example.com'))?.id,
+    dnsJob.id,
+    'SaaS 批量面板必须能反查到 DNS 批量任务'
+  )
+  assert.equal(
+    (await app.ctx.workflows.saasPreferredApply.active('saas-owner', 'example.com'))?.id,
+    dnsJob.id,
+    '优选切换面板必须能反查到 DNS 批量任务'
+  )
+  assert.equal(
+    (await app.ctx.workflows.edgeOneBatch.active('edge-owner', 'zone-1'))?.id,
+    dnsJob.id,
+    'EdgeOne 面板必须能反查到关联 DNSPod 域名上的 DNS 批量任务'
+  )
+
   // 不同站点不应被误锁
   const otherZone = await app.ctx.workflows.dnsBatch.createCreate({
     providerType: 'dnspod',
@@ -370,8 +394,116 @@ try {
   assert.equal(idempotentState?.items[0]?.record_id, '99', 'skipped 条目必须回填已存在记录 ID')
   assert.equal(idempotentCreates, 0, '命中幂等时不得调用 CreateRecord')
 
+  // ---- 7. 优选切换批量：逐条更新只失效详情缓存，主机名列表不得随条目数重复拉取 ----
+  await app.ctx.modules.saas.preferredDomains.create('preferred.example.net')
+  // 上一轮批量收尾会清掉站点主机名缓存；先还原这一前置状态，才能验证本任务的列表拉取次数
+  invalidateSaaSHostnameCache('cf-owner', 'zone-1', true)
+  cloudflareGets.length = 0
+  // DnsWriter 的归属取证会按 DNSPod 目标扫描 EdgeOne 加速域名：返回空站点即可（无归属冲突）
+  EdgeOneClient.prototype.call = async function (action: string): Promise<unknown> {
+    if (action === 'DescribeZones') return { Zones: [], TotalCount: 0, RequestId: 'zones' }
+    assert.fail(`unexpected EdgeOne action: ${action}`)
+  }
+  CloudflareClient.prototype.get = async function (
+    requestPath: string,
+    params: Record<string, unknown> = {}
+  ): Promise<unknown> {
+    cloudflareGets.push({ path: requestPath, params })
+    if (requestPath === 'zones') {
+      return {
+        success: true,
+        result: [{ id: 'zone-1', name: 'example.com' }],
+        result_info: { page: 1, per_page: 100, total_pages: 1 },
+      }
+    }
+    if (requestPath.endsWith('/custom_hostnames')) {
+      return {
+        success: true,
+        result: cloudflareHostnames.map((hostname) => ({
+          id: `id-${hostname}`,
+          hostname,
+          status: 'active',
+          custom_origin_server: 'origin.example.net',
+          auto_preferred: true,
+          ssl: {},
+        })),
+        result_info: { page: 1, per_page: 100, total_pages: 1 },
+      }
+    }
+    if (requestPath.endsWith('/fallback_origin')) return { success: true, result: { origin: null, status: null } }
+    if (requestPath.includes('/custom_hostnames/')) {
+      const id = requestPath.split('/').pop() ?? ''
+      return {
+        success: true,
+        result: {
+          id,
+          hostname: id.replace(/^id-/, ''),
+          status: 'active',
+          custom_origin_server: 'origin.example.net',
+          auto_preferred: true,
+          ssl: {},
+        },
+      }
+    }
+    assert.fail(`unexpected Cloudflare GET ${requestPath}`)
+  }
+
+  let preferredCreates = 0
+  DnsPodClient.prototype.call = async function (action: string): Promise<unknown> {
+    if (action === 'DescribeDomainList') {
+      return {
+        DomainList: [{ DomainId: 1, Name: 'example.com', Grade: 'D_FREE' }],
+        DomainCountInfo: { DomainTotal: 1 },
+      }
+    }
+    if (action === 'DescribeRecordList') {
+      return { RecordList: [], RecordCountInfo: { TotalCount: 0 }, RequestId: 'preferred' }
+    }
+    if (action === 'CreateRecord') {
+      preferredCreates++
+      return { RecordId: 800 + preferredCreates, RequestId: 'created' }
+    }
+    if (action === 'ModifyRecord') return { RecordId: 801, RequestId: 'updated' }
+    if (action === 'DeleteRecord') return { RecordId: 802, RequestId: 'deleted' }
+    assert.fail(`unexpected DNSPod action: ${action}`)
+  }
+
+  const preferredJob = await app.ctx.workflows.saasPreferredApply.create({
+    providerId: 'saas-owner',
+    zoneName: 'example.com',
+    preferredDomain: 'preferred.example.net',
+    hostnames: cloudflareHostnames,
+  })
+  await app.ctx.platform.jobs.drain()
+  const preferredState = await app.ctx.workflows.saasPreferredApply.require(preferredJob.id, 'saas-owner')
+  assert.equal(
+    preferredState?.status,
+    'completed',
+    `优选切换条目结果：${JSON.stringify(preferredState?.items?.map((item) => item.message))}`
+  )
+  assert.equal(preferredState?.failed, 0, preferredState?.message)
+  assert.equal(listGets(), 1, `优选切换批量：主机名列表应只拉取一次，实际 ${listGets()} 次`)
+  assert.ok(
+    preferredCreates >= cloudflareHostnames.length,
+    `优选切换必须写回 DNS 记录，实际 CreateRecord ${preferredCreates} 次`
+  )
+  // 「列表只拉一次」在条目全失败时同样成立：必须同时锁定逐条成功与逐条详情读取，
+  // 否则任务整体失败也会让上面一条断言通过，O(N) 行为根本没被验证
+  assert.equal(preferredState?.items?.length, cloudflareHostnames.length, '优选切换必须覆盖全部目标主机名')
+  assert.equal(
+    preferredState?.success,
+    cloudflareHostnames.length,
+    `优选切换必须逐条成功：${JSON.stringify(
+      preferredState?.items?.map((item) => [item.hostname, item.status, item.message])
+    )}`
+  )
+  assert.ok(
+    detailGets() >= cloudflareHostnames.length,
+    `逐条更新必须各自读取详情（列表快照不能替代），实际 ${detailGets()} 次`
+  )
+
   console.log(
-    'batch-request-probe=ok dnspod=upstream-filter cloudflare=exact-name saas=o(n) edgeone=snapshot lock=resource-keys dns-batch=record-status idempotency=skip-existing'
+    'batch-request-probe=ok dnspod=upstream-filter cloudflare=exact-name saas=o(n) edgeone=snapshot lock=resource-keys dns-batch=record-status idempotency=skip-existing preferred-apply=o(n)'
   )
 } finally {
   // 断言失败时可能有任务仍在等待上游：close 加超时，保证失败能正常退出

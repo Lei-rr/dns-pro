@@ -28,3 +28,33 @@ export function requireField(record: Record<string, any>, field: string, code: s
     throw new ApiError(code, `${label} response missing ${field}`, 502)
   }
 }
+
+type ListResponseOptions = {
+  code: string
+  /** 服务商标识，用于错误消息（如 'DNSPod'） */
+  label: string
+  /** 上游数组字段名 */
+  listField: string
+  /** 条目语义，用于错误消息（如 'domain'） */
+  itemLabel: string
+  extra?: (record: Record<string, any>) => Record<string, any>
+}
+
+/**
+ * 列表响应归一：校验列表字段、展开原记录，SourceCount 取原始条目数
+ * （分页偏移按上游条目数推进，因此不能用过滤后的长度）。
+ * 腾讯云系（DNSPod / EdgeOne）的列表响应同构，仅数组字段名与文案不同，共用本工厂。
+ */
+export function normalizeListResponse(value: unknown, options: ListResponseOptions): Record<string, any> {
+  const record = requireRecord(value, options.code, options.label)
+  const list = record[options.listField]
+  if (!Array.isArray(list)) {
+    throw new ApiError(options.code, `${options.label} invalid ${options.itemLabel} list response`, 502)
+  }
+  return {
+    ...record,
+    [options.listField]: asRecordArray(list),
+    SourceCount: list.length,
+    ...options.extra?.(record),
+  }
+}

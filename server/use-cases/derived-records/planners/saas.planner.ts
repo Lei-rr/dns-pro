@@ -14,7 +14,11 @@ import type { DnsPodAccess } from '../../../modules/dnspod/access.js'
 import type { DnsPodZoneCatalog } from '../../../modules/dnspod/zone-catalog.js'
 import type { CloudflareZoneService } from '../../../modules/cloudflare/cloudflare-zone.service.js'
 import type { CloudflareCustomHostname } from '../../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { isHostnameActive, zoneOwnsHostname } from '../../../modules/cloudflare/saas/saas-hostname-rules.js'
+import {
+  effectivePreferredDomain,
+  isHostnameActive,
+  zoneOwnsHostname,
+} from '../../../modules/cloudflare/saas/saas-hostname-rules.js'
 import type { SaaSHostnameService } from '../../../modules/cloudflare/saas/saas-hostname.service.js'
 import type { SaaSSyncConfigService } from '../../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { DerivedSourcePlanner, PlannedRecord } from '../derived-record.types.js'
@@ -239,7 +243,7 @@ export function saasDesiredRecords(input: {
     })
 
   const records: SaaSSyncRecord[] = []
-  const preferred = String(input.hostname.custom_metadata?.preferred_domain ?? '').trim()
+  const preferred = effectivePreferredDomain(input.hostname)
   if (dnspod) {
     if (input.origin) records.push(record('CNAME', fqdn, input.origin, 'origin_cname'))
     if (input.hostname.auto_preferred && preferred) {
@@ -328,21 +332,24 @@ export async function resolveDnsPodSaasTarget(
   }
 }
 
-/** 解析失败（未关联服务商 / 找不到域名）返回跳过原因，不抛出 */
+/** 解析失败（未关联服务商 / 找不到域名）用 ok:false 显式标记，不与成功的写入目标混用同一形状 */
+export type DnsPodSaasTargetResolution = (SaaSDnsTarget & { ok: true }) | { ok: false; reason: string }
+
+/** 目标解析：失败返回跳过原因，不抛出 */
 export async function optionalDnsPodSaasTarget(
   deps: SaaSDnsPodTargetDeps,
   providerId: string,
   hostname: CloudflareCustomHostname,
   fqdn: string
-): Promise<SaaSDnsTarget | { reason: string }> {
+): Promise<DnsPodSaasTargetResolution> {
   if ((await saasDnsPodProviderId(deps, providerId, hostname)) === '') {
-    return { reason: 'dnspod_provider_missing' }
+    return { ok: false, reason: 'dnspod_provider_missing' }
   }
   try {
-    return await resolveDnsPodSaasTarget(deps, providerId, hostname, fqdn)
+    return { ...(await resolveDnsPodSaasTarget(deps, providerId, hostname, fqdn)), ok: true }
   } catch (error) {
     if (error instanceof ApiError && error.code === 'saas_dnspod_zone_not_found') {
-      return { reason: 'dnspod_zone_not_found' }
+      return { ok: false, reason: 'dnspod_zone_not_found' }
     }
     throw error
   }

@@ -45,6 +45,9 @@ type DnsZoneWriteInput = { domain?: string; name?: string }
 /** 写接口选项：Cloudflare 需要 zoneName 把主机记录补成全限定名 */
 type DnsWriteOptions = { zoneName?: string }
 
+/** 读接口选项：signal 由 useResourceQuery 的 queryFn 注入，用于中止卸载/切换作用域后的在飞请求 */
+type DnsReadOptions = { refresh?: boolean; signal?: AbortSignal }
+
 const providerBase = (provider: DnsProviderRef) => `/${provider.type}/providers/${encodePath(provider.id)}`
 const zoneBase = (provider: DnsProviderRef, zone: string) => `${providerBase(provider)}/zones/${encodePath(zone)}`
 const endpoints = {
@@ -164,9 +167,12 @@ function presentRecord(provider: DnsProviderRef, domain: string, record: DnsReco
 }
 
 export const dnsApi = {
-  zones: async (provider: DnsProviderRef, options: Record<string, unknown> = {}): Promise<ApiResponse<Zone[]>> => {
+  zones: async (provider: DnsProviderRef, options: DnsReadOptions = {}): Promise<ApiResponse<Zone[]>> => {
     const response = unwrapItems<Zone[]>(
-      await http.get(endpoints.zones(provider), withRefresh({ refresh: options?.refresh }))
+      await http.get(endpoints.zones(provider), {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     )
     return { ...response, data: response.data.map((domain) => presentDomain(provider, domain)) }
   },
@@ -177,20 +183,26 @@ export const dnsApi = {
   lines: async (
     provider: DnsProviderRef,
     zone: string,
-    options: Record<string, unknown> = {}
+    options: DnsReadOptions = {}
   ): Promise<ApiResponse<{ items: DnsLine[]; groups: DnsLine[] }>> => {
     if (provider.type !== 'dnspod') return { code: 0, message: 'success', data: { items: [], groups: [] } }
-    const response = await http.get(endpoints.lines(provider, zone), withRefresh({ refresh: options?.refresh }))
+    const response = await http.get(endpoints.lines(provider, zone), {
+      ...withRefresh({ refresh: options.refresh }),
+      signal: options.signal,
+    })
     const data = (response.data ?? {}) as { items?: DnsLine[]; groups?: DnsLine[] }
     return { ...response, data: { items: data.items ?? [], groups: data.groups ?? [] } }
   },
   records: async (
     provider: DnsProviderRef,
     domain: string,
-    options: Record<string, unknown> = {}
+    options: DnsReadOptions = {}
   ): Promise<ApiResponse<DnsRecord[]>> => {
     const response = unwrapItems<DnsRecord[]>(
-      await http.get(endpoints.records(provider, domain), withRefresh({ refresh: options?.refresh }))
+      await http.get(endpoints.records(provider, domain), {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     )
     return { ...response, data: response.data.map((record) => presentRecord(provider, domain, record)) }
   },

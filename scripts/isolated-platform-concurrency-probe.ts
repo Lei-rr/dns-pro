@@ -5,8 +5,15 @@ import os from 'node:os'
 import path from 'node:path'
 import { JsonStore } from '../server/core/store/json-store.js'
 import { JobService } from '../server/core/jobs/job.service.js'
-import { runBatchItems } from '../server/core/jobs/batch-job.js'
+import { BatchJobKind, runBatchItems } from '../server/core/jobs/batch-job.js'
 import { summarizeJobItems } from '../server/core/jobs/job.types.js'
+import {
+  DNS_BATCH_CREATE_JOB,
+  SAAS_BATCH_DELETE_JOB,
+  peekResourceKeys,
+  readResourceKeys,
+} from '../server/core/jobs/job-types.js'
+import { ApiError } from '../server/core/http/api-error.js'
 import { invalidateProviderCache, withProviderCache } from '../server/core/cache/provider-cache.js'
 
 function deferred<T>() {
@@ -221,6 +228,110 @@ try {
 
   assert.throws(() => new JsonStore('../escaped.json', {}, dataDir), /data root/)
   assert.throws(() => new JsonStore(path.join(dataDir, 'absolute.json'), {}, dataDir), /relative to data root/)
+
+  // 活跃任务查询必须与创建时的互斥判定同口径：跨工作流靠资源键对齐，只看 payload 字段会漏报
+  const lockJobs = new JobService()
+  const lockKind = new BatchJobKind<string>(lockJobs, {
+    types: [DNS_BATCH_CREATE_JOB],
+    lockTypes: [DNS_BATCH_CREATE_JOB, SAAS_BATCH_DELETE_JOB],
+    scopeKeys: ['provider_id', 'zone'],
+    resourceKeys: readResourceKeys,
+    present: (job) => job.id,
+  })
+  // SaaS 批量任务的 payload 只有 provider_id / zone_name，站点写在资源键里
+  const saasJob = await lockJobs.create(
+    SAAS_BATCH_DELETE_JOB,
+    { provider_id: 'cf-1', zone_name: 'example.com', resource_keys: ['dns:cloudflare:cf-1:example.com'] },
+    [{ hostname: 'a.example.com' }],
+    { start: false }
+  )
+  assert.equal(
+    await lockKind.active({ provider_type: 'cloudflare', provider_id: 'cf-1', zone: 'example.com' }),
+    saasJob.id,
+    '资源键指向同一底层站点时，查询必须能发现其它工作流的活跃任务'
+  )
+  assert.equal(
+    await lockKind.active({ provider_type: 'cloudflare', provider_id: 'cf-1', zone: 'other.example.com' }),
+    null,
+    '同一服务商的不同站点不得误报为活跃冲突'
+  )
+  assert.equal(
+    await lockKind.active({ provider_type: 'cloudflare', provider_id: 'cf-2', zone: 'example.com' }),
+    null,
+    '不同服务商的同名站点不得误报为活跃冲突'
+  )
+  // EdgeOne 键（zoneId）与 DNS 键形状不同，解析必须都认
+  const edgeJob = await lockJobs.create(
+    SAAS_BATCH_DELETE_JOB,
+    { provider_id: 'eo-1', zone_id: 'zone-9', resource_keys: ['edgeone:eo-1:zone-9'] },
+    [{ hostname: 'b.example.com' }],
+    { start: false }
+  )
+  assert.equal(
+    await lockKind.active({ provider_id: 'eo-1', zone_id: 'zone-9' }),
+    edgeJob.id,
+    'EdgeOne 资源键必须按 providerId + zoneId 命中'
+  )
+
+  // 查询侧显式资源键：SaaS/EdgeOne 查询里的 provider_id 是 SaaS/EdgeOne 服务商，
+  // 而任务资源键里带的是被关联的 DNS 服务商，只比 scope 会整片漏报。
+  // 服务商/站点刻意用独立取值，避免干扰后面「历史 payload 重试」的 scope 判定
+  const dnsJob = await lockJobs.create(
+    DNS_BATCH_CREATE_JOB,
+    {
+      provider_type: 'dnspod',
+      provider_id: 'dns-2',
+      zone: 'locks.example.com',
+      resource_keys: ['dns:dnspod:dns-2:locks.example.com'],
+    },
+    [{ name: 'www', type: 'A', value: '192.0.2.1' }],
+    { start: false }
+  )
+  assert.equal(
+    await lockKind.active({ provider_id: 'saas-2', zone_name: 'locks.example.com' }, [
+      'dns:dnspod:dns-2:locks.example.com',
+    ]),
+    dnsJob.id,
+    'SaaS 查询必须按资源键交集发现 DNS 批量任务'
+  )
+  assert.equal(
+    await lockKind.active({ provider_id: 'saas-2', zone_name: 'locks.example.com' }),
+    null,
+    '不传查询侧资源键时跨服务商反查仍会漏报（scope 语义保持原样）'
+  )
+  assert.equal(
+    await lockKind.active({ provider_id: 'saas-2', zone_name: 'other.example.com' }, [
+      'dns:dnspod:dns-2:other.example.com',
+    ]),
+    null,
+    '资源键无交集不得误报为活跃冲突'
+  )
+
+  // 资源键缺失属于装配错误：创建路径必须显式失败，查询路径不得因此 500
+  assert.throws(
+    () => readResourceKeys({ provider_id: 'cf-1' }),
+    (error: unknown) => error instanceof ApiError && error.code === 'batch_resource_keys_missing',
+    '缺少 resource_keys 的任务载荷必须显式报错'
+  )
+  assert.deepEqual(peekResourceKeys({ provider_id: 'cf-1' }), [], '查询路径遇缺字段应退化为空集合')
+
+  // 早于资源键字段的历史 payload 必须仍可重试：退化到 scope 判定，而不是让任务卡死在重试接口。
+  // 注册真实 runner 并等执行到终态：缺键只影响互斥范围，不得影响执行链路
+  lockJobs.registerRunner(DNS_BATCH_CREATE_JOB, async (job) => {
+    await lockJobs.patch(job.id, { status: 'completed', message: 'legacy payload executed' })
+  })
+  const legacyJob = await lockJobs.createTerminalExclusive(
+    DNS_BATCH_CREATE_JOB,
+    { provider_type: 'dnspod', provider_id: 'dns-1', zone: 'example.com' },
+    [{ name: 'legacy', status: 'failed' }],
+    undefined,
+    { status: 'failed', success: 0, failed: 1, skipped: 0, message: 'legacy payload' }
+  )
+  assert.equal(await lockKind.retryFailed(legacyJob.id), legacyJob.id, '缺资源键的历史任务必须仍可重试')
+  assert.equal((await lockJobs.get(legacyJob.id))?.items[0]?.status, 'pending', '重试必须把失败条目改回待执行')
+  await lockJobs.drain()
+  assert.equal((await lockJobs.get(legacyJob.id))?.status, 'completed', '缺资源键的历史任务必须能真正执行到终态')
+
   console.log('platform-concurrency-probe=ok')
 } finally {
   await fs.rm(dataDir, { recursive: true, force: true })

@@ -1,13 +1,8 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
-import { edgeoneZonesCacheTag, providerCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
+import { providerCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
 import { ApiError } from '../../core/http/api-error.js'
 import { parseBool } from '../../shared/values.js'
-import {
-  callProvider,
-  collectOffsetPages,
-  parseUpstreamTotal,
-  toFullListResult,
-} from '../../core/providers/provider-call.js'
+import { callProvider, collectOffsetPages, toFullListResult } from '../../core/providers/provider-call.js'
 import { providerOptionalString, providerString } from '../../core/providers/provider-values.js'
 import { edgeOneClientFor, resolveEdgeOneProvider } from './edge-one-credentials.js'
 import {
@@ -46,7 +41,8 @@ export class EdgeOneZoneService {
     const { dnspodProviderId } = await resolveEdgeOneProvider(this.providers, providerId)
     const cached = await withProviderCache<ZoneListResult>({
       key: `edgeone:zones:${providerId}:all`,
-      tags: [providerCacheTag(providerId), providerCacheTag(dnspodProviderId), edgeoneZonesCacheTag(providerId)],
+      // 站点列表只随服务商配置变化：provider 标签已覆盖变更/删除（原先的独立 tag 没有任何失效入口，已移除）
+      tags: [providerCacheTag(providerId), providerCacheTag(dnspodProviderId)],
       refresh,
       loader: () => this.fetchAll(providerId),
     })
@@ -73,7 +69,6 @@ export class EdgeOneZoneService {
             .map((zone) => presentZone(edgeOneZoneSchema.parse(zone)))
             .filter((zone) => !HIDDEN_ZONE_TYPES.has(String(zone.type ?? '').toLowerCase())),
           sourceCount: Number(parsed.SourceCount ?? 0),
-          total: parseUpstreamTotal(parsed.TotalCount),
           requestId: parsed.RequestId ?? undefined,
         }
       },

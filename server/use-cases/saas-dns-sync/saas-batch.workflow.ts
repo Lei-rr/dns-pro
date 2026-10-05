@@ -84,15 +84,20 @@ export class SaaSBatchWorkflow {
     )
   }
 
-  find(id: string, providerId?: string) {
-    return this.kind.find(id, { provider_id: providerId })
+  /** 归属校验按 SaaS 服务商：providerId 必填，缺失即不匹配（查不到走本族 not_found） */
+  require(id: string, providerId: string) {
+    return this.kind.require(id, { provider_id: providerId })
   }
 
-  active(providerId: string, zoneName: string) {
-    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
+  async active(providerId: string, zoneName: string) {
+    // 反查必须按底层资源键比对：本工作流的 provider_id 是 SaaS 服务商，而 DNS 批量任务的键里带的是被关联的 DNS 服务商
+    return this.kind.active(
+      { provider_id: providerId, zone_name: zoneName },
+      await this.workflow.zoneResourceKeys(providerId, zoneName)
+    )
   }
 
-  retryFailed(id: string, providerId?: string) {
+  retryFailed(id: string, providerId: string) {
     return this.kind.retryFailed(id, { provider_id: providerId })
   }
 

@@ -8,20 +8,32 @@ const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/
 const domainBase = (provider: string, zone: string, domain: string) =>
   `${zoneBase(provider, zone)}/records/${encodePath(domain)}`
 
+/** 读接口选项：signal 由 useResourceQuery 的 queryFn 注入 */
+type EdgeOneReadOptions = { refresh?: boolean; signal?: AbortSignal }
+
 export const edgeOneApi = {
-  zones: async (provider: string, options: Record<string, unknown> = {}): Promise<ApiResponse<EdgeOneZone[]>> =>
+  zones: async (provider: string, options: EdgeOneReadOptions = {}): Promise<ApiResponse<EdgeOneZone[]>> =>
     unwrapItems<EdgeOneZone[]>(
-      await http.get(`${providerBase(provider)}/zones`, withRefresh({ refresh: options?.refresh }))
+      await http.get(`${providerBase(provider)}/zones`, {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     ),
-  zone: (provider: string, zoneId: string, options: Record<string, unknown> = {}): Promise<ApiResponse<EdgeOneZone>> =>
-    http.get(`${providerBase(provider)}/zones/${encodePath(zoneId)}`, withRefresh({ refresh: options?.refresh })),
+  zone: (provider: string, zoneId: string, options: EdgeOneReadOptions = {}): Promise<ApiResponse<EdgeOneZone>> =>
+    http.get(`${providerBase(provider)}/zones/${encodePath(zoneId)}`, {
+      ...withRefresh({ refresh: options.refresh }),
+      signal: options.signal,
+    }),
   accelerationDomains: async (
     provider: string,
     zone: string,
-    options: Record<string, unknown> = {}
+    options: EdgeOneReadOptions = {}
   ): Promise<ApiResponse<EdgeOneAccelerationDomain[]>> =>
     unwrapItems<EdgeOneAccelerationDomain[]>(
-      await http.get(`${zoneBase(provider, zone)}/records`, withRefresh({ refresh: options?.refresh }))
+      await http.get(`${zoneBase(provider, zone)}/records`, {
+        ...withRefresh({ refresh: options.refresh }),
+        signal: options.signal,
+      })
     ),
   createAccelerationDomain: (
     provider: string,

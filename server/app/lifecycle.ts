@@ -18,6 +18,7 @@ import { loadCredentialKey } from '../core/security/credential-key.js'
 import { createInitialAuthConfig } from '../modules/system/auth/auth-config.repository.js'
 import { JobService } from '../core/jobs/job.service.js'
 import { AuditLog } from '../core/observability/audit-log.js'
+import { installMemoryCache, MemoryCache } from '../core/cache/memory-cache.js'
 
 type AppWorkflows = ReturnType<typeof createWorkflows>
 
@@ -98,7 +99,11 @@ async function initKernel(boot: Boot): Promise<void> {
     jobs: new JobService(),
     // F6：审计权威留痕写日志；内存环形缓冲只为 UI 提供最近事件的查询入口
     audit: new AuditLog((event) => boot.app.log.info({ audit: event }, 'audit')),
+    // 晚绑定闭包：modules 在 initDomains 阶段才装配，请求期读取即可（越序调用会立即抛错）
+    session: (request) => boot.modules.auth.service.authenticate(request),
   }
+  // 供应商查询缓存随本次装配创建：同一进程内重复装配（探针）不会串用上一个实例的条目
+  installMemoryCache(new MemoryCache())
   boot.credentialKey = await loadCredentialKey(boot.config.dataDir)
   boot.initialPassword = await createInitialAuthConfig(boot.config.dataDir)
 }

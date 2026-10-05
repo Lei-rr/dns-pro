@@ -14,7 +14,8 @@ const FALLBACK_LINE_OPTIONS: DnsLineOption[] = [
 export function useDnsRecordsQuery(provider: MaybeRefOrGetter<DnsProviderRef>, zoneId: MaybeRefOrGetter<string>) {
   const query = useResourceQuery<DnsRecord[]>({
     key: () => ['dns', 'records', toValue(provider).id, toValue(provider).type, toValue(zoneId)],
-    queryFn: async ({ refresh }) => (await dnsApi.records(toValue(provider), toValue(zoneId), { refresh })).data,
+    queryFn: async ({ refresh, signal }) =>
+      (await dnsApi.records(toValue(provider), toValue(zoneId), { refresh, signal })).data,
     pageSizeScope: 'dns-records',
   })
 
@@ -43,11 +44,11 @@ export function useDnsLinesQuery(options: {
       toValue(options.provider).type,
       toValue(options.zoneName),
     ],
-    queryFn: async ({ refresh }) => {
+    queryFn: async ({ refresh, signal }) => {
       if (toValue(options.cloudflare)) return []
       try {
         const { items, groups } = (
-          await dnsApi.lines(toValue(options.provider), toValue(options.zoneName), { refresh })
+          await dnsApi.lines(toValue(options.provider), toValue(options.zoneName), { refresh, signal })
         ).data
         return [
           ...items.map((line) => ({ label: line.name, value: line.name, lineId: line.line_id })),
@@ -61,7 +62,6 @@ export function useDnsLinesQuery(options: {
         return []
       }
     },
-    pageSizeScope: 'dns-lines',
     refreshNotice: '',
   })
 

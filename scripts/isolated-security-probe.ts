@@ -105,6 +105,35 @@ try {
   assert.equal(foreignOrigin.statusCode, 403)
   assert.equal(await authed(first.cookie), 200, 'rejected CSRF logout must not revoke the session')
 
+  // 4b. 开发代理（vite changeOrigin）：Host 被改写成后端地址，Origin 仍是前端地址。
+  // 浏览器对写请求必带 Origin，此时只有 sec-fetch-site: same-origin 能证明同源，必须放行，
+  // 否则 README 记载的 5173 + 3022 开发流程下登录与全部写请求都会被误判成跨站（403 csrf_rejected）
+  const proxiedWrite = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: {
+      cookie: first.cookie,
+      origin: 'http://127.0.0.1:5173',
+      host: '127.0.0.1:3022',
+      'sec-fetch-site': 'same-origin',
+    },
+    payload: { id: 'proxied', type: 'dnspod', secret_id: 'proxied-id', secret_key: 'proxied-key' },
+  })
+  assert.ok(
+    [200, 201].includes(proxiedWrite.statusCode),
+    `Host 被代理改写时同源写请求必须放行，实际 ${proxiedWrite.statusCode}: ${proxiedWrite.body}`
+  )
+
+  // 没有浏览器同源声明时不得放宽：Origin 与 Host 不一致仍按跨站拒绝
+  const spoofedHost = await app.inject({
+    method: 'POST',
+    url: '/api/providers',
+    headers: { cookie: first.cookie, origin: 'http://127.0.0.1:5173', host: '127.0.0.1:3022' },
+    payload: { id: 'spoofed', type: 'dnspod', secret_id: 'spoofed-id', secret_key: 'spoofed-key' },
+  })
+  assert.equal(spoofedHost.statusCode, 403, '缺少同源声明时不得只凭 Origin/Host 不一致放行')
+  assert.equal(spoofedHost.json().code, 'csrf_rejected')
+
   // 5. 上游路径注入：记录 ID 为 .. 时绝不能发出「删除站点」请求
   await app.inject({
     method: 'POST',

@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../core/http/api-response.js'
-import { trimmedParam } from '../../core/http/route-params.js'
 import type { RequestOf } from '../../core/http/request-schema.js'
 import { auditActor } from '../../core/observability/audit-log.js'
 import {
@@ -33,7 +32,7 @@ export async function deleteEdgeOneDomainHandler(
   const result = await request.server.ctx.workflows.edgeOneDnsSync.deleteAccelerationDomain(
     request.params.providerId,
     request.params.zoneId,
-    trimmedParam(request, 'domainName'),
+    request.params.domainName,
     request.query.auto_cleanup === undefined || request.query.auto_cleanup === 'true'
   )
   return reply.send(success(result))
@@ -46,7 +45,7 @@ export async function repairEdgeOneDomainDnsHandler(
   const result = await request.server.ctx.workflows.edgeOneDnsSync.repairDomainDns(
     request.params.providerId,
     request.params.zoneId,
-    trimmedParam(request, 'domainName')
+    request.params.domainName
   )
   return reply.send(success(result))
 }
@@ -62,7 +61,7 @@ export async function createEdgeOneBatchDisableHandler(
   })
   request.server.ctx.platform.audit.record({
     action: 'batch',
-    actor: await auditActor(request),
+    actor: auditActor(request),
     target: `edgeone:${request.params.providerId}/${request.params.zoneId}`,
     detail: { operation: 'disable', job_id: result.id, domains: request.body.domains.length },
   })
@@ -81,7 +80,7 @@ export async function createEdgeOneBatchDeleteHandler(
   })
   request.server.ctx.platform.audit.record({
     action: 'batch',
-    actor: await auditActor(request),
+    actor: auditActor(request),
     target: `edgeone:${request.params.providerId}/${request.params.zoneId}`,
     detail: { operation: 'delete', job_id: result.id, domains: request.body.domains.length },
   })

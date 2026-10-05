@@ -1,3 +1,5 @@
+import type { BadgeVariants } from '@/shared/ui/badge'
+
 const GREEN = new Set(['active', 'active_renewing', 'moved'])
 const GOLD = new Set(['pending', 'pending_validation', 'pending_issuance', 'pending_deployment', 'initializing'])
 const RED = new Set(['deleted', 'blocked', 'pending_deletion', 'deactivated'])
@@ -30,9 +32,7 @@ export function statusLabel(status?: string | null) {
   return STATUS_LABELS[String(status).toLowerCase()] || '状态未知'
 }
 
-export function statusVariant(
-  status?: string | null
-): 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning' {
+export function statusVariant(status?: string | null): NonNullable<BadgeVariants['variant']> {
   if (!status) return 'outline'
   // 与 statusLabel 同一口径：上游可能返回大写/混合大小写状态
   const key = String(status).toLowerCase()

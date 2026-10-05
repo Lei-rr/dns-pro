@@ -1,3 +1,5 @@
+import type { BadgeVariants } from '@/shared/ui/badge'
+
 export function edgeOneStatusLabel(status?: string) {
   const key = String(status || '').toLowerCase()
   return (
@@ -50,7 +52,8 @@ export function edgeOneHttpsStatusLabel(certificate?: {
   return status ? certificateStatusLabel(status) : '已开启'
 }
 
-type BadgeVariant = 'default' | 'secondary' | 'outline' | 'destructive' | 'success' | 'warning'
+/** 徽章色与 Badge 组件的变体同源，避免手抄联合类型随组件增删而漂移（cva 的变体含 null/undefined，此处收窄） */
+type BadgeVariant = NonNullable<BadgeVariants['variant']>
 
 /** 状态 → 徽章色：与 edgeOneStatusLabel/certificateStatusLabel 的词表对齐 */
 const STATUS_VARIANTS: Record<string, BadgeVariant> = {

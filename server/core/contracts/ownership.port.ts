@@ -37,11 +37,33 @@ export function normalizeOwnershipHost(value: unknown): string {
   return normalizeFqdn(value).replace(/\.+$/, '')
 }
 
+/**
+ * 主机名 → 声明列表的索引，按 claims 数组实例缓存。
+ * 写流水线会拿同一批 claims 逐个目标主机名查询，不建索引就是 O(目标数 × claims数) 的重复归一；
+ * 约定：claims 数组构造完成后不再原地修改（调用方每次查询都重新构造）。
+ */
+const claimIndexes = new WeakMap<readonly RecordOwnership[], Map<string, RecordOwnership[]>>()
+
+function indexClaims(claims: readonly RecordOwnership[]): Map<string, RecordOwnership[]> {
+  const cached = claimIndexes.get(claims)
+  if (cached) return cached
+  const index = new Map<string, RecordOwnership[]>()
+  for (const claim of claims) {
+    const host = normalizeOwnershipHost(claim.fqdn)
+    if (host === '') continue
+    const bucket = index.get(host)
+    if (bucket) bucket.push(claim)
+    else index.set(host, [claim])
+  }
+  claimIndexes.set(claims, index)
+  return index
+}
+
 /** 主机名归属：未命中派生关系 → manual */
 export function ownerOf(claims: readonly RecordOwnership[], fqdn: string): { owner: RecordOwner; refId: string } {
   const host = normalizeOwnershipHost(fqdn)
   if (host === '') return { owner: 'manual', refId: '' }
-  const claim = claims.find((item) => normalizeOwnershipHost(item.fqdn) === host)
+  const claim = indexClaims(claims).get(host)?.[0]
   return claim ? { owner: claim.owner, refId: claim.refId } : { owner: 'manual', refId: '' }
 }
 
@@ -53,5 +75,9 @@ export function ownershipConflict(
 ): RecordOwnership | null {
   const host = normalizeOwnershipHost(fqdn)
   if (host === '') return null
-  return claims.find((item) => normalizeOwnershipHost(item.fqdn) === host && item.owner !== declared) ?? null
+  return (
+    indexClaims(claims)
+      .get(host)
+      ?.find((item) => item.owner !== declared) ?? null
+  )
 }

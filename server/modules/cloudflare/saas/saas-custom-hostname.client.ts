@@ -16,8 +16,20 @@ import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import { callProvider, collectNumberedPages } from '../../../core/providers/provider-call.js'
 import { CLOUDFLARE_PAGE_LIMIT } from '../cloudflare-pagination.js'
+import { CLOUDFLARE_PROVIDER_TYPE } from '../cloudflare.cache.js'
 import { providerOptionalString, providerString } from '../../../core/providers/provider-values.js'
 import { asRecord, asRecordArray } from '../../../core/providers/response-guards.js'
+
+/** 变更动作 → 错误码；模板拼接的码无法静态穷举，集中声明为映射常量供架构守卫 ARCH028 收集 */
+const SAAS_HOSTNAME_ACTION_ERROR_CODES = {
+  list: 'saas_hostname_list_failed',
+  show: 'saas_hostname_show_failed',
+  create: 'saas_hostname_create_failed',
+  update: 'saas_hostname_update_failed',
+  delete: 'saas_hostname_delete_failed',
+} as const
+
+type SaasHostnameAction = keyof typeof SAAS_HOSTNAME_ACTION_ERROR_CODES
 
 interface DcvDelegationRecord {
   cname: string
@@ -90,7 +102,7 @@ export class SaaSCustomHostnameClient {
     refresh = false
   ): Promise<CloudflareCustomHostname> {
     const cached = await withProviderCache<CloudflareCustomHostname>({
-      key: `cloudflare:custom_hostname:${cloudflareProviderId}:${zoneId}:${hostnameId}`,
+      key: `${CLOUDFLARE_PROVIDER_TYPE}:custom_hostname:${cloudflareProviderId}:${zoneId}:${hostnameId}`,
       tags: [providerCacheTag(cloudflareProviderId), customHostnameDetailsCacheTag(cloudflareProviderId, zoneId)],
       refresh,
       loader: async () => {
@@ -163,7 +175,7 @@ export class SaaSCustomHostnameClient {
     refresh: boolean
   ): Promise<CloudflarePage<CloudflareCustomHostname>> {
     const cached = await withProviderCache<CloudflarePage<CloudflareCustomHostname>>({
-      key: `cloudflare:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`,
+      key: `${CLOUDFLARE_PROVIDER_TYPE}:custom_hostnames:${cloudflareProviderId}:${zoneId}:${page}:${perPage}`,
       tags: [providerCacheTag(cloudflareProviderId), customHostnameListCacheTag(cloudflareProviderId, zoneId)],
       refresh,
       loader: async () => {
@@ -190,14 +202,14 @@ export class SaaSCustomHostnameClient {
 
   private async call<T>(
     cloudflareProviderId: string,
-    action: 'list' | 'show' | 'create' | 'update' | 'delete',
+    action: SaasHostnameAction,
     details: Record<string, unknown>,
     fn: (client: CloudflareClient) => Promise<T>
   ): Promise<T> {
     const { client } = await this.access.forProvider(cloudflareProviderId)
     return callProvider(
       {
-        code: `saas_hostname_${action}_failed`,
+        code: SAAS_HOSTNAME_ACTION_ERROR_CODES[action],
         message: `Cloudflare custom hostname ${action} failed`,
         providerId: cloudflareProviderId,
         details,

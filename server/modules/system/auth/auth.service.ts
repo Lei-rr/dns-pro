@@ -91,7 +91,7 @@ export class AuthService {
     }
     // 两项都比较，避免短路造成时序差异
     const userOk = safeEqual(state.username, username)
-    const passOk = this.matches(state, password)
+    const passOk = await this.matches(state, password)
     if (!userOk || !passOk) {
       this.recordFailure(clientIp)
       throw new ApiError('invalid_credentials', '用户名或密码不正确', 401)
@@ -118,7 +118,7 @@ export class AuthService {
   ): Promise<SessionState> {
     this.assertNotLocked(clientIp)
     const state = await this.repository.read()
-    if (!this.matches(state, currentPassword)) {
+    if (!(await this.matches(state, currentPassword))) {
       // 与登录共用失败计数：持有会话者也不能无限猜测当前密码
       this.recordFailure(clientIp)
       throw new ApiError('invalid_credentials', '当前密码不正确', 401)
@@ -165,7 +165,7 @@ export class AuthService {
     const isDefault =
       current.plaintext !== null
         ? safeEqual(current.plaintext, DEFAULT_PASSWORD)
-        : verifyPassword(DEFAULT_PASSWORD, current.credential)
+        : await verifyPassword(DEFAULT_PASSWORD, current.credential)
     // 仅密码变更时新增键，容量有限
     if (this.defaultCredentialCache.size > 8) this.defaultCredentialCache.clear()
     this.defaultCredentialCache.set(current.credential, isDefault)
@@ -227,8 +227,10 @@ export class AuthService {
     }
   }
 
-  private matches(state: AuthState, password: string): boolean {
-    return state.plaintext !== null ? safeEqual(state.plaintext, password) : verifyPassword(password, state.credential)
+  private async matches(state: AuthState, password: string): Promise<boolean> {
+    return state.plaintext !== null
+      ? safeEqual(state.plaintext, password)
+      : await verifyPassword(password, state.credential)
   }
 
   private async hashAndReload(): Promise<AuthState> {

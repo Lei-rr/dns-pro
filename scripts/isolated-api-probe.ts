@@ -773,15 +773,15 @@ try {
       autoSync: true,
     })
     await app.ctx.platform.jobs.drain()
-    const stagedFailed = await app.ctx.workflows.saasBatch.find(stagedJob.id)
+    const stagedFailed = await app.ctx.workflows.saasBatch.require(stagedJob.id, 'saas-owner')
     assert.equal(stagedFailed?.status, 'failed')
     assert.equal(stagedFailed?.items[0]?.primary_applied, true)
     assert.equal('dns_before_records' in (stagedFailed?.items[0] ?? {}), false)
     const stagedRaw = await app.ctx.platform.jobs.get(stagedJob.id)
     assert.ok(Array.isArray(stagedRaw?.items[0]?.dns_before_records), 'pre-update DNS snapshot was not persisted')
-    await app.ctx.workflows.saasBatch.retryFailed(stagedJob.id)
+    await app.ctx.workflows.saasBatch.retryFailed(stagedJob.id, 'saas-owner')
     await app.ctx.platform.jobs.drain()
-    const stagedRetried = await app.ctx.workflows.saasBatch.find(stagedJob.id)
+    const stagedRetried = await app.ctx.workflows.saasBatch.require(stagedJob.id, 'saas-owner')
     assert.equal(stagedRetried?.status, 'completed')
     assert.equal(stagedRemoteUpdates, 1, 'SaaS batch retry replayed an already-applied remote update')
     assert.equal(stagedCollectCalls, 1, 'SaaS batch retry recollected post-update DNS state')
@@ -1004,7 +1004,13 @@ try {
       item_key: 'internal-item',
     },
   ]
-  const presenterJobs = [
+  const presenterJobs: Array<{
+    type: string
+    payload: Record<string, unknown>
+    url: string
+    /** 另一个服务商下的同族路径：断言归属校验必须 404，且沿用本族 not_found 错误码 */
+    foreign?: { url: string; code: string }
+  }> = [
     {
       type: DNS_BATCH_CREATE_JOB,
       payload: { provider_type: 'cloudflare', provider_id: 'missing', zone: 'example.com' },
@@ -1023,17 +1029,19 @@ try {
     {
       type: SAAS_BATCH_DELETE_JOB,
       payload: { provider_id: 'missing', zone_name: 'example.com' },
-      url: '/api/saas/batch',
+      url: '/api/saas/providers/missing/batch',
+      foreign: { url: '/api/saas/providers/probe-other/batch', code: 'batch_job_not_found' },
     },
     {
       type: SAAS_BATCH_UPDATE_JOB,
       payload: { provider_id: 'missing', zone_name: 'example.com', patch: {} },
-      url: '/api/saas/batch',
+      url: '/api/saas/providers/missing/batch',
     },
     {
       type: PREFERRED_APPLY_JOB,
       payload: { provider_id: 'missing', zone_name: 'example.com', preferred_domain: 'target.example.com' },
-      url: '/api/saas/preferred-apply',
+      url: '/api/saas/providers/missing/preferred-apply',
+      foreign: { url: '/api/saas/providers/probe-other/preferred-apply', code: 'preferred_apply_not_found' },
     },
     {
       type: EDGEONE_BATCH_DISABLE_JOB,
@@ -1057,6 +1065,22 @@ try {
     const response = await app.inject({ method: 'GET', url: `${presenter.url}/${job.id}`, headers: { cookie } })
     assert.equal(response.statusCode, 200, `${presenter.type} presenter status`)
     assertNoBatchInternals(response.json().data, presenter.type)
+    if (presenter.foreign) {
+      const foreignRead = await app.inject({
+        method: 'GET',
+        url: `${presenter.foreign.url}/${job.id}`,
+        headers: { cookie },
+      })
+      assert.equal(foreignRead.statusCode, 404, `${presenter.type} 跨服务商读取必须 404`)
+      assert.equal(foreignRead.json().code, presenter.foreign.code, `${presenter.type} 归属失败须沿用本族错误码`)
+      const foreignRetry = await app.inject({
+        method: 'POST',
+        url: `${presenter.foreign.url}/${job.id}/retry`,
+        headers: { cookie },
+      })
+      assert.equal(foreignRetry.statusCode, 404, `${presenter.type} 跨服务商重试必须 404`)
+      assert.equal(foreignRetry.json().code, presenter.foreign.code, `${presenter.type} 归属失败须沿用本族错误码`)
+    }
   }
 
   const validation = await app.inject({ method: 'POST', url: '/api/providers', headers: { cookie }, payload: {} })

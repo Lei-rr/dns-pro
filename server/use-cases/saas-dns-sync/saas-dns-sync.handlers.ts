@@ -1,6 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../core/http/api-response.js'
-import { trimmedParam } from '../../core/http/route-params.js'
 import type { RequestOf } from '../../core/http/request-schema.js'
 import {
   saasHostnameDeleteSchema,
@@ -15,7 +14,7 @@ export async function createSaaSHostnameHandler(
 ) {
   const result = await request.server.ctx.workflows.saasDnsSync.createHostname(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
+    request.params.zoneName,
     request.body,
     request.query.auto_sync === 'true'
   )
@@ -28,8 +27,8 @@ export async function updateSaaSHostnameHandler(
 ) {
   const result = await request.server.ctx.workflows.saasDnsSync.updateHostname(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
-    trimmedParam(request, 'hostnameFqdn'),
+    request.params.zoneName,
+    request.params.hostnameFqdn,
     request.body,
     request.query.auto_sync === 'true'
   )
@@ -42,8 +41,8 @@ export async function reconcileSaaSHostnameHandler(
 ) {
   const result = await request.server.ctx.workflows.saasDnsSync.reconcileHostname(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
-    trimmedParam(request, 'hostnameFqdn')
+    request.params.zoneName,
+    request.params.hostnameFqdn
   )
   return reply.send(success(result))
 }
@@ -54,8 +53,8 @@ export async function repairSaaSHostnameDnsHandler(
 ) {
   const result = await request.server.ctx.workflows.saasDnsSync.repairHostnameDns(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
-    trimmedParam(request, 'hostnameFqdn')
+    request.params.zoneName,
+    request.params.hostnameFqdn
   )
   return reply.send(success(result))
 }
@@ -66,8 +65,8 @@ export async function deleteSaaSHostnameHandler(
 ) {
   const result = await request.server.ctx.workflows.saasDnsSync.deleteHostname(
     request.params.providerId,
-    trimmedParam(request, 'zoneName'),
-    trimmedParam(request, 'hostnameFqdn'),
+    request.params.zoneName,
+    request.params.hostnameFqdn,
     request.query.auto_cleanup === undefined || request.query.auto_cleanup === 'true'
   )
   return reply.send(success(result))

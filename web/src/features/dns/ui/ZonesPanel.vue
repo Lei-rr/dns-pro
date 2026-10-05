@@ -59,7 +59,7 @@ const canWriteZones = computed(() => props.provider.type !== 'saas')
 
 const zonesQuery = useResourceQuery<Zone[]>({
   key: () => ['dns', 'zones', props.provider.id, props.provider.type],
-  queryFn: async ({ refresh }) => (await dnsApi.zones(props.provider, { refresh })).data || [],
+  queryFn: async ({ refresh, signal }) => (await dnsApi.zones(props.provider, { refresh, signal })).data || [],
   pageSizeScope: 'dns-zones',
 })
 const loading = zonesQuery.loading
@@ -155,6 +155,8 @@ watch(
     resetRowOperations()
     showAdd.value = false
     adding.value = false
+    // 搜索词属于上一个服务商：不清理会让新域名列表被旧关键词过滤成空表
+    keyword.value = ''
     resetPage()
   }
 )

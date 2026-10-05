@@ -3,7 +3,7 @@ import type { SaaSProvider } from '../../../core/providers/provider.types.js'
 import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
-import { guessZoneFromFqdn, zoneOwnsHostname } from './saas-hostname-rules.js'
+import { guessZoneFromFqdn, zoneOwnsHostname, effectivePreferredDomain } from './saas-hostname-rules.js'
 import type { HostnamePreference, SaaSPreferenceService, SyncPreference } from './saas-preference.service.js'
 import { preferenceOf } from './saas-preference.service.js'
 
@@ -143,11 +143,14 @@ export class SaaSSyncConfigService {
     return this.resolve(saasProviderId, fqdn, candidate)
   }
 
-  /** 合并 Cloudflare 主机名与本地偏好；本地偏好优先 */
+  /**
+   * 合并 Cloudflare 主机名与本地偏好；本地偏好优先。
+   * 取值顺序与派生记录侧（effectivePreferredDomain）、前端展示共用同一实现，
+   * 避免同一主机名在「读接口」「DNS 写回」「一键切换」之间出现两个优选域名。
+   */
   mergePreference(hostname: CloudflareCustomHostname, preference: HostnamePreference | null): MergedHostname {
     const metadata = { ...(hostname.custom_metadata ?? {}) }
-    const preferred =
-      text(preference?.preferred_domain) || text(metadata.preferred_domain) || text(hostname.preferred_domain)
+    const preferred = effectivePreferredDomain(hostname, preference)
     if (preferred !== '') metadata.preferred_domain = preferred
 
     return {

@@ -43,7 +43,7 @@ function nextSessionEpoch(value: unknown): number {
 export async function createInitialAuthConfig(dataDir: string): Promise<string | null> {
   await fs.mkdir(dataDir, { recursive: true, mode: 0o700 })
   const password = generatePassword()
-  const initial: AuthConfigData = { auth: { username: 'admin', password_hash: hashPassword(password) } }
+  const initial: AuthConfigData = { auth: { username: 'admin', password_hash: await hashPassword(password) } }
   try {
     await fs.writeFile(path.join(dataDir, CONFIG_FILE), `${JSON.stringify(initial, null, 2)}\n`, {
       flag: 'wx',
@@ -76,13 +76,13 @@ export class AuthConfigRepository {
   async hashPlaintextCredential(): Promise<boolean> {
     const state = await this.read()
     if (!state.plaintext) return false
-    await this.writeCredential(hashPassword(state.plaintext))
+    await this.writeCredential(await hashPassword(state.plaintext))
     return true
   }
 
   /** 写入新密码哈希并吊销既有会话 */
   async setPassword(password: string): Promise<void> {
-    await this.writeCredential(hashPassword(password))
+    await this.writeCredential(await hashPassword(password))
   }
 
   /** 会话代次 +1（保留文件其余内容） */

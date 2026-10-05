@@ -261,22 +261,6 @@
   },
   {
     "method": "GET",
-    "path": "/api/saas/batch/:jobId"
-  },
-  {
-    "method": "POST",
-    "path": "/api/saas/batch/:jobId/retry"
-  },
-  {
-    "method": "GET",
-    "path": "/api/saas/preferred-apply/:jobId"
-  },
-  {
-    "method": "POST",
-    "path": "/api/saas/preferred-apply/:jobId/retry"
-  },
-  {
-    "method": "GET",
     "path": "/api/saas/preferred-domains"
   },
   {
@@ -294,6 +278,22 @@
   {
     "method": "PUT",
     "path": "/api/saas/preferred-domains/sort-order"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/batch/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/batch/:jobId/retry"
+  },
+  {
+    "method": "GET",
+    "path": "/api/saas/providers/:providerId/preferred-apply/:jobId"
+  },
+  {
+    "method": "POST",
+    "path": "/api/saas/providers/:providerId/preferred-apply/:jobId/retry"
   },
   {
     "method": "GET",

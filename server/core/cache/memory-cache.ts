@@ -84,4 +84,18 @@ export class MemoryCache {
   }
 }
 
-export const memoryCache = new MemoryCache()
+/**
+ * 当前进程使用的缓存实例。
+ * 由装配层在启动阶段安装（见 app/lifecycle.ts 的 initKernel）：读路径统一经 activeMemoryCache() 取用，
+ * 不再散落的模块级单例，探针也可以换成自己的隔离实例。
+ */
+let activeInstance = new MemoryCache()
+
+export function activeMemoryCache(): MemoryCache {
+  return activeInstance
+}
+
+/** 安装装配层创建的实例；同一进程内重复装配（探针）会各自从干净缓存开始 */
+export function installMemoryCache(instance: MemoryCache): void {
+  activeInstance = instance
+}

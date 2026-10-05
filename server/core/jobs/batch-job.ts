@@ -8,6 +8,7 @@ import {
   type JobLock,
   type JobRecord,
 } from './job.types.js'
+import { peekResourceKeys, scopeMatchesResourceKeys } from './job-types.js'
 
 /** 批量任务对外视图公共字段 */
 export type BatchJobViewBase = {
@@ -56,11 +57,24 @@ export class BatchJobKind<View> {
     }
   ) {}
 
+  /** 创建路径的互斥锁：payload 必须显式声明 resource_keys（缺失即装配错误，见 readResourceKeys） */
   lock(payload: Record<string, unknown>): JobLock {
+    return this.buildLock(payload, this.options.resourceKeys?.(payload))
+  }
+
+  /**
+   * 重试路径的互斥锁：读到的是历史 payload，早于资源键字段的旧任务同样要能重试，
+   * 因此缺失时退化为 scope 判定而不是抛错（查询/重试都不该因旧数据失败）。
+   */
+  private retryLock(payload: Record<string, unknown>): JobLock {
+    return this.buildLock(payload, peekResourceKeys(payload))
+  }
+
+  private buildLock(payload: Record<string, unknown>, resourceKeys: string[] | undefined): JobLock {
     return {
       types: this.options.lockTypes,
       scope: this.scopeOf(payload),
-      resourceKeys: this.options.resourceKeys?.(payload),
+      resourceKeys,
       message: this.options.lockMessage,
     }
   }
@@ -71,22 +85,40 @@ export class BatchJobKind<View> {
     return job ? this.present(job) : null
   }
 
-  async active(scope: Record<string, string>): Promise<View | null> {
-    const job = await findActiveBatchJob(this.jobs, this.options.lockTypes, scope)
-    return job && this.options.types.includes(job.type) ? this.present(job) : null
+  /** 读取路径的归属校验：不存在与归属不匹配共用同一 not_found 口径，避免探测任务存在性 */
+  async require(id: string, scope: Record<string, string | undefined> = {}): Promise<View> {
+    return this.present(await this.requireRecord(id, scope))
+  }
+
+  /**
+   * 与创建时的互斥判定同口径地查找活跃任务：跨工作流靠资源键对齐，命中即返回（不再按本族 types 过滤，
+   * 否则 DNS 站点上正在跑的 SaaS/EdgeOne 任务查询不到，而创建却会被 409 拒绝）。
+   * queryKeys 是本次查询所代表底层资源的键（各工作流自行解析）：SaaS/EdgeOne 查询里的 provider_id 是
+   * SaaS/EdgeOne 服务商，而任务资源键里带的是被关联的 DNS 服务商，只比 payload 字段会整片漏报。
+   * 展示字段用查询 scope 兜底：其它工作流的 payload 字段名不同（zone_name / zone_id），直接透出会留下空站点。
+   */
+  async active(scope: Record<string, string>, queryKeys: readonly string[] = []): Promise<View | null> {
+    const job = await findActiveBatchJob(this.jobs, this.options.lockTypes, scope, queryKeys)
+    if (!job) return null
+    return this.present({ ...job, payload: { ...scope, ...job.payload } })
   }
 
   /** 失败项重新入队 */
   async retryFailed(id: string, scope: Record<string, string | undefined> = {}): Promise<View> {
-    const job = await this.findRecord(id, scope)
-    if (!job) {
-      throw new ApiError(this.options.notFoundCode ?? 'batch_job_not_found', 'Batch job not found', 404, { job_id: id })
-    }
-    return this.present(await requeueFailedBatchItems(this.jobs, job, this.lock(job.payload)))
+    const job = await this.requireRecord(id, scope)
+    return this.present(await requeueFailedBatchItems(this.jobs, job, this.retryLock(job.payload)))
   }
 
   present(job: JobRecord): View {
     return this.options.present(job, presentBatchJobBase(job))
+  }
+
+  private async requireRecord(id: string, scope: Record<string, string | undefined>): Promise<JobRecord> {
+    const job = await this.findRecord(id, scope)
+    if (!job) {
+      throw new ApiError(this.options.notFoundCode ?? 'batch_job_not_found', 'Batch job not found', 404, { job_id: id })
+    }
+    return job
   }
 
   private async findRecord(id: string, scope: Record<string, string | undefined>): Promise<JobRecord | null> {
@@ -122,20 +154,26 @@ export async function finishBatchJob(jobs: JobService, jobId: string, label: str
   })
 }
 
-/** 在 types 中查找 payload 匹配 scope 的活跃任务 */
+/** 在 types 中查找与 scope 冲突的活跃任务（与 assertNoActiveConflict 同口径，见 matchesLockScope） */
 async function findActiveBatchJob(
   jobs: JobService,
   types: readonly string[],
-  scope: Record<string, string>
+  scope: Record<string, string>,
+  queryKeys: readonly string[]
 ): Promise<JobRecord | null> {
   const active = await jobs.listActive()
-  return (
-    active.find(
-      (job) =>
-        types.includes(job.type) &&
-        Object.entries(scope).every(([key, value]) => String(job.payload?.[key] ?? '') === value)
-    ) ?? null
-  )
+  return active.find((job) => types.includes(job.type) && matchesLockScope(job, scope, queryKeys)) ?? null
+}
+
+/**
+ * 冲突判定：查询侧资源键与任务资源键有交集，或 scope 能对上任务资源键（跨工作流），或 payload 同名字段相等。
+ * 交集判定不解析键内服务商，因此不要求查询的 provider_id 与键内服务商一致。
+ */
+function matchesLockScope(job: JobRecord, scope: Record<string, string>, queryKeys: readonly string[]): boolean {
+  const jobKeys = peekResourceKeys(job.payload)
+  if (queryKeys.length > 0 && jobKeys.some((key) => queryKeys.includes(key))) return true
+  if (scopeMatchesResourceKeys(scope, jobKeys)) return true
+  return Object.entries(scope).every(([key, value]) => String(job.payload?.[key] ?? '') === value)
 }
 
 /** 失败项改回 pending 并重新入队 */

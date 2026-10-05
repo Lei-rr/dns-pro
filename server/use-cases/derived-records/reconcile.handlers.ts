@@ -1,6 +1,7 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../core/http/api-response.js'
 import type { RequestOf } from '../../core/http/request-schema.js'
+import { auditActor } from '../../core/observability/audit-log.js'
 import type { ReconcileScope, SourceKind } from './derived-record.types.js'
 import { reconcileApplySchema, reconcileDetectSchema } from './reconcile.schema.js'
 
@@ -28,9 +29,12 @@ export async function applyReconcileHandler(
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.workflows.reconcile.reconcile(scopeOf(request.body))
-  request.log.info(
-    { audit: { action: 'reconcile', scope: result.scope, summary: result.summary } },
-    'reconcile.executed'
-  )
+  // 全部范围的修复动作留审计：target 无单一资源 id，用范围摘要，完整 scope 与统计放 detail
+  request.server.ctx.platform.audit.record({
+    action: 'reconcile',
+    actor: auditActor(request),
+    target: `derived-records:${result.scope.providerId ?? 'all'}/${result.scope.kind ?? 'all'}`,
+    detail: { scope: result.scope, summary: result.summary },
+  })
   return reply.send(success(result))
 }

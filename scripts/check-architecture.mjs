@@ -64,8 +64,45 @@ function resolveImport(from, specifier) {
   return resolved ? normalize(path.relative(root, resolved)) : null
 }
 
+function propertyNameOf(name) {
+  if (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) return name.text
+  return null
+}
+
+/**
+ * 错误码载体 → 取值表达式：
+ * - new ApiError(...) / wrapProviderError(...) 的首参
+ * - 对象字面量的 code / limitCode / notFoundCode 字段（callProvider 与分页上限走这里）
+ * - `const xxxCode = ...` 局部变量（变量会传给 requireType 一类透传函数）
+ * 其余形态（变量、成员访问、调用结果）静态不可判，由这里返回 null 跳过。
+ */
+function errorCodeValueOf(node) {
+  if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'ApiError')
+    return node.arguments?.[0] ?? null
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'wrapProviderError')
+    return node.arguments?.[0] ?? null
+  if (ts.isPropertyAssignment(node)) {
+    const name = propertyNameOf(node.name)
+    if (name === 'code' || name === 'limitCode' || name === 'notFoundCode') return node.initializer
+  }
+  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+    const name = node.name.text
+    // code / errorCode / limitCode / probeCode 一类命名；全小写的 'unicode' 之类不在此列
+    if (name === 'code' || /Code$/.test(name)) return node.initializer ?? null
+  }
+  return null
+}
+
+/** 模板骨架：插值统一替换为 ${}，保留静态片段（`${source}_provider_not_found` → '${}_provider_not_found'） */
+function templateSkeleton(node) {
+  let text = node.head.text
+  for (const span of node.templateSpans) text += '${}' + span.literal.text
+  return text
+}
+
 const imports = []
 const apiErrorCodes = new Set()
+const errorCodeTemplates = []
 const routeMethods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
 let routeCalls = 0
 let schemaRoutes = 0
@@ -92,15 +129,35 @@ for (const file of sourceFiles) {
         if (target)
           imports.push({ from: file, to: target, typeOnly, line: block.offset + lineAt(block.code, node.getStart(sf)) })
       }
+      // 错误码：字面量直接查中文映射；模板拼码的实际取值随变量变化、静态无法穷举，
+      // 改由下方 errorCodeTemplateAllowlist 的骨架白名单收口（见 ARCH028 校验段）
+      if (file.startsWith('server/')) {
+        const value = errorCodeValueOf(node)
+        if (value && ts.isStringLiteralLike(value)) apiErrorCodes.add(value.text)
+        else if (value && ts.isTemplateExpression(value))
+          errorCodeTemplates.push({
+            skeleton: templateSkeleton(value),
+            file,
+            line: block.offset + lineAt(block.code, node.getStart(sf)),
+          })
+      }
+      // 动态拼接的错误码（如 `${prefix}_${action}_failed`）无法静态穷举，
+      // 因此约定集中声明为 *_ERROR_CODES 映射常量，由这里把每个字面量取值纳入检查
       if (
         file.startsWith('server/') &&
-        ts.isNewExpression(node) &&
-        ts.isIdentifier(node.expression) &&
-        node.expression.text === 'ApiError' &&
-        node.arguments?.[0] &&
-        ts.isStringLiteralLike(node.arguments[0])
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        /_ERROR_CODES$/.test(node.name.text) &&
+        node.initializer
       ) {
-        apiErrorCodes.add(node.arguments[0].text)
+        // `as const` 会把对象字面量包成 AsExpression，先解包再收集属性字面量
+        const initializer = ts.isAsExpression(node.initializer) ? node.initializer.expression : node.initializer
+        if (ts.isObjectLiteralExpression(initializer)) {
+          for (const property of initializer.properties) {
+            if (ts.isPropertyAssignment(property) && ts.isStringLiteralLike(property.initializer))
+              apiErrorCodes.add(property.initializer.text)
+          }
+        }
       }
       if (
         file.startsWith('server/') &&
@@ -348,6 +405,61 @@ const mappedErrorCodes = new Set(
 for (const code of apiErrorCodes) {
   if (!mappedErrorCodes.has(code))
     report('ARCH028', 'server/core/http/error-messages.ts', 1, `missing ApiError message: ${code}`)
+}
+// 模板拼码白名单：模板的实际取值由运行时变量决定（如 `${source}_provider_not_found` 的 source），
+// 静态无法穷举；因此要求每个模板骨架在此显式登记，并列出现有调用点会产生的完整错误码。
+// 登记的展开值必须全部已在 error-messages.ts 登记中文映射，否则中文界面会直出英文。
+// 新增模板、或给模板新增取值来源时校验会失败，必须同步登记；条目不再被任何模板使用同样会失败（防白名单腐烂）。
+const errorCodeTemplateAllowlist = new Map([
+  [
+    '${}_provider_not_found',
+    {
+      // DnsPodAccess.linkedProviderId：source 为 'edgeone' | 'saas'（DnsPodLinkSource），两个取值都已登记
+      expansions: ['edgeone_provider_not_found', 'saas_provider_not_found'],
+    },
+  ],
+  [
+    '${}_dnspod_provider_missing',
+    {
+      // DnsPodAccess.requireLinkedProviderId：source 同上
+      expansions: ['edgeone_dnspod_provider_missing', 'saas_dnspod_provider_missing'],
+    },
+  ],
+  [
+    '${}_fqdn_empty',
+    {
+      // DnsPodZoneCatalog.resolve：errorCodePrefix 目前只有 'saas'（coordinator / planner 调用点）
+      expansions: ['saas_fqdn_empty'],
+    },
+  ],
+  [
+    '${}_dnspod_zone_not_found',
+    {
+      // DnsPodZoneCatalog.resolve / requireExplicit：errorCodePrefix 目前只有 'saas'
+      expansions: ['saas_dnspod_zone_not_found'],
+    },
+  ],
+])
+for (const template of errorCodeTemplates) {
+  const entry = errorCodeTemplateAllowlist.get(template.skeleton)
+  if (!entry) {
+    report('ARCH028', template.file, template.line, `unregistered error-code template: ${template.skeleton}`)
+    continue
+  }
+  for (const code of entry.expansions) {
+    if (!mappedErrorCodes.has(code))
+      report(
+        'ARCH028',
+        'server/core/http/error-messages.ts',
+        1,
+        `error-code template ${template.skeleton} expands to unmapped code: ${code}`
+      )
+  }
+}
+const usedErrorCodeTemplates = new Set(errorCodeTemplates.map((template) => template.skeleton))
+for (const skeleton of errorCodeTemplateAllowlist.keys()) {
+  if (!usedErrorCodeTemplates.has(skeleton))
+    report('ARCH028', 'scripts/check-architecture.mjs', 1, `stale error-code template whitelist entry: ${skeleton}`)
 }
 for (const file of backendFiles)
   if (/\bapp\.(?:get|post|put|patch|delete|head|options)\s*\(/.test(read(file)) && !file.endsWith('.routes.ts'))

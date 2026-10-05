@@ -11,6 +11,19 @@ import {
   dnsZoneParamsSchema,
 } from './dns-batch.schema.js'
 
+/** 三个批量入队入口共用同一审计形状：目标定位到服务商 + 站点，detail 记录操作与条目数 */
+function recordBatchAudit(
+  request: FastifyRequest<RequestOf<typeof dnsZoneParamsSchema>>,
+  input: { providerType: DnsProviderType; operation: string; jobId: string; count: number }
+): void {
+  request.server.ctx.platform.audit.record({
+    action: 'batch',
+    actor: auditActor(request),
+    target: `${input.providerType}:${request.params.providerId}/${request.params.zone}`,
+    detail: { operation: input.operation, job_id: input.jobId, records: input.count },
+  })
+}
+
 export function createDnsBatchHandler(providerType: DnsProviderType) {
   return async function createDnsBatch(
     request: FastifyRequest<RequestOf<typeof dnsBatchCreateSchema>>,
@@ -22,11 +35,11 @@ export function createDnsBatchHandler(providerType: DnsProviderType) {
       zone: request.params.zone,
       records: request.body.records,
     })
-    request.server.ctx.platform.audit.record({
-      action: 'batch',
-      actor: await auditActor(request),
-      target: `${providerType}:${request.params.providerId}/${request.params.zone}`,
-      detail: { operation: 'create', job_id: result.id, records: request.body.records.length },
+    recordBatchAudit(request, {
+      providerType,
+      operation: 'create',
+      jobId: result.id,
+      count: request.body.records.length,
     })
     return reply.status(201).send(success(result))
   }
@@ -43,11 +56,11 @@ export function deleteDnsBatchHandler(providerType: DnsProviderType) {
       zone: request.params.zone,
       records: request.body.records,
     })
-    request.server.ctx.platform.audit.record({
-      action: 'batch',
-      actor: await auditActor(request),
-      target: `${providerType}:${request.params.providerId}/${request.params.zone}`,
-      detail: { operation: 'delete', job_id: result.id, records: request.body.records.length },
+    recordBatchAudit(request, {
+      providerType,
+      operation: 'delete',
+      jobId: result.id,
+      count: request.body.records.length,
     })
     return reply.status(201).send(success(result))
   }
@@ -65,11 +78,11 @@ export function updateDnsBatchHandler(providerType: DnsProviderType) {
       records: request.body.records,
       patch: request.body.patch,
     })
-    request.server.ctx.platform.audit.record({
-      action: 'batch',
-      actor: await auditActor(request),
-      target: `${providerType}:${request.params.providerId}/${request.params.zone}`,
-      detail: { operation: 'update', job_id: result.id, records: request.body.records.length },
+    recordBatchAudit(request, {
+      providerType,
+      operation: 'update',
+      jobId: result.id,
+      count: request.body.records.length,
     })
     return reply.status(201).send(success(result))
   }

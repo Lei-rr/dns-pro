@@ -71,7 +71,7 @@ const created = await batch.createDelete({
   autoCleanup: true,
 })
 await jobs.drain()
-const failed = await batch.find(created.id)
+const failed = await batch.require(created.id, 'saas-owner')
 assert.equal(failed?.status, 'failed')
 assert.equal(cleanupRecipeRecordedBeforePrimary, true, 'cleanup recipe was not recorded before primary delete')
 assert.equal(primaryDeleteRecordedBeforeCleanup, true, 'primary delete stage was not recorded before DNS cleanup')
@@ -85,7 +85,7 @@ assert.equal('cleanup_recipe' in (failed?.items[0] ?? {}), false, '内部清理�
 
 await batch.retryFailed(created.id)
 await jobs.drain()
-const retried = await batch.find(created.id)
+const retried = await batch.require(created.id, 'saas-owner')
 assert.equal(retried?.status, 'completed')
 assert.equal(retried?.items[0]?.dns_cleanup_status, 'completed')
 assert.equal(primaryDeletes, 1, 'retry replayed an already-completed SaaS hostname delete')

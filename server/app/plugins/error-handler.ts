@@ -2,6 +2,10 @@ import type { FastifyError, FastifyPluginAsync, FastifySchemaValidationError } f
 import fp from 'fastify-plugin'
 import { ApiError } from '../../core/http/api-error.js'
 import { error } from '../../core/http/api-response.js'
+import { translateError } from '../../core/http/error-messages.js'
+
+/** 5xx 未登记中文文案时的兜底文案：绝不透出原始 message（可能含文件路径、上游响应、底层库报错文本） */
+const GENERIC_SERVER_ERROR_MESSAGE = '服务暂时不可用，请稍后重试'
 
 /** 对外暴露的 details 字段白名单；上游原始响应、文件路径等只写日志 */
 const PUBLIC_DETAIL_KEYS = new Set([
@@ -90,8 +94,9 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
     else request.log.warn(err)
 
     if (err instanceof ApiError) {
-      // 5xx 的内部细节（文件路径、上游响应）不返回给客户端
-      const message = status >= 500 && err.code === 'server_error' ? 'server_error' : err.message
+      // 5xx 一律不透出原始 message：优先用错误码已登记的中文文案，未登记则用通用文案。
+      // 只按 code 走白名单式文案（文案由本仓库维护），新增 5xx 错误码默认就是安全的
+      const message = status >= 500 ? (translateError(err.code) ?? GENERIC_SERVER_ERROR_MESSAGE) : err.message
       return reply.status(status).send(error(message, status, err.code, publicDetails(err.details)))
     }
     if (err.code === 'FST_ERR_VALIDATION') {

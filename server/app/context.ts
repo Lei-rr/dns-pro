@@ -1,12 +1,18 @@
-import type { FastifyBaseLogger } from 'fastify'
+import type { FastifyBaseLogger, FastifyRequest } from 'fastify'
 import type { AppConfig } from './config.js'
 import type { AppModules } from './modules.js'
 import { createWorkflows } from './use-cases.js'
 import type { JobService } from '../core/jobs/job.service.js'
 import type { AuditLog } from '../core/observability/audit-log.js'
 
-/** 平台设施：单进程内存任务执行器 + 关键操作审计（F6） */
-export type AppPlatform = { jobs: JobService; audit: AuditLog }
+/** 平台设施：单进程内存任务执行器 + 关键操作审计（F6）+ 只读会话判定 */
+export type AppPlatform = { jobs: JobService; audit: AuditLog; session: SessionProbe }
+
+/**
+ * 只读会话判定：由装配层注入（app → modules）。
+ * modules 之间禁止互相引用，需要「当前请求是否已登录」时统一走这里。
+ */
+type SessionProbe = (request: FastifyRequest) => Promise<string | null>
 
 /** 装配完成的运行上下文：config / platform / modules / workflows 四层 */
 export type AppContext = {

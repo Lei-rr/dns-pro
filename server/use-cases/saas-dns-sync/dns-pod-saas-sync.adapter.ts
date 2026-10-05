@@ -20,7 +20,6 @@ import {
   saasDnsPodProviderId,
   syncRemark,
   type SaaSDnsPodTargetDeps,
-  type SaaSDnsTarget,
   type SaaSSyncRecord,
 } from '../derived-records/planners/saas.planner.js'
 import { deleteRemovedRecords, saasTargetRecords, type SaaSSyncAdapter } from './saas-sync-records.js'
@@ -82,7 +81,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     const hostname = await this.hostnames.showHostname(providerId, cfZoneName, hostnameFqdn, true)
     const fqdn = requireFqdn(hostname)
     const target = await optionalDnsPodSaasTarget(this.target, providerId, hostname, fqdn)
-    if ('reason' in target) return { cleaned: 0, records: [], deleted: [], reason: target.reason }
+    if (!target.ok) return { cleaned: 0, records: [], deleted: [], reason: target.reason }
 
     const origin = requireBusinessTarget(await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
     const afterRecords = saasTargetRecords('dnspod', hostname, target, origin)
@@ -133,7 +132,7 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     if (!fqdn) return { cleaned: 0, reason: 'fqdn_missing' }
 
     const target = await optionalDnsPodSaasTarget(this.target, providerId, current, fqdn)
-    if ('reason' in target) return { cleaned: 0, reason: target.reason }
+    if (!target.ok) return { cleaned: 0, reason: target.reason }
     const deleted = await this.writer.sync('dnspod', target.providerId, target.zone, [
       cleanupDesired(
         desiredRecord({
@@ -167,9 +166,9 @@ export class DnsPodSaaSSyncAdapter implements SaaSSyncAdapter {
     if (dnspodProviderId === '') return { hostname_fqdn: fqdn, records: [] }
 
     const target = await optionalDnsPodSaasTarget(this.target, providerId, hostname, fqdn)
-    const resolved: SaaSDnsTarget =
-      'reason' in target ? { providerType: 'dnspod', providerId: dnspodProviderId, zone: '' } : target
+    // 域名未匹配到 DNSPod 站点：同样返回空快照，不写入无站点归属的记录
+    if (!target.ok) return { hostname_fqdn: fqdn, records: [] }
     const origin = await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname)
-    return { hostname_fqdn: fqdn, records: saasTargetRecords('dnspod', hostname, resolved, origin, true) }
+    return { hostname_fqdn: fqdn, records: saasTargetRecords('dnspod', hostname, target, origin, true) }
   }
 }

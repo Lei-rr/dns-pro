@@ -23,7 +23,7 @@ const keyword = ref('')
 
 const zonesQuery = useResourceQuery<EdgeOneZone[]>({
   key: () => ['edgeone', 'zones', props.providerId],
-  queryFn: async ({ refresh }) => (await edgeOneApi.zones(props.providerId, { refresh })).data || [],
+  queryFn: async ({ refresh, signal }) => (await edgeOneApi.zones(props.providerId, { refresh, signal })).data || [],
   pageSizeScope: 'edgeone-zones',
 })
 const loading = zonesQuery.loading

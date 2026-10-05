@@ -1,8 +1,8 @@
 import crypto from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 
-/** 审计动作（§4.3 F6）：批量 / 凭据变更 / 会话吊销 */
-type AuditAction = 'batch' | 'credential_change' | 'session_revoked'
+/** 审计动作（§4.3 F6）：批量 / 凭据变更 / 会话吊销 / 派生记录对账 */
+export type AuditAction = 'batch' | 'credential_change' | 'session_revoked' | 'reconcile'
 
 export interface AuditEvent {
   id: string
@@ -20,7 +20,7 @@ type AuditInput = { action: AuditAction; actor?: string; target: string; detail?
 const DEFAULT_CAPACITY = 200
 
 /**
- * §5 可观测性：关键操作审计（批量 / 凭据变更 / 会话吊销）。
+ * §5 可观测性：关键操作审计（批量 / 凭据变更 / 会话吊销 / 派生记录对账）。
  *
  * 权威留痕是日志（sink 写入 pino）；内存环形缓冲只为 UI 提供"可查入口"，
  * 不做持久化（不引入审计落盘表——蓝图边界内）。

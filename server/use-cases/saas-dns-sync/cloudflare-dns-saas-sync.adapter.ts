@@ -1,7 +1,7 @@
 import { ApiError } from '../../core/http/api-error.js'
 import type { CloudflareZoneService } from '../../modules/cloudflare/cloudflare-zone.service.js'
 import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
-import { isHostnameActive } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
+import { effectivePreferredDomain, isHostnameActive } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
 import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
 import type { SaaSSyncConfigService } from '../../modules/cloudflare/saas/saas-sync-config.service.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
@@ -178,7 +178,7 @@ export class CloudflareDnsSaaSSyncAdapter implements SaaSSyncAdapter {
     hostname: CloudflareCustomHostname,
     required: boolean
   ) {
-    const preferred = String(hostname.custom_metadata?.preferred_domain ?? hostname.preferred_domain ?? '').trim()
+    const preferred = effectivePreferredDomain(hostname)
     const target = preferred || (await resolveEffectiveOrigin(this.hostnames, providerId, cfZoneName, hostname))
     return required ? requireBusinessTarget(target) : target
   }

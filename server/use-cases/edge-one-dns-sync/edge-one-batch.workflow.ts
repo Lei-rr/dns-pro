@@ -68,8 +68,20 @@ export class EdgeOneBatchWorkflow {
     return this.kind.find(id, { provider_id: providerId })
   }
 
-  active(providerId: string, zoneId: string) {
-    return this.kind.active({ provider_id: providerId, zone_id: zoneId })
+  async active(providerId: string, zoneId: string) {
+    // 只比 EdgeOne 站点键会漏掉 DNS 批量：查询的 provider_id 是 EdgeOne 服务商，
+    // 而删除路径还会写关联 DNSPod 域名的记录，资源键里带的是那个 DNS 服务商
+    return this.kind.active(
+      { provider_id: providerId, zone_id: zoneId },
+      await this.zoneResourceKeys(providerId, zoneId)
+    )
+  }
+
+  /** 站点级资源键：加速域名清单（带缓存）→ EdgeOne 站点 + 各域名匹配到的 DNSPod 域名 */
+  private async zoneResourceKeys(providerId: string, zoneId: string): Promise<string[]> {
+    const listing = await this.domains.accelerationDomains(providerId, zoneId).catch(() => null)
+    const domains = (listing?.items ?? []).map((item) => String(item.name ?? '')).filter(Boolean)
+    return this.dnsSync.resourceKeys(providerId, zoneId, domains)
   }
 
   retryFailed(id: string, providerId?: string) {

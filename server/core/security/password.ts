@@ -14,15 +14,33 @@ export function generatePassword(length = 16): string {
   return password
 }
 
+/**
+ * 异步 scrypt：算法本身仍在 libuv 线程池执行，但同步版本会让事件循环停等数十毫秒，
+ * 登录/校验高峰期会阻塞其它请求，故统一走回调形式并包成 Promise。
+ */
+function scryptAsync(
+  password: string,
+  salt: Buffer,
+  keylen: number,
+  params: { N: number; r: number; p: number }
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, keylen, params, (failure, derived) => {
+      if (failure) reject(failure)
+      else resolve(derived)
+    })
+  })
+}
+
 /** 生成自描述哈希：scrypt$N$r$p$salt$hash（参数变更后可平滑升级） */
-export function hashPassword(password: string): string {
+export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(SALT_BYTES)
-  const derived = crypto.scryptSync(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p })
+  const derived = await scryptAsync(password, salt, SCRYPT.keylen, SCRYPT)
   return [PREFIX, SCRYPT.N, SCRYPT.r, SCRYPT.p, salt.toString('base64'), derived.toString('base64')].join('$')
 }
 
 /** 校验密码；哈希格式非法时返回 false 而不是抛错 */
-export function verifyPassword(password: string, stored: string): boolean {
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split('$')
   if (parts.length !== 6 || parts[0] !== PREFIX) return false
   const [, n, r, p, saltPart, hashPart] = parts as [string, string, string, string, string, string]
@@ -30,7 +48,7 @@ export function verifyPassword(password: string, stored: string): boolean {
   if (!Number.isInteger(params.N) || !Number.isInteger(params.r) || !Number.isInteger(params.p)) return false
   try {
     const expected = Buffer.from(hashPart, 'base64')
-    const derived = crypto.scryptSync(password, Buffer.from(saltPart, 'base64'), expected.length, params)
+    const derived = await scryptAsync(password, Buffer.from(saltPart, 'base64'), expected.length, params)
     return crypto.timingSafeEqual(derived, expected)
   } catch {
     return false

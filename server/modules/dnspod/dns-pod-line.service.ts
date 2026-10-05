@@ -3,11 +3,11 @@ import { providerCacheTag, recordLineCacheTag, withProviderCache } from '../../c
 import { callProvider } from '../../core/providers/provider-call.js'
 import { asRecordArray } from '../../core/providers/response-guards.js'
 import { providerOptionalString, providerString } from '../../core/providers/provider-values.js'
+import { toAsciiFqdn } from '../../shared/values.js'
 import { dnsPodClientFor } from './dns-pod.client.js'
+import { DNSPOD_PROVIDER_TYPE } from './dns-pod.cache.js'
 import { dnspodRecordLineListResponseSchema } from './dns-pod-response.schema.js'
 import type { DnsPodZoneService } from './dns-pod-zone.service.js'
-
-const PROVIDER_TYPE = 'dnspod'
 
 interface DnsPodLine {
   name: string
@@ -36,8 +36,8 @@ export class DnsPodLineService {
   async lines(providerId: string, zone: string, refresh = false): Promise<DnsPodLineListResult> {
     const domain = zone.toLowerCase().trim()
     const cached = await withProviderCache<DnsPodLineListResult>({
-      key: `${PROVIDER_TYPE}:lines:${providerId}:${domain}`,
-      tags: [providerCacheTag(providerId), recordLineCacheTag(PROVIDER_TYPE, providerId, domain)],
+      key: `${DNSPOD_PROVIDER_TYPE}:lines:${providerId}:${domain}`,
+      tags: [providerCacheTag(providerId), recordLineCacheTag(DNSPOD_PROVIDER_TYPE, providerId, domain)],
       refresh,
       loader: () => this.fetchLines(providerId, domain),
     })
@@ -67,7 +67,9 @@ export class DnsPodLineService {
   /** 线路查询需要域名套餐等级；取不到时由上游自行判断 */
   private async zoneGrade(providerId: string, domain: string): Promise<string> {
     const zones = await this.zones.list(providerId)
-    return zones.items.find((item) => item.name.toLowerCase() === domain)?.grade ?? ''
+    // IDN 域名同时返回 Unicode 名与 punycode：统一取 ASCII 形态，否则与请求域名匹配不上而丢掉套餐等级
+    const ascii = toAsciiFqdn(domain)
+    return zones.items.find((item) => toAsciiFqdn(item.punycode || item.name) === ascii)?.grade ?? ''
   }
 }
 

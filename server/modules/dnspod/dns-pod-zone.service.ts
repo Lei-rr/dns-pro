@@ -3,7 +3,6 @@ import { providerCacheTag, withProviderCache, zoneCacheTag } from '../../core/ca
 import {
   callProvider,
   collectOffsetPages,
-  parseUpstreamTotal,
   TENCENT_PAGE_SIZE,
   toFullListResult,
 } from '../../core/providers/provider-call.js'
@@ -13,7 +12,7 @@ import {
   providerOptionalString,
   providerString,
 } from '../../core/providers/provider-values.js'
-import { invalidateDnsPodZoneCache } from './dns-pod.cache.js'
+import { DNSPOD_PROVIDER_TYPE, invalidateDnsPodZoneCache } from './dns-pod.cache.js'
 import { DnsPodClient, dnsPodClientFor } from './dns-pod.client.js'
 import {
   dnspodDomainCreateResponseSchema,
@@ -23,8 +22,6 @@ import {
   dnspodMutationResponseSchema,
   type DnsPodDomain,
 } from './dns-pod-response.schema.js'
-
-const PROVIDER_TYPE = 'dnspod'
 
 interface ZoneListFilters {
   refresh?: boolean
@@ -59,8 +56,8 @@ export class DnsPodZoneService {
 
   async list(providerId: string, filters: ZoneListFilters = {}): Promise<ZoneListResult> {
     const cached = await withProviderCache<ZoneListResult>({
-      key: { prefix: `${PROVIDER_TYPE}:zones`, parts: { provider_id: providerId } },
-      tags: [providerCacheTag(providerId), zoneCacheTag(PROVIDER_TYPE, providerId)],
+      key: { prefix: `${DNSPOD_PROVIDER_TYPE}:zones`, parts: { provider_id: providerId } },
+      tags: [providerCacheTag(providerId), zoneCacheTag(DNSPOD_PROVIDER_TYPE, providerId)],
       refresh: filters.refresh ?? false,
       loader: () => this.fetchAll(providerId),
     })
@@ -120,7 +117,6 @@ export class DnsPodZoneService {
         return {
           items: (parsed.DomainList as unknown[]).map((zone) => presentZone(dnspodDomainSchema.parse(zone))),
           sourceCount: Number(parsed.SourceCount ?? 0),
-          total: parseUpstreamTotal(parsed.DomainCountInfo?.DomainTotal),
           requestId: parsed.RequestId,
         }
       },
@@ -151,7 +147,8 @@ function presentZone(zone: DnsPodDomain): ZoneListItem {
     record_count: providerFiniteNumber(zone.RecordCount),
     ttl: providerFiniteNumber(zone.TTL),
     remark: providerString(zone.Remark),
-    effective_dns: (zone.EffectiveDNS as unknown[]).filter((value): value is string => typeof value === 'string'),
+    // dnspodDomainSchema 已把 EffectiveDNS 归一为字符串数组，这里不再重复过滤
+    effective_dns: zone.EffectiveDNS as string[],
     created_on: providerString(zone.CreatedOn),
     updated_on: providerString(zone.UpdatedOn),
   }

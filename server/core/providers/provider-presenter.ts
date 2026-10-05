@@ -1,4 +1,4 @@
-import type { Provider, PresentedProvider, ProviderType } from './provider.types.js'
+import type { Provider, PresentedProvider, ProviderDefinition, ProviderType } from './provider.types.js'
 import { getProviderDefinition } from './provider-definitions.js'
 import { providerLinkRulesFor, requiredLinkRule } from './provider-reference.js'
 
@@ -29,12 +29,8 @@ export class ProviderPresenter {
     return providers.map((provider) => this.present(provider, providers))
   }
 
-  private isConfigured(
-    provider: Provider,
-    definition = getProviderDefinition(provider.type),
-    allProviders: Provider[] = [provider]
-  ): boolean {
-    if (!definition) return false
+  /** 关联服务商判定需要完整列表：不给默认值，避免单参调用静默把关联判成未配置 */
+  private isConfigured(provider: Provider, definition: ProviderDefinition, allProviders: Provider[]): boolean {
     for (const field of definition.required) {
       if (String((provider as Record<string, unknown>)[field] ?? '').trim() === '') {
         return false

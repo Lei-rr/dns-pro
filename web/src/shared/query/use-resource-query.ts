@@ -15,7 +15,8 @@ type ResourceQueryOptions<T> = {
   key: MaybeRefOrGetter<QueryKey>
   /** 显式刷新（refresh=true）时必须携带 refresh 参数绕过服务端缓存 */
   queryFn: (context: ResourceQueryContext) => Promise<T>
-  pageSizeScope: string
+  /** 每页条数的 localStorage 记忆键；无分页 UI 的读路径不传，避免留下读不到也写不进的死配置 */
+  pageSizeScope?: string
   defaultPageSize?: number
   /** 刷新完成提示；默认「已刷新」，传空字符串则静默 */
   refreshNotice?: string
@@ -40,7 +41,8 @@ const REFRESH_MIN_MS = 120
  */
 export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQuery<T> {
   const client = useQueryClient()
-  const pageSize = ref(loadPageSize(options.pageSizeScope, options.defaultPageSize ?? 20))
+  const fallbackPageSize = options.defaultPageSize ?? 20
+  const pageSize = ref(options.pageSizeScope ? loadPageSize(options.pageSizeScope, fallbackPageSize) : fallbackPageSize)
   const refreshing = ref(false)
   const refreshFlag = ref(false)
   const dispose = ref(true)
@@ -86,7 +88,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
 
   function setPageSize(next: number) {
     pageSize.value = next
-    savePageSize(options.pageSizeScope, next)
+    if (options.pageSizeScope) savePageSize(options.pageSizeScope, next)
   }
 
   return {

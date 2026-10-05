@@ -15,7 +15,8 @@ import {
 const providerParams = paramsSchema('providerId')
 const zoneParams = paramsSchema('providerId', 'zoneName')
 const hostnameParams = paramsSchema('providerId', 'zoneName', 'hostnameFqdn')
-const jobParams = paramsSchema('jobId')
+// 任务端点与 EdgeOne 同构：providerId 走路径，归属校验直接复用同一参数
+const jobParams = paramsSchema('providerId', 'jobId')
 const method = Type.Union([Type.Literal('txt'), Type.Literal('http')])
 const tlsVersion = Type.Union([Type.Literal('1.0'), Type.Literal('1.1'), Type.Literal('1.2'), Type.Literal('1.3')])
 const hostnameFields = {
@@ -82,10 +83,9 @@ export const saasFallbackWriteSchema = requestSchema({
 export const saasZoneParamsSchema = requestSchema({ params: zoneParams })
 export const saasPreferredApplySchema = requestSchema({
   params: zoneParams,
-  body: objectSchema(
-    { preferred_domain: text(253), hostnames: stringList(), only_auto_preferred: bool, dry_run: bool },
-    ['preferred_domain']
-  ),
+  body: objectSchema({ preferred_domain: text(253), hostnames: stringList(), only_auto_preferred: bool }, [
+    'preferred_domain',
+  ]),
 })
 export const saasBatchDeleteSchema = requestSchema({
   params: zoneParams,

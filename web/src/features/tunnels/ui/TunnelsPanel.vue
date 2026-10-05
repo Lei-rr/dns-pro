@@ -37,7 +37,8 @@ const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 const tunnelsQuery = useResourceQuery<CloudflaredTunnel[]>({
   key: () => ['tunnels', 'list', props.providerId],
-  queryFn: async ({ refresh }) => (await cloudflaredApi.tunnels(props.providerId, { refresh })).data || [],
+  queryFn: async ({ refresh, signal }) =>
+    (await cloudflaredApi.tunnels(props.providerId, { refresh, signal })).data || [],
   pageSizeScope: 'cloudflared-tunnels',
 })
 const loading = tunnelsQuery.loading

@@ -4,6 +4,11 @@ import { ApiError } from '../server/core/http/api-error.js'
 import { BaseHttpClient } from '../server/core/http/base-http.client.js'
 import { fromDnsOperationResult } from '../server/core/providers/side-effect-result.js'
 import { ProviderConnectionService } from '../server/core/providers/provider-connection.service.js'
+import {
+  PROVIDER_FIELD_MAX_LENGTHS,
+  PROVIDER_FIELD_MAX_LENGTH_DEFAULT,
+  PROVIDER_ID_PATTERN,
+} from '../server/core/providers/provider-normalizer.js'
 import type { ProviderRepository } from '../server/core/providers/provider.repository.js'
 import type { Provider } from '../server/core/providers/provider.types.js'
 import { hashPassword, verifyPassword } from '../server/core/security/password.js'
@@ -24,12 +29,12 @@ import {
   edgeoneZoneListResponseSchema,
 } from '../server/modules/edgeone/edge-one-response.schema.js'
 
-// 密码以 scrypt 自描述哈希存储，校验不接受错误密码
-const stored = hashPassword('correct horse battery staple')
+// 密码以 scrypt 自描述哈希存储（异步派生），校验不接受错误密码
+const stored = await hashPassword('correct horse battery staple')
 assert.ok(stored.startsWith('scrypt$'), '密码必须以 scrypt 哈希存储')
-assert.equal(verifyPassword('correct horse battery staple', stored), true)
-assert.equal(verifyPassword('wrong password', stored), false)
-assert.equal(verifyPassword('anything', 'plaintext-legacy'), false, '非哈希输入必须校验失败')
+assert.equal(await verifyPassword('correct horse battery staple', stored), true)
+assert.equal(await verifyPassword('wrong password', stored), false)
+assert.equal(await verifyPassword('anything', 'plaintext-legacy'), false, '非哈希输入必须校验失败')
 assert.equal(fromDnsOperationResult({ action: 'completed', records: [{ status: 'failed' }] }, 'done').status, 'failed')
 for (const [label, parse, malformed] of [
   ['cf-list-empty', parseCloudflareListResponse, {}],
@@ -73,8 +78,21 @@ try {
       (error.details as Record<string, unknown>).upstream_status === 404
   )
 
-  // 上游路径逃逸：记录 ID / 站点名拼进 URL 路径后，`.`/`..`/`%2e` 段与空段必须在发请求前被拒
-  for (const escaped of ['..', '../zones', 'zones/..', '%2e%2e', '%2E%2E/zones', 'a//b', 'https://evil.invalid/']) {
+  // 上游路径逃逸：记录 ID / 站点名拼进 URL 路径后，`.`/`..`/`%2e` 段与空段必须在发请求前被拒；
+  // 编码后的分隔符（%2f / %5c）与 「解码后才是 ..」 的组合同样要拒：上游可能对路径二次解码
+  for (const escaped of [
+    '..',
+    '../zones',
+    'zones/..',
+    '%2e%2e',
+    '%2E%2E/zones',
+    'a//b',
+    'https://evil.invalid/',
+    'zones/a%2fb',
+    'zones/a%5Cb',
+    '%2e%2fzones',
+    'zones/%2e%2e%2f%2e%2e',
+  ]) {
     await assert.rejects(
       new ProbeGateway().callWith(escaped),
       (error: unknown) => error instanceof ApiError && error.code === 'invalid_upstream_path',
@@ -89,6 +107,17 @@ try {
       error.code !== 'invalid_upstream_path' &&
       (error.details as Record<string, unknown>).upstream_status === 404
   )
+  // 解码后仍非分隔符的百分号编码（点号 ID、转义空格）属于合法路径段，不得被路径守卫拦下
+  for (const allowed of ['zones/zone.1', 'zones/ab%20cd']) {
+    await assert.rejects(
+      new ProbeGateway().callWith(allowed),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.code !== 'invalid_upstream_path' &&
+        (error.details as Record<string, unknown>).upstream_status === 404,
+      `合法路径被误判为逃逸: ${allowed}`
+    )
+  }
 } finally {
   globalThis.fetch = originalFetch
 }
@@ -160,5 +189,27 @@ assert.equal(linked.ok, true)
 assert.equal(linked.type, 'saas')
 assert.equal((linked.details as Record<string, unknown>).cloudflare_provider, 'cf-b')
 assert.equal(probeCalls, probesBeforeLinked + 1, '合法关联必须发起一次探测')
+
+// 服务商 ID 与字段长度上限是 schema 层与归一化层共用的唯一口径，写法漂移必须在这里被拦住
+assert.equal(PROVIDER_ID_PATTERN.test('cf-1'), true)
+assert.equal(PROVIDER_ID_PATTERN.test('CF_1'), true)
+assert.equal(PROVIDER_ID_PATTERN.test('-cf'), false, '不得以分隔符开头')
+assert.equal(PROVIDER_ID_PATTERN.test('cf.1'), false, '点号不属于 ID 字符集')
+assert.equal(PROVIDER_ID_PATTERN.test('a'.repeat(64)), true)
+assert.equal(PROVIDER_ID_PATTERN.test('a'.repeat(65)), false, 'ID 长度上限必须是 64')
+assert.equal(PROVIDER_FIELD_MAX_LENGTHS.secret_key, 256)
+assert.equal(PROVIDER_FIELD_MAX_LENGTHS.cloudflare_provider, 64)
+assert.equal(PROVIDER_FIELD_MAX_LENGTH_DEFAULT, 255, '未登记字段的默认长度上限')
+for (const field of [
+  'secret_id',
+  'secret_key',
+  'api_token',
+  'account_id',
+  'dnspod_provider',
+  'cloudflare_provider',
+  'cloudflare_dns_provider',
+]) {
+  assert.equal(typeof PROVIDER_FIELD_MAX_LENGTHS[field], 'number', `${field} 缺少长度上限`)
+}
 
 console.log('backend-careful-probe=ok')
