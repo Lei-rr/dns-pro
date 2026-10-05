@@ -10,10 +10,10 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import type { DnsRecordPort, DnsRecordRef } from '../server/core/contracts/dns-record.port.js'
 import type { RecordOwnership } from '../server/core/contracts/ownership.port.js'
-import type { DerivedSourcePlanner } from '../server/use-cases/derived-records/derived-record.types.js'
-import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
-import { tunnelDerivedPlanner } from '../server/use-cases/derived-records/planners/tunnel.planner.js'
-import { ReconcileService } from '../server/use-cases/derived-records/reconcile.service.js'
+import type { DerivedSourcePlanner } from '../server/workflows/derived-records/derived-record.types.js'
+import { DnsWriter } from '../server/workflows/derived-records/dns-writer.js'
+import { tunnelDerivedPlanner } from '../server/workflows/derived-records/planners/tunnel.planner.js'
+import { ReconcileService } from '../server/workflows/derived-records/reconcile.service.js'
 
 const calls: string[] = []
 const writes = () => calls.filter((call) => !call.startsWith('find:')).length

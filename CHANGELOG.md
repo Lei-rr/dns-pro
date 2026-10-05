@@ -19,7 +19,7 @@
 
 ### 变更
 
-- 结构重构（Phase 5a）：后端迁移为五顶层 `app / domains / use-cases / kernel / lib` + `main.ts`（142 个文件移动、140 个文件导入重写）；架构守卫的层矩阵同步更新为 `app → use-cases → modules → core → shared`，`version.mjs`、`knip.json`、`package.json` 入口一并调整。
+- 结构重构（Phase 5a）：后端迁移为五顶层 `app / domains / workflows / kernel / lib` + `main.ts`（142 个文件移动、140 个文件导入重写）；架构守卫的层矩阵同步更新为 `app → workflows → modules → core → shared`，`version.mjs`、`knip.json`、`package.json` 入口一并调整。
 - 共享底座（Phase 5b / D2）：抽出 `CloudflareAccess`（provider → 账号 → client 的唯一定义）与 `ZoneCatalog`（FQDN 最长后缀匹配 + DCV 委派），DNS / SaaS / 隧道三条产品线只依赖底座、互不引用；删除 `tunnel-account.ts`、`cloudflareClientFor`、`bestMatchId` 等重复路径。
 - DNS 端口（Phase 5b / D1-1）：引入 `DnsRecordPort` 与 Cloudflare / DNSPod 适配器，厂商字段映射（`content`/`comment`、`subdomain`/`record_line`/`mx`）收敛到适配器；`dns-batch` 只依赖端口，删除厂商 body 构造器与逐厂商等值判定（`dns-batch.adapters.ts`、`dns-record-equivalence.ts`）。
 - CI：GHCR 镜像仅在推送 `v*` 标签时构建（日常提交只跑 `verify`），并校验标签版本与 `package.json` 一致。

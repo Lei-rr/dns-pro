@@ -14,7 +14,7 @@ import { CloudflareZoneService } from '../server/modules/cloudflare/cloudflare-z
 import { TunnelService } from '../server/modules/cloudflare/tunnel/tunnel.service.js'
 import { SaaSSyncConfigService } from '../server/modules/cloudflare/saas/saas-sync-config.service.js'
 import { effectivePreferredDomain } from '../server/modules/cloudflare/saas/saas-hostname-rules.js'
-import { saasDesiredRecords } from '../server/use-cases/derived-records/planners/saas.planner.js'
+import { saasDesiredRecords } from '../server/workflows/derived-records/planners/saas.planner.js'
 import {
   PreferredDomainService,
   type PreferredDomainsFile,

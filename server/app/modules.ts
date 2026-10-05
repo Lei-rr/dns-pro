@@ -34,7 +34,7 @@ import {
   edgeOneOwnershipSource,
   saasOwnershipSource,
   tunnelOwnershipSource,
-} from '../use-cases/derived-records/ownership.js'
+} from '../workflows/derived-records/ownership.js'
 import { createSecretBox } from '../core/crypto/secret-box.js'
 import { createStore } from '../core/store/store-registry.js'
 

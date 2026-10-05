@@ -3,7 +3,7 @@
  * 无网络、无存储，直接断言计划结果。
  */
 import assert from 'node:assert/strict'
-import { planSync, type DesiredRecord } from '../server/use-cases/derived-records/sync-plan.js'
+import { planSync, type DesiredRecord } from '../server/workflows/derived-records/sync-plan.js'
 import type { DnsRecordRef } from '../server/core/contracts/dns-record.port.js'
 
 const zone = 'example.com'

@@ -3,7 +3,7 @@
 - 状态：Accepted（D1-1 已落地；`ProviderAdapter` 能力声明与编解码部分进行中）
 - 日期：2026-10-04
 - 依据：`dns-pro-target-architecture.md` §3 D1；落地提交 `4fcb741`
-- 相关代码：`server/core/contracts/dns-record.port.ts`、`server/modules/cloudflare/dns/cloudflare-record.adapter.ts`、`server/modules/dnspod/dns/dnspod-record.adapter.ts`、`server/use-cases/dns-batch/dns-batch.workflow.ts`
+- 相关代码：`server/core/contracts/dns-record.port.ts`、`server/modules/cloudflare/dns/cloudflare-record.adapter.ts`、`server/modules/dnspod/dns/dnspod-record.adapter.ts`、`server/workflows/dns-batch/dns-batch.workflow.ts`
 
 ## 背景
 
@@ -18,7 +18,7 @@
 1. 在 `core/contracts/` 定义厂商无关的记录值模型与端口 `DnsRecordPort`（`find` / `create` / `update` / `remove`），并把幂等重放判定收敛为纯函数 `dnsRecordMatches`（域名类值忽略大小写与尾点）。
 2. 每个厂商提供一个适配器实现端口，厂商字段映射只允许出现在适配器：Cloudflare（`content` / `comment`）与 DNSPod（`subdomain` / `record_line` / `mx`）。
 3. 用例只依赖端口注册表 `Record<DnsProviderType, DnsRecordPort>`（`dns-batch.workflow.ts:38`），批量路径不再出现厂商分支；删除 `dns-batch.adapters.ts` 与 `dns-record-equivalence.ts`。
-4. 进行中：把"能力声明 + `encodeCreate` / `encodeUpdate` / `decode` / `recordKey`"提炼为 `ProviderAdapter`，让端口实现由 adapter 组合，`kernel` 与 `use-cases` 内厂商判断归零。
+4. 进行中：把"能力声明 + `encodeCreate` / `encodeUpdate` / `decode` / `recordKey`"提炼为 `ProviderAdapter`，让端口实现由 adapter 组合，`kernel` 与 `workflows` 内厂商判断归零。
 
 ## 后果
 
@@ -43,4 +43,4 @@
 ## 验证与遗留
 
 - `npm run arch:final`、`npm run probe:api`、`npm run probe:workflow` 覆盖端口接入与批量路径。
-- 遗留（未达成验收）：`use-cases/` 已归零，`kernel` 与域内仍有厂商判断——`server/core/providers/provider-presenter.ts:46-66`、`server/modules/dnspod/dns-pod-record-sync.service.ts:77-78`；`ProviderAdapter` 能力面尚未落地。
+- 遗留（未达成验收）：`workflows/` 已归零，`kernel` 与域内仍有厂商判断——`server/core/providers/provider-presenter.ts:46-66`、`server/modules/dnspod/dns-pod-record-sync.service.ts:77-78`；`ProviderAdapter` 能力面尚未落地。

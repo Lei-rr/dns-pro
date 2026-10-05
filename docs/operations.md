@@ -50,7 +50,7 @@ data/
 | `lint`             | ESLint（`server`、`web/src`、`scripts`）                                                                           |
 | `typecheck`        | 后端 `tsc --noEmit`                                                                                                |
 | `typecheck:web`    | 前端 `vue-tsc --noEmit`                                                                                            |
-| `arch:final`       | 架构守卫：层矩阵 `app → use-cases → modules → core → shared`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
+| `arch:final`       | 架构守卫：层矩阵 `app → workflows → modules → core → shared`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
 | `deadcode`         | knip 死代码 / 无用导出检查（配置提示也视为错误）                                                                   |
 | `deps:check`       | 依赖一致性脚本 + `npm audit --omit=dev --audit-level=high`                                                         |
 | `routes:check`     | 路由指纹漂移门禁（`scripts/api-route-manifest.json` 与代码不一致即失败）                                           |

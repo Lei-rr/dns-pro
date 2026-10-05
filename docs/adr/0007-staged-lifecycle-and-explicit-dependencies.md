@@ -15,7 +15,7 @@
 
 ## 决策
 
-1. **显式阶段列表**：启动改为有序阶段数组 `[initConfig, initStore, runMigrations, initKernel, initDomains, initUseCases, recoverJobs, ready]`，逐阶段 fail-fast；顺序是代码（数组）而不是注释。
+1. **显式阶段列表**：启动改为有序阶段数组 `[initConfig, initStore, runMigrations, initKernel, initDomains, initWorkflows, recoverJobs, ready]`，逐阶段 fail-fast；顺序是代码（数组）而不是注释。
 2. **消除模块级可变全局**：`dataRoot`、HTTP 超时等改为构造参数传入；`JsonStore`、HTTP 客户端不再从模块级 setter 读取。
 3. **handler 显式取依赖**：经显式工厂（或闭包）获得所需依赖，替代 `request.server.ctx` 的全量上下文抓取。
 4. 组装层（`app/`）只做组合：允许它知道全部实现，禁止它承载业务判断。

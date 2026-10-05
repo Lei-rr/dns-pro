@@ -17,8 +17,8 @@ import {
   edgeOneOwnershipSource,
   saasOwnershipSource,
   tunnelOwnershipSource,
-} from '../server/use-cases/derived-records/ownership.js'
-import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
+} from '../server/workflows/derived-records/ownership.js'
+import { DnsWriter } from '../server/workflows/derived-records/dns-writer.js'
 import type { DnsRecordPort, DnsRecordRef, DnsRecordValue } from '../server/core/contracts/dns-record.port.js'
 
 const zone = 'example.com'

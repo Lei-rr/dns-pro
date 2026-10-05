@@ -4,7 +4,7 @@ import { TypeBoxValidatorCompiler, type TypeBoxTypeProvider } from '@fastify/typ
 import { loadAppConfig, parseCliOverrides, type AppConfig } from './config.js'
 import { startAppContext, type AppContext, type AppPlatform } from './context.js'
 import { createModules, type AppModules } from './modules.js'
-import { createWorkflows } from './use-cases.js'
+import { createWorkflows } from './workflows.js'
 import { registerApiRoutes } from './routes.js'
 import { appContextPlugin } from './plugins/app-context.js'
 import { errorHandlerPlugin } from './plugins/error-handler.js'
@@ -47,7 +47,7 @@ const STARTUP_STAGES = [
   { name: 'runMigrations', run: runMigrations },
   { name: 'initKernel', run: initKernel },
   { name: 'initDomains', run: initDomains },
-  { name: 'initUseCases', run: initUseCases },
+  { name: 'initWorkflows', run: initWorkflows },
   { name: 'recoverJobs', run: recoverJobs },
   { name: 'ready', run: ready },
 ] as const
@@ -115,8 +115,8 @@ async function initDomains(boot: Boot): Promise<void> {
   boot.modules = createModules(boot.config, { credentialKey: boot.credentialKey })
 }
 
-/** initUseCases：跨模块用例 + 任务运行器注册 */
-async function initUseCases(boot: Boot): Promise<void> {
+/** initWorkflows：跨模块用例 + 任务运行器注册 */
+async function initWorkflows(boot: Boot): Promise<void> {
   boot.workflows = createWorkflows(boot.platform, boot.modules)
 }
 

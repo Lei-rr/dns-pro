@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger, FastifyRequest } from 'fastify'
 import type { AppConfig } from './config.js'
 import type { AppModules } from './modules.js'
-import { createWorkflows } from './use-cases.js'
+import { createWorkflows } from './workflows.js'
 import type { JobService } from '../core/jobs/job.service.js'
 import type { AuditLog } from '../core/observability/audit-log.js'
 

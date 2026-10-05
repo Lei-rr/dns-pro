@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
-import { DnsWriter } from '../server/use-cases/derived-records/dns-writer.js'
+import { DnsWriter } from '../server/workflows/derived-records/dns-writer.js'
 import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dnspod-record.adapter.js'
 import fs from 'node:fs/promises'
 import os from 'node:os'

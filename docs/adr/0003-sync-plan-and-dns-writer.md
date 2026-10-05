@@ -3,7 +3,7 @@
 - 状态：Accepted（实现进行中，尚未落地）
 - 日期：2026-10-04
 - 依据：`dns-pro-target-architecture.md` §3 D3
-- 相关代码（现状）：`server/use-cases/saas-dns-sync/cloudflare-dns-saas-sync.adapter.ts`、`server/use-cases/saas-dns-sync/dns-pod-saas-sync.adapter.ts`、`server/modules/cloudflare/tunnel/tunnel-dns.service.ts`
+- 相关代码（现状）：`server/workflows/saas-dns-sync/cloudflare-dns-saas-sync.adapter.ts`、`server/workflows/saas-dns-sync/dns-pod-saas-sync.adapter.ts`、`server/modules/cloudflare/tunnel/tunnel-dns.service.ts`
 
 ## 背景
 
@@ -24,7 +24,9 @@ function planSync(target: SyncTarget, current: DnsRecord[], desired: DnsRecord[]
 // SyncPlan = { create: DnsRecord[]; update: { id: string; patch: Partial<DnsRecord> }[]; delete: string[] }
 
 // 唯一写入端点：所有权校验 + 执行计划
-class DnsWriter { apply(zone: ZoneRef, plan: SyncPlan, opts: { owner: Owner }): Promise<WriteResult> }
+class DnsWriter {
+  apply(zone: ZoneRef, plan: SyncPlan, opts: { owner: Owner }): Promise<WriteResult>
+}
 ```
 
 - 三条产品线（SaaS / 隧道 / EdgeOne）共用同一 writer，**不再各自构造写入**。

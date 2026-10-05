@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict'
 import { JobService } from '../server/core/jobs/job.service.js'
-import { SaaSBatchWorkflow } from '../server/use-cases/saas-dns-sync/saas-batch.workflow.js'
+import { SaaSBatchWorkflow } from '../server/workflows/saas-dns-sync/saas-batch.workflow.js'
 
 type DeleteOptions = {
   completed?: readonly string[]

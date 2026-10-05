@@ -6,7 +6,7 @@ const RESERVED_PROVIDER_IDS = ['home', 'login', 'providers', 'user']
 /**
  * 服务商 ID 规则（自定义 id 与关联字段引用共用同一份正则）。
  * 显式写出大小写范围而不带 i 标志：JSON Schema 的 pattern 不支持 flags，
- * use-cases 侧要直接引用同一份 source，带标志会让两端校验口径漂移。
+ * workflows 侧要直接引用同一份 source，带标志会让两端校验口径漂移。
  */
 export const PROVIDER_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/
 const PROVIDER_ID_MESSAGE = '服务商 ID 不合法（字母或数字开头，可含 _ 和 -）'

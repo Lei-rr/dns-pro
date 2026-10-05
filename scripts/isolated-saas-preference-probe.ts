@@ -8,7 +8,7 @@ import path from 'node:path'
 import { loadAppConfig } from '../server/app/config.js'
 import { createModules } from '../server/app/modules.js'
 import { isHostnameActive } from '../server/modules/cloudflare/saas/saas-hostname-rules.js'
-import { SaaSDnsSyncWorkflow } from '../server/use-cases/saas-dns-sync/saas-dns-sync.workflow.js'
+import { SaaSDnsSyncWorkflow } from '../server/workflows/saas-dns-sync/saas-dns-sync.workflow.js'
 
 const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dns-pro-saas-pref-'))
 const preferencesFile = path.join(dataDir, 'saas', 'preferences.json')

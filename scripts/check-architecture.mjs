@@ -223,7 +223,7 @@ for (const file of sourceFiles) {
 
 if (finalMode) {
   const forbiddenBatchJobFields = new Set(['items', 'execution_owner', 'execution_token', 'lease_until'])
-  for (const file of backendFiles.filter((candidate) => candidate.startsWith('server/use-cases/'))) {
+  for (const file of backendFiles.filter((candidate) => candidate.startsWith('server/workflows/'))) {
     const code = read(file)
     const sf = ts.createSourceFile(file, code, ts.ScriptTarget.Latest, true)
     const visit = (node) => {
@@ -288,7 +288,7 @@ if (finalMode) {
 function backendLayer(file) {
   if (file === 'server/main.ts') return 'shell'
   if (file.startsWith('server/types/')) return 'core'
-  for (const layer of ['app', 'use-cases', 'modules', 'core', 'shared'])
+  for (const layer of ['app', 'workflows', 'modules', 'core', 'shared'])
     if (file.startsWith(`server/${layer}/`)) return layer
   return 'other'
 }
@@ -296,15 +296,15 @@ function webLayer(file) {
   for (const layer of ['app', 'pages', 'features', 'shared']) if (file.startsWith(`web/src/${layer}/`)) return layer
   return 'other'
 }
-// 蓝图 §2.4：app → use-cases → modules → core → shared，只允许向右依赖
+// 蓝图 §2.4：app → workflows → modules → core → shared，只允许向右依赖
 const backendAllowed = {
-  shell: new Set(['shell', 'app', 'use-cases', 'modules', 'core', 'shared']),
-  app: new Set(['app', 'use-cases', 'modules', 'core', 'shared']),
-  'use-cases': new Set(['use-cases', 'modules', 'core', 'shared']),
+  shell: new Set(['shell', 'app', 'workflows', 'modules', 'core', 'shared']),
+  app: new Set(['app', 'workflows', 'modules', 'core', 'shared']),
+  workflows: new Set(['workflows', 'modules', 'core', 'shared']),
   modules: new Set(['modules', 'core', 'shared']),
   core: new Set(['core', 'shared']),
   shared: new Set(['shared']),
-  other: new Set(['shell', 'app', 'use-cases', 'modules', 'core', 'shared', 'other']),
+  other: new Set(['shell', 'app', 'workflows', 'modules', 'core', 'shared', 'other']),
 }
 const webAllowed = {
   app: new Set(['app', 'pages', 'features', 'shared']),
@@ -321,15 +321,15 @@ for (const edge of imports) {
     if (finalMode && !backendAllowed[from]?.has(to))
       report('ARCH001', edge.from, edge.line, `${from} must not import ${to}: ${edge.to}`)
     // 产品线边界（蓝图 §2.4）：cloudflare/saas 与 cloudflare/tunnel 互不引用，共享能力走底座（D2）
-    const fromProduct = edge.from.match(/^server\/src\/domains\/cloudflare\/(saas|tunnel)\//)?.[1]
-    const toProduct = edge.to.match(/^server\/src\/domains\/cloudflare\/(saas|tunnel)\//)?.[1]
+    const fromProduct = edge.from.match(/^server\/modules\/cloudflare\/(saas|tunnel)\//)?.[1]
+    const toProduct = edge.to.match(/^server\/modules\/cloudflare\/(saas|tunnel)\//)?.[1]
     if (finalMode && fromProduct && toProduct && fromProduct !== toProduct)
       report('ARCH002', edge.from, edge.line, `cloudflare/${fromProduct} must not import cloudflare/${toProduct}`)
-    const fromUseCase = edge.from.match(/^server\/src\/use-cases\/([^/]+)/)?.[1]
-    const toUseCase = edge.to.match(/^server\/src\/use-cases\/([^/]+)/)?.[1]
+    const fromWorkflow = edge.from.match(/^server\/workflows\/([^/]+)/)?.[1]
+    const toWorkflow = edge.to.match(/^server\/workflows\/([^/]+)/)?.[1]
     // derived-records 是跨产品线共享的 DNS 写入口（D3），允许被其他用例依赖
-    if (finalMode && fromUseCase && toUseCase && fromUseCase !== toUseCase && toUseCase !== 'derived-records')
-      report('ARCH003', edge.from, edge.line, `use-case ${fromUseCase} must not import use-case ${toUseCase}`)
+    if (finalMode && fromWorkflow && toWorkflow && fromWorkflow !== toWorkflow && toWorkflow !== 'derived-records')
+      report('ARCH003', edge.from, edge.line, `workflow ${fromWorkflow} must not import workflow ${toWorkflow}`)
   }
   if (edge.from.startsWith('web/src/') && edge.to.startsWith('web/src/')) {
     const from = webLayer(edge.from),
@@ -610,7 +610,7 @@ const forbiddenLegacy = [
   'server/bootstrap',
   'server/plugins',
   'server/domains',
-  'server/workflows',
+  'server/use-cases',
   'server/platform',
   'server/lib',
   'web/src/main.ts',

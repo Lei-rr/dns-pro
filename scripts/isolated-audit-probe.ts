@@ -50,12 +50,12 @@ const read = async (file: string) => await readFile(new URL(file, root), 'utf8')
 const [auth, providers, dnsBatch, saasBatch, edgeOne, preferred, reconcile, routes] = await Promise.all(
   [
     'server/modules/system/auth/auth.handlers.ts',
-    'server/use-cases/provider-management/provider-management.handlers.ts',
-    'server/use-cases/dns-batch/dns-batch.handlers.ts',
-    'server/use-cases/saas-dns-sync/saas-batch.handlers.ts',
-    'server/use-cases/edge-one-dns-sync/edge-one-dns-sync.handlers.ts',
-    'server/use-cases/saas-dns-sync/preferred-apply.handlers.ts',
-    'server/use-cases/derived-records/reconcile.handlers.ts',
+    'server/workflows/provider-management/provider-management.handlers.ts',
+    'server/workflows/dns-batch/dns-batch.handlers.ts',
+    'server/workflows/saas-dns-sync/saas-batch.handlers.ts',
+    'server/workflows/edge-one-dns-sync/edge-one-dns-sync.handlers.ts',
+    'server/workflows/saas-dns-sync/preferred-apply.handlers.ts',
+    'server/workflows/derived-records/reconcile.handlers.ts',
     'server/app/routes.ts',
   ].map(read)
 )
