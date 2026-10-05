@@ -146,3 +146,42 @@ describe('槽位占用与线路身份（避免重复写入的两个边界）', (
     expect(plan([want], [existing]).entries.map((entry) => entry.action)).toEqual(['create'])
   })
 })
+
+/** P1 探针迁移（原 scripts/isolated-sync-plan-probe.ts）：清理归属、值尾点与槽位复用边界 */
+describe('清理归属与槽位复用的边界（探针迁移补充）', () => {
+  it('值/备注/TTL 全同 → unchanged，不重复创建', () => {
+    const existing = current('rec-1', { ttl: 600, note: 'edgeone:domain-1' })
+    const want = desired({
+      record: { type: 'CNAME', value: 'target.edgeone.net', ttl: 600, note: 'edgeone:domain-1' },
+    })
+    expect(plan([want], [existing]).entries.map((entry) => [entry.action, entry.existing?.id])).toEqual([
+      ['unchanged', 'rec-1'],
+    ])
+  })
+
+  it('仅备注不同 → update 同一槽位（值相同仍是同一条记录的另一版本）', () => {
+    const existing = current('rec-1', { note: '人工记录' })
+    const want = desired({ record: { type: 'CNAME', value: 'target.edgeone.net', note: 'edgeone:domain-1' } })
+    expect(plan([want], [existing]).entries.map((entry) => [entry.action, entry.existing?.id])).toEqual([
+      ['update', 'rec-1'],
+    ])
+  })
+
+  it('域名型记录仅尾点差异 → 视为同值 unchanged', () => {
+    const want = desired({ record: { type: 'CNAME', value: 'target.edgeone.net.' } })
+    expect(plan([want], [current('rec-1')]).entries.map((entry) => entry.action)).toEqual(['unchanged'])
+  })
+
+  it('同一槽位多条候选：优先命中值相同的记录，且只认领一条', () => {
+    const entries = plan([desired()], [current('rec-old', { value: 'old.edgeone.net' }), current('rec-exact')]).entries
+    expect(entries.map((entry) => [entry.action, entry.existing?.id])).toEqual([['unchanged', 'rec-exact']])
+  })
+
+  it('FQDN 与 zone 相同时身份按 @ 归一；不同主机记录名不复用槽位', () => {
+    const apex = plan([desired({ fqdn: 'example.com' })], [current('rec-apex', { name: '@' })])
+    expect(apex.entries.map((entry) => entry.action)).toEqual(['unchanged'])
+
+    const otherName = plan([desired()], [current('rec-other', { name: 'a.other.com' })])
+    expect(otherName.entries.map((entry) => entry.action)).toEqual(['create'])
+  })
+})

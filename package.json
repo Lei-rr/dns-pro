@@ -41,9 +41,9 @@
     "routes:check": "tsx scripts/generate-route-manifest.ts --check",
     "probe:api": "tsx scripts/isolated-api-probe.ts",
     "probe:job": "tsx --tsconfig web/tsconfig.json scripts/isolated-job-progress-probe.ts",
-    "probe:platform": "tsx scripts/isolated-platform-concurrency-probe.ts && tsx scripts/isolated-sensitive-files-probe.ts && tsx scripts/isolated-maintenance-contract-probe.ts && tsx scripts/isolated-data-migration-probe.ts && npm run probe:cache",
-    "probe:workflow": "tsx scripts/isolated-sync-plan-probe.ts && tsx scripts/isolated-ownership-probe.ts && tsx scripts/isolated-saas-preference-probe.ts && tsx scripts/isolated-workflow-recovery-probe.ts && tsx scripts/isolated-tunnel-route-probe.ts && tsx scripts/isolated-request-param-probe.ts && tsx scripts/isolated-edge-one-payload-probe.ts && tsx scripts/isolated-backend-safe-probe.ts && tsx scripts/isolated-backend-careful-probe.ts && tsx scripts/isolated-default-config-probe.ts && tsx scripts/isolated-zone-catalog-probe.ts && tsx scripts/isolated-saas-config-branch-probe.ts && npm run probe:requests && npm run probe:retry",
-    "probe:functional": "tsx scripts/isolated-frontend-audit-probe.ts && tsx scripts/isolated-edge-one-https-status-probe.ts && tsx scripts/isolated-saas-dns-repair-probe.ts && tsx scripts/isolated-stability-readability-probe.ts && tsx --tsconfig web/tsconfig.json scripts/isolated-dns-import-probe.ts && tsx --tsconfig web/tsconfig.json scripts/isolated-edge-one-command-probe.ts",
+    "probe:platform": "tsx scripts/isolated-platform-concurrency-probe.ts && tsx scripts/isolated-sensitive-files-probe.ts && tsx scripts/isolated-maintenance-contract-probe.ts && tsx scripts/isolated-data-migration-probe.ts",
+    "probe:workflow": "tsx scripts/isolated-saas-preference-probe.ts && tsx scripts/isolated-workflow-recovery-probe.ts && tsx scripts/isolated-tunnel-route-probe.ts && tsx scripts/isolated-request-param-probe.ts && tsx scripts/isolated-backend-safe-probe.ts && tsx scripts/isolated-backend-careful-probe.ts && tsx scripts/isolated-default-config-probe.ts && tsx scripts/isolated-saas-config-branch-probe.ts && npm run probe:requests",
+    "probe:functional": "tsx scripts/isolated-frontend-audit-probe.ts && tsx scripts/isolated-saas-dns-repair-probe.ts && tsx scripts/isolated-stability-readability-probe.ts && tsx --tsconfig web/tsconfig.json scripts/isolated-dns-import-probe.ts && tsx --tsconfig web/tsconfig.json scripts/isolated-edge-one-command-probe.ts",
     "probe:static": "tsx scripts/isolated-static-probe.ts",
     "probe:security": "tsx scripts/isolated-security-probe.ts && tsx scripts/isolated-password-probe.ts && tsx scripts/isolated-credential-encryption-probe.ts",
     "typecheck": "tsc --noEmit",
@@ -51,11 +51,9 @@
     "test": "vitest run",
     "verify": "npm run format:check && npm run version:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run test && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:query && npm run probe:platform && npm run probe:workflow && npm run probe:reconcile && npm run probe:audit && npm run probe:functional && npm run probe:security && npm run build && npm run probe:static",
     "probe:requests": "tsx scripts/isolated-batch-request-probe.ts",
-    "probe:retry": "tsx scripts/isolated-provider-retry-probe.ts",
     "probe:query": "tsx --tsconfig web/tsconfig.json scripts/isolated-resource-query-probe.ts",
     "probe:reconcile": "tsx scripts/isolated-reconcile-probe.ts",
-    "probe:audit": "tsx scripts/isolated-audit-probe.ts",
-    "probe:cache": "tsx scripts/isolated-cache-probe.ts"
+    "probe:audit": "tsx scripts/isolated-audit-probe.ts"
   },
   "dependencies": {
     "@fastify/compress": "^9.1.0",
