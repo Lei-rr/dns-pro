@@ -16,8 +16,8 @@ import {
 } from '../../core/contracts/ownership.port.js'
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import type { EdgeOneProvider, SaaSProvider } from '../../core/providers/provider.types.js'
-import type { EdgeOneDomainService } from '../../modules/edgeone/edge-one-domain.service.js'
-import type { EdgeOneZoneService } from '../../modules/edgeone/edge-one-zone.service.js'
+import type { AccelerationDomainPort } from '../../core/contracts/acceleration-domain.port.js'
+import type { ZoneListPort } from '../../core/contracts/zone-list.port.js'
 import type { SaaSHostnameService } from '../../modules/cloudflare/saas/saas-hostname.service.js'
 import type { CloudflareCustomHostname } from '../../modules/cloudflare/saas/saas-custom-hostname.client.js'
 import type { TunnelRouteService } from '../../modules/cloudflare/tunnel/tunnel-route.service.js'
@@ -107,8 +107,8 @@ export function saasOwnershipSource(deps: {
 /** EdgeOne 加速域名 → DNSPod 归属（仅 dnspod 目标） */
 export function edgeOneOwnershipSource(deps: {
   providers: ProviderRepository
-  zones: EdgeOneZoneService
-  domains: EdgeOneDomainService
+  zones: ZoneListPort
+  domains: AccelerationDomainPort
 }): OwnershipSource {
   return {
     async claimsFor(target) {

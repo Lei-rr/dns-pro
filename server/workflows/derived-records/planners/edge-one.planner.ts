@@ -10,8 +10,8 @@ import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import type { EdgeOneProvider } from '../../../core/providers/provider.types.js'
 import { DNSPOD_DEFAULT_LINE } from '../../../modules/dnspod/dns-pod-record.service.js'
 import type { DnsPodZoneCatalog } from '../../../modules/dnspod/zone-catalog.js'
-import type { EdgeOneDomainService } from '../../../modules/edgeone/edge-one-domain.service.js'
-import type { EdgeOneZoneService } from '../../../modules/edgeone/edge-one-zone.service.js'
+import type { AccelerationDomainPort } from '../../../core/contracts/acceleration-domain.port.js'
+import type { ZoneListPort } from '../../../core/contracts/zone-list.port.js'
 import type { DerivedSourcePlanner, PlannedRecord } from '../derived-record.types.js'
 import type { DesiredRecord } from '../sync-plan.js'
 
@@ -38,8 +38,8 @@ export function edgeOneCnameDesired(fqdn: string, cname: string): DesiredRecord 
 /** EdgeOne 加速域名扫描：站点 → 加速域名 → 分配的 CNAME → DNSPod 记录（只读） */
 export function edgeOneDerivedPlanner(deps: {
   providers: ProviderRepository
-  zones: EdgeOneZoneService
-  domains: EdgeOneDomainService
+  zones: ZoneListPort
+  domains: AccelerationDomainPort
   catalog: DnsPodZoneCatalog
 }): DerivedSourcePlanner {
   return {

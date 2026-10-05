@@ -12,9 +12,7 @@ import type { DnsPodAccess } from '../../modules/dnspod/access.js'
 import type { DnsPodZoneCatalog } from '../../modules/dnspod/zone-catalog.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
 import { edgeOneCnameDesired } from '../derived-records/planners/edge-one.planner.js'
-import type { EdgeOneDomainService } from '../../modules/edgeone/edge-one-domain.service.js'
-import { normalizeAccelerationDomainPayload } from '../../modules/edgeone/edge-one-domain-payload.js'
-import { invalidateEdgeOneDomainCache } from '../../modules/edgeone/edge-one.cache.js'
+import type { AccelerationDomainPort } from '../../core/contracts/acceleration-domain.port.js'
 import { dnsZoneKey, edgeOneZoneKey } from '../../core/jobs/job-registry.js'
 
 /** 删除加速域名的阶段序列（顺序不可逆；重试从第一个未完成阶段继续） */
@@ -42,7 +40,7 @@ type DeleteOptions = StageLifecycle<EdgeOneDeleteStage> & {
  */
 export class EdgeOneDnsSyncWorkflow {
   constructor(
-    private readonly domains: EdgeOneDomainService,
+    private readonly domains: AccelerationDomainPort,
     /** 关联 DNSPod 账号解析（D3-2 底座） */
     private readonly access: DnsPodAccess,
     /** FQDN → DNSPod 域名 解析（D3-2 底座） */
@@ -72,7 +70,7 @@ export class EdgeOneDnsSyncWorkflow {
     data: Record<string, unknown>,
     autoSync = false
   ): Promise<Record<string, unknown>> {
-    const { domain_name: domainName } = normalizeAccelerationDomainPayload(data)
+    const domainName = this.domains.domainNameOf(data)
     // 自动同步时先校验 DNSPod 关联与域名归属，避免创建后才发现无法写回
     if (autoSync) await this.resolveDnsTarget(providerId, domainName)
 
@@ -122,7 +120,7 @@ export class EdgeOneDnsSyncWorkflow {
           } catch (error) {
             if (!isEdgeOneNotFound(error)) throw error
             primaryAlreadyMissing = true
-            invalidateEdgeOneDomainCache(providerId, zoneId)
+            this.domains.invalidateCache(providerId, zoneId)
           }
           return { primary_deleted: true }
         },

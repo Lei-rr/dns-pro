@@ -89,11 +89,11 @@ npm run build                 # 只构建
 | `scripts/isolated-batch-request-probe.ts`         | 请求量守卫：过滤下推上游、不随条目数重复全量拉取                                     |
 | `scripts/isolated-provider-retry-probe.ts`        | 上游限流重试与任务快照剥离（失败任务保留快照）                                       |
 | `scripts/isolated-request-param-probe.ts`         | 路径参数与 schema 校验                                                               |
-| `scripts/isolated-edgeone-payload-probe.ts`       | EdgeOne 加速域名载荷归一化                                                           |
+| `scripts/isolated-edge-one-payload-probe.ts`      | EdgeOne 加速域名载荷归一化                                                           |
 | `scripts/isolated-saas-dns-repair-probe.ts`       | SaaS DNS repair 编排                                                                 |
 | `scripts/isolated-frontend-audit-probe.ts`        | 前端：任务恢复失败与"无活跃任务"必须可区分                                           |
 | `scripts/isolated-job-progress-probe.ts`          | 前端任务进度 / 行忙碌 / 选择 / 作用域代次                                            |
-| `scripts/isolated-edgeone-https-status-probe.ts`  | 前端 EdgeOne HTTPS 状态标签                                                          |
+| `scripts/isolated-edge-one-https-status-probe.ts` | 前端 EdgeOne HTTPS 状态标签                                                          |
 | `scripts/isolated-stability-readability-probe.ts` | 错误语义、厂商响应 schema、同步适配器                                                |
 | `scripts/isolated-default-config-probe.ts`        | 配置优先级与非法值 fail-fast                                                         |
 | `scripts/isolated-security-probe.ts`              | 会话吊销 / CSRF / 上游路径注入 / 信息泄露 / 暴力破解                                 |

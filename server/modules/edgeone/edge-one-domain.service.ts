@@ -1,4 +1,5 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
+import type { AccelerationDomainPort } from '../../core/contracts/acceleration-domain.port.js'
 import { edgeoneDomainsCacheTag, providerCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
 import { ApiError } from '../../core/http/api-error.js'
 import { callProvider, collectOffsetPages, toFullListResult } from '../../core/providers/provider-call.js'
@@ -53,8 +54,8 @@ type DomainListResult = ReturnType<typeof toFullListResult<EdgeOneAccelerationDo
 
 type DomainMutation = { name: string; request_id?: string }
 
-/** EdgeOne 加速域名 CRUD；DNS 副作用由 edge-one-dns-sync 工作流负责 */
-export class EdgeOneDomainService {
+/** EdgeOne 加速域名 CRUD；DNS 副作用由 edge-one-dns-sync 工作流负责。读模型是端口 AccelerationDomainValue 的超集 */
+export class EdgeOneDomainService implements AccelerationDomainPort {
   constructor(
     private readonly providers: ProviderRepository,
     private readonly httpTimeoutMs?: number
@@ -90,6 +91,16 @@ export class EdgeOneDomainService {
       )
     }
     return domain.cname ?? ''
+  }
+
+  /** 写前归一化：编排解析 DNS 目标与写入校验共用同一份 domain_name 规则（端口 domainNameOf） */
+  domainNameOf(data: Record<string, unknown>): string {
+    return normalizeAccelerationDomainPayload(data).domain_name
+  }
+
+  /** 丢弃站点加速域名缓存（端口 invalidateCache）：远端已不存在时清掉本地陈旧副本 */
+  invalidateCache(providerId: string, zoneId: string): void {
+    invalidateEdgeOneDomainCache(providerId, zoneId)
   }
 
   async createAccelerationDomain(

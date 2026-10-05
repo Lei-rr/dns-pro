@@ -11,7 +11,7 @@ import {
   runBatchItems,
   type BatchJobViewBase,
 } from '../../core/jobs/batch-job.js'
-import type { EdgeOneDomainService } from '../../modules/edgeone/edge-one-domain.service.js'
+import type { AccelerationDomainPort } from '../../core/contracts/acceleration-domain.port.js'
 import {
   EDGEONE_BATCH_DELETE_JOB,
   EDGEONE_BATCH_DISABLE_JOB,
@@ -32,7 +32,7 @@ export class EdgeOneBatchWorkflow {
 
   constructor(
     private readonly jobs: JobService,
-    private readonly domains: EdgeOneDomainService,
+    private readonly domains: AccelerationDomainPort,
     private readonly dnsSync: EdgeOneDnsSyncWorkflow
   ) {
     this.kind = new BatchJobKind(jobs, {

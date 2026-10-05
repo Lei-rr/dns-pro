@@ -1,4 +1,5 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
+import type { ZoneListPort } from '../../core/contracts/zone-list.port.js'
 import { providerCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
 import { ApiError } from '../../core/http/api-error.js'
 import { parseBool } from '../../shared/values.js'
@@ -30,8 +31,8 @@ interface EdgeOneZone {
 /** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
 type ZoneListResult = ReturnType<typeof toFullListResult<EdgeOneZone>>
 
-/** EdgeOne 站点查询（站点数量少，全量拉取） */
-export class EdgeOneZoneService {
+/** EdgeOne 站点查询（站点数量少，全量拉取）。读模型是端口 ZoneSummary 的超集 */
+export class EdgeOneZoneService implements ZoneListPort {
   constructor(
     private readonly providers: ProviderRepository,
     private readonly httpTimeoutMs?: number

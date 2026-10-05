@@ -68,4 +68,4 @@ assert.throws(
   () => normalizeAccelerationDomainPayload({}),
   (error: any) => error?.code === 'validation_failed'
 )
-console.log('edgeone-payload-probe=ok')
+console.log('edge-one-payload-probe=ok')

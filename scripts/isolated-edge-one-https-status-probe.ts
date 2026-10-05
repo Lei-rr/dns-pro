@@ -22,4 +22,4 @@ assert.match(table, /<TableHead>HTTPS<\/TableHead>/, 'acceleration-domain table 
 assert.match(table, /edgeOneHttpsStatusLabel\(record\.certificate\)/, 'HTTPS column is not driven by certificate state')
 assert.match(table, /<TableCell colspan="7"/, 'empty-row colspan must include HTTPS column')
 
-console.log('edgeone-https-status-probe=ok')
+console.log('edge-one-https-status-probe=ok')
