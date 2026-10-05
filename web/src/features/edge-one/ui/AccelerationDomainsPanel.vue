@@ -27,7 +27,8 @@ import type { JobLike } from '@/shared/job'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
-import { createScopeGeneration, type ScopeOwner } from '@/shared/lib/scope-generation'
+import { createScopeGeneration, type GenerationOwner, type ScopeOwner } from '@/shared/lib/scope-generation'
+import { usePageVisibility } from '@/shared/lib/use-page-visibility'
 
 const props = defineProps<{ providerId: string; zoneId: string; dnspodLinked: boolean }>()
 const mutationGeneration = createScopeGeneration()
@@ -87,6 +88,7 @@ watch(domainsQuery.data, (data) => {
   if (!data) return
   domains.value = data.domains
   if (data.zoneMeta) zoneMeta.value = data.zoneMeta
+  settleStatusTransitions(data.domains)
 })
 const { page, total, pagedItems: pagedDomains, resetPage } = useLocalPagination(filtered, pageSize)
 const selection = useRowSelection(pagedDomains, (row) => String(row.domain_name || row.name || ''))
@@ -228,16 +230,110 @@ async function saveCertificate(payload: Record<string, unknown>) {
 }
 
 /** 停止加速与启用都是异步的：上游接受后域名进入 process，期间改状态与删除都会被拒绝；
- *  落定耗时不可预测（创建场景实测 6~7 分钟，远超固定等待上限），因此不再轮询等待：
- *  下发后立即刷新一次列表确认指令已被接受，后续状态交给用户手动刷新查看。 */
+ *  落定耗时不可预测（创建场景实测 6~7 分钟，固定等待上限必然误报超时），因此按「只在下发到落定之间轮询」实现：
+ *  - 没有待定指令时页面静止，不发任何定时请求（不是常驻轮询）；
+ *  - 一直轮询到状态落定或用户离开，不设总时长/轮询次数上限（只放缓间隔降压）；
+ *  - 以「用户在看页面」为前提：页面不可见时停表，恢复可见时立即补一次静默刷新再继续；
+ *  - 顶部「刷新」按钮保留，用户想手动刷新随时可用。 */
 
-/** 上下线切换的文案：指令已下发 → 引导手动刷新查看结果 */
-const STATUS_TRANSITION_TEXT: Record<'online' | 'offline', { sending: string; hint: string }> = {
-  offline: { sending: '停止指令已下发', hint: '可稍后刷新查看结果' },
-  online: { sending: '启用指令已下发', hint: '可稍后刷新查看结果' },
+/** 待落定的上下线指令：目标状态 + 是否已观察到上游进入 process（用于识别失败回退） */
+type PendingStatusTransition = { target: 'online' | 'offline'; enteredTransition: boolean }
+
+/** 轮询间隔：起步 3s 便于尽快看到落定，持续未落定时线性放缓到 10s 降压；这里只放缓间隔，不设轮询上限 */
+const STATUS_POLL_FIRST_MS = 3000
+const STATUS_POLL_STEP_MS = 1000
+const STATUS_POLL_MAX_MS = 10000
+
+const pendingStatusTransitions = ref(new Map<string, PendingStatusTransition>())
+const { visible: pageVisible } = usePageVisibility()
+const statusPollGeneration = createScopeGeneration()
+let statusPollTimer: ReturnType<typeof setTimeout> | null = null
+let statusPollDelayMs = STATUS_POLL_FIRST_MS
+
+function clearStatusPollTimer() {
+  if (statusPollTimer === null) return
+  clearTimeout(statusPollTimer)
+  statusPollTimer = null
 }
 
-/** 停止/启用共用流程：下发 → 按真实过渡态展示 → 立即刷新一次列表 → 提示稍后手动刷新查看结果 */
+/** 单轮：静默强制刷新（必须绕过服务端缓存，否则 5 分钟缓存会让轮询白跑）→ 未落定且页面可见才排下一轮 */
+async function runStatusPoll(owner: GenerationOwner) {
+  if (!owner.active() || !pendingStatusTransitions.value.size || !pageVisible.value) return
+  clearStatusPollTimer()
+  await domainsQuery.refreshSilently()
+  if (!owner.active() || !pendingStatusTransitions.value.size || !pageVisible.value) return
+  statusPollTimer = setTimeout(() => void runStatusPoll(owner), statusPollDelayMs)
+  statusPollDelayMs = Math.min(STATUS_POLL_MAX_MS, statusPollDelayMs + STATUS_POLL_STEP_MS)
+}
+
+/** 启动（或重启）轮询：换代让旧轮次在下个检查点自行退出，避免两条循环并发打上游 */
+function startStatusPolling() {
+  clearStatusPollTimer()
+  statusPollDelayMs = STATUS_POLL_FIRST_MS
+  void runStatusPoll(statusPollGeneration.claim())
+}
+
+/** 停止轮询并清空待定项：站点切换、组件卸载与全部落定后调用 */
+function resetStatusPolling() {
+  clearStatusPollTimer()
+  statusPollGeneration.invalidate()
+  pendingStatusTransitions.value = new Map()
+  statusPollDelayMs = STATUS_POLL_FIRST_MS
+}
+
+/** 落定判定：等于目标态即落定；已进过 process 又离开过渡态（上游给了结论，如失败回退）同样落定。
+ *  尚未观察到 process 时即使状态还是下发前的旧值也继续等：上游可能还没接受指令，此时收口会漏掉落定。 */
+function settleStatusTransitions(records: EdgeOneAccelerationDomain[]) {
+  const pending = pendingStatusTransitions.value
+  if (!pending.size) return
+  const statusByKey = new Map(records.map((item) => [domainName(item), String(item.status || '').toLowerCase()]))
+  const next = new Map<string, PendingStatusTransition>()
+  let consumed = false
+  for (const [key, transition] of pending) {
+    const status = statusByKey.get(key)
+    // 该行已从列表消失（例如别处删除）：等待对象不存在，直接收口
+    if (status === undefined || status === transition.target) {
+      consumed = true
+      continue
+    }
+    if (status === 'process') {
+      if (transition.enteredTransition) {
+        next.set(key, transition)
+      } else {
+        next.set(key, { ...transition, enteredTransition: true })
+        consumed = true
+      }
+      continue
+    }
+    if (transition.enteredTransition) {
+      consumed = true
+      continue
+    }
+    next.set(key, transition)
+  }
+  if (!consumed) return
+  pendingStatusTransitions.value = next
+  // 全部落定：立刻停表，不等下一轮
+  if (!next.size) clearStatusPollTimer()
+}
+
+watch(pageVisible, (visible) => {
+  if (!visible) {
+    // 页面不可见：不再排新的一轮（在飞的一轮结束后会自行退出）
+    clearStatusPollTimer()
+    return
+  }
+  // 回到可见：还有待定指令就立即补一次刷新，把不可见期间的变化拉回来
+  if (pendingStatusTransitions.value.size) startStatusPolling()
+})
+
+/** 上下线切换的文案：指令已下发 → 页面停留期间自动刷新直到落定 */
+const STATUS_TRANSITION_TEXT: Record<'online' | 'offline', { sending: string; hint: string }> = {
+  offline: { sending: '停止指令已下发', hint: '停留本页会自动刷新，直到状态更新完成' },
+  online: { sending: '启用指令已下发', hint: '停留本页会自动刷新，直到状态更新完成' },
+}
+
+/** 停止/启用共用流程：下发 → 按真实过渡态展示 → 登记待落定并开始轮询（首轮立即静默回源确认指令已被接受） */
 async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 'online' | 'offline') {
   const key = domainName(record)
   const text = STATUS_TRANSITION_TEXT[status]
@@ -252,8 +348,11 @@ async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 
         (item) => ({ ...item, status: 'process', active_status: 'process' })
       )
       toast.message(text.sending, text.hint)
-      // 命令已让服务端缓存失效：这次刷新直接回源，能看到上游最新状态（通常已是「配置中」）
-      await runLoad()
+      pendingStatusTransitions.value = new Map(pendingStatusTransitions.value).set(key, {
+        target: status,
+        enteredTransition: false,
+      })
+      startStatusPolling()
     } catch (error) {
       // 行数据只在成功后改写，失败时无需回滚（回滚反而会覆盖并发刷新的新值）
       if (owner.active()) toast.error(errorMessage(error))
@@ -261,12 +360,12 @@ async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 
   })
 }
 
-/** 两步走第一步：online → 停止加速 → 用户刷新确认落为 offline 后，删除入口自然出现 */
+/** 两步走第一步：online → 停止加速 → 轮询落为 offline 后，删除入口自然出现 */
 function stopAcceleration(record: EdgeOneAccelerationDomain) {
   return setAccelerationStatus(record, 'offline')
 }
 
-/** 停用后的回头路：offline → 启用 → 用户刷新确认落回 online 后，删除入口随之收起 */
+/** 停用后的回头路：offline → 启用 → 轮询落回 online 后，删除入口随之收起 */
 function enableAcceleration(record: EdgeOneAccelerationDomain) {
   return setAccelerationStatus(record, 'online')
 }
@@ -420,6 +519,8 @@ watch(
   () => [props.providerId, props.zoneId],
   () => {
     mutationGeneration.invalidate()
+    // 上一个站点的待落定指令随作用域一起作废：轮询定时器与待定项都不能带到新站点
+    resetStatusPolling()
     dialogOpen.value = false
     certDialogOpen.value = false
     editingDomain.value = null
@@ -439,6 +540,8 @@ watch(
 
 onUnmounted(() => {
   mutationGeneration.invalidate()
+  // 组件卸载即用户离开：清掉轮询定时器与可见性监听（监听由 usePageVisibility 的 scope dispose 移除）
+  resetStatusPolling()
   dialogOpen.value = false
   certDialogOpen.value = false
   jobProgress.reset()

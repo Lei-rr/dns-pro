@@ -30,6 +30,7 @@ type ResourceQuery<T> = {
   pageSize: Ref<number>
   setPageSize: (next: number) => void
   refresh: () => Promise<void>
+  refreshSilently: () => Promise<void>
   invalidate: () => Promise<void>
 }
 
@@ -50,6 +51,20 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     dispose.value = false
   })
 
+  // 「绕过服务端缓存」标志按在飞刷新计数：用户刷新与静默刷新并发时，先结束的一方不能把标志提前复位
+  let inFlightRefreshes = 0
+
+  async function withRefreshFlag<T>(task: () => Promise<T>): Promise<T> {
+    inFlightRefreshes += 1
+    refreshFlag.value = true
+    try {
+      return await task()
+    } finally {
+      inFlightRefreshes -= 1
+      if (inFlightRefreshes === 0) refreshFlag.value = false
+    }
+  }
+
   const key = computed<QueryKey>(() => toValue(options.key))
 
   const query = useQuery({
@@ -67,19 +82,25 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
   async function refresh() {
     if (refreshing.value) return
     refreshing.value = true
-    refreshFlag.value = true
     const started = Date.now()
     try {
-      const result = await query.refetch()
+      const result = await withRefreshFlag(() => query.refetch())
       if (result.error) return
       const wait = Math.max(0, REFRESH_MIN_MS - (Date.now() - started))
       if (wait) await new Promise((resolve) => setTimeout(resolve, wait))
       const notice = options.refreshNotice ?? '已刷新'
       if (notice) toast.success(notice)
     } finally {
-      refreshFlag.value = false
       if (dispose.value) refreshing.value = false
     }
+  }
+
+  /**
+   * 静默强制刷新：与 refresh() 一样走 refresh=true 绕过服务端缓存，但不占用 refreshing、不弹提示。
+   * 供「等待状态落定」这类自动轮询使用：轮询不该让顶部刷新按钮转圈，也不该每隔几秒弹一次「已刷新」。
+   */
+  async function refreshSilently() {
+    await withRefreshFlag(() => query.refetch())
   }
 
   async function invalidate() {
@@ -99,6 +120,7 @@ export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQ
     pageSize,
     setPageSize,
     refresh,
+    refreshSilently,
     invalidate,
   }
 }
