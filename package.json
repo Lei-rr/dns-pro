@@ -1,7 +1,7 @@
 {
   "name": "dns-pro",
   "version": "1.1.0",
-  "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / \u817e\u8baf\u4e91 EdgeOne \u4e00\u4f53\u7684 DNS \u4e0e\u96a7\u9053\u7ba1\u7406\u9762\u677f\uff08Node.js \u7248\uff09",
+  "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / 腾讯云 EdgeOne 一体的 DNS 与隧道管理面板（Node.js 版）",
   "type": "module",
   "workspaces": [
     "web"
@@ -48,7 +48,8 @@
     "probe:security": "tsx scripts/isolated-security-probe.ts && tsx scripts/isolated-password-probe.ts && tsx scripts/isolated-credential-encryption-probe.ts",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "npm --workspace dns-pro-web run typecheck",
-    "verify": "npm run format:check && npm run version:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:query && npm run probe:platform && npm run probe:workflow && npm run probe:reconcile && npm run probe:audit && npm run probe:functional && npm run probe:security && npm run build && npm run probe:static",
+    "test": "vitest run",
+    "verify": "npm run format:check && npm run version:check && npm run lint && npm run typecheck && npm run typecheck:web && npm run test && npm run arch:final && npm run deadcode && npm run deps:check && npm run routes:check && npm run probe:api && npm run probe:job && npm run probe:query && npm run probe:platform && npm run probe:workflow && npm run probe:reconcile && npm run probe:audit && npm run probe:functional && npm run probe:security && npm run build && npm run probe:static",
     "probe:requests": "tsx scripts/isolated-batch-request-probe.ts",
     "probe:retry": "tsx scripts/isolated-provider-retry-probe.ts",
     "probe:query": "tsx --tsconfig web/tsconfig.json scripts/isolated-resource-query-probe.ts",
@@ -75,12 +76,14 @@
     "eslint": "^10.8.0",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.8.0",
+    "happy-dom": "^20.14.5",
     "knip": "^6.39.0",
     "pino-pretty": "^13.0.0",
     "prettier": "^3.4.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.11",
     "vue-eslint-parser": "^10.4.1"
   },
   "keywords": [

@@ -21,11 +21,19 @@ const walk = (dir) => {
 const lineAt = (code, position) => code.slice(0, position).split('\n').length
 const report = (rule, file, line, message) => errors.push(`${rule} ${file}:${line} ${message}`)
 
-const sourceFiles = [...walk('server'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
+/**
+ * 测试文件（*.test.ts / *.spec.ts，由 vitest 运行，见 vitest.config.ts）不参与生产架构规则：
+ * 命名、分层依赖、运行时循环、错误码登记等约束只针对生产代码。这里在数据源处统一剔除，
+ * 而不是给每条规则单独加例外 —— 既保证测试文件不误报，也保证生产代码的约束一条不减。
+ */
+const isTestFile = (file) => /\.(?:test|spec)\.[cm]?tsx?$/.test(file)
+const discoveredFiles = [...walk('server'), ...walk('web/src')].filter((file) => /\.(?:ts|vue)$/.test(file))
+const testFiles = discoveredFiles.filter(isTestFile)
+const sourceFiles = discoveredFiles.filter((file) => !isTestFile(file))
 const backendFiles = sourceFiles.filter((file) => file.startsWith('server/'))
 const webFiles = sourceFiles.filter((file) => file.startsWith('web/src/'))
 
-const cacheProductionFiles = walk('server/core/cache')
+const cacheProductionFiles = walk('server/core/cache').filter((file) => !isTestFile(file))
 if (exists('server/core/events')) {
   report('ARCH010', 'server/core/events', 1, 'EventBus platform layer must not be recreated')
 }
@@ -632,4 +640,6 @@ if (errors.length) {
   for (const error of errors.sort()) console.error(error)
   process.exit(1)
 }
-console.log(`architecture=ok files=${sourceFiles.length} imports=${imports.length} routes=${routeCalls}`)
+console.log(
+  `architecture=ok files=${sourceFiles.length} tests=${testFiles.length} imports=${imports.length} routes=${routeCalls}`
+)

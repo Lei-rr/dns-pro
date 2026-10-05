@@ -2,12 +2,12 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.{mjs,ts}"],
+      "entry": ["scripts/*.{mjs,ts}", "server/**/*.{test,spec}.ts"],
       "project": ["server/**/*.ts", "scripts/**/*.{mjs,ts}"],
       "ignoreDependencies": ["vue", "@tanstack/vue-query"]
     },
     "web": {
-      "entry": ["src/app/styles/index.css"],
+      "entry": ["src/app/styles/index.css", "src/**/*.{test,spec}.ts"],
       "project": ["src/**/*.{ts,vue,css}"]
     }
   },
