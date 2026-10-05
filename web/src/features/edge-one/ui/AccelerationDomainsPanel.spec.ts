@@ -11,6 +11,7 @@ import {
   STATUS_POLL_RATE_LIMIT_MIN_MS,
 } from '@/features/edge-one/model/status-poll-policy'
 import type { ApiResponse } from '@/shared/api/types'
+import { confirmDeleteWithSkipCleanup } from '@/shared/ui/confirm'
 import AccelerationDomainsPanel from './AccelerationDomainsPanel.vue'
 import AccelerationDomainsTable from './AccelerationDomainsTable.vue'
 
@@ -33,6 +34,12 @@ import AccelerationDomainsTable from './AccelerationDomainsTable.vue'
 const ZONE_ID = 'zone-1'
 const ZONE_NAME = '示例站点'
 const DOMAIN_NAME = 'www.example.com'
+
+// 删除确认弹窗由 shared/ui/confirm 的组件测试覆盖；这里只关心勾选结果如何转成接口参数
+vi.mock('@/shared/ui/confirm', () => ({
+  confirmDeleteWithSkipCleanup: vi.fn(),
+  confirmDialog: vi.fn(),
+}))
 
 function ok<T>(data: T): ApiResponse<T> {
   return { code: 0, message: 'success', data }
@@ -197,6 +204,12 @@ function clickMenuItem(text: string) {
   item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 }
 
+function findMenuItem(text: string): HTMLElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+    (element) => String(element.textContent ?? '').trim() === text
+  )
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
 })
@@ -258,6 +271,68 @@ describe('AccelerationDomainsPanel 轮询编排 · 限定轮询时段', () => {
 
     await advance(4000)
     expect(server.polls).toHaveLength(4)
+  })
+})
+
+describe('AccelerationDomainsPanel 过渡态不被静默刷新覆盖', () => {
+  it('服务端仍返回 online 时行不回落：保持「配置中」且停止/删除入口保持禁用', async () => {
+    const { wrapper, server } = await mountPanel()
+    await sendStopCommand(wrapper)
+
+    // 首轮静默回源时服务端还没接受指令，返回的仍是 online；行数据也不再被本地改写
+    expect(server.records[0]?.status).toBe('online')
+    expect(wrapper.findComponent(AccelerationDomainsTable).props('transitioningKeys')).toEqual([DOMAIN_NAME])
+
+    // 展示层按过渡态渲染：徽章为「配置中」，状态入口锁住（否则用户会重复下发停止）
+    expect(wrapper.text()).toContain('配置中')
+    expect(wrapper.text()).not.toContain('已生效')
+    await openRowMenu(wrapper)
+    expect(findMenuItem('停止加速')?.getAttribute('data-disabled')).not.toBeNull()
+    expect(findMenuItem('删除')?.getAttribute('data-disabled')).not.toBeNull()
+    expect(document.body.textContent).toContain('配置中，暂不可操作')
+  })
+
+  it('状态落定后过渡态摘除：行回到服务端状态，启用与删除入口恢复可用', async () => {
+    const { wrapper, server } = await mountPanel()
+    await sendStopCommand(wrapper)
+    expect(wrapper.findComponent(AccelerationDomainsTable).props('transitioningKeys')).toEqual([DOMAIN_NAME])
+
+    // 上游落为 offline：下一次静默刷新里过渡态被摘除，行按服务端状态渲染
+    server.records = [domainRecord('offline')]
+    await advance(STATUS_POLL_FIRST_MS)
+
+    expect(wrapper.findComponent(AccelerationDomainsTable).props('transitioningKeys')).toEqual([])
+    expect(wrapper.text()).toContain('已停用')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+describe('AccelerationDomainsPanel 删除时的 DNS 清理选择', () => {
+  it('勾选「跳过 DNS 清理」→ deleteAccelerationDomain 收到 skipCleanup（对应后端 auto_cleanup=false）', async () => {
+    const spy = vi.spyOn(edgeOneApi, 'deleteAccelerationDomain').mockResolvedValue(ok(null))
+    vi.mocked(confirmDeleteWithSkipCleanup).mockResolvedValue({ confirmed: true, checked: true })
+    const { wrapper } = await mountPanel()
+
+    wrapper.findComponent(AccelerationDomainsTable).vm.$emit('remove', domainRecord('offline'))
+    await flush()
+
+    expect(spy).toHaveBeenCalledWith('provider-1', ZONE_ID, DOMAIN_NAME, { skipCleanup: true })
+  })
+
+  it('不勾选时保持既有行为 skipCleanup=false；取消则完全不发请求', async () => {
+    const spy = vi.spyOn(edgeOneApi, 'deleteAccelerationDomain').mockResolvedValue(ok(null))
+    const { wrapper } = await mountPanel()
+
+    vi.mocked(confirmDeleteWithSkipCleanup).mockResolvedValue({ confirmed: true, checked: false })
+    wrapper.findComponent(AccelerationDomainsTable).vm.$emit('remove', domainRecord('offline'))
+    await flush()
+    expect(spy).toHaveBeenCalledWith('provider-1', ZONE_ID, DOMAIN_NAME, { skipCleanup: false })
+
+    spy.mockClear()
+    vi.mocked(confirmDeleteWithSkipCleanup).mockResolvedValue({ confirmed: false, checked: true })
+    wrapper.findComponent(AccelerationDomainsTable).vm.$emit('remove', domainRecord('offline'))
+    await flush()
+    expect(spy).not.toHaveBeenCalled()
   })
 })
 

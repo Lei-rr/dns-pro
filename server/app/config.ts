@@ -12,7 +12,7 @@ export interface AppConfig {
   sessionMaxAgeSeconds: number
   cookieSecure: boolean
   cookieSameSite: 'lax' | 'strict' | 'none'
-  /** false / 可信代理地址列表（不建议 true：会信任任意 X-Forwarded-For） */
+  /** false / 可信代理地址列表；true 会信任任意转发头，仅允许程序内 overrides 显式传入（环境变量侧拒绝） */
   trustProxy: boolean | string[]
   httpTimeoutMs: number
 }
@@ -48,9 +48,12 @@ function envBool(env: NodeJS.ProcessEnv, key: string): boolean | undefined {
 }
 
 /**
- * TRUST_PROXY：true/false 或逗号分隔的 IP/CIDR（如 127.0.0.1,10.0.0.0/8）。
- * 不接受跳数：Fastify 5 对数字 trustProxy 采取 fail-closed，若改成按跳数信任，
- * 直连客户端只要带一个 X-Forwarded-For 就能冒充来源 IP，绕开按 IP 的登录锁定与审计。
+ * TRUST_PROXY：false 或逗号分隔的 IP/CIDR（如 127.0.0.1,10.0.0.0/8）。
+ * 两类取值都拒绝：
+ * - 数字跳数：Fastify 5 对数字 trustProxy 采取 fail-closed，若改成按跳数信任，
+ *   直连客户端只要带一个 X-Forwarded-For 就能冒充来源 IP，绕开按 IP 的登录锁定与审计；
+ * - true：Fastify 的全信任语义同样采信任意 X-Forwarded-For，效果与按跳数信任一致。
+ * 需要信任代理时必须显式列出受信网段。
  */
 function envTrustProxy(env: NodeJS.ProcessEnv): AppConfig['trustProxy'] | undefined {
   const value = envString(env, 'TRUST_PROXY')
@@ -61,7 +64,12 @@ function envTrustProxy(env: NodeJS.ProcessEnv): AppConfig['trustProxy'] | undefi
     )
   }
   const lower = value.toLowerCase()
-  if (['true', 'false'].includes(lower)) return lower === 'true'
+  if (lower === 'true') {
+    throw new Error(
+      'TRUST_PROXY=true is not accepted: trusting every proxy lets any direct client spoof its source IP via X-Forwarded-For. List the trusted proxy IPs/CIDRs instead (e.g. 127.0.0.1,10.0.0.0/8)'
+    )
+  }
+  if (lower === 'false') return false
   return value
     .split(',')
     .map((item) => item.trim())

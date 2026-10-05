@@ -16,8 +16,7 @@ export class ProviderRepository {
 
   async all(options: { fresh?: boolean } = {}): Promise<Provider[]> {
     const data = options.fresh ? await this.store.readFresh() : await this.store.read()
-    const items = Array.isArray(data.items) ? data.items : []
-    return items.map((item) => openProviderSecrets(item, this.secrets))
+    return this.requireItems(data).map((item) => openProviderSecrets(item, this.secrets))
   }
 
   async find(id: string): Promise<Provider | null> {
@@ -53,9 +52,7 @@ export class ProviderRepository {
     mutator: (current: Provider[]) => { next: Provider[]; result: U }
   ): Promise<{ saved: Provider[]; result: U }> {
     const outcome = await this.store.transaction((current) => {
-      const items = (Array.isArray(current.items) ? current.items : []).map((item) =>
-        openProviderSecrets(item, this.secrets)
-      )
+      const items = this.requireItems(current).map((item) => openProviderSecrets(item, this.secrets))
       const { next, result } = mutator(items)
       const plaintext = next.map((provider) => this.normalizeForStorage(provider))
       const sealed = plaintext.map((provider) => sealProviderSecrets(provider, this.secrets))
@@ -66,6 +63,20 @@ export class ProviderRepository {
       throw new ApiError('server_error', 'Provider transaction produced no result', 500)
     }
     return outcome
+  }
+
+  /**
+   * 结构校验：`items` 必须是数组。
+   * 文件被写成 `{}` 或 `items` 非数组时绝不能兜底成空表——读路径会静默返回空清单，
+   * 写事务再按「整文件替换」把空表落盘，其余服务商连同 AES 密文凭据一并消失。
+   * 因此按损坏处理：显式报错并要求人工修复，写事务在落盘前即被拒绝。
+   */
+  private requireItems(data: ProvidersFile): Provider[] {
+    const items = (data as { items?: unknown } | null | undefined)?.items
+    if (!Array.isArray(items)) {
+      throw new ApiError('server_error', 'Corrupted providers.json: "items" must be an array', 500)
+    }
+    return items as Provider[]
   }
 
   private normalizeForStorage(provider: ProviderInput): Provider {

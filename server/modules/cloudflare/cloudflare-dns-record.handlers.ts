@@ -20,14 +20,21 @@ export async function listCloudflareRecordsHandler(
     zoneId,
     request.query.refresh === 'true'
   )
-  // F3：列表带 hostname 级归属徽标；归属查询失败不阻断列表（徽标降级为无）
+  // F3：列表带 hostname 级归属徽标。归属查询失败不得降级成 manual：
+  // manual 的语义是「无派生归属，自动化流程不会删除该记录」，与「暂时查不到」正好相反，
+  // 上游限流时那样降级等于给用户一个错误保证。失败时本响应干脆不返回 owner 字段，前端按未知归属处理（不渲染徽标）。
   const claims = await request.server.ctx.modules.ownership
     .claimsFor({ providerType: 'cloudflare', providerId, zone })
-    .catch(() => [])
+    .catch((error: unknown) => {
+      request.log.warn({ err: error, providerId, zone }, 'Cloudflare 记录归属查询失败：本次响应不返回归属徽标')
+      return null
+    })
   return reply.send(
     success({
       ...result,
-      items: result.items.map((item) => ({ ...item, owner: ownerOf(claims, String(item.name ?? '')).owner })),
+      items: result.items.map((item) =>
+        claims === null ? { ...item } : { ...item, owner: ownerOf(claims, String(item.name ?? '')).owner }
+      ),
     })
   )
 }

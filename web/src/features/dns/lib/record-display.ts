@@ -51,6 +51,14 @@ export function dnsRecordRowKey(record: DnsRecord): string {
   return String(record.id || `${record.name || ''}·${record.type || ''}·${record.value || ''}·${record.line || ''}`)
 }
 
+/**
+ * 展示行展开为记录集合：分组行携带整组记录（分组先于分页，组不会跨页分裂），单条行就是它自己。
+ * 用于把「当前页展示行」折算成表头全选/批量操作需要覆盖的记录口径。
+ */
+export function recordsOfDisplayRows(rows: DnsRecordDisplayRow[]): DnsRecord[] {
+  return rows.flatMap((row) => (row.kind === 'group' ? row.records : [row.record]))
+}
+
 export function dnsRecordMatchesKeyword(record: DnsRecord, keyword: string): boolean {
   if (!keyword) return false
   return [record.name, record.type, record.value, record.content, record.remark, record.comment, record.line]

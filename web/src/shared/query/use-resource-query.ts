@@ -23,6 +23,11 @@ type ResourceQueryOptions<T> = {
 }
 
 type ResourceQuery<T> = {
+  /**
+   * 服务端真相的只读视图：TanStack 把内部 state 包成深 readonly，
+   * 因此 data（含其数组与嵌套对象）不可写。
+   * 需要就地修改的镜像场景必须先浅拷贝（`data.slice()`），否则赋值静默失效。
+   */
   data: Ref<T | undefined>
   loading: Ref<boolean>
   refreshing: Ref<boolean>

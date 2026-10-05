@@ -25,7 +25,10 @@ export class ProviderDependencyWorkflow {
     options: { freshPreferences?: boolean } = {}
   ): Promise<Record<string, ProviderDependency[]>> {
     const source = providers ?? (await this.providers.all())
-    const dependencies: Record<string, ProviderDependency[]> = {}
+    // 无原型索引容器：provider id 是任意合法字符串，历史数据里可能存在 constructor/toString 这类
+    // 命中 Object.prototype 的名字。普通字面量读到的是原型链上的函数，`??=` 见非空值不建数组，
+    // 紧跟的 push 直接抛错（服务商列表 500）；forProvider 也会把函数当成依赖数组返回。
+    const dependencies: Record<string, ProviderDependency[]> = Object.create(null)
 
     for (const provider of source) {
       for (const rule of PROVIDER_LINK_RULES) {

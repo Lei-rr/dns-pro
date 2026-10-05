@@ -118,6 +118,27 @@ export class SaaSPreferenceService implements SaaSPreferencePort {
     )
   }
 
+  /**
+   * 优选域名 + 同步配置合并写入（单事务）。
+   * 分两次写会在中间失败时留下「优选域名已换、同步配置未换」的半截状态：远端 DNS 已按新优选写回，
+   * 本地却按旧配置继续同步，面板每次读到的取值都不一致。校验由调用方在远端变更前完成（validateSyncConfig）。
+   * 传 null 表示本次不提交该字段；两者都为 null 时不产生任何变更，调用方不应这样调用。
+   */
+  setPreferredAndSync(input: {
+    cloudflareProviderId: string
+    identity: HostnameIdentity
+    hostnameId?: string
+    preferredDomain: string | null
+    sync: SyncPreference | null
+  }): Promise<HostnamePreference> {
+    const changes: Partial<HostnamePreference> = {}
+    if (input.preferredDomain !== null) changes.preferred_domain = input.preferredDomain.trim()
+    if (input.sync !== null) Object.assign(changes, toSyncChanges(input.sync))
+    return this.withOwner(input.cloudflareProviderId, () =>
+      this.save(input.cloudflareProviderId, input.identity, input.hostnameId ?? '', changes)
+    )
+  }
+
   /** 校验同步服务商引用（创建远端资源前预检用） */
   async validateSyncConfig(cloudflareProviderId: string, sync: SyncPreference): Promise<void> {
     await this.withOwner(cloudflareProviderId, async (providers) => assertSyncProvider(sync, providers))

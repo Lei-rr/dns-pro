@@ -101,6 +101,7 @@ function isBusy(record: SaaSHostname) {
             <Checkbox
               :model-value="selected.has(hostnameKey(record))"
               :disabled="isBusy(record)"
+              :aria-label="`选择 ${record.hostname}`"
               @update:model-value="(value: boolean | 'indeterminate') => setSelected(record, value === true)"
               @click.stop
             />

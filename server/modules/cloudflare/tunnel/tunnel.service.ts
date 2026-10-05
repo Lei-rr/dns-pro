@@ -115,10 +115,15 @@ export class TunnelService implements TunnelListPort {
     }
   }
 
-  /** 先断开连接再删除；连接不存在视为已断开 */
+  /** 先断开连接再删除；连接或隧道本体在上游已不存在时视为目标状态已达成（幂等） */
   async delete(providerId: string, tunnelId: string): Promise<{ id: string }> {
     const account = await this.access.forTunnel(providerId)
     const path = tunnelPath(account.accountId, tunnelId)
+    const invalidateCaches = () => {
+      invalidateTunnelListCache(providerId)
+      // 隧道已删除：其路由配置缓存必须一并失效，否则仍会返回旧配置
+      invalidateTunnelRouteCache(providerId, tunnelId)
+    }
     try {
       await account.client.delete(`${path}/connections`)
     } catch (error) {
@@ -132,18 +137,25 @@ export class TunnelService implements TunnelListPort {
         )
       }
     }
-    await callProvider(
-      {
-        code: 'cloudflared_tunnel_delete_failed',
-        message: 'Cloudflare Tunnel delete failed',
-        providerId,
-        details: { tunnel_id: tunnelId },
-      },
-      () => account.client.delete(path)
-    )
-    invalidateTunnelListCache(providerId)
-    // 隧道已删除：其路由配置缓存必须一并失效，否则仍会返回旧配置
-    invalidateTunnelRouteCache(providerId, tunnelId)
+    try {
+      await callProvider(
+        {
+          code: 'cloudflared_tunnel_delete_failed',
+          message: 'Cloudflare Tunnel delete failed',
+          providerId,
+          details: { tunnel_id: tunnelId },
+        },
+        () => account.client.delete(path)
+      )
+    } catch (error) {
+      if (!isExplicitNotFound(error)) {
+        // 删除结果未知（超时 / 上游 5xx）：缓存同样失效，否则旧列表会把幽灵隧道留到 TTL 过期
+        invalidateCaches()
+        throw error
+      }
+      // 上游 404：隧道已不存在（重复删除或已被其它客户端删除），与连接删除同语义，继续走成功路径
+    }
+    invalidateCaches()
     return { id: tunnelId }
   }
 
@@ -152,8 +164,11 @@ export class TunnelService implements TunnelListPort {
     return { token: await this.fetchToken(account, tunnelId) }
   }
 
-  /** 轮换隧道密钥后返回新令牌 */
-  async rotateToken(providerId: string, tunnelId: string): Promise<{ token: string }> {
+  /** 轮换隧道密钥后返回新令牌；密钥已换、令牌取回失败时与 create 同语义，转为副作用标记 */
+  async rotateToken(
+    providerId: string,
+    tunnelId: string
+  ): Promise<{ token: string | null; side_effects?: SideEffects }> {
     const account = await this.access.forTunnel(providerId)
     await callProvider(
       {
@@ -165,7 +180,18 @@ export class TunnelService implements TunnelListPort {
       () => account.client.patch(tunnelPath(account.accountId, tunnelId), { tunnel_secret: newTunnelSecret() })
     )
     invalidateTunnelListCache(providerId)
-    return { token: await this.fetchToken(account, tunnelId) }
+    try {
+      return { token: await this.fetchToken(account, tunnelId) }
+    } catch (error) {
+      // 密钥已换、旧令牌已废弃：抛 502 会让调用方以为轮换失败并重试（再换一次密钥），
+      // 与 create 一致转成 token 为 null 的副作用标记，由调用方决定是否重取
+      return {
+        token: null,
+        side_effects: {
+          tunnel: { token: { status: 'failed', message: errorMessage(error), details: [{ tunnel_id: tunnelId }] } },
+        },
+      }
+    }
   }
 
   private async fetchToken(account: TunnelAccount, tunnelId: string): Promise<string> {

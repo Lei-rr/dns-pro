@@ -1,7 +1,22 @@
 import { ApiError } from '../http/api-error.js'
+import { SEALED_VALUE_PREFIX } from '../crypto/secret-box.js'
 import type { ProviderDefinition, ProviderInput } from './provider.types.js'
 
-const RESERVED_PROVIDER_IDS = ['home', 'login', 'providers', 'user']
+/**
+ * 保留的服务商 ID：
+ * - 路由/界面占位名（大小写不敏感）
+ * - Object.prototype 的自有属性名（constructor/toString/valueOf/hasOwnProperty…）
+ *   下游多处用普通对象做 provider 索引容器（依赖反查 map 等），id 命中这些名字时索引读到的
+ *   是原型链上的函数——`??=` 看到非空值不建数组，push 直接抛错（列表 500）；
+ *   `dependencies.length` 读的是函数自身 length（Object.length 为 1），删除恒判「仍被引用」（409）。
+ */
+const RESERVED_PROVIDER_IDS: ReadonlySet<string> = new Set([
+  'home',
+  'login',
+  'providers',
+  'user',
+  ...Object.getOwnPropertyNames(Object.prototype),
+])
 
 /**
  * 服务商 ID 规则（自定义 id 与关联字段引用共用同一份正则）。
@@ -34,6 +49,7 @@ export class ProviderNormalizer {
   normalize(data: Record<string, unknown>, definition: ProviderDefinition): ProviderInput {
     const id = this.validateId(data.id)
     const type = definition.type
+    const secretFields = new Set(definition.secret_fields)
 
     const provider: Record<string, unknown> = {
       id,
@@ -52,6 +68,13 @@ export class ProviderNormalizer {
 
       if (value !== '') {
         this.validateField(field, value)
+        // 密钥字段只收明文：密文前缀属于落盘格式，用户提交的「看起来是密文」的值
+        // 无法保证由本机密钥生成，跳过加密后读取必然失败且无法从界面改回
+        if (secretFields.has(field) && value.startsWith(SEALED_VALUE_PREFIX)) {
+          throw new ApiError('validation_failed', `Secret field must be plaintext: ${field}`, 422, {
+            errors: { [field]: '请填写明文凭据（不要提交已加密的值）' },
+          })
+        }
       }
 
       provider[field] = value
@@ -75,7 +98,7 @@ export class ProviderNormalizer {
       })
     }
 
-    if (RESERVED_PROVIDER_IDS.includes(value.toLowerCase())) {
+    if (RESERVED_PROVIDER_IDS.has(value.toLowerCase()) || RESERVED_PROVIDER_IDS.has(value)) {
       throw new ApiError('validation_failed', 'Provider id is reserved', 422, {
         errors: { id: 'Provider id is reserved' },
       })

@@ -189,7 +189,7 @@ web/src/
 | `SESSION_SECRET`  | 自动生成       | ≥32 位；未设置时持久化在 `data/session-secret`                                                           |
 | `COOKIE_SECURE`   | `false`        | 启用 HTTPS 后务必设为 `true`                                                                             |
 | `COOKIE_SAMESITE` | `lax`          | `lax` / `strict` / `none`（`none` 必须同时 `COOKIE_SECURE=true`）                                        |
-| `TRUST_PROXY`     | `false`        | 可信代理 IP/CIDR 列表（如 `127.0.0.1,10.0.0.0/8`）；不接受跳数；`true` 会信任任意转发头                  |
+| `TRUST_PROXY`     | `false`        | 可信代理 IP/CIDR 列表（如 `127.0.0.1,10.0.0.0/8`）；跳数与 `true` 都会被拒绝——两者都信任任意 `X-Forwarded-For`，直连客户端可借此冒充来源 IP，绕开按 IP 的登录锁定与审计。需信任代理时显式列出受信网段 |
 | `HTTP_TIMEOUT_MS` | `30000`        | 服务商 API 超时                                                                                          |
 
 ```bash

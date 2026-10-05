@@ -6,7 +6,12 @@ import { PageHeader } from '@/shared/ui/page-header'
 import { Button } from '@/shared/ui/button'
 import { TablePagination } from '@/shared/ui/pagination'
 import { dnsApi, type DnsProviderRef } from '@/features/dns/api/dns-api'
-import { buildDnsRecordDisplayRows, dnsRecordMatchesKeyword, dnsRecordRowKey } from '@/features/dns/lib/record-display'
+import {
+  buildDnsRecordDisplayRows,
+  dnsRecordMatchesKeyword,
+  dnsRecordRowKey,
+  recordsOfDisplayRows,
+} from '@/features/dns/lib/record-display'
 import { exportRecordsAsCsv, exportRecordsAsJson, exportRecordsAsZone } from '@/features/dns/lib/record-export'
 import type { DnsRecord } from '@/features/dns/model/types'
 import type { ImportPlan } from '@/features/dns/lib/record-import-preview'
@@ -84,15 +89,28 @@ const filteredRecords = computed(() => {
   })
 })
 
-const { page, total, pagedItems: pagedRecords, resetPage } = useLocalPagination(filteredRecords, recordsQuery.pageSize)
-const displayRows = computed(() => buildDnsRecordDisplayRows(pagedRecords.value, zoneName.value))
+/**
+ * 先分组、后分页：分组基于全量过滤结果，同一主机不会因页边界被切成两个同名分组；
+ * 组内条数标签与组内全选因此都覆盖该主机的全部记录。
+ */
+const allDisplayRows = computed(() => buildDnsRecordDisplayRows(filteredRecords.value, zoneName.value))
+const {
+  page,
+  total,
+  pagedItems: pagedDisplayRows,
+  resetPage,
+} = useLocalPagination(allDisplayRows, recordsQuery.pageSize)
+/** 当前页展示行展开后的记录集合：表头全选与批量操作的覆盖口径 = 当前页可见记录（含折叠组内） */
+const pageRecords = computed(() => recordsOfDisplayRows(pagedDisplayRows.value))
+/** 读失败与空列表是两回事：失败时渲染告警条，不能只留一次 toast */
+const recordsError = computed(() => (recordsQuery.error.value ? '解析记录加载失败。' : ''))
 /** 折叠状态：默认收起；搜索命中自动展开。 */
 const expandedHosts = ref<Record<string, boolean>>({})
-const selection = useRowSelection(pagedRecords, dnsRecordRowKey)
+const selection = useRowSelection(pageRecords, dnsRecordRowKey)
 const selectedCount = computed(() => selection.selected.value.length)
 
 function currentSelectedRows(): DnsRecord[] {
-  return selectedAvailableRows(pagedRecords.value, selection.selected.value, dnsRecordRowKey, (row) =>
+  return selectedAvailableRows(pageRecords.value, selection.selected.value, dnsRecordRowKey, (row) =>
     isRowBusy(dnsRecordRowKey(row))
   )
 }
@@ -123,12 +141,12 @@ watch([keyword, typeFilter], () => {
   expandedHosts.value = {}
 })
 watch(
-  [keyword, displayRows],
+  [keyword, pagedDisplayRows],
   () => {
     const q = keyword.value.trim().toLowerCase()
     if (!q) return
     const next: Record<string, boolean> = {}
-    for (const row of displayRows.value) {
+    for (const row of pagedDisplayRows.value) {
       if (
         row.kind === 'group' &&
         (row.records.some((record) => dnsRecordMatchesKeyword(record, q)) || row.label.toLowerCase().includes(q))
@@ -277,15 +295,23 @@ onUnmounted(() => {
       @import="batch.importOpen.value = true"
     />
 
+    <div v-if="recordsError" role="alert" class="text-destructive flex items-center gap-2 text-sm">
+      <span>{{ recordsError }}</span>
+      <Button type="button" variant="link" size="sm" class="text-destructive h-auto p-0" @click="recordsQuery.refresh()"
+        >重试</Button
+      >
+    </div>
+
     <RecordsTable
-      :rows="displayRows"
-      :records="pagedRecords"
+      :rows="pagedDisplayRows"
+      :records="pageRecords"
       :selected-keys="selection.selected.value"
       :expanded-hosts="expandedHosts"
       :zone-name="zoneName"
       :is-cloudflare="isCloudflare"
       :loading="recordsQuery.loading.value"
       :refreshing="recordsQuery.refreshing.value"
+      :load-failed="!!recordsQuery.error.value"
       :busy="isRowBusy"
       @update:selected-keys="selection.selected.value = $event"
       @update:expanded-hosts="expandedHosts = $event"

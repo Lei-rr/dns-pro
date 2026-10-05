@@ -90,9 +90,10 @@ export class CloudflareZoneService {
       },
       () => client.post('zones', { name, account: { id: accountId }, type: 'full' })
     )
-    const zone = presentZone(parseCloudflareItemResponse(response).result)
+    // 上游已受理：先失效站点缓存再解析响应体。解析失败（502）时缓存也必须已清，
+    // 否则站点列表（TTL 5 分钟）仍返回变更前快照，新建站点不可见
     invalidateCloudflareZoneCache(providerId)
-    return zone
+    return presentZone(parseCloudflareItemResponse(response).result)
   }
 
   async delete(providerId: string, zoneId: string): Promise<{ id: string }> {
@@ -106,8 +107,9 @@ export class CloudflareZoneService {
       },
       () => client.delete(`zones/${encodeURIComponent(zoneId)}`)
     )
-    const result = parseCloudflareItemResponse(response).result
+    // 同 create：上游已受理，先失效再解析；否则解析失败时已删站点仍会被当成写入目标
     invalidateCloudflareZoneCache(providerId, zoneId)
+    const result = parseCloudflareItemResponse(response).result
     return { id: providerNullableString(result.id) ?? zoneId }
   }
 

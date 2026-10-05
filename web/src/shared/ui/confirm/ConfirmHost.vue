@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/shared/ui/alert-dialog'
 import { Button } from '@/shared/ui/button'
+import { Checkbox } from '@/shared/ui/checkbox'
 import { confirmState, settleConfirm } from './confirm'
 
 const confirmVariant = computed<'destructive' | 'default'>(() =>
@@ -28,6 +29,11 @@ function onConfirm() {
 function onCancel() {
   settleConfirm(false)
 }
+
+/** 勾选项切换：确认时由 settleConfirm 一并回传，取消时不消费 */
+function toggleOption(value: boolean | 'indeterminate') {
+  confirmState.optionChecked.value = value === true
+}
 </script>
 
 <template>
@@ -41,6 +47,20 @@ function onCancel() {
           {{ confirmState.options.value.description }}
         </AlertDialogDescription>
       </AlertDialogHeader>
+      <div v-if="confirmState.options.value.option" class="mt-3 flex items-start gap-2 text-sm">
+        <Checkbox
+          :model-value="confirmState.optionChecked.value"
+          @update:model-value="toggleOption"
+          aria-label="可选操作"
+        />
+        <button
+          type="button"
+          class="text-muted-foreground cursor-pointer text-left leading-5 hover:text-foreground"
+          @click="toggleOption(!confirmState.optionChecked.value)"
+        >
+          {{ confirmState.options.value.option?.label }}
+        </button>
+      </div>
       <AlertDialogFooter class="flex flex-row items-center justify-end gap-2 [&>*]:w-auto mt-2">
         <Button variant="outline" type="button" @click="onCancel">
           {{ confirmState.options.value.cancelText }}

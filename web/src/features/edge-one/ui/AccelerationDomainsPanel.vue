@@ -13,6 +13,11 @@ import {
   nextStatusPollRateLimitDelayMs,
   statusPollRateLimit,
 } from '@/features/edge-one/model/status-poll-policy'
+import {
+  transitioningKeys,
+  type PendingStatusTransition,
+  type PendingStatusTransitions,
+} from '@/features/edge-one/model/status-transitions'
 
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/features/edge-one/model/types'
 import type { EdgeOneDomainSubmitPayload } from '@/features/edge-one/model/domain-command'
@@ -24,14 +29,14 @@ import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
-import { useRowBusy, removeListItem, patchListItem } from '@/shared/lib/row-busy'
+import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
 import AccelerationDomainFormDialog from '@/features/edge-one/ui/AccelerationDomainFormDialog.vue'
 import CertificateFormDialog from '@/features/edge-one/ui/CertificateFormDialog.vue'
 import AccelerationDomainsTable from '@/features/edge-one/ui/AccelerationDomainsTable.vue'
 import { formatFailedJobItem, JobProgressAlert, runBatchJob, showBatchFailures, useJobProgress } from '@/shared/job'
 import type { JobLike } from '@/shared/job'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
+import { confirmDeleteWithSkipCleanup, confirmDialog } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
 import { createScopeGeneration, type GenerationOwner, type ScopeOwner } from '@/shared/lib/scope-generation'
 import { usePageVisibility } from '@/shared/lib/use-page-visibility'
@@ -92,7 +97,8 @@ const pageSize = domainsQuery.pageSize
 const runLoad = () => domainsQuery.invalidate()
 watch(domainsQuery.data, (data) => {
   if (!data) return
-  domains.value = data.domains
+  // 浅拷贝切断 TanStack 的深 readonly 代理：镜像数组要能承接行内就地替换，否则替换会静默失效
+  domains.value = data.domains.slice()
   if (data.zoneMeta) zoneMeta.value = data.zoneMeta
   settleStatusTransitions(data.domains)
 })
@@ -243,14 +249,20 @@ async function saveCertificate(payload: Record<string, unknown>) {
  *  - 遇到限流（HTTP 429 / 腾讯云业务限流码）改用更长的退避间隔，不按原节奏继续打；
  *  - 顶部「刷新」按钮保留，用户想手动刷新随时可用。 */
 
-/** 待落定的上下线指令：目标状态 + 是否已观察到上游进入 process（用于识别失败回退） */
-type PendingStatusTransition = { target: 'online' | 'offline'; enteredTransition: boolean }
+/**
+ * 待落定的上下线指令（行键 = domainName）。过渡态只存在于这里，不写回列表数据：
+ * 列表始终是服务端真相，若把 process 写进行数据，静默刷新拿到的旧状态会把过渡态抹掉，
+ * 「停止加速/删除」入口在指令在途时重新出现（本地写与刷新互相覆盖）。
+ * 展示层由 transitioningKeys 派生「配置中」，落定后自动摘除。
+ */
+const pendingStatusTransitions = ref<PendingStatusTransitions>(new Map())
+/** 过渡中的行：传给表格锁住状态操作并显示「配置中」 */
+const transitioningKeysList = computed(() => transitioningKeys(pendingStatusTransitions.value))
 
 /** 轮询间隔与限流退避的取值依据（腾讯云 20 次/秒、Cloudflare 1200 次/5 分钟、
  *  本仓 base-http.client.ts 的 MAX_RETRY_AFTER_MS）集中在 model/status-poll-policy.ts：
  *  起步 3s、每轮 +1s 线性放缓、10s 封顶；限流时另走 60s 起、300s 封顶的退避。 */
 
-const pendingStatusTransitions = ref(new Map<string, PendingStatusTransition>())
 const { visible: pageVisible } = usePageVisibility()
 const statusPollGeneration = createScopeGeneration()
 let statusPollTimer: ReturnType<typeof setTimeout> | null = null
@@ -351,7 +363,9 @@ const STATUS_TRANSITION_TEXT: Record<'online' | 'offline', { sending: string; hi
   online: { sending: '启用指令已下发', hint: '停留本页会自动刷新，直到状态更新完成' },
 }
 
-/** 停止/启用共用流程：下发 → 按真实过渡态展示 → 登记待落定并开始轮询（首轮立即静默回源确认指令已被接受） */
+/** 停止/启用共用流程：下发 → 登记待落定并开始轮询（首轮立即静默回源确认指令已被接受）。
+ *  过渡态不做本地行改写：行数据保持服务端真相，表格按 pendingStatusTransitions 派生「配置中」，
+ *  否则静默刷新拿到的旧状态会覆盖本地 process，状态入口在指令在途时重新放开。 */
 async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 'online' | 'offline') {
   const key = domainName(record)
   const text = STATUS_TRANSITION_TEXT[status]
@@ -359,12 +373,6 @@ async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 
     try {
       await edgeOneApi.updateAccelerationDomainStatus(props.providerId, props.zoneId, key, status)
       if (!owner.active()) return
-      // 下发后上游进入 process：按真实过渡态展示，避免乐观显示目标态又被上游打回
-      patchListItem(
-        domains,
-        (item) => domainName(item) === key,
-        (item) => ({ ...item, status: 'process', active_status: 'process' })
-      )
       toast.message(text.sending, text.hint)
       pendingStatusTransitions.value = new Map(pendingStatusTransitions.value).set(key, {
         target: status,
@@ -372,7 +380,7 @@ async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 
       })
       startStatusPolling()
     } catch (error) {
-      // 行数据只在成功后改写，失败时无需回滚（回滚反而会覆盖并发刷新的新值）
+      // 行数据没有本地改写，失败时无需回滚
       if (owner.active()) toast.error(errorMessage(error))
     }
   })
@@ -408,11 +416,14 @@ async function removeDomain(record: EdgeOneAccelerationDomain) {
   const providerId = props.providerId
   const zoneId = props.zoneId
   const name = domainName(record)
-  if (!(await confirmDelete(name)) || !scopeOwner.active()) return
+  // 删除对话框自带「跳过 DNS 清理」勾选：后端 auto_cleanup=false 一直可用，界面必须能选到
+  const deletion = await confirmDeleteWithSkipCleanup(name)
+  if (!deletion.confirmed || !scopeOwner.active()) return
+  const skipCleanup = deletion.checked
   await runBusy(name, async (owner) => {
     if (!scopeOwner.active()) return
     try {
-      const response = await edgeOneApi.deleteAccelerationDomain(providerId, zoneId, name)
+      const response = await edgeOneApi.deleteAccelerationDomain(providerId, zoneId, name, { skipCleanup })
       if (!scopeOwner.active() || !owner.active()) return
       notifyDnsSideEffect(dnsSideEffectFromData(response, 'cleanup'), '已删除')
       removeListItem(domains, (item) => domainName(item) === name)
@@ -634,6 +645,7 @@ onMounted(() => {
         :selected="selection.selected.value"
         :domain-name="domainName"
         :busy="(record) => isRowBusy(domainName(record))"
+        :transitioning-keys="transitioningKeysList"
         @update:selected="selection.selected.value = $event"
         @repair-dns="repairDomainDns"
         @edit="openEdit"

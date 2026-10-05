@@ -56,11 +56,23 @@ export function useSaasHostEditor(options: {
   const preferredOptions = ref<Array<{ domain: string }>>([])
   const preferredOptionsError = ref('')
   const syncZonesOwnership = createScopeGeneration()
+  /** 下拉数据（优选域名）加载的所有权：与表单生命周期、提交彻底分离 */
+  const preferredOptionsOwnership = createScopeGeneration()
   const ownership = createScopeGeneration()
 
   function captureOwner() {
     // claim 会作废上一个 owner：保存中重新打开弹窗时，旧请求不得再改写新表单
     return ownership.claim({})
+  }
+
+  /**
+   * 新表单会话：作废旧会话的在飞写入，并复位保存态。
+   * 旧提交的 finally 只在 owner 有效时复位 saving，会话换代后不再负责它；
+   * 若这里不复位，新表单的保存按钮会永久停在加载态。
+   */
+  function beginFormSession() {
+    saving.value = false
+    return captureOwner()
   }
 
   function active(owner: GenerationOwner) {
@@ -124,14 +136,20 @@ export function useSaasHostEditor(options: {
     }
   )
 
-  async function loadPreferredOptions(owner = captureOwner()) {
+  /**
+   * 优选域名下拉数据：所有权独立于表单生命周期与提交。
+   * 不能与 save 共用 ownership：弹窗里的「重试」会 claim 新 generation、作废正在保存的请求，
+   * 让 save 的 finally 永远跳过 saving=false，保存按钮常驻转圈。
+   */
+  async function loadPreferredOptions() {
+    const owner = preferredOptionsOwnership.claim()
     preferredOptionsError.value = ''
     try {
       const response = await preferredDomainApi.list()
-      if (!active(owner)) return
+      if (!owner.active()) return
       preferredOptions.value = response.data || []
     } catch {
-      if (active(owner)) preferredOptionsError.value = '优选域名加载失败。'
+      if (owner.active()) preferredOptionsError.value = '优选域名加载失败。'
     }
   }
 
@@ -155,10 +173,10 @@ export function useSaasHostEditor(options: {
   }
 
   async function openCreate() {
-    const owner = captureOwner()
+    const owner = beginFormSession()
     editing.value = null
     formErrors.value = {}
-    await loadPreferredOptions(owner)
+    await loadPreferredOptions()
     if (!active(owner)) return
     resetForm()
     if (active(owner)) dialogOpen.value = true
@@ -167,6 +185,7 @@ export function useSaasHostEditor(options: {
   function openEdit(record: SaaSHostname) {
     if (options.rowBusy(String(record.hostname || record.id || ''))) return
     options.closeDetail()
+    beginFormSession()
     editing.value = record
     formErrors.value = {}
     Object.assign(form, {
@@ -261,6 +280,7 @@ export function useSaasHostEditor(options: {
       formErrors.value = { ...formErrors.value, ...serverFieldErrors(error) }
       toast.error(errorMessage(error))
     } finally {
+      // 只复位当前会话的保存态：会话换代时由 beginFormSession/openEdit 主动复位，站点切换由 reset 复位
       if (active(owner)) saving.value = false
     }
   }
@@ -268,6 +288,7 @@ export function useSaasHostEditor(options: {
   function reset() {
     ownership.invalidate()
     syncZonesOwnership.invalidate()
+    preferredOptionsOwnership.invalidate()
     dialogOpen.value = false
     editing.value = null
     saving.value = false

@@ -21,6 +21,8 @@ export function useDnsRecordsQuery(provider: MaybeRefOrGetter<DnsProviderRef>, z
 
   return {
     records: computed(() => query.data.value ?? []),
+    /** 读失败标记：必须透出到渲染路径，否则未定义数据会被折算成空列表、失败被误渲染成空态 */
+    error: query.error,
     loading: query.loading,
     refreshing: query.refreshing,
     pageSize: query.pageSize,

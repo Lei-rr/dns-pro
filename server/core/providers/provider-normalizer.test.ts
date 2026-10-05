@@ -1,0 +1,79 @@
+import { describe, expect, it } from 'vitest'
+import { ProviderNormalizer } from './provider-normalizer.js'
+import { getProviderDefinition } from './provider-definitions.js'
+
+/**
+ * 服务商 ID 只按字符规则放行会漏掉 Object.prototype 上的名字：
+ * 下游多处用普通对象做 provider 索引容器（依赖反查 map），id 命中 constructor/toString 时
+ * 读到的是原型链上的函数——依赖列表 push 抛错（列表 500）、dependencies.length 恒为 1（删除恒 409）。
+ */
+
+const normalizer = new ProviderNormalizer()
+const dnspodDefinition = getProviderDefinition('dnspod')
+const cloudflareDefinition = getProviderDefinition('cloudflare')
+if (!dnspodDefinition || !cloudflareDefinition) throw new Error('缺少服务商定义')
+
+async function captured(run: () => unknown): Promise<unknown> {
+  try {
+    await run()
+  } catch (error) {
+    return error
+  }
+  throw new Error('预期抛错但未抛出')
+}
+
+describe('服务商 ID：保留键与原型链键', () => {
+  it.each([
+    'constructor',
+    'toString',
+    'valueOf',
+    'hasOwnProperty',
+    'isPrototypeOf',
+    'propertyIsEnumerable',
+    'toLocaleString',
+  ])('拒绝原型链键 id=%s', async (id) => {
+    expect(await captured(() => normalizer.validateId(id))).toMatchObject({ code: 'validation_failed' })
+  })
+
+  it('保留路由名仍大小写不敏感拒绝', async () => {
+    expect(await captured(() => normalizer.validateId('HOME'))).toMatchObject({ code: 'validation_failed' })
+    expect(await captured(() => normalizer.validateId('providers'))).toMatchObject({ code: 'validation_failed' })
+  })
+
+  it('普通合法 id 正常通过并去除首尾空白', () => {
+    expect(normalizer.validateId(' my-dns_1 ')).toBe('my-dns_1')
+  })
+})
+
+describe('密钥字段：拒绝密文前缀输入', () => {
+  it('secret_key 带 enc:v1: 前缀被拒（跳过加密会留下无法解密的落盘值）', async () => {
+    const error = await captured(() =>
+      normalizer.normalize(
+        { id: 'dns', type: 'dnspod', secret_id: 'AKID', secret_key: 'enc:v1:truncated' },
+        dnspodDefinition
+      )
+    )
+    expect(error).toMatchObject({ code: 'validation_failed' })
+  })
+
+  it('api_token 带前缀同样被拒，明文密钥正常归一化', async () => {
+    const rejected = await captured(() =>
+      normalizer.normalize({ id: 'cf', type: 'cloudflare', api_token: 'enc:v1:a:b:c' }, cloudflareDefinition)
+    )
+    expect(rejected).toMatchObject({ code: 'validation_failed' })
+
+    const provider = normalizer.normalize(
+      { id: 'cf', type: 'cloudflare', api_token: 'plain-token' },
+      cloudflareDefinition
+    )
+    expect(provider.api_token).toBe('plain-token')
+  })
+
+  it('非密钥字段不受该规则影响（历史数据里的普通文本照常保存）', () => {
+    const provider = normalizer.normalize(
+      { id: 'dns', type: 'dnspod', secret_id: 'enc:v1:not-a-secret', secret_key: 'plain-key' },
+      dnspodDefinition
+    )
+    expect(provider.secret_id).toBe('enc:v1:not-a-secret')
+  })
+})

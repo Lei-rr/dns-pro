@@ -9,6 +9,7 @@ import {
   AuditTrailPanel,
   SyncHealthTable,
   SyncSummaryCards,
+  buildRepairNotice,
   useAuditTrailQuery,
   useReconcileRepair,
   useSyncHealthQuery,
@@ -37,16 +38,13 @@ const scannedText = computed(() => {
   return Number.isNaN(date.getTime()) ? scannedAt.value : `检测于 ${date.toLocaleTimeString()}`
 })
 
-/** 一键修复：只补齐/纠正 create、update；归属冲突的条目由写入器跳过 */
+/** 一键修复：只补齐/纠正 create、update；归属冲突的条目由写入器跳过；failed 必须单独上报 */
 async function repairScope() {
   try {
     const result = await repair(scope.value)
-    const changed = result.results.filter(
-      (outcome) => outcome.status === 'created' || outcome.status === 'updated'
-    ).length
-    const skipped = result.results.filter((outcome) => outcome.status === 'skipped').length
-    if (changed === 0 && skipped === 0) toast.success('派生记录均无需变更')
-    else toast.success(`已修复 ${changed} 条${skipped ? `，跳过 ${skipped} 条（归属冲突）` : ''}`)
+    const notice = buildRepairNotice(result.results)
+    if (notice.tone === 'error') toast.error(notice.message)
+    else toast.success(notice.message)
     await refresh()
   } catch (error) {
     toast.error(errorMessage(error))

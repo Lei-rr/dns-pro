@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { preferredDomainApi, saasApi } from '@/features/saas/api/saas-api'
 import type { SaaSHostname, SaaSSyncProvider } from '@/features/saas/model/types'
-import { confirmDelete, confirmDialog } from '@/shared/ui/confirm'
+import { confirmDeleteWithSkipCleanup, confirmDialog } from '@/shared/ui/confirm'
 import { useSaasHostJobs } from './use-saas-host-jobs'
 import { preferredDomainOf, useSaasHostEditor } from './use-saas-host-editor'
 import type { DnsZoneOption } from '../model/types'
@@ -35,10 +35,14 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       (await saasApi.hostnames(props.providerId, routeZoneName.value, { refresh, signal })).data || [],
     pageSizeScope: 'saas-hosts',
   })
-  /** 视图镜像：保留面板内的局部 patch 反馈，写后统一由 invalidate 收敛到服务端真相 */
+  /**
+   * 视图镜像：保留面板内的局部 patch 反馈，写后统一由 invalidate 收敛到服务端真相。
+   * 必须浅拷贝数组：TanStack 的 query.data 是深 readonly 代理，把代理数组直接当镜像，
+   * 下面的 `hostnames.value[idx] = row` 会静默失效（Vue 只打警告，行不更新）。
+   */
   const hostnames = ref<SaaSHostname[]>([])
   watch(hostnamesQuery.data, (data) => {
-    if (data) hostnames.value = data
+    if (data) hostnames.value = data.slice()
   })
   const keyword = ref('')
   const detailOpen = ref(false)
@@ -46,6 +50,12 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   const detailRefreshing = ref(false)
   const { busyKeys: rowBusyKeys, isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
   const detailRequestGeneration = createScopeGeneration()
+  /**
+   * 详情「刷新」自己的所有权：与 openDetails 的加载所有权分离。
+   * 共用会让后发起的操作 claim 掉先发起的 owner，先发起的一方 finally 永远跳过复位，
+   * detailLoading / detailRefreshing 卡在 true。
+   */
+  const detailRefreshGeneration = createScopeGeneration()
   const scopeGeneration = createScopeGeneration()
   const detailRecord = ref<SaaSHostname | null>(null)
   const batchPreferredOpen = ref(false)
@@ -127,6 +137,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   watch(detailOpen, (open) => {
     if (open) return
     detailRequestGeneration.invalidate()
+    detailRefreshGeneration.invalidate()
     detailLoading.value = false
     detailRefreshing.value = false
   })
@@ -170,6 +181,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     patchHostname: patchHostnameRow,
     closeDetail: () => {
       detailRequestGeneration.invalidate()
+      detailRefreshGeneration.invalidate()
       detailOpen.value = false
     },
     rowBusy: isRowBusy,
@@ -228,7 +240,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   async function refreshDetailHostname(record: SaaSHostname) {
     const key = hostnameKey(record)
     await runBusy(key, async (rowOwner) => {
-      const detailOwner = detailRequestGeneration.claim()
+      // 刷新不占用 openDetails 的所有权：两者并发时各自的 in-flight 状态都能正常收尾
+      const detailOwner = detailRefreshGeneration.claim()
       const identity = detailIdentity(record)
       detailRefreshing.value = true
       try {
@@ -240,7 +253,8 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       } catch (error) {
         if (rowOwner.active() && isCurrentDetail(detailOwner, identity)) toast.error(errorMessage(error))
       } finally {
-        if (rowOwner.active() && isCurrentDetail(detailOwner, identity)) detailRefreshing.value = false
+        // 刷新态只由刷新自己复位：弹窗换代不能让它停在加载中
+        if (detailOwner.active()) detailRefreshing.value = false
       }
     })
   }
@@ -253,17 +267,27 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     const scopeOwner = captureScope()
     const hostname = record.hostname
     const key = hostnameKey(record)
-    if (!key || isRowBusy(key) || !(await confirmDelete(hostname)) || !scopeOwner.active()) return
+    if (!key || isRowBusy(key)) return
+    // 删除对话框自带「跳过 DNS 清理」勾选：后端 auto_cleanup=false 一直可用，界面必须能选到
+    const deletion = await confirmDeleteWithSkipCleanup(hostname)
+    if (!deletion.confirmed || !scopeOwner.active()) return
+    const skipCleanup = deletion.checked
     await runBusy(key, async (owner) => {
       if (!scopeOwner.active()) return
       try {
-        const response = await saasApi.deleteHostname(scopeOwner.value.providerId, scopeOwner.value.zoneName, hostname)
+        const response = await saasApi.deleteHostname(
+          scopeOwner.value.providerId,
+          scopeOwner.value.zoneName,
+          hostname,
+          { skipCleanup }
+        )
         if (!scopeOwner.active() || !owner.active()) return
         notifyDnsSideEffect(dnsSideEffectFromData(response, 'cleanup'), '已删除')
         await hostnamesQuery.invalidate()
         selection.clear()
         if (detailOpen.value && detailRecord.value?.hostname === record.hostname) {
           detailRequestGeneration.invalidate()
+          detailRefreshGeneration.invalidate()
           detailOpen.value = false
           detailRecord.value = null
         }
@@ -402,6 +426,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     () => {
       scopeGeneration.invalidate()
       detailRequestGeneration.invalidate()
+      detailRefreshGeneration.invalidate()
       detailOpen.value = false
       detailRecord.value = null
       batchPreferredOpen.value = false
@@ -425,6 +450,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   onUnmounted(() => {
     scopeGeneration.invalidate()
     detailRequestGeneration.invalidate()
+    detailRefreshGeneration.invalidate()
     batchPreferredOpen.value = false
     batchSubmitting.value = false
     batchAutoPreferred.value = false

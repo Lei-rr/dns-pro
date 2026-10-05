@@ -117,6 +117,31 @@ describe('AccelerationDomainsTable 行内操作', () => {
     expect(wrapper.emitted('remove')).toEqual([[record]])
   })
 
+  it('过渡中的行（transitioningKeys，服务端仍返回 online）按「配置中」展示并锁住状态菜单', async () => {
+    const record = domain('online')
+    const wrapper = mount(AccelerationDomainsTable, {
+      attachTo: document.body,
+      props: {
+        domains: [record],
+        loading: false,
+        refreshing: false,
+        selected: [],
+        domainName,
+        busy: () => false,
+        // 指令已下发但服务端还没进入 process：行数据保持 online，展示层按过渡态处理
+        transitioningKeys: ['www.example.com'],
+      },
+    })
+    wrappers.push(wrapper)
+    await openMenu(wrapper)
+
+    expect(wrapper.text()).toContain('配置中')
+    expect(wrapper.text()).not.toContain('已生效')
+    expect(menuItem('停止加速').getAttribute('data-disabled')).not.toBeNull()
+    expect(menuItem('删除').getAttribute('data-disabled')).not.toBeNull()
+    expect(document.body.textContent).toContain('配置中，暂不可操作')
+  })
+
   it('busy 行（本地下发中）操作入口整体禁用：触发按钮带 disabled，菜单打不开', async () => {
     const wrapper = await mountTable([domain('online')], true)
     expect(wrapper.get('[data-slot="dropdown-menu-trigger"]').attributes('disabled')).toBeDefined()

@@ -40,14 +40,16 @@ export class DnsPodLineService {
       key: `${DNSPOD_PROVIDER_TYPE}:lines:${providerId}:${domain}`,
       tags: [providerCacheTag(providerId), recordLineCacheTag(DNSPOD_PROVIDER_TYPE, providerId, domain)],
       refresh,
-      loader: () => this.fetchLines(providerId, domain),
+      // refresh 必须透传到 fetchLines：套餐等级取自站点列表的同一份缓存，
+      // 只刷线路而不刷 grade 会按旧套餐请求，并把结果以新 TTL 再固定 5 分钟
+      loader: () => this.fetchLines(providerId, domain, refresh),
     })
     return cached.value
   }
 
-  private async fetchLines(providerId: string, domain: string): Promise<DnsPodLineListResult> {
+  private async fetchLines(providerId: string, domain: string, refresh: boolean): Promise<DnsPodLineListResult> {
     const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
-    const grade = await this.zoneGrade(providerId, domain)
+    const grade = await this.zoneGrade(providerId, domain, refresh)
     const response = await callProvider(
       {
         code: 'dnspod_line_list_failed',
@@ -65,9 +67,9 @@ export class DnsPodLineService {
     }
   }
 
-  /** 线路查询需要域名套餐等级；取不到时由上游自行判断 */
-  private async zoneGrade(providerId: string, domain: string): Promise<string> {
-    const zones = await this.zones.list(providerId)
+  /** 线路查询需要域名套餐等级；refresh 与线路请求同口径，取不到时由上游自行判断 */
+  private async zoneGrade(providerId: string, domain: string, refresh: boolean): Promise<string> {
+    const zones = await this.zones.list(providerId, { refresh })
     // IDN 域名同时返回 Unicode 名与 punycode：统一取 ASCII 形态，否则与请求域名匹配不上而丢掉套餐等级
     const ascii = toAsciiFqdn(domain)
     return zones.items.find((item) => toAsciiFqdn(item.punycode || item.name) === ascii)?.grade ?? ''

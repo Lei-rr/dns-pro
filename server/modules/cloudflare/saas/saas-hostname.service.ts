@@ -153,27 +153,33 @@ export class SaaSHostnameService
     const remotePatch = this.syncConfigs.buildCloudflareUpdatePayload(current, data)
     const remoteChanged = Object.keys(remotePatch).length > 0
 
+    const fqdn = current.hostname || hostnameFqdn
+    const identity = { zone: zoneName, fqdn }
+    const existing = await this.preferences.get(cfId, identity)
+
+    // 校验前移：合并请求与已存偏好后先校验同步服务商引用，非法组合在写偏好与远端 PATCH 之前整体 422。
+    // 否则会降级成「优选域名已提交、同步配置才 422」的部分失败：远端已变、本地只落了一半，且只回一个 200。
+    const normalized =
+      preferred !== null || SYNC_FIELDS.some((field) => field in data)
+        ? await this.syncConfigs.normalizeSyncPreference(providerId, fqdn, existing, data)
+        : null
+    if (normalized !== null) await this.preferences.validateSyncConfig(cfId, normalized)
+
     // 批量重试时远端已应用，跳过重复 PATCH
     const hostname =
       remoteChanged && !options.remoteApplied
         ? await this.customHostnames.update(cfId, zoneId, hostnameId, remotePatch)
         : current
-    const fqdn = hostname.hostname || hostnameFqdn
-    const identity = { zone: zoneName, fqdn }
-    const existing = await this.preferences.get(cfId, identity)
 
     try {
-      if (preferred !== null) await this.preferences.setPreferredDomain(cfId, identity, preferred, hostnameId)
-      if (preferred !== null || SYNC_FIELDS.some((field) => field in data)) {
-        const normalized = await this.syncConfigs.normalizeSyncPreference(providerId, fqdn, existing, data)
-        await this.preferences.setSyncConfig({
+      // 优选域名与同步配置落在同一偏好行上，合并为一次事务写：分两次写会在中间失败时留下半截状态
+      if (preferred !== null || normalized !== null) {
+        await this.preferences.setPreferredAndSync({
           cloudflareProviderId: cfId,
           identity,
           hostnameId,
-          syncTarget: normalized.sync_target,
-          syncProviderId: normalized.sync_provider_id,
-          syncZone: normalized.sync_zone,
-          autoPreferred: normalized.auto_preferred,
+          preferredDomain: preferred,
+          sync: normalized,
         })
       }
       // 远端字段变化后可能重新需要所有权验证
@@ -190,6 +196,16 @@ export class SaaSHostnameService
       ref = await this.resolveHostname(providerId, zoneName, hostnameFqdn)
     } catch (error) {
       if (!isExplicitNotFound(error, NOT_FOUND)) throw error
+      // 站点不托管该 FQDN：这不是「远端已删除」，而是请求把别的站点的主机名带到了本站点。
+      // 既不能清偏好（clearForFqdn 只按行内 hostname 匹配，会连另一站点同名 FQDN 的偏好一起删掉），
+      // 也不能返回成功——批量任务会把它记成「已删除」，而那条主机名其实还在别的站点活着。
+      if (!zoneOwnsHostname(zoneName, hostnameFqdn)) {
+        throw new ApiError(
+          'validation_failed',
+          `SaaS hostname ${hostnameFqdn} does not belong to zone ${zoneName}`,
+          422
+        )
+      }
       // 远端已不存在：只清本地偏好
       await this.syncConfigs.clearPreferencesForFqdn(await this.cloudflareProviderId(providerId), hostnameFqdn)
       return { id: '' }

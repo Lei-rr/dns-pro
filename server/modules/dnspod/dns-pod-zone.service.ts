@@ -78,9 +78,11 @@ export class DnsPodZoneService {
       },
       () => client.call('CreateDomain', { Domain: domain })
     )
+    // 上游已受理：先失效缓存再解析响应体。解析失败（502）时缓存也必须已清，
+    // 否则站点列表仍返回变更前快照，新建站点不可见
+    invalidateDnsPodZoneCache(providerId, domain)
     const parsed = dnspodDomainCreateResponseSchema.parse(response)
     const info = dnspodDomainInfoSchema.parse(parsed.DomainInfo ?? {})
-    invalidateDnsPodZoneCache(providerId, domain)
     return {
       id: providerFiniteNumber(info.Id),
       name: providerString(info.Domain, domain),
@@ -103,8 +105,9 @@ export class DnsPodZoneService {
       },
       () => client.call('DeleteDomain', { Domain: domain })
     )
-    const parsed = dnspodMutationResponseSchema.parse(response)
+    // 同 create：上游已受理，先失效再解析；否则解析失败时已删域名仍会被当成写入目标
     invalidateDnsPodZoneCache(providerId, domain)
+    const parsed = dnspodMutationResponseSchema.parse(response)
     return { name: domain, request_id: providerOptionalString(parsed.RequestId) }
   }
 

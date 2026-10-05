@@ -20,6 +20,7 @@ import {
   edgeOneStatusVariant,
 } from '@/features/edge-one/lib/status'
 import { edgeOneDomainStatusActions } from '@/features/edge-one/model/domain-status-actions'
+import { displayDomainStatus } from '@/features/edge-one/model/status-transitions'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
 
@@ -30,6 +31,8 @@ const props = defineProps<{
   selected: string[]
   domainName: (record: EdgeOneAccelerationDomain) => string
   busy: (record: EdgeOneAccelerationDomain) => boolean
+  /** 已下发未落定的上下线指令：这些行按「配置中」展示并锁住状态操作（列表数据保持服务端真相） */
+  transitioningKeys?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -42,9 +45,20 @@ const emit = defineEmits<{
   remove: [record: EdgeOneAccelerationDomain]
 }>()
 
+const transitioningSet = computed(() => new Set(props.transitioningKeys || []))
+
+/**
+ * 行展示状态：过渡中的行按 process 展示。
+ * 服务端在指令被接受前可能仍返回旧状态（如刚下发停止时的 online），
+ * 照旧值渲染会让「停止加速」「删除」入口在指令在途时重新出现。
+ */
+function displayStatus(record: EdgeOneAccelerationDomain) {
+  return displayDomainStatus(record.status, transitioningSet.value.has(props.domainName(record)))
+}
+
 /** 行内状态动作显隐：online 只给「停止加速」（不出现删除），offline 同时给「启用」与「删除」，process 两者都禁用 */
 function statusActions(record: EdgeOneAccelerationDomain) {
-  return edgeOneDomainStatusActions(record.status)
+  return edgeOneDomainStatusActions(displayStatus(record))
 }
 
 // 选择状态缓存为 computed：避免每次渲染/每行都重建 Set
@@ -106,14 +120,15 @@ function toggleAll(value: boolean | 'indeterminate') {
             <Checkbox
               :model-value="isSelected(record)"
               :disabled="busy(record)"
+              :aria-label="`选择 ${domainName(record)}`"
               @update:model-value="(value: boolean | 'indeterminate') => toggle(record, value === true)"
               @click.stop
             />
           </TableCell>
           <TableCell class="font-medium">{{ domainName(record) }}</TableCell>
           <TableCell
-            ><StatusBadge :variant="edgeOneStatusVariant(record.status)">{{
-              edgeOneStatusLabel(record.status)
+            ><StatusBadge :variant="edgeOneStatusVariant(displayStatus(record))">{{
+              edgeOneStatusLabel(displayStatus(record))
             }}</StatusBadge></TableCell
           >
           <TableCell

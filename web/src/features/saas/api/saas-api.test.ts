@@ -1,0 +1,37 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import http from '@/shared/api/http'
+import type { ApiResponse } from '@/shared/api/types'
+import { saasApi } from './saas-api'
+
+/**
+ * 删除接口的 auto_cleanup 映射：界面勾选「跳过 DNS 清理」时，必须真的把 auto_cleanup=false 发到后端，
+ * 否则勾选只是一个没有效果的开关。
+ */
+
+const DELETE_URL = '/saas/providers/provider-1/zones/example.com/hostnames/api.example.com'
+
+function mockDelete() {
+  return vi.spyOn(http, 'delete').mockResolvedValue({ code: 0, message: 'success', data: null } as ApiResponse<unknown>)
+}
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe('saasApi.deleteHostname 的 auto_cleanup 映射', () => {
+  it('skipCleanup=true → 带 params.auto_cleanup=false', async () => {
+    const spy = mockDelete()
+
+    await saasApi.deleteHostname('provider-1', 'example.com', 'api.example.com', { skipCleanup: true })
+
+    expect(spy).toHaveBeenCalledWith(DELETE_URL, { params: { auto_cleanup: false } })
+  })
+
+  it('未勾选（或旧调用不带选项）→ 不带该参数，保持既有的连带清理行为', async () => {
+    const spy = mockDelete()
+
+    await saasApi.deleteHostname('provider-1', 'example.com', 'api.example.com')
+
+    expect(spy).toHaveBeenCalledWith(DELETE_URL, {})
+  })
+})

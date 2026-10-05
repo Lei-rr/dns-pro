@@ -33,7 +33,7 @@
     "format:check": "prettier --check \"server/**/*.ts\" \"web/src/**/*.{ts,js,vue}\" \"scripts/**/*.{mjs,ts}\" \"*.{json,mjs}\" \"web/*.json\"",
     "version:sync": "node scripts/version.mjs sync",
     "version:check": "node scripts/version.mjs check",
-    "arch": "node scripts/check-architecture.mjs",
+    "arch": "node scripts/check-architecture.mjs --final",
     "arch:final": "node scripts/check-architecture.mjs --final",
     "deadcode": "knip --treat-config-hints-as-errors",
     "deps:check": "node scripts/check-dependencies.mjs && npm audit --omit=dev --audit-level=high",

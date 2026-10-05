@@ -95,11 +95,18 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     // 收紧历史文件权限；失败（如只读挂载）不影响读取
     await fs.chmod(filePath, 0o600).catch(() => undefined)
     if (content.trim() === '') return structuredClone(this.defaultValue)
+    let parsed: unknown
     try {
-      return (JSON.parse(content) as T) ?? structuredClone(this.defaultValue)
+      parsed = JSON.parse(content)
     } catch (error) {
       // 损坏文件不自动覆盖，避免数据丢失；提示人工修复
       throw new ApiError('server_error', `Corrupted JSON in ${this.relativePath}: ${errorMessage(error)}`, 500)
     }
+    // 顶层必须是普通对象：`T extends object` 的契约不含数组/标量/null。
+    // 这类结构损坏同样不自动覆盖——被下游当空表读走再写回，等价于把整份数据抹掉。
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new ApiError('server_error', `Corrupted JSON in ${this.relativePath}: expected a JSON object`, 500)
+    }
+    return parsed as T
   }
 }

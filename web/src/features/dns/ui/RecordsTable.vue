@@ -23,6 +23,8 @@ const props = defineProps<{
   isCloudflare: boolean
   loading: boolean
   refreshing: boolean
+  /** 读失败标记：空态不能把「加载失败」写成「暂无记录」的行动号召 */
+  loadFailed?: boolean
   busy: (key: string) => boolean
 }>()
 
@@ -142,8 +144,14 @@ function onCopyClick(record: DnsRecord) {
           <TableCell colspan="8" class="text-muted-foreground py-10 text-center">
             <div class="flex flex-col items-center justify-center gap-1.5 py-4">
               <Globe2 class="size-8 text-muted-foreground/40 stroke-1" />
-              <div class="font-medium text-foreground/80 text-sm">暂无解析记录</div>
-              <div class="text-xs text-muted-foreground">可通过上方「添加记录」或「导入」快速添加</div>
+              <template v-if="loadFailed">
+                <div class="font-medium text-foreground/80 text-sm">解析记录加载失败</div>
+                <div class="text-xs text-muted-foreground">请点击上方「重试」重新加载，当前没有可展示的数据</div>
+              </template>
+              <template v-else>
+                <div class="font-medium text-foreground/80 text-sm">暂无解析记录</div>
+                <div class="text-xs text-muted-foreground">可通过上方「添加记录」或「导入」快速添加</div>
+              </template>
             </div>
           </TableCell>
         </TableRow>
@@ -155,6 +163,7 @@ function onCopyClick(record: DnsRecord) {
                 :model-value="
                   groupAllSelected(row.records) ? true : groupSomeSelected(row.records) ? 'indeterminate' : false
                 "
+                :aria-label="`选择 ${row.label} 分组的全部记录`"
                 @update:model-value="() => toggleGroup(row.records)"
                 @click.stop
               />
@@ -194,6 +203,7 @@ function onCopyClick(record: DnsRecord) {
               <Checkbox
                 :model-value="isSelected(record)"
                 :disabled="busy(dnsRecordRowKey(record))"
+                :aria-label="`选择 ${record.name || '@'} 的 ${record.type || ''} 记录`"
                 @update:model-value="(value: boolean | 'indeterminate') => setSelected(record, value === true)"
                 @click.stop
               />
@@ -279,6 +289,7 @@ function onCopyClick(record: DnsRecord) {
               ><Checkbox
                 :model-value="isSelected(row.record)"
                 :disabled="busy(dnsRecordRowKey(row.record))"
+                :aria-label="`选择 ${row.record.name || '@'} 的 ${row.record.type || ''} 记录`"
                 @update:model-value="(value: boolean | 'indeterminate') => setSelected(row.record, value === true)"
                 @click.stop
             /></TableCell>
