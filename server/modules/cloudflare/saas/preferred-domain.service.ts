@@ -125,13 +125,12 @@ export class PreferredDomainService {
     const seen = new Set<string>()
 
     for (const item of items) {
-      const domain =
-        typeof item === 'string'
-          ? item.trim().toLowerCase()
-          : String((item as Record<string, unknown> | undefined)?.domain ?? '')
-              .trim()
-              .toLowerCase()
-      if (domain === '' || seen.has(domain)) continue
+      const raw = typeof item === 'string' ? item : String((item as Record<string, unknown> | undefined)?.domain ?? '')
+      // 与写入/校验侧共用 normalizeDomain：存量未归一化条目（'x.com.'、'https://x.com'）不能
+      // 只在写入侧判真、在读取侧判假；归一化失败（非法/为空）的条目直接丢弃
+      const domain = this.normalize(raw)
+      if (domain === null || domain === '') continue
+      if (seen.has(domain)) continue
       seen.add(domain)
       normalized.push(domain)
     }

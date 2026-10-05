@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { ApiError } from '../server/core/http/api-error.js'
 import { JsonStore } from '../server/core/store/json-store.js'
-import { resetProviderCacheState } from '../server/core/cache/provider-cache.js'
+import { installProviderCacheState } from '../server/core/cache/provider-cache.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { CloudflareAccess } from '../server/modules/cloudflare/access.js'
 import { CloudflareZoneService } from '../server/modules/cloudflare/cloudflare-zone.service.js'
@@ -123,6 +123,22 @@ try {
     '改名的新域名非法仍按 422'
   )
 
+  // 存量数据（旧版写入或手工编辑）未归一化：读取侧必须与写入侧同源，不能只在写入侧判真、在读取侧判假
+  await fs.writeFile(
+    path.join(dataDir, 'saas', 'preferred-domains.json'),
+    JSON.stringify({ items: ['https://Legacy.Example.com/path', 'legacy2.example.com.', 'not a domain', 42] })
+  )
+  const legacy = new PreferredDomainService(
+    new JsonStore<PreferredDomainsFile>('saas/preferred-domains.json', { items: [] }, dataDir)
+  )
+  assert.equal(await legacy.isAllowed('legacy.example.com'), true, '存量协议前缀条目必须与写入侧同源判真')
+  assert.equal(await legacy.isAllowed('legacy2.example.com'), true, '存量尾点条目必须判真')
+  assert.deepEqual(
+    (await legacy.list()).map((item) => item.domain),
+    ['legacy.example.com', 'legacy2.example.com'],
+    '读取侧必须归一化存量条目并丢弃非法条目'
+  )
+
   // ---- 2. 真实服务商仓库 + 假上游：ZoneService / TunnelService / SyncConfigService 走同一访问链 ----
   const providerFixtures = new Map<string, Record<string, unknown>>([
     ['cf-1', { id: 'cf-1', type: 'cloudflare', name: 'CF', api_token: 'cf-token', account_id: 'acct-1' }],
@@ -159,7 +175,7 @@ try {
   const tunnels = new TunnelService(access)
   const syncConfig = new SaaSSyncConfigService(repository as never, {} as never)
 
-  resetProviderCacheState()
+  installProviderCacheState()
   const zoneRequests: Array<Record<string, unknown>> = []
   const zonePages = new Map<number, unknown[]>([
     [1, [{ id: 'zone-www', name: 'WWW.example.com', status: 'active', type: 'full' }]],

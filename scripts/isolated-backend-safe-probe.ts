@@ -9,6 +9,14 @@ import { ProviderPresenter } from '../server/core/providers/provider-presenter.j
 import type { Provider } from '../server/core/providers/provider.types.js'
 import { DNS_BATCH_DELETE_JOB } from '../server/core/jobs/job-types.js'
 import { EDGEONE_BATCH_DISABLE_JOB } from '../server/core/jobs/job-types.js'
+import { translateError } from '../server/core/http/error-messages.js'
+import { error as errorResponse } from '../server/core/http/api-response.js'
+
+// 原型链键不是错误码：裸查表会取出 Object.prototype 上的函数，序列化时 message 字段整体消失
+assert.equal(translateError('constructor'), null)
+assert.equal(translateError('toString'), null)
+assert.equal(translateError('server_error'), '服务内部错误')
+assert.equal(errorResponse('boom', 400, 'constructor').message, 'boom')
 
 assert.equal(
   normalizeCreateRecords([

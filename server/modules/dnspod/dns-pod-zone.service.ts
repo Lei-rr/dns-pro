@@ -12,6 +12,7 @@ import {
   providerOptionalString,
   providerString,
 } from '../../core/providers/provider-values.js'
+import { toAsciiFqdn } from '../../shared/values.js'
 import { DNSPOD_PROVIDER_TYPE, invalidateDnsPodZoneCache } from './dns-pod.cache.js'
 import { DnsPodClient, dnsPodClientFor } from './dns-pod.client.js'
 import {
@@ -65,7 +66,8 @@ export class DnsPodZoneService {
   }
 
   async create(providerId: string, zone: string) {
-    const domain = zone.toLowerCase().trim()
+    // IDN 与匹配侧同源：统一 punycode，保证缓存键与失效标签在 UI/同步两条路径上一致
+    const domain = toAsciiFqdn(zone)
     const client = await this.clientFor(providerId)
     const response = await callProvider(
       {
@@ -89,7 +91,8 @@ export class DnsPodZoneService {
   }
 
   async delete(providerId: string, zone: string) {
-    const domain = zone.toLowerCase().trim()
+    // 同上：失效标签必须与记录/线路缓存的键同源（punycode）
+    const domain = toAsciiFqdn(zone)
     const client = await this.clientFor(providerId)
     const response = await callProvider(
       {

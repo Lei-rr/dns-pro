@@ -55,40 +55,8 @@ export function readResourceKeys(payload: Record<string, unknown>): string[] {
   return keys.map(String)
 }
 
-/** 宽容读取：查询路径使用；缺失只说明无法按资源键判定，不该让读接口失败 */
+/** 宽容读取：重试路径使用；缺失只说明无法按资源键判定，不该让重试失败 */
 export function peekResourceKeys(payload: Record<string, unknown> | undefined): string[] {
   const keys = payload?.resource_keys
   return Array.isArray(keys) ? keys.map(String) : []
-}
-
-/** 资源键拆解：`dns:<system>:<providerId>:<zone>` 与 `edgeone:<providerId>:<zoneId>` */
-function resourceKeyTarget(key: string): { providerId: string; zone: string } | null {
-  const parts = key.split(':')
-  if (parts[0] === 'dns' && parts.length >= 4) return { providerId: parts[2] as string, zone: parts[3] as string }
-  if (parts[0] === 'edgeone' && parts.length >= 3) return { providerId: parts[1] as string, zone: parts[2] as string }
-  return null
-}
-
-/**
- * 查询范围是否与某条资源键指向同一底层资源。
- * 各工作流的 scope 字段名不同（zone / zone_name / zone_id），但资源键统一是
- * providerId + 站点，用它比对才能让「查询活跃任务」与创建时的 409 判定同口径。
- */
-export function scopeMatchesResourceKeys(scope: Record<string, string>, keys: readonly string[]): boolean {
-  const providerId = String(scope.provider_id ?? '')
-    .trim()
-    .toLowerCase()
-  const zones = [scope.zone, scope.zone_name, scope.zone_id]
-    .map((value) =>
-      String(value ?? '')
-        .trim()
-        .toLowerCase()
-    )
-    .filter(Boolean)
-  if (providerId === '' || zones.length === 0) return false
-  return keys.some((key) => {
-    const target = resourceKeyTarget(String(key))
-    if (!target) return false
-    return target.providerId.toLowerCase() === providerId && zones.includes(target.zone.toLowerCase())
-  })
 }

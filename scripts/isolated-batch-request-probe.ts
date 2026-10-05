@@ -203,7 +203,20 @@ try {
   const finished = await app.ctx.workflows.saasBatch.require(batch.id, 'saas-owner')
   assert.equal(finished?.status, 'completed', finished?.message)
   assert.equal(listGets(), 1, `主机名列表应只拉取一次，实际 ${listGets()} 次`)
-  assert.ok(detailGets() <= cloudflareHostnames.length, `详情请求应每主机名一次，实际 ${detailGets()} 次`)
+  // 条目全停在 pending 时「列表只拉一次」同样成立：必须同时锁定逐条落实与逐条详情读取，
+  // 否则任务整体没执行也会让上面一条断言通过，O(N) 行为根本没被验证
+  assert.equal(finished?.items?.length, cloudflareHostnames.length, '批量删除必须覆盖全部目标主机名')
+  assert.equal(
+    (finished?.success ?? 0) + (finished?.skipped ?? 0),
+    cloudflareHostnames.length,
+    `批量删除必须逐条落实（success+skipped 应为全部条目）：${JSON.stringify(
+      finished?.items?.map((item) => [item.hostname, item.status, item.message])
+    )}`
+  )
+  assert.ok(
+    detailGets() >= cloudflareHostnames.length,
+    `逐条删除前必须各自读取主机名详情（列表快照不能替代），实际 ${detailGets()} 次`
+  )
 
   // ---- 4. EdgeOne 批量删除：加速域名列表只拉一次 ----
   EdgeOneClient.prototype.call = async function (action: string): Promise<unknown> {
@@ -301,7 +314,7 @@ try {
   assert.equal(dnsRaw?.items[0]?.record_status, 'DISABLE', '任务条目必须保留 record_status')
   assert.notEqual(dnsRaw?.items[0]?.status, 'DISABLE', '任务条目的 status 属于执行骨架')
 
-  // SaaS 批量写回同一个 DNSPod 域名 → 必须被拒
+  // 跨工作流冲突判定生效于创建路径：SaaS 批量写回同一个 DNSPod 域名 → 必须被拒
   const conflict = await app.ctx.workflows.saasBatch
     .createDelete({
       providerId: 'saas-owner',
@@ -315,27 +328,29 @@ try {
     )
   assert.equal(conflict?.code, 'batch_job_running', '同一底层 DNS 域名上的 SaaS 批量必须被互斥拦截')
 
-  // 反查：正在跑的 DNS 批量任务必须能被其它工作流的 active 查询看见。
-  // 这些查询的 provider_id 是 SaaS / EdgeOne 服务商，只有按底层资源键交集比对才能命中（此前整片漏报）
+  // 反查与本族详情端点同口径：面板只显示本族任务（详情端点取得到的任务）；
+  // 跨工作流写入冲突已由上面的创建路径 409 断言覆盖，不通过跨族反查展示（别族任务在详情端点取不到）。
+  const dnsActive = await app.ctx.workflows.dnsBatch.active('dnspod', 'dns-target', 'example.com')
+  assert.equal(dnsActive?.id, dnsJob.id, 'DNS 面板必须能查到本工作流的活跃任务')
   assert.equal(
-    (await app.ctx.workflows.dnsBatch.active('dnspod', 'dns-target', 'example.com'))?.id,
+    (await app.ctx.workflows.dnsBatch.find(String(dnsActive?.id), 'dnspod', 'dns-target'))?.id,
     dnsJob.id,
-    'DNS 面板必须能查到本工作流的活跃任务'
+    '反查返回的任务必须能被同 providerId 的详情端点取到'
   )
   assert.equal(
     (await app.ctx.workflows.saasBatch.active('saas-owner', 'example.com'))?.id,
-    dnsJob.id,
-    'SaaS 批量面板必须能反查到 DNS 批量任务'
+    undefined,
+    'SaaS 面板不得反查出别族任务（其详情端点取不到）'
   )
   assert.equal(
     (await app.ctx.workflows.saasPreferredApply.active('saas-owner', 'example.com'))?.id,
-    dnsJob.id,
-    '优选切换面板必须能反查到 DNS 批量任务'
+    undefined,
+    '优选切换面板不得反查出别族任务'
   )
   assert.equal(
     (await app.ctx.workflows.edgeOneBatch.active('edge-owner', 'zone-1'))?.id,
-    dnsJob.id,
-    'EdgeOne 面板必须能反查到关联 DNSPod 域名上的 DNS 批量任务'
+    undefined,
+    'EdgeOne 面板不得反查出别族任务'
   )
 
   // 不同站点不应被误锁

@@ -115,11 +115,8 @@ export class SaaSPreferredApplyWorkflow {
   }
 
   async active(providerId: string, zoneName: string) {
-    // 同 SaaS 批量：查询的 provider_id 是 SaaS 服务商，只有按底层 DNS 资源键比对才能发现 DNS 批量任务
-    return this.kind.active(
-      { provider_id: providerId, zone_name: zoneName },
-      await this.workflow.zoneResourceKeys(providerId, zoneName)
-    )
+    // 同 SaaS 批量：面板反查只认本族任务（与详情端点同口径），跨工作流冲突由创建路径判定
+    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
   }
 
   retryFailed(id: string, providerId: string) {

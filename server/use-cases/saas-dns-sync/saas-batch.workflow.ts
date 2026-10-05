@@ -90,11 +90,8 @@ export class SaaSBatchWorkflow {
   }
 
   async active(providerId: string, zoneName: string) {
-    // 反查必须按底层资源键比对：本工作流的 provider_id 是 SaaS 服务商，而 DNS 批量任务的键里带的是被关联的 DNS 服务商
-    return this.kind.active(
-      { provider_id: providerId, zone_name: zoneName },
-      await this.workflow.zoneResourceKeys(providerId, zoneName)
-    )
+    // 面板反查只认本族任务（与详情端点同口径）；跨工作流冲突由创建路径按资源键 409 拦截
+    return this.kind.active({ provider_id: providerId, zone_name: zoneName })
   }
 
   retryFailed(id: string, providerId: string) {

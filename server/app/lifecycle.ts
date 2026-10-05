@@ -19,6 +19,7 @@ import { createInitialAuthConfig } from '../modules/system/auth/auth-config.repo
 import { JobService } from '../core/jobs/job.service.js'
 import { AuditLog } from '../core/observability/audit-log.js'
 import { installMemoryCache, MemoryCache } from '../core/cache/memory-cache.js'
+import { installProviderCacheState } from '../core/cache/provider-cache.js'
 
 type AppWorkflows = ReturnType<typeof createWorkflows>
 
@@ -102,8 +103,9 @@ async function initKernel(boot: Boot): Promise<void> {
     // 晚绑定闭包：modules 在 initDomains 阶段才装配，请求期读取即可（越序调用会立即抛错）
     session: (request) => boot.modules.auth.service.authenticate(request),
   }
-  // 供应商查询缓存随本次装配创建：同一进程内重复装配（探针）不会串用上一个实例的条目
+  // 供应商查询缓存与代次状态同路径安装：同一进程内重复装配（探针）不会串用上一个实例的条目/代数
   installMemoryCache(new MemoryCache())
+  installProviderCacheState()
   boot.credentialKey = await loadCredentialKey(boot.config.dataDir)
   boot.initialPassword = await createInitialAuthConfig(boot.config.dataDir)
 }

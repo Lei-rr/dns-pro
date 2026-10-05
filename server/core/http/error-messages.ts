@@ -155,5 +155,8 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
 }
 
 export function translateError(code: string): string | null {
+  // 必须挡掉原型链键（constructor/toString 等）：裸查表会取到 Object.prototype 上的函数，
+  // 被下游当 message 输出后 JSON 序列化会让整个字段消失
+  if (!Object.hasOwn(ERROR_MESSAGE_MAP, code)) return null
   return ERROR_MESSAGE_MAP[code] ?? null
 }

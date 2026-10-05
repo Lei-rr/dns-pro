@@ -1083,6 +1083,40 @@ try {
     }
   }
 
+  // 反查（active）返回的每一条都必须能被同 providerId 的详情端点取到：HTTP 级组合链路
+  const liveJob = await app.ctx.platform.jobs.create(
+    DNS_BATCH_CREATE_JOB,
+    {
+      provider_type: 'dnspod',
+      provider_id: 'missing',
+      zone: 'example.com',
+      resource_keys: ['dns:dnspod:missing:example.com'],
+    },
+    [{ name: 'live', type: 'A', value: '192.0.2.9' }],
+    { start: false }
+  )
+  const liveActive = await app.inject({
+    method: 'GET',
+    url: '/api/dnspod/providers/missing/zones/example.com/records/batch/active',
+    headers: { cookie },
+  })
+  assert.equal(liveActive.statusCode, 200, `DNS active => ${liveActive.statusCode}: ${liveActive.body}`)
+  assert.equal(liveActive.json().data?.id, liveJob.id, 'DNS active 必须返回本族活跃任务')
+  const liveDetail = await app.inject({
+    method: 'GET',
+    url: `/api/dnspod/providers/missing/records/batch/${liveJob.id}`,
+    headers: { cookie },
+  })
+  assert.equal(liveDetail.statusCode, 200, `DNS job detail => ${liveDetail.statusCode}: ${liveDetail.body}`)
+  assert.equal(liveDetail.json().data?.id, liveJob.id, '反查返回的任务必须能被同 providerId 的详情端点取到')
+  const foreignActive = await app.inject({
+    method: 'GET',
+    url: '/api/saas/providers/missing/zones/example.com/batch/active',
+    headers: { cookie },
+  })
+  assert.equal(foreignActive.statusCode, 200, `SaaS active => ${foreignActive.statusCode}: ${foreignActive.body}`)
+  assert.equal(foreignActive.json().data, null, '别族面板不得反查出本族任务')
+
   const validation = await app.inject({ method: 'POST', url: '/api/providers', headers: { cookie }, payload: {} })
   assert.equal(validation.statusCode, 400)
 

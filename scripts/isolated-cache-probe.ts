@@ -1,8 +1,17 @@
 #!/usr/bin/env node
-// 缓存语义：存活时间、容量上限、标签失效与在途加载拦截
+// 缓存语义：存活时间、容量上限、标签失效、在途加载拦截、DNSPod IDN 键同源
 import assert from 'node:assert/strict'
-import { MemoryCache, CACHE_MAX_ENTRIES, CACHE_TTL_MS } from '../server/core/cache/memory-cache.js'
-import { invalidateProviderCache, providerCacheStats, withProviderCache } from '../server/core/cache/provider-cache.js'
+import { MemoryCache, CACHE_MAX_ENTRIES, CACHE_TTL_MS, installMemoryCache } from '../server/core/cache/memory-cache.js'
+import {
+  installProviderCacheState,
+  invalidateProviderCache,
+  providerCacheStats,
+  withProviderCache,
+} from '../server/core/cache/provider-cache.js'
+import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
+import { DnsPodRecordService } from '../server/modules/dnspod/dns-pod-record.service.js'
+import { DnsPodZoneService } from '../server/modules/dnspod/dns-pod-zone.service.js'
+import { toAsciiFqdn } from '../server/shared/values.js'
 import {
   CloudflareDnsRecordService,
   cloudflareRecordPageKey,
@@ -140,4 +149,36 @@ assert.deepEqual(Object.keys(providerCacheStats()), ['size'], '健康检查契�
   assert.notEqual(key({ type: 'A' }, 2), key({ type: 'A' }, 1), '分页必须进键')
 }
 
-console.log('cache-probe=ok ttl=expires lru=evicts tags=invalidate inflight=deduped records-key=filtered')
+// 8. DNSPod IDN：UI 路径（Unicode）与同步路径（punycode）必须落到同一条记录缓存；
+//    站点删除的失效标签也要覆盖该缓存（归一只改匹配侧时两处都会漏）
+{
+  installMemoryCache(new MemoryCache())
+  installProviderCacheState()
+  const providers = { requireType: async () => ({ secret_id: 'sid', secret_key: 'skey' }) }
+  let recordLists = 0
+  DnsPodClient.prototype.call = async function (action: string): Promise<unknown> {
+    if (action === 'DescribeRecordList') {
+      recordLists += 1
+      return { RecordList: [], RecordCountInfo: { TotalCount: 0 }, RequestId: 'idn' }
+    }
+    if (action === 'DeleteDomain') return { RequestId: 'deleted' }
+    assert.fail(`unexpected DNSPod action: ${action}`)
+  }
+  const records = new DnsPodRecordService(providers as never)
+  const zones = new DnsPodZoneService(providers as never)
+  const idn = '例子.中国'
+  const ascii = toAsciiFqdn(idn)
+  assert.notEqual(ascii, idn, '前置：IDN 必须能转成 punycode')
+
+  await records.list('p1', idn)
+  await records.list('p1', ascii)
+  assert.equal(recordLists, 1, 'Unicode 与 punycode 写法必须命中同一条记录缓存')
+  assert.equal(providerCacheStats().size, 1, '前置：记录缓存已写入')
+
+  await zones.delete('p1', idn)
+  assert.equal(providerCacheStats().size, 0, '站点删除的失效标签必须覆盖 punycode 记录缓存')
+}
+
+console.log(
+  'cache-probe=ok ttl=expires lru=evicts tags=invalidate inflight=deduped records-key=filtered idn=punycode-shared'
+)

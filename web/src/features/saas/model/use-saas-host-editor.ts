@@ -14,7 +14,12 @@ import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-
 export function preferredDomainOf(record: SaaSHostname | null | undefined): string {
   if (!record) return ''
   const metadata = record.custom_metadata as Record<string, unknown> | null | undefined
-  return String(record.preferred_domain || metadata?.preferred_domain || '').trim()
+  // 逐候选先 trim 再判空：纯空白不算已设置，也不该挡住后面的候选（与后端 effectivePreferredDomain 同口径）
+  for (const candidate of [record.preferred_domain, metadata?.preferred_domain]) {
+    const value = String(candidate ?? '').trim()
+    if (value) return value
+  }
+  return ''
 }
 
 export function useSaasHostEditor(options: {

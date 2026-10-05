@@ -1,7 +1,7 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import { buildCacheKey, providerCacheTag, recordCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
 import { ApiError } from '../../core/http/api-error.js'
-import { parseBool } from '../../shared/values.js'
+import { parseBool, toAsciiFqdn } from '../../shared/values.js'
 import {
   callProvider,
   collectOffsetPages,
@@ -226,9 +226,10 @@ function optionalUint(value: unknown, min = 0, max = Number.MAX_SAFE_INTEGER): n
   return int
 }
 
-/** DNSPod 域名大小写不敏感：统一小写去空白，保证缓存键与失效标签一致 */
+/** DNSPod 域名大小写不敏感；IDN 统一转 punycode（与 zone-catalog/站点服务同源），
+ * 保证 UI 路径与同步路径落到同一条缓存与同一组失效标签 */
 function normalizeDomain(domain: string): string {
-  return domain.toLowerCase().trim()
+  return toAsciiFqdn(domain)
 }
 
 function normalizeRecordInput(raw: RecordCreateInput): NormalizedRecordInput {

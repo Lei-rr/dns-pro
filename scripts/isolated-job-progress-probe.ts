@@ -167,6 +167,37 @@ assert.equal(progress.text.value, '新任务完成')
 assert.equal(progress.running.value, false)
 assert.equal(progress.owns(owner), true)
 
+// 详情缺失（null / 空对象）不得被当成已完成：连续读不到详情必须按未知状态失败
+const missingDetailProgress = useJobProgress()
+let missingDetailFetches = 0
+const missingDetailPoll = missingDetailProgress.pollJob(
+  'missing-detail',
+  {
+    intervalMs: 300,
+    autoClearMs: 0,
+    fetchJob: async () => {
+      missingDetailFetches++
+      return {}
+    },
+  },
+  missingDetailProgress.begin()
+)
+await assert.rejects(missingDetailPoll, /任务详情缺失/)
+assert.equal(missingDetailFetches, 3, '详情缺失必须重试到上限才判定未知')
+assert.equal(missingDetailProgress.running.value, false)
+
+// 恢复流程遇到详情缺失：必须报「恢复失败」，不得当成任务已完成
+const missingResume = await progress.resumeActive(() => ({ data: { id: 'lost-job', status: 'running', total: 2 } }), {
+  label: '丢失详情',
+  intervalMs: 300,
+  autoClearMs: 0,
+  fetchJob: async () => null as unknown as JobLike,
+})
+assert.equal(missingResume, null)
+assert.equal(progress.running.value, false)
+assert.match(progress.text.value, /恢复失败/)
+assert.equal(progress.job.value?.status, 'failed')
+
 const staleOwner = owner
 progress.reset()
 assert.equal(progress.owns(staleOwner), false)

@@ -100,6 +100,20 @@ function templateSkeleton(node) {
   return text
 }
 
+/**
+ * 错误码前缀的静态取值来源（供模板白名单反向对账）：
+ * - DnsPodZoneCatalog.resolve / requireExplicit：实参 3（形如 *.catalog.* 的调用点）
+ * - DnsPodAccess.linkedProviderId / requireLinkedProviderId：实参 2（形如 *.access.* 的调用点，≥3 参以避开 Cloudflare 版本）
+ * 前缀一律要求字面量：变量化会让静态对账失明，因此直接判错。
+ */
+const errorCodePrefixSources = new Map([
+  ['catalog.resolve', { argument: 2, minArgs: 3 }],
+  ['catalog.requireExplicit', { argument: 2, minArgs: 3 }],
+  ['access.linkedProviderId', { argument: 1, minArgs: 3 }],
+  ['access.requireLinkedProviderId', { argument: 1, minArgs: 3 }],
+])
+const errorCodePrefixUsages = new Map([...errorCodePrefixSources.keys()].map((key) => [key, new Map()]))
+
 const imports = []
 const apiErrorCodes = new Set()
 const errorCodeTemplates = []
@@ -140,6 +154,28 @@ for (const file of sourceFiles) {
             file,
             line: block.offset + lineAt(block.code, node.getStart(sf)),
           })
+      }
+      // 错误码前缀的实际取值来源：静态收集，供白名单反向对账（前缀必须字面量，见下方 ARCH028 校验段）
+      if (file.startsWith('server/') && ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+        const method = node.expression.name.text
+        const receiver = node.expression.expression
+        const receiverName = ts.isIdentifier(receiver)
+          ? receiver.text
+          : ts.isPropertyAccessExpression(receiver)
+            ? receiver.name.text
+            : ''
+        const sourceKey = `${receiverName}.${method}`
+        const spec = errorCodePrefixSources.get(sourceKey)
+        if (spec && node.arguments.length >= spec.minArgs) {
+          const argument = node.arguments[spec.argument]
+          const line = block.offset + lineAt(block.code, node.getStart(sf))
+          if (argument && ts.isStringLiteralLike(argument)) {
+            const usage = errorCodePrefixUsages.get(sourceKey)
+            if (usage && !usage.has(argument.text)) usage.set(argument.text, { file, line })
+          } else {
+            report('ARCH028', file, line, `${sourceKey} errorCodePrefix must be a string literal for static audit`)
+          }
+        }
       }
       // 动态拼接的错误码（如 `${prefix}_${action}_failed`）无法静态穷举，
       // 因此约定集中声明为 *_ERROR_CODES 映射常量，由这里把每个字面量取值纳入检查
@@ -409,13 +445,15 @@ for (const code of apiErrorCodes) {
 // 模板拼码白名单：模板的实际取值由运行时变量决定（如 `${source}_provider_not_found` 的 source），
 // 静态无法穷举；因此要求每个模板骨架在此显式登记，并列出现有调用点会产生的完整错误码。
 // 登记的展开值必须全部已在 error-messages.ts 登记中文映射，否则中文界面会直出英文。
-// 新增模板、或给模板新增取值来源时校验会失败，必须同步登记；条目不再被任何模板使用同样会失败（防白名单腐烂）。
+// prefixSources 声明前缀取值来自哪些调用点，下方与静态扫描结果双向对账：新增取值来源而漏登记、
+// 或调用点删除而白名单未清理都会失败（edgeone 前缀的展开值此前就整片漏登记过）。
 const errorCodeTemplateAllowlist = new Map([
   [
     '${}_provider_not_found',
     {
-      // DnsPodAccess.linkedProviderId：source 为 'edgeone' | 'saas'（DnsPodLinkSource），两个取值都已登记
+      // DnsPodAccess.linkedProviderId：source 为 'edgeone' | 'saas'（DnsPodLinkSource）
       expansions: ['edgeone_provider_not_found', 'saas_provider_not_found'],
+      prefixSources: ['access.linkedProviderId'],
     },
   ],
   [
@@ -423,20 +461,23 @@ const errorCodeTemplateAllowlist = new Map([
     {
       // DnsPodAccess.requireLinkedProviderId：source 同上
       expansions: ['edgeone_dnspod_provider_missing', 'saas_dnspod_provider_missing'],
+      prefixSources: ['access.requireLinkedProviderId'],
     },
   ],
   [
     '${}_fqdn_empty',
     {
-      // DnsPodZoneCatalog.resolve：errorCodePrefix 目前只有 'saas'（coordinator / planner 调用点）
-      expansions: ['saas_fqdn_empty'],
+      // DnsPodZoneCatalog.resolve：errorCodePrefix 来自调用点（saas / edgeone 两个来源）
+      expansions: ['edgeone_fqdn_empty', 'saas_fqdn_empty'],
+      prefixSources: ['catalog.resolve'],
     },
   ],
   [
     '${}_dnspod_zone_not_found',
     {
-      // DnsPodZoneCatalog.resolve / requireExplicit：errorCodePrefix 目前只有 'saas'
-      expansions: ['saas_dnspod_zone_not_found'],
+      // DnsPodZoneCatalog.resolve / requireExplicit：errorCodePrefix 来自调用点（saas / edgeone）
+      expansions: ['edgeone_dnspod_zone_not_found', 'saas_dnspod_zone_not_found'],
+      prefixSources: ['catalog.resolve', 'catalog.requireExplicit'],
     },
   ],
 ])
@@ -460,6 +501,51 @@ const usedErrorCodeTemplates = new Set(errorCodeTemplates.map((template) => temp
 for (const skeleton of errorCodeTemplateAllowlist.keys()) {
   if (!usedErrorCodeTemplates.has(skeleton))
     report('ARCH028', 'scripts/check-architecture.mjs', 1, `stale error-code template whitelist entry: ${skeleton}`)
+}
+// 反向前缀对账：白名单登记的前缀集合必须与代码中实际出现的调用点前缀集合一致
+for (const [skeleton, entry] of errorCodeTemplateAllowlist) {
+  const sources = entry.prefixSources
+  if (!sources) continue
+  const suffix = skeleton.replaceAll('${}', '')
+  const declared = new Map()
+  for (const code of entry.expansions) {
+    if (!code.endsWith(suffix)) {
+      report(
+        'ARCH028',
+        'scripts/check-architecture.mjs',
+        1,
+        `template ${skeleton} expansion must end with ${suffix}: ${code}`
+      )
+      continue
+    }
+    declared.set(code.slice(0, code.length - suffix.length), true)
+  }
+  const actual = new Map()
+  for (const source of sources) {
+    for (const [prefix, location] of errorCodePrefixUsages.get(source) ?? []) {
+      const existing = actual.get(prefix)
+      if (existing) existing.sources.add(source)
+      else actual.set(prefix, { ...location, sources: new Set([source]) })
+    }
+  }
+  for (const [prefix, location] of actual) {
+    if (!declared.has(prefix))
+      report(
+        'ARCH028',
+        location.file,
+        location.line,
+        `error-code prefix "${prefix}" (${[...location.sources].join(', ')}) missing from template ${skeleton} allowlist`
+      )
+  }
+  for (const prefix of declared.keys()) {
+    if (!actual.has(prefix))
+      report(
+        'ARCH028',
+        'scripts/check-architecture.mjs',
+        1,
+        `stale template ${skeleton} allowlist prefix "${prefix}": no matching errorCodePrefix usage`
+      )
+  }
 }
 for (const file of backendFiles)
   if (/\bapp\.(?:get|post|put|patch|delete|head|options)\s*\(/.test(read(file)) && !file.endsWith('.routes.ts'))

@@ -34,7 +34,8 @@ export class DnsPodLineService {
   ) {}
 
   async lines(providerId: string, zone: string, refresh = false): Promise<DnsPodLineListResult> {
-    const domain = zone.toLowerCase().trim()
+    // 缓存键与失效标签必须与站点/记录服务同源：统一 punycode，IDN 域名下两条路径才互相覆盖
+    const domain = toAsciiFqdn(zone)
     const cached = await withProviderCache<DnsPodLineListResult>({
       key: `${DNSPOD_PROVIDER_TYPE}:lines:${providerId}:${domain}`,
       tags: [providerCacheTag(providerId), recordLineCacheTag(DNSPOD_PROVIDER_TYPE, providerId, domain)],

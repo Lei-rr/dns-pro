@@ -64,17 +64,25 @@ try {
     await fs.rm(failing, { recursive: true, force: true })
   }
 
-  // 5. 保留策略：只留最近 keep 份
+  // 5. 保留策略：只留最近 keep 份正式备份；写入中途退出留下的临时残留不参与计数
   for (let index = 0; index < 3; index += 1) {
     await backupDataRoot(legacy, backupLabel(`keep-${index}`))
   }
+  await fs.mkdir(path.join(legacy, 'backups', '.tmp-interrupted'), { recursive: true })
   const beforePrune = (await fs.readdir(path.join(legacy, 'backups'))).length
-  assert.ok(beforePrune >= 4, '前置备份数量应足够')
+  assert.ok(beforePrune >= 5, '前置备份数量应足够')
   const removed = await pruneBackups(legacy, 2)
-  assert.equal((await fs.readdir(path.join(legacy, 'backups'))).length, 2, '保留策略必须只留最近 keep 份')
-  assert.equal(removed, beforePrune - 2)
+  const afterPrune = await fs.readdir(path.join(legacy, 'backups'))
+  assert.equal(afterPrune.filter((name) => !name.startsWith('.tmp-')).length, 2, '保留策略必须只留最近 keep 份正式备份')
+  assert.ok(
+    afterPrune.some((name) => name.startsWith('.tmp-')),
+    '未完成的临时残留不得被当成有效备份（既不计数也不删除）'
+  )
+  assert.equal(removed, beforePrune - 3, '删除数量只计正式备份')
 
-  console.log('data-migration-probe=ok first-run=meta legacy=ordered idempotent=yes failure=stops retention=pruned')
+  console.log(
+    'data-migration-probe=ok first-run=meta legacy=ordered idempotent=yes failure=stops retention=pruned atomic=renamed temp=ignored'
+  )
 } finally {
   await fs.rm(fresh, { recursive: true, force: true })
   await fs.rm(legacy, { recursive: true, force: true })

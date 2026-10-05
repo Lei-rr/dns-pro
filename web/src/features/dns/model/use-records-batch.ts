@@ -217,6 +217,7 @@ export function useRecordsBatch(options: {
     // 两次恢复重叠时最新作用域的后台任务会被静默丢弃；作用域切换统一由 invalidateScope 作废
     const owner = scope.capture({ provider: toValue(options.provider), zoneId: toValue(options.zoneId) })
     const { provider, zoneId } = owner.value
+    // 详情缺失（null/{}）由轮询层按未知状态上报：读不到任务详情时不会在这里被当成「已完成」去刷新列表
     const finished = await options.jobProgress.resumeActive(() => dnsApi.batchActive(provider, zoneId), {
       label: 'DNS 批量',
       fetchJob: batchJobFetcher(provider),

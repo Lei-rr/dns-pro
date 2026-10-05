@@ -14,6 +14,15 @@ export function extractJobId(data: unknown): string {
   return ''
 }
 
+/** 详情端点返回 null/{} 都算详情缺失：空对象同样不能证明任务已完成 */
+function isMissingJobPayload(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return true
+  return Object.keys(data as Record<string, unknown>).length === 0
+}
+
+/** 连续读不到详情的容忍次数：超过即按未知状态上报，而不是当成任务已完成 */
+const MISSING_DETAIL_LIMIT = 3
+
 export function useJobProgress() {
   const running = ref(false)
   const text = ref('')
@@ -80,6 +89,7 @@ export function useJobProgress() {
     running.value = true
     try {
       let current: JobLike | null = { id: jobId, status: 'pending' }
+      let missingDetails = 0
       while (current && (options.isActive?.(current) ?? isActiveStatus(current.status))) {
         if (!owner.active()) return null
         job.value = current
@@ -88,7 +98,16 @@ export function useJobProgress() {
         options.onTick?.(current)
         await new Promise((resolve) => setTimeout(resolve, interval))
         if (!owner.active()) return null
-        current = await options.fetchJob(jobId)
+        const next = await options.fetchJob(jobId)
+        // 读不到详情时保持轮询；连续多次仍缺失说明任务状态未知，绝不能报成已完成
+        if (isMissingJobPayload(next)) {
+          if (++missingDetails >= MISSING_DETAIL_LIMIT) {
+            throw new Error(`任务详情缺失，状态未知（任务 ${jobId}）`)
+          }
+          continue
+        }
+        missingDetails = 0
+        current = next
       }
       if (!owner.active()) return null
       job.value = current

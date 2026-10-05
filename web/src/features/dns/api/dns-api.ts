@@ -242,9 +242,12 @@ export const dnsApi = {
     http.get(endpoints.recordsBatchActive(provider, domain), { timeout: POLL_TIMEOUT_MS }),
 }
 
-/** 批量任务轮询适配：runBatchJob / PollJobOptions 要裸任务对象，接口返回的是 ApiResponse 包装 */
+/**
+ * 批量任务轮询适配：runBatchJob / PollJobOptions 要裸任务对象，接口返回的是 ApiResponse 包装。
+ * 详情缺失时原样返回，由轮询层按未知状态处理：补 {} 会把「读不到详情」伪装成任务已完成。
+ */
 export function batchJobFetcher(provider: DnsProviderRef): (jobId: string) => Promise<JobLike> {
-  return async (jobId) => ((await dnsApi.batchJob(provider, jobId)).data as JobLike) || {}
+  return async (jobId) => (await dnsApi.batchJob(provider, jobId)).data as JobLike
 }
 
 /** 批量任务重试适配：把 provider 固定进任务创建时返回的 retry 回调 */

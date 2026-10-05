@@ -88,8 +88,8 @@ export const saasApi = {
     http.post(`${zoneBase(provider, zone)}/preferred-apply/preview`, data),
   preferredApply: (provider: string, zone: string, data: PreferredApplyPayload) =>
     http.post(`${zoneBase(provider, zone)}/preferred-apply`, data),
-  preferredApplyActive: (provider: string, zone: string) =>
-    http.get(`${zoneBase(provider, zone)}/preferred-apply/active`, { timeout: POLL_TIMEOUT_MS }),
+  preferredApplyActive: (provider: string, zone: string, options: { timeout?: number } = {}) =>
+    http.get(`${zoneBase(provider, zone)}/preferred-apply/active`, { timeout: options.timeout ?? POLL_TIMEOUT_MS }),
   // 任务端点挂在服务商作用域下：归属校验要求路径带 providerId
   preferredApplyJob: (provider: string, jobId: string) =>
     http.get(`${providerBase(provider)}/preferred-apply/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
@@ -99,8 +99,8 @@ export const saasApi = {
     http.post(`${zoneBase(provider, zone)}/batch/delete`, data),
   batchUpdate: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/update`, data),
-  batchActive: (provider: string, zone: string) =>
-    http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: POLL_TIMEOUT_MS }),
+  batchActive: (provider: string, zone: string, options: { timeout?: number } = {}) =>
+    http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: options.timeout ?? POLL_TIMEOUT_MS }),
   batchJob: (provider: string, jobId: string) =>
     http.get(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (provider: string, jobId: string) =>

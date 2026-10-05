@@ -3,6 +3,7 @@ import type { BadgeVariants } from '@/shared/ui/badge'
 const GREEN = new Set(['active', 'active_renewing', 'moved'])
 const GOLD = new Set(['pending', 'pending_validation', 'pending_issuance', 'pending_deployment', 'initializing'])
 const RED = new Set(['deleted', 'blocked', 'pending_deletion', 'deactivated'])
+const SSL_SETTLED = new Set(['active', 'deleted', 'deactivated', 'pending_deletion'])
 
 const STATUS_LABELS: Record<string, string> = {
   active: '已生效',
@@ -27,15 +28,19 @@ const TLS_LABELS: Record<string, string> = {
   '1.3': 'TLS 1.3',
 }
 
+/** 状态归一：上游可能返回大写/混合大小写，标签、徽章与终态判定共用这一份比较键 */
+function statusKey(status?: string | null) {
+  return String(status ?? '').toLowerCase()
+}
+
 export function statusLabel(status?: string | null) {
   if (!status) return '-'
-  return STATUS_LABELS[String(status).toLowerCase()] || '状态未知'
+  return STATUS_LABELS[statusKey(status)] || '状态未知'
 }
 
 export function statusVariant(status?: string | null): NonNullable<BadgeVariants['variant']> {
   if (!status) return 'outline'
-  // 与 statusLabel 同一口径：上游可能返回大写/混合大小写状态
-  const key = String(status).toLowerCase()
+  const key = statusKey(status)
   if (GREEN.has(key)) return 'success'
   if (RED.has(key)) return 'destructive'
   if (GOLD.has(key)) return 'warning'
@@ -59,10 +64,11 @@ export function formatDate(value?: string | null) {
 
 /** 主机名是否已到达终态（不再需要所有权验证帮助） */
 export function isHostnameSettled(status: string): boolean {
-  return GREEN.has(status) || RED.has(status)
+  const key = statusKey(status)
+  return GREEN.has(key) || RED.has(key)
 }
 
 /** 证书/SSL 状态是否已出结果（用于展示"处理中"提示） */
 export function isSslSettled(status: string): boolean {
-  return ['active', 'deleted', 'deactivated', 'pending_deletion'].includes(status)
+  return SSL_SETTLED.has(statusKey(status))
 }

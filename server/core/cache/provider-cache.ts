@@ -20,7 +20,7 @@ type InflightEntry = {
 }
 
 /**
- * 代次与在途状态：封装成实例，装配层/探针可整体重置，不再散落成模块级可变 Map。
+ * 代次与在途状态：封装成实例，由装配层安装（与内存缓存同路径，见 app/lifecycle.ts）。
  * 代次仅用于拦截「失效后才完成的在途加载」。
  */
 class ProviderCacheState {
@@ -59,12 +59,6 @@ class ProviderCacheState {
     if (this.inflight.get(key) === entry) this.inflight.delete(key)
   }
 
-  reset(): void {
-    this.tagGenerations.clear()
-    this.loadGenerations.clear()
-    this.inflight.clear()
-  }
-
   /** 有上限的写入：超出后淘汰最早插入的键 */
   private bump(map: Map<string, number>, key: string): void {
     map.set(key, (map.get(key) ?? 0) + 1)
@@ -76,11 +70,13 @@ class ProviderCacheState {
   }
 }
 
-const state = new ProviderCacheState()
+/** 当前进程使用的代次状态：由装配层在启动阶段安装（见 app/lifecycle.ts 的 initKernel），
+ * 与内存缓存同一路径；重复装配（探针）各从干净状态开始，不再需要手工清理 */
+let activeState = new ProviderCacheState()
 
-/** 清空代次与在途记录：同一进程内重复装配（探针）时从干净状态开始 */
-export function resetProviderCacheState(): void {
-  state.reset()
+/** 安装新的代次状态：装配层每次装配调用；同一进程内重复装配不会串用旧实例的代数 */
+export function installProviderCacheState(): void {
+  activeState = new ProviderCacheState()
 }
 
 /**
@@ -91,6 +87,8 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
   const key = resolveKey(options.key)
   const tags = options.tags ?? []
   const cache = activeMemoryCache()
+  // 读一次：本次调用内代次口径一致（安装只发生在装配期，与请求期不交错）
+  const state = activeState
 
   if (!options.refresh) {
     const hit = cache.get<T>(key)
@@ -129,7 +127,7 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
 /** 按标签失效：标签覆盖 provider/zone/record 等维度，同时拦截在途加载的写入 */
 export function invalidateProviderCache(options: { tags?: string[] }): void {
   const tags = options.tags ?? []
-  for (const tag of tags) state.bumpTag(tag)
+  for (const tag of tags) activeState.bumpTag(tag)
   activeMemoryCache().invalidateTags(tags)
 }
 
