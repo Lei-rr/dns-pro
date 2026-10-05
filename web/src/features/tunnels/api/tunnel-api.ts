@@ -19,7 +19,7 @@ type RefreshOptions = { refresh?: boolean; signal?: AbortSignal }
 const providerBase = (provider: string) => `/cloudflared/providers/${encodePath(provider)}`
 const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provider)}/tunnels/${encodePath(tunnelId)}`
 
-export const cloudflaredApi = {
+export const tunnelApi = {
   tunnels: async (provider: string, options: RefreshOptions = {}): Promise<ApiResponse<CloudflaredTunnel[]>> =>
     unwrapItems<CloudflaredTunnel[]>(
       await http.get(`${providerBase(provider)}/tunnels`, {

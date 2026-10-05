@@ -19,8 +19,8 @@ import { useResourceQuery } from '@/shared/query'
 import { useLocalPagination } from '@/shared/lib/use-local-pagination'
 import { TablePagination } from '@/shared/ui/pagination'
 import { useRowBusy, removeListItem, patchListItem } from '@/shared/lib/row-busy'
-import EdgeOneDomainForm from '@/features/edge-one/ui/AccelerationDomainFormDialog.vue'
-import CertificateForm from '@/features/edge-one/ui/CertificateFormDialog.vue'
+import AccelerationDomainFormDialog from '@/features/edge-one/ui/AccelerationDomainFormDialog.vue'
+import CertificateFormDialog from '@/features/edge-one/ui/CertificateFormDialog.vue'
 import AccelerationDomainsTable from '@/features/edge-one/ui/AccelerationDomainsTable.vue'
 import { formatFailedJobItem, JobProgressAlert, runBatchJob, showBatchFailures, useJobProgress } from '@/shared/job'
 import type { JobLike } from '@/shared/job'
@@ -586,7 +586,7 @@ onMounted(() => {
       </Button>
     </FloatingSelectionBar>
 
-    <EdgeOneDomainForm
+    <AccelerationDomainFormDialog
       v-model:open="dialogOpen"
       :zone-name="pageTitle"
       :dnspod-linked="dnspodLinked"
@@ -596,7 +596,7 @@ onMounted(() => {
       :saving="saving"
       @save="save"
     />
-    <CertificateForm
+    <CertificateFormDialog
       v-model:open="certDialogOpen"
       :certificate="editingDomain?.certificate"
       :errors="certErrors"

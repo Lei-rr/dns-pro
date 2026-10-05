@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableLoading } from '@/shared/ui/table'
 import { AppDialog } from '@/shared/ui/dialog'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
-import { cloudflaredApi } from '@/features/tunnels/api/tunnel-api'
+import { tunnelApi } from '@/features/tunnels/api/tunnel-api'
 import { tunnelStatusLabel } from '@/features/tunnels/lib/status'
 
 import type { Tunnel as CloudflaredTunnel } from '@/features/tunnels/model/types'
@@ -37,8 +37,7 @@ const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 const tunnelsQuery = useResourceQuery<CloudflaredTunnel[]>({
   key: () => ['tunnels', 'list', props.providerId],
-  queryFn: async ({ refresh, signal }) =>
-    (await cloudflaredApi.tunnels(props.providerId, { refresh, signal })).data || [],
+  queryFn: async ({ refresh, signal }) => (await tunnelApi.tunnels(props.providerId, { refresh, signal })).data || [],
   pageSizeScope: 'cloudflared-tunnels',
 })
 const loading = tunnelsQuery.loading
@@ -74,7 +73,7 @@ async function createTunnel() {
   if (nameError.value) return
   creating.value = true
   try {
-    const response = await cloudflaredApi.createTunnel(scopeOwner.value.providerId, value)
+    const response = await tunnelApi.createTunnel(scopeOwner.value.providerId, value)
     if (!scopeOwner.active()) return
     const tokenEffect = response.side_effects?.tunnel?.token
     if (tokenEffect?.status === 'failed') toast.warning('隧道已创建，令牌获取失败，可进入详情重试')
@@ -103,7 +102,7 @@ async function removeTunnel(record: CloudflaredTunnel) {
   if (!(await confirmDelete(record.name || record.id)) || !scopeOwner.active()) return
   await runBusy(tunnelKey, async (owner) => {
     try {
-      await cloudflaredApi.deleteTunnel(scopeOwner.value.providerId, tunnelId)
+      await tunnelApi.deleteTunnel(scopeOwner.value.providerId, tunnelId)
       if (!scopeOwner.active() || !owner.active()) return
       toast.success('已删除')
       await tunnelsQuery.invalidate()

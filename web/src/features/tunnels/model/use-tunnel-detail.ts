@@ -1,8 +1,8 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useQueryClient } from '@tanstack/vue-query'
-import { cloudflaredApi } from '@/features/tunnels/api/tunnel-api'
+import { tunnelApi } from '@/features/tunnels/api/tunnel-api'
 import type { Tunnel, TunnelRoute } from '@/features/tunnels/model/types'
-import { useClipboardCopy } from '@/features/tunnels/lib/clipboard'
+import { useClipboardCopy } from '@/features/tunnels/lib/use-clipboard-copy'
 import { useResourceQuery } from '@/shared/query'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -35,9 +35,9 @@ export function useTunnelDetail(props: TunnelDetailScope) {
       // 失败转成 tokenFailed 标记而非抛错：详情整体仍算成功，由面板显式提示并可重试。
       const previous = client.getQueryData<TunnelDetail>(detailKey())
       const [tunnelRes, routesRes, tokenRes] = await Promise.all([
-        cloudflaredApi.tunnel(props.providerId, props.tunnelId, { refresh, signal }),
-        cloudflaredApi.routes(props.providerId, props.tunnelId, { refresh, signal }),
-        cloudflaredApi.tunnelToken(props.providerId, props.tunnelId, { signal }).then(
+        tunnelApi.tunnel(props.providerId, props.tunnelId, { refresh, signal }),
+        tunnelApi.routes(props.providerId, props.tunnelId, { refresh, signal }),
+        tunnelApi.tunnelToken(props.providerId, props.tunnelId, { signal }).then(
           (response) => ({ token: response.data?.token || '', failed: false }),
           () => ({ token: '', failed: true })
         ),
@@ -63,7 +63,7 @@ export function useTunnelDetail(props: TunnelDetailScope) {
     const owner = repairGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
     repairing.value = true
     try {
-      const response = await cloudflaredApi.repairRoutes(owner.value.providerId, owner.value.tunnelId)
+      const response = await tunnelApi.repairRoutes(owner.value.providerId, owner.value.tunnelId)
       if (!owner.active()) return
       notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, 'DNS 修复完成')
       await detailQuery.invalidate()
@@ -79,7 +79,7 @@ export function useTunnelDetail(props: TunnelDetailScope) {
     const owner = rotationGeneration.claim({ providerId: props.providerId, tunnelId: props.tunnelId })
     rotating.value = true
     try {
-      const response = await cloudflaredApi.rotateToken(owner.value.providerId, owner.value.tunnelId)
+      const response = await tunnelApi.rotateToken(owner.value.providerId, owner.value.tunnelId)
       if (!owner.active()) return
       const nextToken = response.data?.token
       if (nextToken) {

@@ -1,5 +1,5 @@
 import { onUnmounted, reactive, ref, watch } from 'vue'
-import { cloudflaredApi, type TunnelRouteInput } from '@/features/tunnels/api/tunnel-api'
+import { tunnelApi, type TunnelRouteInput } from '@/features/tunnels/api/tunnel-api'
 import type { TunnelRoute } from '@/features/tunnels/model/types'
 import { confirmDelete } from '@/shared/ui/confirm'
 import { toast } from '@/shared/lib/toast'
@@ -65,7 +65,7 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
         path: form.path.trim() || undefined,
       }
       if (editingRoute.value) {
-        const response = await cloudflaredApi.updateRoute(
+        const response = await tunnelApi.updateRoute(
           props.providerId,
           props.tunnelId,
           data,
@@ -75,7 +75,7 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
         if (!owner.active()) return
         notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已更新')
       } else {
-        const response = await cloudflaredApi.addRoute(props.providerId, props.tunnelId, data)
+        const response = await tunnelApi.addRoute(props.providerId, props.tunnelId, data)
         if (!owner.active()) return
         notifyDnsSideEffect(response.data?.side_effects?.dns?.sync, '路由已添加')
       }
@@ -101,7 +101,7 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
     await runBusy(key, async (owner) => {
       if (!scopeOwner.active()) return
       try {
-        const response = await cloudflaredApi.deleteRoute(providerId, tunnelId, hostname, path)
+        const response = await tunnelApi.deleteRoute(providerId, tunnelId, hostname, path)
         if (!scopeOwner.active() || !owner.active()) return
         notifyDnsSideEffect(response.data?.side_effects?.dns?.cleanup, '已删除')
         await invalidateDetail()

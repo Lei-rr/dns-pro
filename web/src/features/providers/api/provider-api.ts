@@ -15,7 +15,7 @@ function presentDefinitions(definitions: ProviderDefinition[]): ApiResponse<Prov
   }
 }
 
-export const providersApi = {
+export const providerApi = {
   configured: async (): Promise<ApiResponse<Provider[]>> => {
     const response = unwrapItems<Provider[]>(await http.get('/providers'))
     return {

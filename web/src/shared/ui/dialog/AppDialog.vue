@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { HTMLAttributes } from 'vue'
-import DialogRoot from './Dialog.vue'
+import Dialog from './Dialog.vue'
 import DialogContent from './DialogContent.vue'
 import DialogDescription from './DialogDescription.vue'
 import DialogFooter from './DialogFooter.vue'
@@ -24,7 +24,7 @@ const props = withDefaults(
 </script>
 
 <template>
-  <DialogRoot v-model:open="open">
+  <Dialog v-model:open="open">
     <DialogContent
       :show-close-button="!props.preventClose"
       @escape-key-down="props.preventClose && $event.preventDefault()"
@@ -53,5 +53,5 @@ const props = withDefaults(
         <slot name="footer" />
       </DialogFooter>
     </DialogContent>
-  </DialogRoot>
+  </Dialog>
 </template>

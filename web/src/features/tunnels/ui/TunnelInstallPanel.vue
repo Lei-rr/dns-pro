@@ -4,7 +4,7 @@ import { Check, Copy } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { AppTooltip } from '@/shared/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
-import { useClipboardCopy } from '@/features/tunnels/lib/clipboard'
+import { useClipboardCopy } from '@/features/tunnels/lib/use-clipboard-copy'
 
 const props = defineProps<{
   token?: string

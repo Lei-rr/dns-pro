@@ -6,7 +6,7 @@ import { Button, LoadingButton } from '@/shared/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/shared/ui/tabs'
 import ProviderFormDialog from './ProviderFormDialog.vue'
 import ProvidersTable from './ProvidersTable.vue'
-import { providersApi } from '../api/provider-api'
+import { providerApi } from '../api/provider-api'
 import type { Provider, ProviderDefinition, ProviderDefinitions } from '../model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -39,7 +39,7 @@ const typeFilter = ref('all')
 
 const definitionsQuery = useResourceQuery<ProviderDefinitions>({
   key: ['providers', 'definitions'],
-  queryFn: async ({ signal }) => (await providersApi.definitions(signal)).data,
+  queryFn: async ({ signal }) => (await providerApi.definitions(signal)).data,
 })
 const definitions = computed(() => definitionsQuery.data.value?.types ?? [])
 const labels = computed(() => definitionsQuery.data.value?.labels ?? {})
@@ -127,10 +127,10 @@ async function save() {
       payload[key] = text
     }
     if (editing.value) {
-      await providersApi.update(editing.value.id, payload)
+      await providerApi.update(editing.value.id, payload)
       toast.success('服务商已更新')
     } else {
-      await providersApi.create(payload)
+      await providerApi.create(payload)
       toast.success('服务商已创建')
     }
     dialogOpen.value = false
@@ -146,7 +146,7 @@ async function save() {
 async function testProvider(record: Provider) {
   await runBusy(record.id, async (owner) => {
     try {
-      await providersApi.test(record.id)
+      await providerApi.test(record.id)
       if (!owner.active()) return
       toast.success(`${record.name} 测通成功`)
     } catch (error) {
@@ -159,7 +159,7 @@ async function removeProvider(record: Provider) {
   if (isRowBusy(record.id) || !(await confirmDelete(record.name))) return
   await runBusy(record.id, async (owner) => {
     try {
-      await providersApi.remove(record.id)
+      await providerApi.remove(record.id)
       if (!owner.active()) return
       toast.success('已删除')
       await providersQuery.reload()
