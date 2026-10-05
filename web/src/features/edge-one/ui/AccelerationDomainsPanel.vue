@@ -227,40 +227,17 @@ async function saveCertificate(payload: Record<string, unknown>) {
   }
 }
 
-/** 停止加速与启用都是异步的：上游接受后域名进入 process（实测两分钟以上），期间改状态/删除都会被拒绝。
- *  这里沿用 shared/job 的轮询写法（定时读取 + 作用域所有权）等状态落定，删除入口只在确认落为 offline 后出现。 */
-const STATUS_POLL_INTERVAL_MS = 5000
-const STATUS_POLL_MAX_ATTEMPTS = 60
+/** 停止加速与启用都是异步的：上游接受后域名进入 process，期间改状态与删除都会被拒绝；
+ *  落定耗时不可预测（创建场景实测 6~7 分钟，远超固定等待上限），因此不再轮询等待：
+ *  下发后立即刷新一次列表确认指令已被接受，后续状态交给用户手动刷新查看。 */
 
-/** 轮询该域名的真实状态直到离开 process（或超出等待上限）；返回最终状态，域名已消失时返回 'gone' */
-async function waitForDomainStatusSettled(key: string, owner: { active: () => boolean }): Promise<string> {
-  let status = 'process'
-  for (let attempt = 0; attempt < STATUS_POLL_MAX_ATTEMPTS; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_INTERVAL_MS))
-    if (!owner.active()) return ''
-    // refresh 绕过服务端缓存：否则轮询只会读回上一次的 process 快照
-    const response = await edgeOneApi.accelerationDomains(props.providerId, props.zoneId, { refresh: true })
-    if (!owner.active()) return ''
-    const latest = (response.data || []).find((item) => domainName(item) === key)
-    if (!latest) return 'gone'
-    status = String(latest.status || '')
-    patchListItem(
-      domains,
-      (item) => domainName(item) === key,
-      (item) => ({ ...item, status: latest.status, active_status: latest.status })
-    )
-    if (status.toLowerCase() !== 'process') return status
-  }
-  return status
+/** 上下线切换的文案：指令已下发 → 引导手动刷新查看结果 */
+const STATUS_TRANSITION_TEXT: Record<'online' | 'offline', { sending: string; hint: string }> = {
+  offline: { sending: '停止指令已下发', hint: '可稍后刷新查看结果' },
+  online: { sending: '启用指令已下发', hint: '可稍后刷新查看结果' },
 }
 
-/** 上下线切换的文案：目标态 → 下发中 / 完成 / 超时提醒 */
-const STATUS_TRANSITION_TEXT: Record<'online' | 'offline', { sending: string; done: string; pending: string }> = {
-  offline: { sending: '停止指令已下发', done: '已停止加速', pending: '停止加速仍在进行中' },
-  online: { sending: '启用指令已下发', done: '已启用加速', pending: '启用加速仍在进行中' },
-}
-
-/** 停止/启用共用流程：下发 → 按真实过渡态 process 展示 → 轮询到落定 → 整表收敛 */
+/** 停止/启用共用流程：下发 → 按真实过渡态展示 → 立即刷新一次列表 → 提示稍后手动刷新查看结果 */
 async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 'online' | 'offline') {
   const key = domainName(record)
   const text = STATUS_TRANSITION_TEXT[status]
@@ -274,14 +251,9 @@ async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 
         (item) => domainName(item) === key,
         (item) => ({ ...item, status: 'process', active_status: 'process' })
       )
-      toast.message(text.sending, '等待 EdgeOne 完成配置…')
-      const settled = (await waitForDomainStatusSettled(key, owner)).toLowerCase()
-      if (!owner.active()) return
+      toast.message(text.sending, text.hint)
+      // 命令已让服务端缓存失效：这次刷新直接回源，能看到上游最新状态（通常已是「配置中」）
       await runLoad()
-      if (!owner.active()) return
-      if (settled === status) toast.success(text.done)
-      // 超时仍是 process：保留「配置中」视图，提醒用户稍后刷新
-      else if (settled === 'process') toast.warning(text.pending, '可稍后刷新查看状态')
     } catch (error) {
       // 行数据只在成功后改写，失败时无需回滚（回滚反而会覆盖并发刷新的新值）
       if (owner.active()) toast.error(errorMessage(error))
@@ -289,12 +261,12 @@ async function setAccelerationStatus(record: EdgeOneAccelerationDomain, status: 
   })
 }
 
-/** 两步走第一步：online → 停止加速 → 等上游落为 offline，删除入口随状态自然出现 */
+/** 两步走第一步：online → 停止加速 → 用户刷新确认落为 offline 后，删除入口自然出现 */
 function stopAcceleration(record: EdgeOneAccelerationDomain) {
   return setAccelerationStatus(record, 'offline')
 }
 
-/** 停用后的回头路：offline → 启用 → 等上游落回 online，删除入口随之收起 */
+/** 停用后的回头路：offline → 启用 → 用户刷新确认落回 online 后，删除入口随之收起 */
 function enableAcceleration(record: EdgeOneAccelerationDomain) {
   return setAccelerationStatus(record, 'online')
 }
