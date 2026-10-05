@@ -24,6 +24,7 @@
 - DNS 端口（Phase 5b / D1-1）：引入 `DnsRecordPort` 与 Cloudflare / DNSPod 适配器，厂商字段映射（`content`/`comment`、`subdomain`/`record_line`/`mx`）收敛到适配器；`dns-batch` 只依赖端口，删除厂商 body 构造器与逐厂商等值判定（`dns-batch.adapters.ts`、`dns-record-equivalence.ts`）。
 - 契约层试点（D1 延续）：新增 `AccelerationDomainPort`（加速域名）与 `ZoneListPort`（站点目录）两个端口，EdgeOne 同步 / 批量工作流、归属取证与派生扫描改依赖端口而非模块服务类；模块服务显式 `implements` 端口，端口读模型取对外契约里的归一化字段（`name` / `cname` / `zone_id` / `status`），不暴露 SDK 原始字段。
 - 命名对齐：`scripts/isolated-edgeone-*.ts` → `isolated-edge-one-*.ts`（与 server / web 的切分式 `edge-one` 拼写统一，探针输出标识一并跟随；`docs/operations.md` 同步更新）。
+- 命名对齐：`server/modules/edgeone/` → `server/modules/edge-one/`（全仓最后一处"目录连写、文件却切分"的位置；目录内 11 个文件随目录整体移动，12 处 import / knip 路径同步，服务类名、任务 ID、错误码前缀等运行时标识符与数据取值不变）。
 - CI：GHCR 镜像仅在推送 `v*` 标签时构建（日常提交只跑 `verify`），并校验标签版本与 `package.json` 一致。
 
 ### 移除

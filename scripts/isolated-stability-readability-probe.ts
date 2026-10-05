@@ -6,7 +6,7 @@ import { cloudflareRecordPort } from '../server/modules/cloudflare/dns/cloudflar
 import { ApiError } from '../server/core/http/api-error.js'
 import { isExplicitNotFound } from '../server/core/providers/provider-error.js'
 import { dnspodDomainListResponseSchema } from '../server/modules/dnspod/dns-pod-response.schema.js'
-import { edgeoneZoneListResponseSchema } from '../server/modules/edgeone/edge-one-response.schema.js'
+import { edgeoneZoneListResponseSchema } from '../server/modules/edge-one/edge-one-response.schema.js'
 import { DnsPodSaaSSyncAdapter } from '../server/workflows/saas-dns-sync/dns-pod-saas-sync.adapter.js'
 import { CloudflareDnsSaaSSyncAdapter } from '../server/workflows/saas-dns-sync/cloudflare-dns-saas-sync.adapter.js'
 import { cloudflareDnsCleanupRecipe } from '../server/workflows/derived-records/planners/saas.planner.js'

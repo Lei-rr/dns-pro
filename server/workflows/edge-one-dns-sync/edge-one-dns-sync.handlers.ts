@@ -10,7 +10,7 @@ import {
   edgeoneDomainStoreSchema,
   edgeoneJobParamsSchema,
   edgeoneZoneParamsSchema,
-} from '../../modules/edgeone/edge-one.schema.js'
+} from '../../modules/edge-one/edge-one.schema.js'
 
 export async function createEdgeOneDomainHandler(
   request: FastifyRequest<RequestOf<typeof edgeoneDomainStoreSchema>>,

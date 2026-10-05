@@ -27,7 +27,7 @@ import {
   edgeoneAccelerationDomainListResponseSchema,
   edgeoneMutationResponseSchema,
   edgeoneZoneListResponseSchema,
-} from '../server/modules/edgeone/edge-one-response.schema.js'
+} from '../server/modules/edge-one/edge-one-response.schema.js'
 
 // 密码以 scrypt 自描述哈希存储（异步派生），校验不接受错误密码
 const stored = await hashPassword('correct horse battery staple')

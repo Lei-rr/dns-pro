@@ -4,7 +4,7 @@ import {
   buildAccelerationDomainRequest,
   normalizeAccelerationDomainPayload,
   normalizeAccelerationDomainUpdatePayload,
-} from '../server/modules/edgeone/edge-one-domain-payload.js'
+} from '../server/modules/edge-one/edge-one-domain-payload.js'
 
 const normalized = normalizeAccelerationDomainPayload({
   domain_name: ' WWW.Example.COM ',

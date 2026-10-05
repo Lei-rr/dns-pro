@@ -15,7 +15,7 @@ import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { DnsPodRecordService } from '../server/modules/dnspod/dns-pod-record.service.js'
 import { dnsPodRecordPort } from '../server/modules/dnspod/dns/dns-pod-record.adapter.js'
 import { dnsRecordMatches } from '../server/core/contracts/dns-record.port.js'
-import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
+import { EdgeOneClient } from '../server/modules/edge-one/edge-one.client.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { ApiError } from '../server/core/http/api-error.js'
 

@@ -9,7 +9,7 @@ import path from 'node:path'
 import { buildApp } from '../server/app/lifecycle.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
-import { EdgeOneClient } from '../server/modules/edgeone/edge-one.client.js'
+import { EdgeOneClient } from '../server/modules/edge-one/edge-one.client.js'
 import { invalidateSaaSHostnameCache } from '../server/modules/cloudflare/saas/saas.cache.js'
 import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-registry.js'
 

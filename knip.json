@@ -14,6 +14,6 @@
   "ignoreIssues": {
     "server/modules/cloudflare/cloudflare-response.schema.ts": ["types"],
     "server/modules/dnspod/dns-pod-response.schema.ts": ["types"],
-    "server/modules/edgeone/edge-one-response.schema.ts": ["types"]
+    "server/modules/edge-one/edge-one-response.schema.ts": ["types"]
   }
 }
