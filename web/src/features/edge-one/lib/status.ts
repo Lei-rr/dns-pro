@@ -5,7 +5,7 @@ export function edgeOneStatusLabel(status?: string) {
   return (
     {
       online: '已生效',
-      process: '部署中',
+      process: '配置中',
       offline: '已停用',
       forbidden: '已封禁',
       init: '未生效',

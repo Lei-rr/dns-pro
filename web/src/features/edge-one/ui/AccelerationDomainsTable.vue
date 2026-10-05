@@ -4,7 +4,13 @@ import { EllipsisVertical, Radar } from '@lucide/vue'
 import { StatusBadge } from '@/shared/ui/status-badge'
 import { Button } from '@/shared/ui/button'
 import { Checkbox } from '@/shared/ui/checkbox'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
 import {
@@ -13,6 +19,7 @@ import {
   edgeOneStatusLabel,
   edgeOneStatusVariant,
 } from '@/features/edge-one/lib/status'
+import { edgeOneDomainStatusActions } from '@/features/edge-one/model/domain-status-actions'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
 
@@ -30,9 +37,15 @@ const emit = defineEmits<{
   'repair-dns': [record: EdgeOneAccelerationDomain]
   edit: [record: EdgeOneAccelerationDomain]
   certificate: [record: EdgeOneAccelerationDomain]
-  status: [record: EdgeOneAccelerationDomain, status: string]
+  stop: [record: EdgeOneAccelerationDomain]
+  enable: [record: EdgeOneAccelerationDomain]
   remove: [record: EdgeOneAccelerationDomain]
 }>()
+
+/** 行内状态动作显隐：online 只给「停止加速」（不出现删除），offline 同时给「启用」与「删除」，process 两者都禁用 */
+function statusActions(record: EdgeOneAccelerationDomain) {
+  return edgeOneDomainStatusActions(record.status)
+}
 
 // 选择状态缓存为 computed：避免每次渲染/每行都重建 Set
 const selectedSet = computed(() => new Set(props.selected))
@@ -126,14 +139,30 @@ function toggleAll(value: boolean | 'indeterminate') {
                 <DropdownMenuItem :disabled="busy(record)" @click="emit('certificate', record)"
                   >HTTPS 配置</DropdownMenuItem
                 >
-                <DropdownMenuItem :disabled="busy(record)" @click="emit('status', record, 'online')"
+                <!-- 两步走删除：online 只给「停止加速」、不出现删除；offline 才同时给出「启用」与删除入口；process 期间两者都不可用 -->
+                <DropdownMenuItem
+                  v-if="statusActions(record).canStop || statusActions(record).configuring"
+                  :disabled="busy(record) || statusActions(record).configuring"
+                  @click="emit('stop', record)"
+                  >停止加速</DropdownMenuItem
+                >
+                <DropdownMenuItem
+                  v-if="statusActions(record).canEnable"
+                  :disabled="busy(record)"
+                  @click="emit('enable', record)"
                   >启用</DropdownMenuItem
                 >
-                <DropdownMenuItem :disabled="busy(record)" @click="emit('status', record, 'offline')"
-                  >停用</DropdownMenuItem
-                >
-                <DropdownMenuItem variant="destructive" :disabled="busy(record)" @click="emit('remove', record)"
+                <DropdownMenuItem
+                  v-if="statusActions(record).canRemove || statusActions(record).configuring"
+                  variant="destructive"
+                  :disabled="busy(record) || statusActions(record).configuring"
+                  @click="emit('remove', record)"
                   >删除</DropdownMenuItem
+                >
+                <DropdownMenuLabel
+                  v-if="statusActions(record).configuring"
+                  class="text-muted-foreground text-xs font-normal"
+                  >配置中，暂不可操作</DropdownMenuLabel
                 >
               </DropdownMenuContent>
             </DropdownMenu>
