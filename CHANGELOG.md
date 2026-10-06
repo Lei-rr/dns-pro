@@ -16,6 +16,7 @@
 - 可观测性（Phase 2）：日志级别默认 `info`，非法值 fail-fast；迁移、孤儿偏好清理、任务恢复、明文凭据升级等关键操作写入结构化日志。
 - 契约（Phase 3）：前端经 `@server` 路径复用后端类型，类型漂移在编译期暴露。
 - 快赢三项：优选域名白名单校验前置到任务创建（不再"任务创建成功、全员失败"）；新增隧道 repair 端点；隧道 `ensureCname` 补归属校验。
+- 运行边界成文：README 新增「已知边界」章节，写明单实例运行、跨文件写入无事务、供应商缓存重启即空、无指标与追踪、无浏览器端到端测试、上游 404 折叠、副作用位于 `data` 下、持久化模式版本固定为 1 这八条约束，并说明「被打破时会发生什么」，而不只是罗列原则。
 
 ### 变更
 
@@ -95,6 +96,15 @@
 - DNSPod 记录 ID 非数字时以 `NaN` 发往上游。
 - 未捕获异常未做有序退出。
 - EdgeOne 清空自定义回源 HOST 后回读被误判为「自定义」：真机实测确认上游把「清空」表达为回读加速域名自身（非空），前端原先按「非空即自定义」判定，用户清空后重新打开对话框会看到一个自己从未填过的 HOST，再次提交还会把「清空」误解成「自定义为域名自身」。
+- 第五批审计修复（全仓精简，只读审计 437 个文件）：
+  - 前端 15 处裸表查表在 key 为 `constructor` / `__proto__` 时会命中原型链，统一改走 `shared/lib/own-value.ts` 的 `ownValue()`；其中 `shared/api/transport-errors.ts` 用 `key in MAP` 更严重——`in` 不做小写归一，`'toString'` 会命中原型方法并把函数当作提示文案返回给用户。
+  - `shared/lib/field-errors.ts` 对缺少 `message` 的服务端错误对象渲染出 `[object Object]`，改为丢弃该条（这类载荷本就没有可读文本）。
+  - `features/tunnels/lib/status.ts` 缺 `trim()`，`' down '` 被判为「状态未知」；`features/providers/model/provider-config-items.ts` 顶层纯空白值会遮蔽 `fields` 里的有效值。
+  - `vitest.global-setup.ts`：projects 模式下 `globalSetup` 按 project 各跑一次，先结束的 project 会删掉仍在运行的 project 正在使用的临时数据目录（表现为 fixture 登录 401/500），改为「延后一轮」删除。
+  - `cloudflare.client.ts` 用 `as CloudflareApiResponse` 断言把上游网关返回的纯文本 / HTML 冒充成响应对象，调用方读 `.result` 恒为 `undefined` 却不报错，故障被显示成空数据；现在非对象一律按 502 `cloudflare_invalid_response` 拒绝。
+  - `saas-targets.planner.ts` 两处同步站点来源未归一：`sync_zone` 由前端配置，带首尾空白时仍是 truthy，会绕过「空则退回后缀匹配」判定，拿脏值打一次必然失败的上游查询。
+  - `.gitignore` 末条注释是 GBK 编码（全仓唯一的非 UTF-8 文件），重写为 UTF-8。
+  - 测试规模 94 → 118 个文件、560 → 878 个用例：补齐此前零覆盖的 handler / planner / client（DNSPod 站点与线路、EdgeOne 站点与域名、Cloudflare SaaS 与 Tunnel、审计接口、SaaS 与 EdgeOne 派生计划器等）以及前端 12 个文件 102 个用例；同时修正 18 处「断言说谎」的既有测试——断言与实现同谋，或只断言调用次数而不断言语义。
 
 ## [1.1.0] - 2026-09-28
 
