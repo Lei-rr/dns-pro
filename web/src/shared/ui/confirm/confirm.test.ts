@@ -47,3 +47,23 @@ describe('确认弹窗的勾选项', () => {
     await expect(pending).resolves.toBe(true)
   })
 })
+
+/**
+ * 批量失败确认（runBatchJob 的 stale 场景，见 web/src/shared/job/model/run-batch-job.test.ts）依赖的手势契约：
+ * 弹窗打开期间必须处于未决状态（外部据此判断「有待确认的交互」），settleConfirm 结算后立即关闭、立即无未决弹窗，
+ * 这样迟到的结算才能被安全地丢弃而不是挂起调用方。迁移自 scripts/isolated-job-progress-probe.ts。
+ */
+describe('确认手势契约：未决状态与结算', () => {
+  it('未决弹窗可被 settleConfirm 结算并立即关闭，之后不再有未决弹窗', async () => {
+    const pending = confirmDialog({ title: '批量失败', description: '失败 1 条\n\nwww: 失败' })
+
+    expect(confirmState.open.value).toBe(true)
+    expect(confirmState.hasPending()).toBe(true)
+
+    settleConfirm(true)
+
+    await expect(pending).resolves.toBe(true)
+    expect(confirmState.open.value).toBe(false)
+    expect(confirmState.hasPending()).toBe(false)
+  })
+})

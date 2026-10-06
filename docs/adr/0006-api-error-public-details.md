@@ -35,7 +35,7 @@ throw new ApiError('upstream_failed', '上游失败', 502, {
 
 负面：
 
-- 失去单点白名单的"默认拒绝"特性：安全边界从"集中白名单"变成"每个抛出点自我约束"，必须靠代码评审与探针（`probe:security` 检查不泄露上游响应与路径）兜底。
+- 失去单点白名单的"默认拒绝"特性：安全边界从"集中白名单"变成"每个抛出点自我约束"，必须靠代码评审与回归测试（`server/app/security.test.ts` 检查不泄露上游响应与路径）兜底。
 - 存量 `ApiError` 抛出点数量可观，改造是逐个的机械工作，期间两种语义并存，需要一次收尾。
 - 5xx 脱敏逻辑仍需保留，脱敏与"自声明"的职责边界要写清楚，否则容易被误读为"完全放开"。
 
@@ -48,4 +48,4 @@ throw new ApiError('upstream_failed', '上游失败', 502, {
 ## 验证计划
 
 - 单元：自声明细节进入响应体；未声明细节被丢弃；5xx 的 `server_error` 消息不外泄。
-- 回归：`npm run probe:security` 保持绿（信息泄露断言不变），`npm run probe:api` 覆盖错误码契约。
+- 回归：`server/app/security.test.ts` 保持绿（信息泄露断言不变），`server/app/api-contract.test.ts` 等 API 契约测试覆盖错误码契约（单跑 `npx vitest run <文件>`）。

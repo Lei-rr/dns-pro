@@ -50,69 +50,191 @@ data/
 | `lint`             | ESLint（`server`、`web/src`、`scripts`）                                                                           |
 | `typecheck`        | 后端 `tsc --noEmit`                                                                                                |
 | `typecheck:web`    | 前端 `vue-tsc --noEmit`                                                                                            |
-| `test`             | Vitest 单测（server / web 双项目：纯函数、契约、组件行为）                                                        |
+| `test`             | Vitest 全量测试（scripts / server / web 三项目：架构守卫规则、纯函数、契约、组件行为；见 §3）                      |
 | `arch:final`       | 架构守卫：层矩阵 `app → workflows → modules → core → shared`、产品线互不引用、缓存实现白名单、禁止重建 EventBus 等 |
 | `deadcode`         | knip 死代码 / 无用导出检查（配置提示也视为错误）                                                                   |
 | `deps:check`       | 依赖一致性脚本 + `npm audit --omit=dev --audit-level=high`                                                         |
 | `routes:check`     | 路由指纹漂移门禁（`scripts/api-route-manifest.json` 与代码不一致即失败）                                           |
-| `probe:api`        | 以真实装配 + Fastify inject 验证 API 契约（含路由、鉴权、错误体）                                                  |
-| `probe:job`        | 前端任务进度模型（`useJobProgress`、`runBatchJob`、行忙碌 / 选择 / 作用域代次）                                    |
-| `probe:platform`   | 平台并发、敏感文件、维护契约、数据迁移四个探针                                                                     |
-| `probe:workflow`   | 任务失败重试、隧道路由、请求参数、默认配置、批量请求量                                                             |
-| `probe:functional` | 前端审计、SaaS DNS repair、稳定性断言                                                                              |
-| `probe:security`   | 安全回归（会话吊销 / CSRF / 路径注入 / 信息泄露 / 暴力破解）、密码、凭据加密                                       |
 | `build`            | esbuild 打包 `dist/server.js` + Vite 构建 `web/dist`                                                               |
-| `probe:static`     | 基于构建产物的静态资源与 SPA 回退契约                                                                              |
+| `test:static`      | 静态资源与 SPA 回退契约（`server/app/static-files.test.ts`）；针对构建产物，必须紧跟 `build` 之后单独跑              |
 
 单步排查示例：
 
 ```bash
 npm run arch:final            # 只跑架构守卫
 npm run routes:check          # 只查路由漂移
-npm run probe:security        # 只跑安全回归
+npx vitest run server/app/security.test.ts   # 只跑安全回归
+npm run test                  # 全量测试（scripts / server / web）
 npm run build                 # 只构建
 ```
 
 ---
 
-## 3. 探针清单与单跑
+## 3. 测试套件与单跑
 
-探针以仓库根为工作目录运行（内部使用相对路径 `server/...`），**必须在项目根执行**。多数探针用 `os.tmpdir()` 建临时数据目录并通过 `setDataRoot` 指向它，不读写生产 `data/`；少数探针额外读取仓库文件（如 `Dockerfile`、前端源码）做契约断言。
+验证入口是 `npm run test`（Vitest，配置见 `vitest.config.ts`），一次跑三个 project：
 
-纯函数 / 契约类（P1）探针已迁移到 Vitest（`npm run test`，测试文件就近放在源码旁，示例：`server/modules/edge-one/edge-one-domain-payload.test.ts`、`server/core/cache/memory-cache.test.ts`）；下表是仍在维护的 isolated 探针。
+- `scripts`：Node 环境，跑架构守卫规则与仓库级契约（Dockerfile 健康检查、前端接线静态断言）。
+- `server`：Node 环境，直接执行 `server/` 下的 ESM 源码（相对导入带 `.js` 后缀），覆盖装配、API 契约、存储、安全与工作流。
+- `web`：happy-dom 环境，extends `web/vite.config.ts` 复用 Vue SFC 编译与 `@` 别名，覆盖前端模型、组件与网络层。
 
-| 探针                                              | 覆盖内容                                                                             |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `scripts/isolated-api-probe.ts`                   | 真实装配 + inject 的 API 契约与路由指纹（最大的一份）                                |
-| `scripts/isolated-backend-safe-probe.ts`          | 装配、输入归一化、presenter 输出的安全面                                             |
-| `scripts/isolated-backend-careful-probe.ts`       | 边界值：`ApiError`、HTTP 客户端、密码哈希、厂商响应守卫                              |
-| `scripts/isolated-platform-concurrency-probe.ts`  | `JsonStore` 串行、内存 `JobService`、批量条目汇总                                    |
-| `scripts/isolated-workflow-recovery-probe.ts`     | SaaS 批量任务失败重试语义（不重放已完成阶段）                                        |
-| `scripts/isolated-tunnel-route-probe.ts`          | 隧道路由写回顺序、扩展字段与 `catch_all` 保留、并发串行、CNAME 归属保护、repair 幂等 |
-| `scripts/isolated-batch-request-probe.ts`         | 请求量守卫：过滤下推上游、不随条目数重复全量拉取                                     |
-| `scripts/isolated-request-param-probe.ts`         | 路径参数与 schema 校验                                                               |
-| `scripts/isolated-saas-dns-repair-probe.ts`       | SaaS DNS repair 编排                                                                 |
-| `scripts/isolated-frontend-audit-probe.ts`        | 前端：任务恢复失败与"无活跃任务"必须可区分                                           |
-| `scripts/isolated-job-progress-probe.ts`          | 前端任务进度 / 行忙碌 / 选择 / 作用域代次                                            |
-| `scripts/isolated-stability-readability-probe.ts` | 错误语义、厂商响应 schema、同步适配器                                                |
-| `scripts/isolated-default-config-probe.ts`        | 配置优先级与非法值 fail-fast                                                         |
-| `scripts/isolated-security-probe.ts`              | 会话吊销 / CSRF / 上游路径注入 / 信息泄露 / 暴力破解                                 |
-| `scripts/isolated-password-probe.ts`              | 密码存储与强制改密流程                                                               |
-| `scripts/isolated-credential-encryption-probe.ts` | 凭据加密（`enc:v1:`）与存量迁移                                                      |
-| `scripts/isolated-sensitive-files-probe.ts`       | 敏感文件权限与内容保护                                                               |
-| `scripts/isolated-data-migration-probe.ts`        | 迁移框架与备份保留策略                                                               |
-| `scripts/isolated-maintenance-contract-probe.ts`  | 部署契约：镜像内无 curl/wget，健康检查必须走 node                                    |
-| `scripts/isolated-static-probe.ts`                | 静态资源与 SPA 回退契约（依赖构建产物）                                              |
+测试文件就近放在源码旁（各 project include `scripts/**`、`server/**`、`web/src/**` 下的 `*.{test,spec}.ts`），**必须在项目根执行**。旧版探针脚本已全部删除，断言迁入这些测试文件（多数文件头部注释保留了迁移来源）。
 
-单跑方式：
+单跑：
 
 ```bash
-npx tsx scripts/isolated-request-param-probe.ts               # 后端探针
-npx tsx --tsconfig web/tsconfig.json scripts/isolated-job-progress-probe.ts   # 前端探针（需 web tsconfig）
-npm run probe:platform                                        # 按分组跑
+npx vitest run server/app/security.test.ts      # 单个文件
+npx vitest run server/core/security             # 一个目录
+npx vitest run --project web                    # 只跑前端
+npx vitest run --project server                 # 只跑后端
+npm run test                                    # 全量（三 project）
+npm run test:static                             # 构建产物契约（需先 npm run build，见 3.9）
 ```
 
-`probe:static` 依赖 `dist/` 与 `web/dist/`，先跑 `npm run build`。`probe:api` 等会打印失败断言与首个不匹配的字段，定位方式同单元测试。
+下表按域索引「要验证什么 → 跑哪个文件」：
+
+### 3.1 架构与仓库级契约（scripts）
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `scripts/check-architecture.test.ts` | 架构守卫规则样例（层矩阵、产品线互不引用、缓存实现白名单等） |
+| `scripts/maintenance-contract.test.ts` | 部署契约：Dockerfile 健康检查必须走 node 请求 `/api/health`，镜像内不得依赖 curl / wget；npm audit 用例默认跳过（`DNS_PRO_RUN_NPM_AUDIT=1` 显式开启） |
+| `scripts/reconcile-ui-wiring.test.ts` | 同步健康视图接入（前端接线静态断言） |
+| `scripts/saas-repair-ui.test.ts` | 修复域名解析入口统一（前端接线静态断言） |
+
+### 3.2 API 契约与装配（server/app）
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `server/app/api-contract.test.ts` | 真实装配 + Fastify inject 的对外 HTTP 契约与 API 路由清单 |
+| `server/app/api-records.test.ts` | DNS / EdgeOne 记录端点契约 |
+| `server/app/api-jobs.test.ts` | 批量任务族端点、任务详情视图与归属校验 |
+| `server/app/api-providers.test.ts` | 服务商 CRUD / 关联与数据目录初值 |
+| `server/app/routes.test.ts` | 批量任务端点按服务商归属隔离 |
+| `server/app/config.test.ts` | 配置解析：`TRUST_PROXY` 拒绝 `true` / 跳数、`LOG_LEVEL` 归一与非法值 fail-fast、首启与明文配置的凭据落盘 |
+| `server/app/static-files.test.ts` | 静态资源与 SPA 回退契约（依赖构建产物，见 3.9） |
+
+### 3.3 安全
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `server/app/security.test.ts` | 安全回归：会话吊销 / CSRF / 上游路径注入 / 信息泄露 / 暴力破解 |
+| `server/core/security/password.test.ts` | 密码哈希与校验（scrypt） |
+| `server/core/security/password-flow.test.ts` | 默认凭据拦截与改密吊销 |
+| `server/core/security/credential-encryption.test.ts` | 凭据静态加密（`enc:v1:`）与存量迁移 |
+| `server/core/security/sensitive-files.test.ts` | 敏感文件权限与内容保护 |
+| `server/core/crypto/secret-box.test.ts` | `secret-box` 完整形态判定 |
+
+### 3.4 存储、迁移与缓存
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `server/core/store/json-store.test.ts` | `JsonStore` 结构损坏判定（损坏即报错、不静默覆盖） |
+| `server/core/store/migrations.test.ts` | 迁移框架、版本推进与备份保留 |
+| `server/core/cache/memory-cache.test.ts` | `MemoryCache` 存活时间（惰性过期） |
+| `server/core/cache/provider-cache.test.ts` | `withProviderCache` 命中 / `refresh` / 标签失效 |
+
+### 3.5 任务、并发与审计
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `server/core/jobs/job-concurrency.test.ts` | `JsonStore` 跨实例写队列、内存 `JobService` 并发 |
+| `server/core/jobs/job.service.test.ts` | 任务快照体积守卫 |
+| `server/core/jobs/job-mutex.test.ts` | 资源键交集互斥的单一口径 |
+| `server/core/observability/audit-log.test.ts` | 审计环形缓冲 |
+
+### 3.6 厂商模块与核心契约
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `server/core/contracts/dns-record.port.test.ts` | 记录值比较（域名类忽略大小写与尾点，其余类型精确比较） |
+| `server/core/http/base-http.client.test.ts` | HTTP 限流重试（429 遵循上游等待时间） |
+| `server/core/http/error-messages.test.ts` | 错误消息翻译（原型链键不得被当成错误码） |
+| `server/core/providers/provider-error.test.ts` | `isExplicitNotFound` 只认结构化证据 |
+| `server/core/providers/provider.repository.test.ts` | `providers.json` 损坏不得被读成空表 |
+| `server/core/providers/provider-connection.service.test.ts` | 关联链校验先于探测 |
+| `server/core/providers/provider-normalizer.test.ts` | 服务商 ID 保留键与原型链键 |
+| `server/core/providers/provider-presenter.test.ts` | 未知类型只输出安全字段 |
+| `server/core/providers/side-effect-result.test.ts` | 嵌套失败项上浮为 failed |
+| `server/core/providers/tencent-cloud.client.test.ts` | 腾讯云业务错误码限流 |
+| `server/modules/cloudflare/cloudflare-dns-record.handlers.test.ts` | 记录列表归属徽标降级策略 |
+| `server/modules/cloudflare/cloudflare-dns-record.service.test.ts` | 加速域名分页缓存键 |
+| `server/modules/cloudflare/cloudflare-response.schema.test.ts` | 响应结构不符即 502 |
+| `server/modules/cloudflare/cloudflare-zone.service.test.ts` | 站点 create：先失效再解析 |
+| `server/modules/cloudflare/saas/saas-custom-hostname.client.test.ts` | 主机名索引快照：一次拉取、多次匹配 |
+| `server/modules/cloudflare/saas/saas-hostname.service.test.ts` | 主机名删除的站点归属校验 |
+| `server/modules/cloudflare/saas/saas-preference.service.test.ts` | 孤儿偏好清理 |
+| `server/modules/cloudflare/saas/saas-sync-config.service.test.ts` | 同步配置归一化（目标切换与脏配置修复） |
+| `server/modules/cloudflare/tunnel/tunnel.service.test.ts` | 令牌轮换：部分成功必须对外可见 |
+| `server/modules/cloudflare/tunnel/tunnel-route.service.test.ts` | 隧道路由写回顺序、扩展字段与 `catch_all` 保留、并发串行、CNAME 归属保护、repair 幂等 |
+| `server/modules/dnspod/dns-pod-line.service.test.ts` | 线路解析：`refresh` 透传到套餐等级 |
+| `server/modules/dnspod/dns-pod-record.handlers.test.ts` | 记录列表归属徽标降级策略 |
+| `server/modules/dnspod/dns-pod-record.service.test.ts` | IDN 缓存键同源 |
+| `server/modules/dnspod/dns-pod-response.test.ts` | 响应结构不符即 502 |
+| `server/modules/dnspod/dns-pod-zone.service.test.ts` | 站点 create：先失效再解析 |
+| `server/modules/dnspod/zone-catalog.test.ts` | FQDN 归一：账号侧与查询侧必须同形 |
+| `server/modules/edge-one/edge-one-domain-payload.test.ts` | 加速域名载荷归一化（创建路径） |
+| `server/modules/edge-one/edge-one-params.test.ts` | 路径参数解码与白名单 |
+| `server/modules/edge-one/edge-one-response.test.ts` | 响应结构不符即 502 |
+
+### 3.7 工作流
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `server/workflows/saas-dns-sync/saas-batch.workflow.test.ts` | SaaS 批量任务删除阶段顺序 |
+| `server/workflows/saas-dns-sync/saas-preference-migration.test.ts` | 偏好键身份 `(zone, FQDN)`：启动收编、写入即收编、按 FQDN 清理 |
+| `server/workflows/saas-dns-sync/saas-dns-repair.test.ts` | SaaS DNS repair 编排：复用既有 upsert 而非另写一套 |
+| `server/workflows/saas-dns-sync/batch-request-budget.test.ts` | 请求量守卫：过滤下推上游、不随条目数重复全量拉取 |
+| `server/workflows/saas-dns-sync/saas-sync-adapter.test.ts` | 同步适配器记录采集（DNSPod / Cloudflare 两侧） |
+| `server/workflows/derived-records/reconcile.service.test.ts` | 对账检测与执行：只读检测零写、执行只写 create/update |
+| `server/workflows/derived-records/ownership.test.ts` | 归属查询：未声明即 `manual` |
+| `server/workflows/derived-records/planners/saas.test.ts` | 清理按名称定位、备注证明归属 |
+| `server/workflows/derived-records/sync-plan.test.ts` | 记录身份与查询条件（写入与只读检测共用判据） |
+| `server/workflows/dns-batch/dns-record-payload.test.ts` | 创建记录槽位去重不吞掉不同取值 |
+| `server/workflows/provider-management/provider-dependency.workflow.test.ts` | 服务商依赖反查与原型链隔离 |
+
+### 3.8 前端（web）
+
+| 文件 | 覆盖内容 |
+| ---- | -------- |
+| `web/src/shared/job/model/run-batch-job.test.ts` | 批量任务执行模型 |
+| `web/src/shared/job/model/use-job-progress.test.ts` | 任务进度模型与恢复失败区分 |
+| `web/src/shared/lib/row-busy.test.ts` | 行忙碌 |
+| `web/src/shared/lib/row-selection.test.ts` | 行选择与忙行 |
+| `web/src/shared/lib/scope-generation.test.ts` | 作用域代次（在飞请求作废） |
+| `web/src/shared/lib/use-page-visibility.test.ts` | 页面可见性开关 |
+| `web/src/shared/api/http.test.ts` | 网络层的中断分类 |
+| `web/src/shared/query/client.test.ts` | 全局 `queryClient` |
+| `web/src/shared/query/use-resource-query.test.ts` | `useResourceQuery` 错误提示分流 |
+| `web/src/shared/ui/confirm/confirm.test.ts` | 确认弹窗的勾选项 |
+| `web/src/shared/ui/confirm/ConfirmHost.test.ts` | 勾选项渲染 |
+| `web/src/features/dns/lib/record-import.test.ts` | DNS 导入文件解析 |
+| `web/src/features/dns/lib/record-group.test.ts` | 邮箱套件聚组与折叠 |
+| `web/src/features/dns/lib/record-owner.test.ts` | 记录归属标签（D4） |
+| `web/src/features/dns/ui/RecordsPanel.test.ts` | 面板先分组后分页 |
+| `web/src/features/dns/ui/RecordsTable.test.ts` | 行内选择框可访问名称 |
+| `web/src/features/edge-one/model/domain-command.test.ts` | 加速域名表单值 |
+| `web/src/features/edge-one/model/domain-status-actions.test.ts` | 状态动作矩阵（真机实测语义） |
+| `web/src/features/edge-one/model/status-transitions.test.ts` | 过渡态派生 |
+| `web/src/features/edge-one/model/status-poll-policy.test.ts` | 常规轮询节奏 |
+| `web/src/features/edge-one/lib/status.test.ts` | HTTPS 状态文案 |
+| `web/src/features/edge-one/api/edge-one-api.test.ts` | `deleteAccelerationDomain` 的 `auto_cleanup` 映射 |
+| `web/src/features/edge-one/ui/AccelerationDomainsPanel.spec.ts` | 面板轮询编排（可见性门控、退避重排、卸载清理） |
+| `web/src/features/edge-one/ui/AccelerationDomainsTable.spec.ts` | 表格行内操作菜单渲染与事件链路 |
+| `web/src/features/saas/ui/SaasHostsPanel.test.ts` | 详情加载与刷新的所有权隔离 |
+| `web/src/features/saas/model/use-saas-host-editor.test.ts` | 保存与优选域名加载的所有权分离 |
+| `web/src/features/saas/api/saas-api.test.ts` | `deleteHostname` 的 `auto_cleanup` 映射 |
+| `web/src/features/tunnels/model/use-tunnel-detail.test.ts` | 令牌读写所有权 |
+| `web/src/features/sync/lib/repair-notice.test.ts` | 修复结果提示 |
+
+### 3.9 构建产物契约（`test:static`）
+
+静态资源与 SPA 回退由 `server/app/static-files.test.ts` 守卫，它走两条路径：
+
+- `web/dist/` 存在时：按真实产物断言外壳引用可达、`/assets/` 不可变缓存、缺失资源 404 且不回退成 HTML、深链回退、API 404 错误体。
+- 未构建时：真实产物用例自动跳过，改用最小 dist fixture 跑同一条装配与断言路径（`verify` 中 `test` 阶段早于 `build`，靠它保证未构建环境也有覆盖）。
+
+因此 `npm run verify` 把 `npm run test:static` 放在 `npm run build` 之后单独执行：`npm run test` 单独运行时若未构建，只覆盖 fixture 分支；构建产物就绪（`npm run build` 同时产出 `dist/` 与 `web/dist/`）后再跑 `npm run test:static`，真实产物断言才真正执行。
 
 ---
 
@@ -132,7 +254,7 @@ docker run -d \
 `compose.yaml` 已内置加固：`read_only: true`、`cap_drop: ALL`、`no-new-privileges`、`tmpfs: /tmp`、数据卷 `./data:/app/data`。
 
 - 容器以非 root（UID 1000）运行，宿主数据目录必须 `chown -R 1000:1000 data`；`docker/entrypoint.sh` 在启动时检查 `/app/data` 可写，不可写直接退出并给出提示。
-- 容器 healthcheck 内置于镜像（Dockerfile `HEALTHCHECK`）：`fetch('http://127.0.0.1:2022/api/health')`，间隔 30s、超时 5s、重试 3 次、启动宽限 5s。镜像内**没有** `curl` / `wget`，不要用它们写探针（`isolated-maintenance-contract-probe.ts` 守卫该契约）。
+- 容器 healthcheck 内置于镜像（Dockerfile `HEALTHCHECK`）：`fetch('http://127.0.0.1:2022/api/health')`，间隔 30s、超时 5s、重试 3 次、启动宽限 5s。镜像内**没有** `curl` / `wget`，不要用它们写探针（`scripts/maintenance-contract.test.ts` 守卫该契约）。
 - 排查容器状态：`docker inspect --format '{{json .State.Health}}' dns-pro` 查看最近几次 healthcheck 结果与退出码；`unhealthy` 时先看应用日志（配置错误、数据目录不可写、迁移失败都会导致进程退出）。
 - 升级实例：保留 `data/` 卷 → 拉新镜像 → 重建容器 → 检查日志、`/api/health`、登录会话与静态资源。
 - 反向代理后推荐 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（填可信代理的 IP/CIDR），并把端口映射收紧为 `127.0.0.1:2022:2022`。

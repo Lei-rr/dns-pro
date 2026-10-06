@@ -59,4 +59,4 @@ transport（裸 fetch：同源 / 超时 / 取消 / 错误归一）
 
 - 单元 / 组件测试（Vitest）覆盖 `domain` 映射与 `ResourceList` 行为。
 - 迁移完成判据：`Record<string, unknown>` 在业务代码中消失；并发原语 ≤2 套；净删约 1000 行。
-- 回归：`npm run probe:job`、`npm run probe:functional`、`npm run probe:static` 保持绿。
+- 回归：`web/src/shared/job/model/run-batch-job.test.ts`、`web/src/shared/job/model/use-job-progress.test.ts`、`web/src/features/dns/lib/record-import.test.ts` 等前端测试与 `server/app/static-files.test.ts` 保持绿（单跑 `npx vitest run <文件>`；静态契约需先 `npm run build`）。

@@ -58,4 +58,4 @@ class DnsWriter {
 
 - 单元：`planSync` 覆盖 create / update / delete / 幂等无变化四类输入。
 - 集成：三条产品线的同步走同一 writer；并发写同一 FQDN 被串行化（配合 D4）。
-- 回归：`probe:functional`、`probe:tunnel-route`、`probe:workflow` 保持绿。
+- 回归：`server/workflows/saas-dns-sync/saas-dns-repair.test.ts`、`server/modules/cloudflare/tunnel/tunnel-route.service.test.ts`、`server/workflows/saas-dns-sync/saas-batch.workflow.test.ts` 保持绿（单跑 `npx vitest run <文件>`，全量 `npm run test`）。

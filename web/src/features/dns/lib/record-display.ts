@@ -2,11 +2,11 @@ import type { DnsRecord } from '@/features/dns/model/types'
 import {
   compareRecordsForGroup,
   hostGroupLabel,
-  inferRecordPurpose,
   recordHostKey,
   shouldCollapseHostGroup,
   type RecordLike,
 } from '@/features/dns/lib/record-group'
+import { inferRecordPurpose } from '@/features/dns/lib/record-purpose'
 
 export type DnsRecordDisplayRow =
   | { kind: 'single'; record: DnsRecord; key: string }

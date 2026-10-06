@@ -56,6 +56,12 @@
 - 抽取公共能力：`provider-call.ts`（错误包装 + 分页采集）、`BatchJobKind`（批量任务查询/重试/互斥）、`saas-sync-records.ts`（SaaS DNS 记录构造）、`tunnel-account.ts`。
 - EdgeOne 加速域名创建/删除收归模块服务；删除仅转发的 Repository/类型文件与未使用的 Job 方法。
 - `JsonStore` 遇到损坏 JSON 时报错而不是静默覆盖；只读挂载下读取不再因 chmod 失败。
+- 重构收尾（探针退役与门禁补全）：
+  - 删除全部 `scripts/isolated-*.ts` 探针（26 个文件），断言逐条迁入 Vitest——48 → 94 个测试文件、260 → 560 个用例，`scripts` / `server` / `web` 三 project 分别对应架构守卫、后端 ESM 源码与 happy-dom 前端；`package.json` 移除全部 `probe:*` 脚本，`verify` 改为纯 Vitest 流程（`test` 覆盖 fixture 分支，`build` 之后由 `test:static` 覆盖真实构建产物）。
+  - 门禁补全：`eslint` 覆盖范围补上 `scripts/**`（此前 `lint` 命令列出 scripts 却零覆盖，扩展后立即暴露架构守卫内的死变量）；清理 3 个随探针删除而失去消费者的孤儿导出与 `knip` 两处失效的忽略项。
+  - 契约收紧：`core/contracts` 补齐领域联合类型与不变量——`DnsProviderType`、`DnsRecordStatus`、`SyncTarget`、`BatchScopeKey` 与 `JobType` + `ZONE_WRITE_SCOPE`（"哪些任务持有站点写锁"从注释约定变成编译期约束）；前端 `shared/api` 以 `ApiResult<T>` 加 `unwrapList` / `unwrapItem` 收口响应校验，取代各调用点就地断言。
+  - 文件级拆分：`features/dns/lib/record-group.ts` 拆出 `record-purpose.ts`（用途判定），化解原文件用途 ↔ 聚组的双向依赖；`use-saas-hosts-panel.ts` 的 58 个返回键按职责分组；`planners/` 内 `saas-records.ts` / `saas-targets.ts` 更名为 `*.planner.ts`，与目录约定一致。
+  - 测试临时目录不再堆积：新增 `vitest.global-setup.ts`，整轮结束后按运行前后快照删除本轮新建的 `dns-pro-*` 数据目录（`KEEP_TMP=1` 可保留失败现场）。
 
 ### 修复
 
@@ -86,6 +92,7 @@
 - SaaS 同步配置的引用校验与写入不在同一把锁内（并发删除服务商时可写入悬空引用）。
 - DNSPod 记录 ID 非数字时以 `NaN` 发往上游。
 - 未捕获异常未做有序退出。
+- EdgeOne 清空自定义回源 HOST 后回读被误判为「自定义」：真机实测确认上游把「清空」表达为回读加速域名自身（非空），前端原先按「非空即自定义」判定，用户清空后重新打开对话框会看到一个自己从未填过的 HOST，再次提交还会把「清空」误解成「自定义为域名自身」。
 
 ## [1.1.0] - 2026-09-28
 

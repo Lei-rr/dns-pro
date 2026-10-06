@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { ProviderNormalizer } from './provider-normalizer.js'
+import {
+  ProviderNormalizer,
+  PROVIDER_FIELD_MAX_LENGTH_DEFAULT,
+  PROVIDER_FIELD_MAX_LENGTHS,
+  PROVIDER_ID_PATTERN,
+} from './provider-normalizer.js'
 import { getProviderDefinition } from './provider-definitions.js'
 
 /**
@@ -95,5 +100,34 @@ describe('服务商名称：与其它字段共用同一张长度上限表', () =
       dnspodDefinition
     )
     expect(provider.name).toBe('')
+  })
+})
+
+/** 服务商 ID 与字段长度上限是 schema 层与归一化层共用的唯一口径，写法漂移必须在这里被拦住 */
+describe('服务商 ID 与字段长度上限：两处校验共用的唯一口径', () => {
+  it('ID 字符集与长度上限（64）', () => {
+    expect(PROVIDER_ID_PATTERN.test('cf-1')).toBe(true)
+    expect(PROVIDER_ID_PATTERN.test('CF_1')).toBe(true)
+    expect(PROVIDER_ID_PATTERN.test('-cf')).toBe(false)
+    expect(PROVIDER_ID_PATTERN.test('cf.1')).toBe(false)
+    expect(PROVIDER_ID_PATTERN.test('a'.repeat(64))).toBe(true)
+    expect(PROVIDER_ID_PATTERN.test('a'.repeat(65))).toBe(false)
+  })
+
+  it('字段长度上限表：密钥与关联字段各有上限，未登记字段回落默认值 255', () => {
+    expect(PROVIDER_FIELD_MAX_LENGTHS.secret_key).toBe(256)
+    expect(PROVIDER_FIELD_MAX_LENGTHS.cloudflare_provider).toBe(64)
+    expect(PROVIDER_FIELD_MAX_LENGTH_DEFAULT).toBe(255)
+    for (const field of [
+      'secret_id',
+      'secret_key',
+      'api_token',
+      'account_id',
+      'dnspod_provider',
+      'cloudflare_provider',
+      'cloudflare_dns_provider',
+    ]) {
+      expect(typeof PROVIDER_FIELD_MAX_LENGTHS[field], `${field} 缺少长度上限`).toBe('number')
+    }
   })
 })

@@ -14,7 +14,7 @@ export default tseslint.config(
   { ignores: ['dist', 'node_modules', 'web/dist', 'web/node_modules'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
-    files: ['server/**/*.ts', 'web/src/**/*.ts'],
+    files: ['*.{ts,mjs}', 'server/**/*.ts', 'web/src/**/*.ts', 'scripts/**/*.{ts,mjs}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

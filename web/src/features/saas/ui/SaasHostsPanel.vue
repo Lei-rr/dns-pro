@@ -20,69 +20,12 @@ import { useSaasHostsPanel, type SaasHostsPanelProps } from '../model/use-saas-h
 import { encodePath } from '@/shared/lib/path'
 
 const props = defineProps<SaasHostsPanelProps>()
-const {
-  router,
-  jobProgress,
-  saving,
-  applyingPreferred,
-  keyword,
-  dialogOpen,
-  detailOpen,
-  detailLoading,
-  detailRefreshing,
-  rowBusyKeys,
-  detailRecord,
-  batchPreferredOpen,
-  batchSubmitting,
-  batchPreferredDomain,
-  batchPreferredError,
-  batchAutoPreferred,
-  preferredOptions,
-  editing,
-  formErrors,
-  form,
-  syncZones,
-  syncZonesError,
-  preferredOptionsError,
-  syncProviders,
-  selectedCount,
-  originSuggestions,
-  showPreferred,
-  showFallback,
-  openPreferred,
-  routeZoneName,
-  hostTotal,
-  loading,
-  refreshing,
-  pageSize,
-  onRefresh,
-  page,
-  total,
-  pagedHostnames,
-  selection,
-  preferredDomainOf,
-  onPageChange,
-  onPageSizeChange,
-  onSearch,
-  openCreate,
-  openEdit,
-  openDetails,
-  refreshDetailHostname,
-  save,
-  removeHostname,
-  refreshHostname,
-  repairHostnameDns,
-  applyPreferred,
-  batchDeleteSelected,
-  openBatchPreferred,
-  batchUpdatePreferred,
-  loadSyncZones,
-  loadPreferredOptions,
-} = useSaasHostsPanel(props)
+// 面板级上下文（router/routeZoneName）留在顶层，其余按职责分组；组内 ref 一律显式 .value
+const { router, routeZoneName, list, rows, detail, editor, batch } = useSaasHostsPanel(props)
 
 function clearSearch() {
-  keyword.value = ''
-  onSearch()
+  list.keyword.value = ''
+  list.onSearch()
 }
 </script>
 
@@ -93,35 +36,40 @@ function clearSearch() {
       <LoadingButton
         variant="outline"
         size="sm"
-        :loading="refreshing"
-        :disabled="loading && !refreshing"
-        @click="onRefresh()"
+        :loading="list.refreshing.value"
+        :disabled="list.loading.value && !list.refreshing.value"
+        @click="list.onRefresh()"
       >
         <RefreshCw class="size-4" />
         刷新
       </LoadingButton>
-      <Button variant="outline" size="sm" @click="showFallback = true">默认回源</Button>
-      <Button variant="outline" size="sm" @click="openPreferred">优选域名</Button>
-      <Button size="sm" @click="openCreate">
+      <Button variant="outline" size="sm" @click="batch.showFallback.value = true">默认回源</Button>
+      <Button variant="outline" size="sm" @click="batch.openPreferred">优选域名</Button>
+      <Button size="sm" @click="editor.openCreate">
         <Plus class="size-4" />
         新增主机名
       </Button>
     </PageHeader>
 
     <JobProgressAlert
-      :running="jobProgress.running.value"
-      :text="jobProgress.text.value"
+      :running="batch.jobProgress.running.value"
+      :text="batch.jobProgress.text.value"
       title="SaaS 任务"
-      :status="jobProgress.job.value?.status"
-      :percent="jobProgress.percent.value"
+      :status="batch.jobProgress.job.value?.status"
+      :percent="batch.jobProgress.percent.value"
     />
 
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap items-center gap-2">
         <div class="relative w-full sm:w-72">
-          <Input v-model="keyword" class="h-8 w-full pr-7" placeholder="搜索主机名" @keyup.enter="onSearch" />
+          <Input
+            v-model="list.keyword.value"
+            class="h-8 w-full pr-7"
+            placeholder="搜索主机名"
+            @keyup.enter="list.onSearch"
+          />
           <button
-            v-if="keyword"
+            v-if="list.keyword.value"
             type="button"
             class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
             title="清空"
@@ -130,55 +78,55 @@ function clearSearch() {
             <X class="size-3.5" />
           </button>
         </div>
-        <Button variant="outline" size="sm" @click="onSearch">
+        <Button variant="outline" size="sm" @click="list.onSearch">
           <Search class="size-4" />
           搜索
         </Button>
         <span
-          v-if="selectedCount && !jobProgress.running.value && !applyingPreferred"
+          v-if="batch.selectedCount.value && !batch.jobProgress.running.value && !batch.applyingPreferred.value"
           class="text-muted-foreground text-sm"
         >
-          已选 {{ selectedCount }}
+          已选 {{ batch.selectedCount.value }}
         </span>
       </div>
 
       <SaasHostsTable
-        :hostnames="pagedHostnames"
-        :selected-hostnames="selection.selected.value"
-        :loading="loading"
-        :refreshing="refreshing"
-        :busy-hostnames="[...rowBusyKeys]"
-        :preferred-domain="preferredDomainOf"
-        @update:selected-hostnames="selection.selected.value = $event"
-        @detail="openDetails"
-        @refresh="refreshHostname"
-        @repair-dns="repairHostnameDns"
-        @edit="openEdit"
-        @remove="removeHostname"
+        :hostnames="list.pagedHostnames.value"
+        :selected-hostnames="batch.selection.selected.value"
+        :loading="list.loading.value"
+        :refreshing="list.refreshing.value"
+        :busy-hostnames="[...rows.rowBusyKeys.value]"
+        :preferred-domain="batch.preferredDomainOf"
+        @update:selected-hostnames="batch.selection.selected.value = $event"
+        @detail="detail.openDetails"
+        @refresh="rows.refreshHostname"
+        @repair-dns="rows.repairHostnameDns"
+        @edit="editor.openEdit"
+        @remove="rows.removeHostname"
       />
 
       <TablePagination
-        :page="page"
-        :page-size="pageSize"
-        :total="total"
-        :disabled="loading"
-        @update:page="onPageChange"
-        @update:page-size="onPageSizeChange"
+        :page="list.page.value"
+        :page-size="list.pageSize.value"
+        :total="list.total.value"
+        :disabled="list.loading.value"
+        @update:page="list.onPageChange"
+        @update:page-size="list.onPageSizeChange"
       />
     </div>
 
     <!-- 勾选后：底部悬浮操作条 -->
     <FloatingSelectionBar
-      :show="selectedCount > 0 && !jobProgress.running.value && !applyingPreferred"
-      :count="selectedCount"
-      :disabled="jobProgress.running.value || batchSubmitting || applyingPreferred"
-      @clear="selection.clear()"
+      :show="batch.selectedCount.value > 0 && !batch.jobProgress.running.value && !batch.applyingPreferred.value"
+      :count="batch.selectedCount.value"
+      :disabled="batch.jobProgress.running.value || batch.batchSubmitting.value || batch.applyingPreferred.value"
+      @clear="batch.selection.clear()"
     >
       <Button
         size="sm"
         class="h-7 px-3 text-xs cursor-pointer"
-        :disabled="jobProgress.running.value || batchSubmitting || applyingPreferred"
-        @click="openBatchPreferred"
+        :disabled="batch.jobProgress.running.value || batch.batchSubmitting.value || batch.applyingPreferred.value"
+        @click="batch.openBatchPreferred"
       >
         批量改优选
       </Button>
@@ -186,73 +134,77 @@ function clearSearch() {
         size="sm"
         variant="destructive"
         class="h-7 px-3 text-xs cursor-pointer"
-        :disabled="jobProgress.running.value || batchSubmitting || applyingPreferred"
-        @click="batchDeleteSelected"
+        :disabled="batch.jobProgress.running.value || batch.batchSubmitting.value || batch.applyingPreferred.value"
+        @click="batch.batchDeleteSelected"
       >
         批量删除
       </Button>
     </FloatingSelectionBar>
 
     <HostnameFormDialog
-      v-model:open="dialogOpen"
-      v-model:form="form"
-      :editing="!!editing"
-      :saving="saving"
-      :sync-providers="syncProviders"
-      :sync-zones="syncZones"
-      :preferred-options="preferredOptions"
-      :origin-suggestions="originSuggestions"
-      :errors="formErrors"
-      :sync-zones-error="syncZonesError"
-      :preferred-options-error="preferredOptionsError"
-      @save="save"
-      @retry-sync-zones="loadSyncZones"
-      @retry-preferred-options="loadPreferredOptions"
+      v-model:open="editor.dialogOpen.value"
+      v-model:form="editor.form"
+      :editing="!!editor.editing.value"
+      :saving="editor.saving.value"
+      :sync-providers="editor.syncProviders.value"
+      :sync-zones="editor.syncZones.value"
+      :preferred-options="editor.preferredOptions.value"
+      :origin-suggestions="editor.originSuggestions.value"
+      :errors="editor.formErrors.value"
+      :sync-zones-error="editor.syncZonesError.value"
+      :preferred-options-error="editor.preferredOptionsError.value"
+      @save="editor.save"
+      @retry-sync-zones="editor.loadSyncZones"
+      @retry-preferred-options="editor.loadPreferredOptions"
     />
 
     <AppDialog
-      v-model:open="batchPreferredOpen"
+      v-model:open="batch.batchPreferredOpen.value"
       title="批量修改优选域名"
-      :description="`将把已选 ${selectedCount} 个主机名的优选域名改为：`"
+      :description="`将把已选 ${batch.selectedCount.value} 个主机名的优选域名改为：`"
     >
-      <Field :data-invalid="!!batchPreferredError">
+      <Field :data-invalid="!!batch.batchPreferredError.value">
         <FieldLabel>优选域名</FieldLabel>
-        <Select v-model="batchPreferredDomain">
+        <Select v-model="batch.batchPreferredDomain.value">
           <SelectTrigger class="w-full">
             <SelectValue placeholder="选择优选域名" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem v-for="item in preferredOptions" :key="item.domain" :value="item.domain">
+            <SelectItem v-for="item in editor.preferredOptions.value" :key="item.domain" :value="item.domain">
               {{ item.domain }}
             </SelectItem>
           </SelectContent>
         </Select>
-        <FieldError :errors="batchPreferredError ? [batchPreferredError] : []" />
+        <FieldError :errors="batch.batchPreferredError.value ? [batch.batchPreferredError.value] : []" />
       </Field>
       <Field orientation="horizontal">
-        <Switch v-model="batchAutoPreferred" />
+        <Switch v-model="batch.batchAutoPreferred.value" />
         <FieldLabel>同时开启自动优选</FieldLabel>
       </Field>
       <template #footer>
-        <Button variant="outline" @click="batchPreferredOpen = false">取消</Button>
-        <Button @click="batchUpdatePreferred">开始修改</Button>
+        <Button variant="outline" @click="batch.batchPreferredOpen.value = false">取消</Button>
+        <Button @click="batch.batchUpdatePreferred">开始修改</Button>
       </template>
     </AppDialog>
 
     <SaasDetailDialog
-      v-model:open="detailOpen"
-      :hostname="detailRecord"
-      :loading="detailLoading"
-      :refreshing="detailRefreshing"
-      @edit="openEdit"
-      @refresh="refreshDetailHostname"
+      v-model:open="detail.detailOpen.value"
+      :hostname="detail.detailRecord.value"
+      :loading="detail.detailLoading.value"
+      :refreshing="detail.detailRefreshing.value"
+      @edit="editor.openEdit"
+      @refresh="detail.refreshDetailHostname"
     />
     <PreferredDomainsDialog
-      v-model:open="showPreferred"
-      :host-count="hostTotal"
-      :applying="applyingPreferred || jobProgress.running.value"
-      @apply="applyPreferred"
+      v-model:open="batch.showPreferred.value"
+      :host-count="list.hostTotal.value"
+      :applying="batch.applyingPreferred.value || batch.jobProgress.running.value"
+      @apply="batch.applyPreferred"
     />
-    <FallbackOriginDialog v-model:open="showFallback" :provider-id="providerId" :zone-name="routeZoneName" />
+    <FallbackOriginDialog
+      v-model:open="batch.showFallback.value"
+      :provider-id="providerId"
+      :zone-name="routeZoneName"
+    />
   </div>
 </template>

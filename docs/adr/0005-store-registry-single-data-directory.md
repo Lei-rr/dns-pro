@@ -30,7 +30,7 @@
 
 负面：
 
-- 注册表成为所有持久化的必经之路：注册表出错影响面大，需要探针覆盖（`probe:platform`、`probe:data-migration`）。
+- 注册表成为所有持久化的必经之路：注册表出错影响面大，需要测试覆盖（`server/core/jobs/job-concurrency.test.ts`、`server/core/cache/provider-cache.test.ts`、`server/core/store/migrations.test.ts`）。
 - 写前 schema 校验尚未内建（`StoreDef.schema` 未实现），类型约束只在编译期。
 - 首启引导路径 `createInitialAuthConfig` 仍以 `fs.writeFile(..., { flag: 'wx' })` 直接创建 `config.json`（语义是"仅当不存在时创建"，不是第二写入路径），但确实绕过了 `JsonStore`，属于待收尾项。
 - 单实例边界意味着不能横向扩容；这是有意选择，不是缺陷。
@@ -44,4 +44,4 @@
 
 ## 验证
 
-`npm run probe:platform`、`npm run probe:data-migration`、`npm run probe:credential-encryption`、`npm run probe:sensitive-files` 覆盖原子写、迁移、加密与文件权限。
+`server/core/jobs/job-concurrency.test.ts`、`server/core/cache/provider-cache.test.ts`、`server/core/store/migrations.test.ts`、`server/core/security/credential-encryption.test.ts`、`server/core/security/sensitive-files.test.ts`（单跑 `npx vitest run <文件>`，全量 `npm run test`）覆盖原子写、迁移、加密与文件权限。

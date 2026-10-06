@@ -6,7 +6,7 @@ import {
   installProviderCacheState,
 } from '../../../core/cache/provider-cache.js'
 import { ApiError } from '../../../core/http/api-error.js'
-import type { CloudflareAccess } from '../access.js'
+import { CloudflareAccess } from '../access.js'
 import { TunnelService } from './tunnel.service.js'
 
 /**
@@ -108,5 +108,83 @@ describe('delete：404 归一与缓存失效', () => {
     await expect(service.delete('tun-1', 'tid-1')).resolves.toEqual({ id: 'tid-1' })
     expect(calls).toHaveLength(2)
     expect(calls[0]?.endsWith('/connections')).toBe(true)
+  })
+})
+
+/** 迁移自 scripts/isolated-saas-config-branch-probe.ts 第 3 节：令牌签发、无效响应与轮换 */
+describe('token / rotateToken：令牌读取位置、形状识别与密钥轮换', () => {
+  it('字符串与对象形状的令牌都必须识别，空响应按 502 拒绝', async () => {
+    const results: unknown[] = ['tok-1', { token: 'tok-2' }, {}]
+    const getPaths: string[] = []
+    const client = {
+      get: vi.fn(async (path: string) => {
+        getPaths.push(path)
+        return { result: results.shift() }
+      }),
+    }
+    const service = serviceWith(client)
+
+    await expect(service.token('tun-1', 'tid-1')).resolves.toEqual({ token: 'tok-1' })
+    expect(getPaths[0]).toMatch(/\/tid-1\/token$/)
+    await expect(service.token('tun-1', 'tid-1')).resolves.toEqual({ token: 'tok-2' })
+    await expect(service.token('tun-1', 'tid-1')).rejects.toMatchObject({
+      code: 'cloudflared_tunnel_token_invalid',
+      statusCode: 502,
+    })
+  })
+
+  it('轮换先写回新的 tunnel_secret 再返回新令牌，每次轮换的密钥都不同', async () => {
+    const rotateSecrets: string[] = []
+    const patchPaths: string[] = []
+    const results: unknown[] = ['tok-rotated', 'tok-rotated-2']
+    const client = {
+      patch: vi.fn(async (path: string, body: unknown) => {
+        patchPaths.push(path)
+        rotateSecrets.push(String((body as Record<string, unknown>).tunnel_secret ?? ''))
+        return { result: { id: 'tun-1' } }
+      }),
+      get: vi.fn(async () => ({ result: results.shift() })),
+    }
+    const service = serviceWith(client)
+
+    await expect(service.rotateToken('tun-1', 'tid-1')).resolves.toEqual({ token: 'tok-rotated' })
+    expect(patchPaths[0]).toMatch(/\/tid-1$/)
+    expect(rotateSecrets[0]?.length).toBeGreaterThan(0)
+
+    await expect(service.rotateToken('tun-1', 'tid-1')).resolves.toEqual({ token: 'tok-rotated-2' })
+    expect(rotateSecrets[1]).not.toBe(rotateSecrets[0])
+  })
+})
+
+describe('token：隧道与 Cloudflare 关联缺失的错误码', () => {
+  it('未关联 Cloudflare → 422；关联的 Cloudflare 缺 account_id → 422', async () => {
+    const fixtures = new Map<string, Record<string, unknown>>([
+      ['cf-1', { id: 'cf-1', type: 'cloudflare', name: 'CF', api_token: 'cf-token', account_id: 'acct-1' }],
+      ['cf-no-account', { id: 'cf-no-account', type: 'cloudflare', name: 'CF bare', api_token: 'cf-token-2' }],
+      ['tun-1', { id: 'tun-1', type: 'cloudflared', name: 'Tunnel', cloudflare_provider: 'cf-1' }],
+      ['tun-unlinked', { id: 'tun-unlinked', type: 'cloudflared', name: 'Tunnel orphan', cloudflare_provider: '' }],
+      [
+        'tun-no-account',
+        { id: 'tun-no-account', type: 'cloudflared', name: 'Tunnel bare', cloudflare_provider: 'cf-no-account' },
+      ],
+    ])
+    const repository = {
+      requireType: async (id: string, type: string, message: string, code: string) => {
+        const provider = fixtures.get(id)
+        if (!provider || provider.type !== type) throw new ApiError(code, message, 404)
+        return provider
+      },
+    }
+    const service = new TunnelService(new CloudflareAccess(repository as never))
+
+    // 错误必须来自真实 CloudflareAccess 链路，而不是桩的硬编码
+    await expect(service.token('tun-unlinked', 'tid-1')).rejects.toMatchObject({
+      code: 'cloudflared_cloudflare_provider_missing',
+      statusCode: 422,
+    })
+    await expect(service.token('tun-no-account', 'tid-1')).rejects.toMatchObject({
+      code: 'cloudflared_account_id_required',
+      statusCode: 422,
+    })
   })
 })

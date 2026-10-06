@@ -72,3 +72,89 @@ describe('健康检查契约', () => {
     expect(Object.keys(providerCacheStats())).toEqual(['size'])
   })
 })
+
+/** 手动放行的在途加载：验证失败重试、失效栅栏与 refresh 绕过在途的时序 */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+describe('withProviderCache：失败重试与失效栅栏', () => {
+  it('并发失败只调用一次 loader，失败后不留单飞条目、可立即重试', async () => {
+    const key = 'probe:failed-single-flight'
+    let loads = 0
+    const failure = new Error('expected cache loader failure')
+    const failedLoad = () =>
+      withProviderCache({
+        key,
+        loader: async () => {
+          loads++
+          throw failure
+        },
+      })
+    const results = await Promise.allSettled([failedLoad(), failedLoad()])
+    expect(loads).toBe(1)
+    expect(results.every((result) => result.status === 'rejected' && result.reason === failure)).toBe(true)
+    const retried = await withProviderCache({ key, loader: async () => ++loads })
+    expect(retried.value).toBe(2)
+  })
+
+  it('失效栅栏：在途结果被拦截不回填，失效后的调用不并入陈旧在途', async () => {
+    const key = 'probe:invalidation-fence'
+    const tag = 'probe:fence'
+    const staleRelease = deferred<string>()
+    let loads = 0
+    const staleRead = withProviderCache({
+      key,
+      tags: [tag],
+      loader: async () => {
+        loads++
+        return staleRelease.promise
+      },
+    })
+    invalidateProviderCache({ tags: [tag] })
+    const freshRead = withProviderCache({
+      key,
+      tags: [tag],
+      loader: async () => {
+        loads++
+        return 'fresh'
+      },
+    })
+    staleRelease.resolve('stale')
+    expect((await staleRead).value).toBe('stale')
+    expect((await freshRead).value).toBe('fresh')
+    // 失效之后不允许旧的在途结果补写缓存：这里的 loader 说明不应再被执行
+    const afterInvalidation = await withProviderCache({ key, tags: [tag], loader: async () => 'must-not-run' })
+    expect(afterInvalidation.value).toBe('fresh')
+    expect(loads).toBe(2)
+  })
+
+  it('显式 refresh 不与冷在途合并', async () => {
+    const key = 'probe:refresh-bypass'
+    const coldRelease = deferred<string>()
+    let loads = 0
+    const coldRead = withProviderCache({
+      key,
+      loader: async () => {
+        loads++
+        return coldRelease.promise
+      },
+    })
+    const refreshed = await withProviderCache({
+      key,
+      refresh: true,
+      loader: async () => {
+        loads++
+        return 'refreshed'
+      },
+    })
+    coldRelease.resolve('cold')
+    await coldRead
+    expect(refreshed.value).toBe('refreshed')
+    expect(loads).toBe(2)
+  })
+})

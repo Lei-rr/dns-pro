@@ -110,7 +110,7 @@ export class DemoFlow {
 `
 
 function createFixture(options: FixtureOptions = {}): Fixture {
-  const dir = mkdtempSync(path.join(tmpdir(), 'arch-guard-'))
+  const dir = mkdtempSync(path.join(tmpdir(), 'dns-pro-arch-'))
   workspaces.push(dir)
   const write = (relPath: string, content: string) => {
     const target = path.join(dir, relPath)

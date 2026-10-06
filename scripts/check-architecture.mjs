@@ -132,7 +132,6 @@ const discoveredFiles = [...walk('server'), ...walk('web/src')].filter((file) =>
 const testFiles = discoveredFiles.filter(isTestFile)
 const sourceFiles = discoveredFiles.filter((file) => !isTestFile(file))
 const backendFiles = sourceFiles.filter((file) => file.startsWith('server/'))
-const webFiles = sourceFiles.filter((file) => file.startsWith('web/src/'))
 
 const cacheProductionFiles = walk('server/core/cache').filter((file) => !isTestFile(file))
 if (exists('server/core/events')) {

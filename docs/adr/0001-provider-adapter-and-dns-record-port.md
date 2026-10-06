@@ -42,5 +42,5 @@
 
 ## 验证与遗留
 
-- `npm run arch:final`、`npm run probe:api`、`npm run probe:workflow` 覆盖端口接入与批量路径。
+- `npm run arch:final`、`server/app/api-contract.test.ts` 等 API 契约测试、`server/workflows/saas-dns-sync/saas-batch.workflow.test.ts` 等批量路径测试（单跑 `npx vitest run <文件>`，全量 `npm run test`）覆盖端口接入与批量路径。
 - 遗留（未达成验收）：`workflows/` 已归零，`kernel` 与域内仍有厂商判断——`server/core/providers/provider-presenter.ts:46-66`、`server/modules/dnspod/dns-pod-record-sync.service.ts:77-78`；`ProviderAdapter` 能力面尚未落地。

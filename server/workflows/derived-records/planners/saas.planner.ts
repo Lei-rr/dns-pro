@@ -2,19 +2,19 @@
  * SaaS 主机名 → 期望 DNS 记录（§4.2 planner）。
  *
  * 本文件只保留扫描：遍历 SaaS 服务商 → 站点 → 主机名，解析写入目标后组装 PlannedRecord。
- * 期望记录构造在 saas-records.ts，目标解析在 saas-targets.ts；两者的原有导出在此按原样再导出，
+ * 期望记录构造在 saas-records.planner.ts，目标解析在 saas-targets.planner.ts；两者的原有导出在此按原样再导出，
  * 模块对外 API 与调用方不变，写入路径与对账检测仍共用同一份判据。
  */
 import type { SaaSProvider } from '../../../core/providers/provider.types.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import type { DerivedSourcePlanner, PlannedRecord } from '../derived-record.types.js'
-import { saasDesiredRecords } from './saas-records.js'
+import { saasDesiredRecords } from './saas-records.planner.js'
 import {
   resolveEffectiveOrigin,
   resolveSaaSSyncTarget,
   type SaaSDerivedPlannerDeps,
   type SaaSDnsTarget,
-} from './saas-targets.js'
+} from './saas-targets.planner.js'
 
 export {
   CLOUDFLARE_ORIGIN_LABEL,
@@ -37,7 +37,7 @@ export {
   type SaaSSyncProviderType,
   type SaaSSyncRecord,
   type SyncCollectedRecords,
-} from './saas-records.js'
+} from './saas-records.planner.js'
 
 export {
   optionalDnsPodSaasTarget,
@@ -50,10 +50,10 @@ export {
   type SaaSDnsPodTargetDeps,
   type SaaSSyncTargetDeps,
   type SaaSPlannerHostnames,
-} from './saas-targets.js'
+} from './saas-targets.planner.js'
 
 /** @public 对外契约：无内部引用但拆分前即已导出，必须保留（knip 会把无引用的再导出判为 unused exported types） */
-export type { CloudflareSaasTarget, DnsPodSaasTargetResolution, SaaSDnsTarget } from './saas-targets.js'
+export type { CloudflareSaasTarget, DnsPodSaasTargetResolution, SaaSDnsTarget } from './saas-targets.planner.js'
 
 /** SaaS 主机名扫描：主机名 + 生效同步目标 → 期望记录（只读） */
 export function saasDerivedPlanner(deps: SaaSDerivedPlannerDeps): DerivedSourcePlanner {

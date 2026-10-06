@@ -40,6 +40,12 @@ export function edgeOneDomainFormValues(
     .toLowerCase()
   const prefix = name === zone ? '@' : name.endsWith(`.${zone}`) ? name.slice(0, -(zone.length + 1)) : name
   const hostHeader = String(domain.origin?.host_header || '')
+  /**
+   * 上游把「清空自定义 HOST」表达为回读加速域名自身（真机实测：下发空串后回读值等于域名）。
+   * 因此等于域名自身的 HOST 属于加速域名模式；按「非空即自定义」判定会让用户清空后
+   * 重新打开对话框时看到一个自己从未填过的自定义 HOST。
+   */
+  const hostHeaderIsDomainItself = hostHeader.replace(/\.$/, '').toLowerCase() === name
 
   return {
     prefix,
@@ -49,7 +55,7 @@ export function edgeOneDomainFormValues(
     http_origin_port: Number(domain.http_origin_port ?? defaults.http_origin_port),
     https_origin_port: Number(domain.https_origin_port ?? defaults.https_origin_port),
     host_header: hostHeader,
-    host_header_mode: hostHeader ? 'custom' : 'accelerate',
+    host_header_mode: hostHeader && !hostHeaderIsDomainItself ? 'custom' : 'accelerate',
     ipv6_status: String(domain.ipv6_status || defaults.ipv6_status),
     autoSync: false,
   }

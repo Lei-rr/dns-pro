@@ -44,4 +44,4 @@
 
 - 单元：阶段数组在任一阶段抛错时后续阶段不执行（fail-fast）。
 - 架构守卫：禁止重新引入模块级可变全局与 `request.server.ctx` 抓取（`npm run arch:final`）。
-- 回归：`npm run probe:default-config`、`probe:platform`、`probe:api` 覆盖启动与配置解析路径。
+- 回归：`server/app/config.test.ts`、`server/core/jobs/job-concurrency.test.ts`、`server/app/api-contract.test.ts` 覆盖启动与配置解析路径（全量入口 `npm run test`）。

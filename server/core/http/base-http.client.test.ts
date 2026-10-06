@@ -72,3 +72,65 @@ describe('5xx 重试只限幂等方法', () => {
     expect(calls.length).toBe(1)
   })
 })
+
+/** 直接暴露受保护的 request：与探针一致，验证路径守卫与上游错误映射 */
+class PathProbeClient extends BaseHttpClient {
+  constructor() {
+    super({ baseURL: 'https://provider.invalid' })
+  }
+  callWith(url: string, params?: Record<string, unknown>): Promise<unknown> {
+    return this.request({ url, params })
+  }
+}
+
+async function captured(run: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await run()
+  } catch (error) {
+    return error
+  }
+  throw new Error('预期拒绝但未拒绝')
+}
+
+/**
+ * 上游路径逃逸：记录 ID / 站点名拼进 URL 路径后，`.`/`..`/`%2e` 段与空段必须在发请求前被拒；
+ * 编码后的分隔符（%2f / %5c）与「解码后才是 ..」的组合同样要拒——上游可能对路径二次解码。
+ */
+const escapedPaths = [
+  '..',
+  '../zones',
+  'zones/..',
+  '%2e%2e',
+  '%2E%2E/zones',
+  'a//b',
+  'https://evil.invalid/',
+  'zones/a%2fb',
+  'zones/a%5Cb',
+  '%2e%2fzones',
+  'zones/%2e%2e%2f%2e%2e',
+]
+
+describe('上游路径守卫与上游错误映射', () => {
+  it('上游 404 映射为 400，且 details.upstream_status 保留 404', async () => {
+    withFetch([{ status: 404, body: '{"error":"missing"}' }])
+    const error = (await captured(() => new PathProbeClient().callWith('resource'))) as ApiError
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.statusCode).toBe(400)
+    expect(error.details as Record<string, unknown>).toMatchObject({ upstream_status: 404 })
+  })
+
+  it.each(escapedPaths)('拒绝逃逸路径：%s', async (escaped) => {
+    withFetch([{ status: 404 }])
+    const error = (await captured(() => new PathProbeClient().callWith(escaped))) as ApiError
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).toBe('invalid_upstream_path')
+  })
+
+  it.each(['zones/zone-1', 'zones/zone.1', 'zones/ab%20cd'])('合法路径不得被误判为逃逸：%s', async (allowed) => {
+    withFetch([{ status: 404 }])
+    const error = (await captured(() => new PathProbeClient().callWith(allowed))) as ApiError
+    expect(error).toBeInstanceOf(ApiError)
+    expect(error.code).not.toBe('invalid_upstream_path')
+    expect(error.details as Record<string, unknown>).toMatchObject({ upstream_status: 404 })
+  })
+})

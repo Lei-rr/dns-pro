@@ -33,7 +33,7 @@ Cloudflare 被拆成三条产品线（DNS / SaaS / 隧道），但两条共享�
 
 负面：
 
-- `modules/cloudflare` 内多了一个共享层：底座的改动会同时影响三条产品线，回归必须覆盖隧道与 SaaS 探针（`probe:tunnel-route`、`probe:functional`）。
+- `modules/cloudflare` 内多了一个共享层：底座的改动会同时影响三条产品线，回归必须覆盖隧道与 SaaS 测试（`server/modules/cloudflare/tunnel/tunnel-route.service.test.ts`、`server/workflows/saas-dns-sync/saas-sync-adapter.test.ts` 等）。
 - 底座与 zone service 相互引用（`ZoneCatalog` 依赖 `CloudflareZoneService.listAll`），需要保持方向单一，避免下一步把 `access` 反向拖进 zone service。
 
 ## 替代方案
@@ -44,4 +44,4 @@ Cloudflare 被拆成三条产品线（DNS / SaaS / 隧道），但两条共享�
 
 ## 验证
 
-`npm run arch:final`（禁止跨产品线 import）、`npm run probe:tunnel-route`、`npm run probe:api`、`npm run probe:functional` 全绿。
+`npm run arch:final`（禁止跨产品线 import）、`server/modules/cloudflare/tunnel/tunnel-route.service.test.ts`、`server/app/api-contract.test.ts`、`server/workflows/saas-dns-sync/saas-sync-adapter.test.ts` 全绿（单跑 `npx vitest run <文件>`，全量 `npm run test`）。

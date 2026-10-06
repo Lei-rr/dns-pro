@@ -9,6 +9,8 @@ import { defineConfig } from 'vitest/config'
  */
 export default defineConfig({
   test: {
+    /** 整轮测试结束后清理本轮新建的临时数据目录（见 vitest.global-setup.ts） */
+    globalSetup: ['./vitest.global-setup.ts'],
     projects: [
       {
         test: {

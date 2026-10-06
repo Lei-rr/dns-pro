@@ -12,6 +12,7 @@ import { CloudflareZoneService } from './cloudflare-zone.service.js'
  */
 
 type FakeClient = {
+  get(path: string, params?: Record<string, unknown>): Promise<unknown>
   post(path: string, body?: unknown): Promise<unknown>
   delete(path: string): Promise<unknown>
 }
@@ -83,5 +84,49 @@ describe('Cloudflare 站点 delete：先失效再解析', () => {
     await expect(service.delete('cf-1', 'z-1')).resolves.toEqual({ id: 'z-1' })
     expect(activeMemoryCache().get(zoneKey)).toBeUndefined()
     expect(activeMemoryCache().get(recordKey)).toBeUndefined()
+  })
+})
+
+/** 迁移自 scripts/isolated-saas-config-branch-probe.ts 第 2 节：idByName 的真实调用链 */
+describe('Cloudflare 站点 idByName：上游过滤、翻页与未命中', () => {
+  it('站点名按归一化形态过滤上游、命中即止、第二页命中继续翻页、全量未命中显式 404', async () => {
+    const requests: Array<Record<string, unknown>> = []
+    const pages = new Map<number, unknown[]>([
+      [1, [{ id: 'zone-www', name: 'WWW.example.com', status: 'active', type: 'full' }]],
+      [2, [{ id: 'zone-other', name: 'other.example.com', status: 'active', type: 'full' }]],
+    ])
+    let totalPages = 3
+    const service = serviceWith({
+      get: async (path: string, params: Record<string, unknown> = {}) => {
+        expect(path).toBe('zones')
+        requests.push(params)
+        const page = Number(params.page ?? 1)
+        return {
+          success: true,
+          result: pages.get(page) ?? [],
+          result_info: { page, per_page: Number(params.per_page ?? 50), total_pages: totalPages },
+        }
+      },
+    })
+
+    // 大小写/尾点差异不算未命中；命中后不得继续翻页，上游过滤值必须是归一化站点名
+    await expect(service.idByName('cf-1', '  WWW.Example.COM. ')).resolves.toBe('zone-www')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]?.name).toBe('www.example.com')
+
+    // 命中在第二页：必须继续翻页
+    requests.length = 0
+    pages.set(1, [{ id: 'zone-aaa', name: 'aaa.example.com', status: 'active', type: 'full' }])
+    await expect(service.idByName('cf-1', 'other.example.com', true)).resolves.toBe('zone-other')
+    expect(requests.map((params) => params.page)).toEqual([1, 2])
+
+    // 全量扫描后仍未命中：必须显式 404，不得把「找不到」当成空站点 ID
+    pages.set(1, [])
+    pages.set(2, [])
+    totalPages = 1
+    await expect(service.idByName('cf-1', 'missing.example.com', true)).rejects.toMatchObject({
+      code: 'cloudflare_zone_not_found',
+      statusCode: 404,
+    })
   })
 })

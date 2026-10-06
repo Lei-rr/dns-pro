@@ -1,162 +1,28 @@
 /**
- * 解析记录聚组、用途推断与排序：按「主机前缀 / 邮箱套件」关系归并同主机记录，不靠备注。
- * 备注只在用途推断的最后兜底（见 inferRecordPurpose），不是分组依据。
+ * 主机聚组与排序：按「主机前缀 / 邮箱套件」关系归并同主机记录，不靠备注
+ * （备注只参与 record-purpose 的用途推断兜底，不是分组依据）。
  *
- * SaaS 写回：
- * - api + 默认 CNAME  → 默认回源
- * - api + 境内 CNAME  → 优选域名
- * - _acme-challenge.api → DCV委派
- * - _cf-custom-hostname.api → 所有权验证
+ * 聚组规则：
+ * - SaaS 写回痕迹：api / _acme-challenge.api / _cf-custom-hostname.api 剥回同一聚组键
+ * - 邮箱套件（MX / SPF / DKIM / DMARC）合成「邮箱」折叠组，与根域名 A/CNAME 分开
+ * - 同 hostKey ≥2 条、写回相关或同主机多线路 CNAME 才折叠（见 shouldCollapseHostGroup）
  *
- * 邮箱（Cloudflare / DNSPod 等前缀类似）：
- * - @ MX / SPF
- * - selector._domainkey / cf2024-1._domainkey
- * - _dmarc
- * → 合成「邮箱」折叠组
+ * 用途判定本身（含 SaaS 写回与邮箱类型的识别细节）见 record-purpose.ts，
+ * 本模块单向依赖它：同一条判定规则不在两处复制。
  */
 
-type RecordPurpose =
-  | 'origin'
-  | 'preferred'
-  | 'dcv'
-  | 'ownership'
-  | 'edgeone'
-  | 'mail_mx'
-  | 'mail_spf'
-  | 'mail_dkim'
-  | 'mail_dmarc'
-  | 'other'
-  | 'none'
+import {
+  MAIL_KEY_PREFIX,
+  emailBaseHostForRecord,
+  inferRecordPurpose,
+  isEmailRecord,
+  purposeSortKey,
+  relativeHostLabel,
+  stripSaaSHostPrefix,
+  type RecordLike,
+} from './record-purpose'
 
-type RecordPurposeInfo = {
-  purpose: RecordPurpose
-  purposeLabel: string
-  fqdn: string
-  raw: string
-  isLinked: boolean
-}
-
-const PURPOSE_ORDER: Record<RecordPurpose, number> = {
-  origin: 0,
-  preferred: 1,
-  dcv: 2,
-  ownership: 3,
-  edgeone: 4,
-  mail_mx: 5,
-  mail_spf: 6,
-  mail_dkim: 7,
-  mail_dmarc: 8,
-  other: 9,
-  none: 10,
-}
-
-const ACME_PREFIX = '_acme-challenge.'
-const CF_OWNERSHIP_PREFIX = '_cf-custom-hostname.'
-const MAIL_KEY_PREFIX = '__mail__:'
-
-export type RecordLike = {
-  name?: string | null
-  type?: string | null
-  line?: string | null
-  value?: string | null
-  content?: string | null
-  remark?: string | null
-  comment?: string | null
-  proxied?: boolean | null
-}
-
-/** 相对 zone 的主机标签：api.example.com → api；@ → @ */
-function relativeHostLabel(name?: string | null, zoneName = ''): string {
-  let n = String(name || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, '')
-  const zone = String(zoneName || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, '')
-  if (!n || n === '@' || n === zone) return '@'
-  if (zone && n.endsWith(`.${zone}`)) {
-    n = n.slice(0, n.length - zone.length - 1)
-    if (!n) return '@'
-  }
-  return n
-}
-
-function recordValue(record: RecordLike): string {
-  return String(record.value || record.content || '').trim()
-}
-
-const ALIYUN_MAIL_AUX_HOSTS = new Set(['imap', 'mail', 'pop3', 'smtp'])
-
-/** 阿里企业邮箱辅助 CNAME：归入根域名邮箱套件，而不是各自形成主机组。 */
-function isAliyunMailAuxRecord(record: RecordLike, zoneName = ''): boolean {
-  if (String(record.type || '').toUpperCase() !== 'CNAME') return false
-  const rel = relativeHostLabel(record.name, zoneName)
-  if (!ALIYUN_MAIL_AUX_HOSTS.has(rel)) return false
-  const target = recordValue(record).toLowerCase().replace(/\.$/, '')
-  return /^(?:imap|pop|smtp)\.qiye\.aliyun\.com$/.test(target) || target === 'qiye.aliyun.com'
-}
-
-function emailBaseHostForRecord(record: RecordLike, zoneName = ''): string {
-  if (isAliyunMailAuxRecord(record, zoneName)) return '@'
-  return emailBaseHost(relativeHostLabel(record.name, zoneName))
-}
-
-/**
- * 邮箱业务主机：把 DKIM / DMARC 前缀剥掉，归到对应邮箱主机。
- * cf2024-1._domainkey → @
- * s1._domainkey.mail → mail
- * _dmarc → @
- * _dmarc.mail → mail
- */
-function emailBaseHost(rel: string): string {
-  const r = String(rel || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, '')
-  if (!r || r === '@') return '@'
-
-  // selector._domainkey 或 selector._domainkey.sub
-  const dkim = r.match(/^(?:[^.]+)\._domainkey(?:\.(.+))?$/)
-  if (dkim) return dkim[1] || '@'
-  // 裸 _domainkey / _domainkey.sub
-  if (r === '_domainkey') return '@'
-  if (r.startsWith('_domainkey.')) return r.slice('_domainkey.'.length) || '@'
-
-  if (r === '_dmarc') return '@'
-  if (r.startsWith('_dmarc.')) return r.slice('_dmarc.'.length) || '@'
-
-  return r
-}
-
-/** 是否邮箱相关解析（CF 邮箱路由 / DNSPod 企业邮等前缀类似） */
-function isEmailRecord(record: RecordLike, zoneName = ''): boolean {
-  const type = String(record.type || '').toUpperCase()
-  const rel = relativeHostLabel(record.name, zoneName)
-  const val = recordValue(record)
-
-  if (type === 'MX') return true
-  if (rel.includes('_domainkey')) return true
-  if (rel === '_dmarc' || rel.startsWith('_dmarc.')) return true
-  if (type === 'TXT') {
-    if (/^v=spf1\b/i.test(val) || /\bv=spf1\b/i.test(val)) return true
-    if (/^v=dmarc1\b/i.test(val) || /\bv=DMARC1\b/i.test(val)) return true
-  }
-  // Cloudflare Email Routing 特征
-  if (/mx\.cloudflare\.net/i.test(val) || /_spf\.mx\.cloudflare\.net/i.test(val)) return true
-  // 常见第三方邮（DNSPod 侧也多见）
-  if (type === 'CNAME' || type === 'TXT') {
-    if (
-      /qq\.com|aliyun|mxhichina|outlook\.com|protection\.outlook|google\.com|googlemail|zoho|mail\.me\.com|icloud/i.test(
-        val
-      )
-    ) {
-      return true
-    }
-  }
-  return false
-}
+export type { RecordLike } from './record-purpose'
 
 /**
  * 聚组键：
@@ -165,13 +31,8 @@ function isEmailRecord(record: RecordLike, zoneName = ''): boolean {
  */
 export function recordHostKey(record: RecordLike, zoneName = ''): string {
   const rel = relativeHostLabel(record.name, zoneName)
-
-  if (rel.startsWith(ACME_PREFIX)) {
-    return rel.slice(ACME_PREFIX.length) || '@'
-  }
-  if (rel.startsWith(CF_OWNERSHIP_PREFIX)) {
-    return rel.slice(CF_OWNERSHIP_PREFIX.length) || '@'
-  }
+  const saasStripped = stripSaaSHostPrefix(rel)
+  if (saasStripped !== rel) return saasStripped
 
   if (isEmailRecord(record, zoneName)) {
     return `${MAIL_KEY_PREFIX}${emailBaseHostForRecord(record, zoneName)}`
@@ -195,89 +56,6 @@ export function hostGroupLabel(hostKey: string, zoneName = ''): string {
   }
   if (!hostKey || hostKey === '@') return zoneName || '@'
   return hostKey
-}
-
-/**
- * 推断用途：主机结构 + 线路 + 邮箱类型；备注仅兜底。
- * 导出给组头徽章（record-display）复用同一份推断，避免展示层另立一套规则。
- */
-export function inferRecordPurpose(record: RecordLike, zoneName = ''): RecordPurposeInfo {
-  const rel = relativeHostLabel(record.name, zoneName)
-  const type = String(record.type || '').toUpperCase()
-  const line = String(record.line || '').trim()
-  const remark = String(record.remark || record.comment || '').trim()
-  const val = recordValue(record)
-  // 非邮箱记录不会带邮箱前缀，无需再判断
-  const baseKey = isEmailRecord(record, zoneName)
-    ? emailBaseHostForRecord(record, zoneName)
-    : recordHostKey(record, zoneName)
-  const fqdn = !baseKey || baseKey === '@' ? zoneName || '' : zoneName ? `${baseKey}.${zoneName}` : baseKey
-
-  // —— 邮箱 ——
-  if (isEmailRecord(record, zoneName)) {
-    if (type === 'MX' || /mx\.cloudflare\.net/i.test(val)) {
-      return { purpose: 'mail_mx', purposeLabel: 'MX', fqdn, raw: remark, isLinked: true }
-    }
-    if (rel.includes('_domainkey')) {
-      return { purpose: 'mail_dkim', purposeLabel: 'DKIM', fqdn, raw: remark, isLinked: true }
-    }
-    if (rel === '_dmarc' || rel.startsWith('_dmarc.') || /\bv=DMARC1\b/i.test(val)) {
-      return { purpose: 'mail_dmarc', purposeLabel: 'DMARC', fqdn, raw: remark, isLinked: true }
-    }
-    if (/\bv=spf1\b/i.test(val) || /_spf\.mx\.cloudflare\.net/i.test(val)) {
-      return { purpose: 'mail_spf', purposeLabel: 'SPF', fqdn, raw: remark, isLinked: true }
-    }
-    return { purpose: 'other', purposeLabel: '邮箱', fqdn, raw: remark, isLinked: true }
-  }
-
-  // DCV
-  if (rel.startsWith(ACME_PREFIX) && (type === 'CNAME' || type === 'TXT' || type === '')) {
-    return { purpose: 'dcv', purposeLabel: 'DCV委派', fqdn, raw: remark, isLinked: true }
-  }
-
-  // 所有权
-  if (rel.startsWith(CF_OWNERSHIP_PREFIX)) {
-    return { purpose: 'ownership', purposeLabel: '所有权验证', fqdn, raw: remark, isLinked: true }
-  }
-
-  // 同主机 CNAME：境内 → 优选；默认 → 回源
-  if (type === 'CNAME' && !rel.startsWith('_')) {
-    if (line === '境内' || line === '电信' || line === '联通' || line === '移动') {
-      return { purpose: 'preferred', purposeLabel: '优选域名', fqdn, raw: remark, isLinked: true }
-    }
-    if (!line || line === '默认' || line === 'default' || line === 'Default') {
-      if (/^优选域名/.test(remark.split(/[丨|｜]/)[0] || '')) {
-        return { purpose: 'preferred', purposeLabel: '优选域名', fqdn, raw: remark, isLinked: true }
-      }
-      return { purpose: 'origin', purposeLabel: '默认回源', fqdn, raw: remark, isLinked: true }
-    }
-  }
-
-  // 备注兜底
-  if (remark) {
-    const head = remark.split(/[丨|｜]/)[0]?.trim() || ''
-    if (/^默认回源|^业务接入/.test(head)) {
-      return { purpose: 'origin', purposeLabel: '默认回源', fqdn, raw: remark, isLinked: true }
-    }
-    if (/^优选域名/.test(head)) {
-      return { purpose: 'preferred', purposeLabel: '优选域名', fqdn, raw: remark, isLinked: true }
-    }
-    if (/^DCV/.test(head)) {
-      return { purpose: 'dcv', purposeLabel: 'DCV委派', fqdn, raw: remark, isLinked: true }
-    }
-    if (/^所有权/.test(head)) {
-      return { purpose: 'ownership', purposeLabel: '所有权验证', fqdn, raw: remark, isLinked: true }
-    }
-    if (/^EdgeOne/.test(head)) {
-      return { purpose: 'edgeone', purposeLabel: 'EdgeOne', fqdn, raw: remark, isLinked: true }
-    }
-  }
-
-  return { purpose: 'none', purposeLabel: '', fqdn: '', raw: remark, isLinked: false }
-}
-
-function purposeSortKey(purpose: RecordPurpose): number {
-  return PURPOSE_ORDER[purpose]
 }
 
 export function compareRecordsForGroup(a: RecordLike, b: RecordLike, zoneName = ''): number {
