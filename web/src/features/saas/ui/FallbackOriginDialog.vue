@@ -12,6 +12,7 @@ import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { confirmDialog } from '@/shared/ui/confirm'
 import { createScopeGeneration } from '@/shared/lib/scope-generation'
+import { statusLabel as sharedStatusLabel } from '@/features/saas/lib/status'
 
 const open = defineModel<boolean>('open', { default: false })
 const props = defineProps<{
@@ -19,7 +20,6 @@ const props = defineProps<{
   zoneName: string
 }>()
 
-const loading = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const enabled = ref(false)
@@ -34,18 +34,19 @@ function claimScope() {
   return scopeGeneration.claim({ providerId: props.providerId, zoneName: props.zoneName })
 }
 
+/**
+ * 回源端点可出现的状态：与主机名状态同源，但旧文案表只认这几种，
+ * 其余值（如 deleted/blocked）在回源语境保持「状态未知」，避免顺带改变未审计的展示。
+ */
+const FALLBACK_ORIGIN_STATUS_KEYS = new Set(['initializing', 'pending_deployment', 'pending_deletion', 'active'])
+
 const statusLabel = computed(() => {
   const key = String(status.value || '')
     .trim()
     .toLowerCase()
-  return (
-    {
-      initializing: '初始化中',
-      pending_deployment: '待部署',
-      pending_deletion: '删除中',
-      active: '已生效',
-    }[key] || (key ? '状态未知' : '-')
-  )
+  if (!FALLBACK_ORIGIN_STATUS_KEYS.has(key)) return key ? '状态未知' : '-'
+  // 回源语境的 pending_deployment 是「待部署」，与主机名口径的「部署中」不同：保留本地覆盖
+  return key === 'pending_deployment' ? '待部署' : sharedStatusLabel(key)
 })
 
 const canSave = computed(() => {
@@ -58,7 +59,6 @@ const hadOrigin = ref(false)
 
 async function loadOriginState() {
   const owner = claimScope()
-  loading.value = true
   errors.value = []
   try {
     const response = await saasApi.fallbackOrigin(owner.value.providerId, owner.value.zoneName)
@@ -73,8 +73,6 @@ async function loadOriginState() {
     errors.value = list.map((item) => (typeof item === 'string' ? item : JSON.stringify(item)))
   } catch (error) {
     if (owner.active()) toast.error(errorMessage(error))
-  } finally {
-    if (owner.active()) loading.value = false
   }
 }
 
@@ -141,16 +139,15 @@ watch(open, (value) => {
     return
   }
   scopeGeneration.invalidate()
-  loading.value = false
   saving.value = false
   deleting.value = false
 })
+
 watch(
   () => [props.providerId, props.zoneName],
   () => {
     scopeGeneration.invalidate()
     open.value = false
-    loading.value = false
     saving.value = false
     deleting.value = false
   }

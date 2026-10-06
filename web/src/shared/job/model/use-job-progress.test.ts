@@ -28,8 +28,9 @@ describe('useJobProgress', () => {
 
     expect(resumeResult).toBeNull()
     expect(progress.running.value).toBe(false)
-    // 失败必须留下可读的错误信息，不能像「没有活跃任务」那样安静
-    expect(progress.resumeError.value).toBe('active job unavailable')
+    // 失败必须留下用户可见的失败态，不能像「没有活跃任务」那样安静
+    expect(progress.text.value).toMatch(/恢复失败：active job unavailable/)
+    expect(progress.job.value?.status).toBe('failed')
   })
 
   it('探测期间不得显示进度；探测结果为空不得残留 running', async () => {

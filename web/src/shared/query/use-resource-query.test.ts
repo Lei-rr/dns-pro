@@ -2,12 +2,7 @@ import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createApp, defineComponent, effectScope, nextTick, type EffectScope } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  CANCELED_CODE,
-  TIMEOUT_CODE,
-  TRANSPORT_ERROR_HINTS,
-  type TransportErrorCode,
-} from '@/shared/api/transport-errors'
+import { CANCELED_CODE, TIMEOUT_CODE, TRANSPORT_ERROR_HINTS } from '@/shared/api/transport-errors'
 import { toast } from '@/shared/lib/toast'
 import { useResourceQuery } from './use-resource-query'
 
@@ -25,11 +20,13 @@ vi.mock('@/shared/lib/toast', () => ({
     error: vi.fn(),
     warning: vi.fn(),
     message: vi.fn(),
-    info: vi.fn(),
     loading: vi.fn(),
     dismiss: vi.fn(),
   },
 }))
+
+/** 传输错误码联合：transport-errors 不再导出该类型，改从文案映射的键推导同一集合 */
+type TransportErrorCode = keyof typeof TRANSPORT_ERROR_HINTS
 
 type Page = { items: string[] }
 

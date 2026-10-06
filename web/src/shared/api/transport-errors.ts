@@ -14,7 +14,7 @@ export const CANCELED_CODE = 'CANCELED'
 /** fetch 自身失败（断网 / 连接被拒 / DNS）：没有后端响应体，文案由本地兜底 */
 export const NETWORK_ERROR_CODE = 'NETWORK_ERROR'
 
-export type TransportErrorCode = typeof TIMEOUT_CODE | typeof CANCELED_CODE | typeof NETWORK_ERROR_CODE
+type TransportErrorCode = typeof TIMEOUT_CODE | typeof CANCELED_CODE | typeof NETWORK_ERROR_CODE
 
 /** 本地网络层兜底文案：与码值同源，抛出方与展示方不再各写一份 */
 export const TRANSPORT_ERROR_HINTS: Record<TransportErrorCode, string> = {

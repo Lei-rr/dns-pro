@@ -35,7 +35,7 @@ export function nextStatusPollDelayMs(currentMs: number): number {
 }
 
 /** 限流信号：hintMs 为服务端明确要求的等待时长（未给出则为 null，按固定退避处理） */
-export interface StatusPollRateLimit {
+interface StatusPollRateLimit {
   retryAfterMs: number | null
 }
 

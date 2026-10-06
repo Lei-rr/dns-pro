@@ -6,7 +6,6 @@ export interface Provider extends PresentedProvider {
   dnspod_provider?: string
   cloudflare_provider?: string
   cloudflare_dns_provider?: string
-  description?: string
 }
 
 export interface ProviderDefinition {

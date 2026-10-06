@@ -2,14 +2,11 @@
 import { cn } from '@/shared/lib/utils'
 import type { HTMLAttributes } from 'vue'
 
-const props = withDefaults(
-  defineProps<{
-    class?: HTMLAttributes['class']
-    title?: string
-    description?: string
-  }>(),
-  {}
-)
+const props = defineProps<{
+  class?: HTMLAttributes['class']
+  title?: string
+  description?: string
+}>()
 </script>
 
 <template>

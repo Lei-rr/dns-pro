@@ -4,7 +4,6 @@ import { LoadingButton } from '@/shared/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/shared/ui/card'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@/shared/ui/field'
 import { Input } from '@/shared/ui/input'
-import { cn } from '@/shared/lib/utils'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/features/auth'
 import { toast } from '@/shared/lib/toast'
@@ -41,7 +40,7 @@ async function submit() {
   <!-- Official login-01 block layout -->
   <div class="flex min-h-svh w-full items-center justify-center p-6 md:p-10">
     <div class="w-full max-w-sm">
-      <div :class="cn('flex flex-col gap-6')">
+      <div class="flex flex-col gap-6">
         <Card>
           <CardHeader>
             <CardTitle>登录 DNS-PRO</CardTitle>

@@ -6,7 +6,7 @@
  * - offline 是停用后的稳定态，不是终点：停用之后必须能重新启用（走同一条异步过渡），否则单向下线不可逆；
  * - 未知状态（forbidden/init/空）保守处理：不给任何状态动作。
  */
-export interface EdgeOneDomainStatusActions {
+interface EdgeOneDomainStatusActions {
   /** 可下发停止加速：仅 online */
   canStop: boolean
   /** 可下发启用（恢复加速）：仅 offline */

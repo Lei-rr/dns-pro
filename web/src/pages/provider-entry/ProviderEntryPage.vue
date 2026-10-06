@@ -24,8 +24,6 @@ const { allProviders, loading, error } = useProvidersQuery()
 const providerId = computed(() => String(route.params.provider || ''))
 const second = computed(() => String(route.params.second || ''))
 const current = computed(() => allProviders.value.find((item) => item.id === providerId.value) || null)
-/** 存在但未配置完整的服务商：展示明确状态而不是空白页 */
-const unconfigured = computed(() => (current.value ? null : getCachedProviderAny(providerId.value)))
 /** 加载失败与「没有这个类型」是两回事，不能都落到「暂未接入」 */
 const loadError = computed(() => (error.value ? errorMessage(error.value) : ''))
 
@@ -86,12 +84,7 @@ onMounted(async () => {
     <Button variant="outline" size="sm" class="mt-4" @click="retryLoad">重试</Button>
   </div>
   <div v-else class="py-16 text-center">
-    <div class="text-lg font-medium">{{ unconfigured?.name || providerId }}</div>
-    <p class="text-muted-foreground mt-2 text-sm">
-      {{ unconfigured ? '该服务商尚未配置完整，请先在服务商页补全关联与密钥。' : '当前服务商类型暂未接入。' }}
-    </p>
-    <Button v-if="unconfigured" variant="outline" size="sm" class="mt-4" @click="router.push('/providers')">
-      前往服务商设置
-    </Button>
+    <div class="text-lg font-medium">{{ providerId }}</div>
+    <p class="text-muted-foreground mt-2 text-sm">当前服务商类型暂未接入。</p>
   </div>
 </template>

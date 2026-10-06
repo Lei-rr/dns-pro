@@ -1,7 +1,10 @@
 /** 列表每页条数本地记忆（10/20/50/100） */
 
+/** 每页条数白名单：分页下拉与本地记忆的唯一来源 */
+export const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const
+
 const DEFAULT_SIZE = 20
-const ALLOWED = new Set([10, 20, 50, 100])
+const ALLOWED = new Set<number>(PAGE_SIZE_OPTIONS)
 
 function storageKey(scope: string) {
   return `dns-pro:page-size:${scope}`

@@ -62,7 +62,7 @@ export function confirmDelete(name: string, extra = ''): Promise<boolean> {
 }
 
 /** 「删除时是否跳过 DNS 清理」勾选项：默认不勾（保持既有行为：删除会连带清理解析记录） */
-export const SKIP_DNS_CLEANUP_OPTION: ConfirmOptionChoice = {
+const SKIP_DNS_CLEANUP_OPTION: ConfirmOptionChoice = {
   label: '跳过 DNS 清理：保留当前解析记录，稍后自行处理',
   defaultChecked: false,
 }
@@ -91,13 +91,8 @@ export function settleConfirm(value: boolean) {
   r({ confirmed: value, checked: optionChecked.value })
 }
 
-function hasPendingConfirm() {
-  return resolver != null
-}
-
 export const confirmState = {
   open,
   options,
   optionChecked,
-  hasPending: hasPendingConfirm,
 }

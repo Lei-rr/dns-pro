@@ -1,35 +1,37 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { ArrowRight, Cloud, Globe2, Radar, Server, Settings2, Shield } from '@lucide/vue'
+import { ArrowRight, Globe2, Settings2 } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { Badge } from '@/shared/ui/badge'
 import { Skeleton } from '@/shared/ui/skeleton'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/shared/ui/empty'
 import {
+  isDnsPlatform,
   loadProviders,
   providerAvatarColor,
+  providerIcon,
   providerPath,
   providerTypeLabel,
   useProvidersQuery,
 } from '@/features/providers'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
-import type { Component } from 'vue'
 
 const { providers, loading } = useProvidersQuery()
 const count = computed(() => providers.value.length)
 
-const typeMeta: Record<string, { blurb: string; icon: Component }> = {
-  dnspod: { blurb: '域名与解析', icon: Globe2 },
-  cloudflare: { blurb: 'Zones / DNS', icon: Cloud },
-  saas: { blurb: '主机名 / 优选', icon: Shield },
-  edgeone: { blurb: '加速 / 证书', icon: Radar },
-  cloudflared: { blurb: '隧道 / 路由', icon: Server },
+/** 卡片说明文案；图标由共享的 providerIcon 映射提供，类型键与控制台导航保持一致 */
+const typeBlurbs: Record<string, string> = {
+  dnspod: '域名与解析',
+  cloudflare: 'Zones / DNS',
+  saas: '主机名 / 优选',
+  edgeone: '加速 / 证书',
+  cloudflared: '隧道 / 路由',
 }
 
 function metaOf(type: string) {
-  return typeMeta[type] || { blurb: '进入管理', icon: Globe2 }
+  return { blurb: typeBlurbs[type] || '进入管理', icon: providerIcon(type) }
 }
 
 onMounted(async () => {
@@ -76,7 +78,7 @@ onMounted(async () => {
       <div class="bg-muted/40 hover:bg-muted/60 transition-colors rounded-xl px-4 py-3">
         <div class="text-xs font-medium text-muted-foreground">DNS 托管</div>
         <div class="text-2xl font-bold tracking-tight tabular-nums mt-0.5">
-          {{ providers.filter((p) => ['dnspod', 'cloudflare'].includes(p.type)).length }}
+          {{ providers.filter((p) => isDnsPlatform(p.type)).length }}
         </div>
       </div>
       <div class="bg-muted/40 hover:bg-muted/60 transition-colors rounded-xl px-4 py-3">

@@ -8,7 +8,7 @@ import { confirmDeleteWithSkipCleanup, confirmDialog, confirmState, settleConfir
 
 afterEach(() => {
   // 模块级单例：用例结束前把未决弹窗收尾，避免跨用例串状态
-  if (confirmState.hasPending()) settleConfirm(false)
+  if (confirmState.open.value) settleConfirm(false)
 })
 
 describe('确认弹窗的勾选项', () => {
@@ -58,12 +58,12 @@ describe('确认手势契约：未决状态与结算', () => {
     const pending = confirmDialog({ title: '批量失败', description: '失败 1 条\n\nwww: 失败' })
 
     expect(confirmState.open.value).toBe(true)
-    expect(confirmState.hasPending()).toBe(true)
+    expect(confirmState.open.value).toBe(true)
 
     settleConfirm(true)
 
     await expect(pending).resolves.toBe(true)
     expect(confirmState.open.value).toBe(false)
-    expect(confirmState.hasPending()).toBe(false)
+    expect(confirmState.open.value).toBe(false)
   })
 })

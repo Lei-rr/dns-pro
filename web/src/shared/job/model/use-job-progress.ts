@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { JobLike, PollJobOptions } from './types'
+import { normalizePercent } from '../../lib/percent'
 import { createScopeGeneration, type GenerationOwner } from '../../lib/scope-generation'
 
 /** 任务详情的形状极弱（字段全可选）：非 null 对象即满足 JobLike，字段缺失由消费侧默认值兜住 */
@@ -32,7 +33,6 @@ export function useJobProgress() {
   const text = ref('')
   const job = ref<JobLike | null>(null)
   const percent = ref<number | null>(null)
-  const resumeError = ref('')
   let clearTimer: ReturnType<typeof setTimeout> | null = null
   const ownership = createScopeGeneration()
   // 探测标志（非计数器）：reset 后必须能重新探测后端进行中的任务
@@ -46,7 +46,7 @@ export function useJobProgress() {
     const total = Number(current.total || 0)
     const done = Number(current.done || 0)
     if (!total) return null
-    return Math.max(0, Math.min(100, Math.round((done / total) * 100)))
+    return normalizePercent(Math.round((done / total) * 100))
   }
 
   function progressText(current: JobLike, label = '') {
@@ -99,7 +99,6 @@ export function useJobProgress() {
         job.value = current
         text.value = progressText(current, options.label)
         percent.value = progressPercent(current)
-        options.onTick?.(current)
         await new Promise((resolve) => setTimeout(resolve, interval))
         if (!owner.active()) return null
         const next = await options.fetchJob(jobId)
@@ -141,7 +140,6 @@ export function useJobProgress() {
     if (running.value || probing) return job.value
     const owner = ownership.claim()
     probing = true
-    resumeError.value = ''
     try {
       const response = await fetchActive()
       if (!owner.active()) return null
@@ -164,10 +162,10 @@ export function useJobProgress() {
       }
       return await pollOwned(jobId, options, owner)
     } catch (error) {
-      resumeError.value = error instanceof Error ? error.message : String(error)
       if (owner.active()) {
+        const message = error instanceof Error ? error.message : String(error)
         running.value = false
-        text.value = `${options.label || '任务'}恢复失败：${resumeError.value}`
+        text.value = `${options.label || '任务'}恢复失败：${message}`
         job.value = { status: 'failed', message: text.value }
       }
       return null
@@ -195,7 +193,6 @@ export function useJobProgress() {
     text.value = ''
     job.value = null
     percent.value = null
-    resumeError.value = ''
   }
 
   return {
@@ -203,15 +200,12 @@ export function useJobProgress() {
     text,
     job,
     percent,
-    resumeError,
     begin,
     owns: (owner: GenerationOwner) => owner.active(),
     release,
     pollJob,
     resumeActive,
     failedItems,
-    progressText,
     reset,
-    extractJobId,
   }
 }

@@ -22,6 +22,32 @@ export const useSessionStore = defineStore('session', () => {
   let pendingSession: Promise<SessionState> | null = null
   let requestToken = 0
 
+  /**
+   * load / login 共用的请求收尾：token 在等待期间被刷新或失效覆盖时丢弃本次结果；
+   * pending 与 loading 仅在「本次请求仍是最新且仍挂起」时复位。
+   * 成功后写入登录态由 commit 提供：load 只在未认证时递增 revision，login 无条件递增，故刻意不合并。
+   */
+  async function runSessionRequest(
+    request: () => Promise<SessionState>,
+    commit: (nextSession: SessionState) => void
+  ): Promise<SessionState> {
+    const token = ++requestToken
+    loading.value = true
+    const pending = request()
+    pendingSession = pending
+    try {
+      const nextSession = await pending
+      if (token !== requestToken) return session.value || anonymousSession
+      commit(nextSession)
+      return nextSession
+    } finally {
+      if (token === requestToken && pendingSession === pending) {
+        pendingSession = null
+        loading.value = false
+      }
+    }
+  }
+
   async function load(options: { refresh?: boolean } = {}) {
     if (options.refresh && pendingSession) {
       requestToken += 1
@@ -30,47 +56,29 @@ export const useSessionStore = defineStore('session', () => {
     if (!options.refresh && checked.value && session.value) return session.value
 
     if (!pendingSession) {
-      const token = ++requestToken
-      loading.value = true
       // 请求失败不写入登录态：checked 保持 false，后续导航会重试
-      const request = authApi.me().then((response) => response.data)
-      pendingSession = request
-      try {
-        const nextSession = await request
-        if (token !== requestToken) return session.value || anonymousSession
-        session.value = nextSession
-        checked.value = true
-        if (!nextSession.authenticated) revision.value += 1
-        return nextSession
-      } finally {
-        if (token === requestToken && pendingSession === request) {
-          pendingSession = null
-          loading.value = false
+      return runSessionRequest(
+        () => authApi.me().then((response) => response.data),
+        (nextSession) => {
+          session.value = nextSession
+          checked.value = true
+          if (!nextSession.authenticated) revision.value += 1
         }
-      }
+      )
     }
 
     return pendingSession
   }
 
-  async function login(username: string, password: string) {
-    const token = ++requestToken
-    loading.value = true
-    const request = authApi.login(username, password).then((response) => response.data)
-    pendingSession = request
-    try {
-      const nextSession = await request
-      if (token !== requestToken) return session.value || anonymousSession
-      session.value = nextSession
-      checked.value = true
-      revision.value += 1
-      return nextSession
-    } finally {
-      if (token === requestToken && pendingSession === request) {
-        pendingSession = null
-        loading.value = false
+  function login(username: string, password: string) {
+    return runSessionRequest(
+      () => authApi.login(username, password).then((response) => response.data),
+      (nextSession) => {
+        session.value = nextSession
+        checked.value = true
+        revision.value += 1
       }
-    }
+    )
   }
 
   async function logout() {

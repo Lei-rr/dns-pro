@@ -2,6 +2,7 @@ import { reactive, ref, toValue, type MaybeRefOrGetter } from 'vue'
 import { batchJobFetcher, batchJobRetrier, dnsApi, type DnsProviderRef, type DnsRecordBatchPatch } from '../api/dns-api'
 import type { DnsRecord } from '../model/types'
 import type { ImportPlan } from '../lib/record-import-preview'
+import { recordPriorityValue } from '../lib/record-group'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { formatFailedJobItem, runBatchJob, showBatchFailures, type useJobProgress } from '@/shared/job'
@@ -141,7 +142,7 @@ export function useRecordsBatch(options: {
       ttl: row.ttl,
       line: row.line,
       remark: row.remark || row.comment,
-      priority: row.priority ?? row.mx,
+      priority: recordPriorityValue(row),
       proxied: row.proxied,
       // 与单条编辑同约定：必须回传启停状态与权重，否则会被上游重置（停用记录被启用、权重归零）
       status: String(row.status || '').toUpperCase() || undefined,

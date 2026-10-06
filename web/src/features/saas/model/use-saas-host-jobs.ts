@@ -52,7 +52,6 @@ export function useSaasHostJobs(options: {
         only_auto_preferred: !!payload.onlyAutoPreferred,
       }
       if (payload.dryRun) {
-        if (!scopeOwner.active()) return
         const preview = await saasApi.preferredApplyPreview(
           scopeOwner.value.providerId,
           scopeOwner.value.zoneName,

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Spinner } from '@/shared/ui/spinner'
 import { Progress } from '@/shared/ui/progress'
 import { Button } from '@/shared/ui/button'
+import { normalizePercent } from '@/shared/lib/percent'
 import { cn } from '@/shared/lib/utils'
 
 const props = withDefaults(
@@ -33,10 +34,7 @@ const resolvedStatus = computed(() => {
   if (props.text) return 'completed'
   return ''
 })
-const progressValue = computed(() => {
-  if (props.percent == null || Number.isNaN(Number(props.percent))) return null
-  return Math.max(0, Math.min(100, Number(props.percent)))
-})
+const progressValue = computed(() => normalizePercent(props.percent))
 const isTerminal = computed(
   () => resolvedStatus.value === 'completed' || resolvedStatus.value === 'failed' || (!props.running && !!props.text)
 )
@@ -50,9 +48,7 @@ const isTerminal = computed(
         cn(
           'bg-card rounded-xl border px-3.5 py-3 text-sm shadow-xs transition-opacity duration-300',
           resolvedStatus === 'failed' && 'border-destructive/30',
-          (resolvedStatus === 'completed' || isTerminal) &&
-            resolvedStatus !== 'failed' &&
-            'border-border/60 opacity-90',
+          isTerminal && resolvedStatus !== 'failed' && 'border-border/60 opacity-90',
           props.class
         )
       "

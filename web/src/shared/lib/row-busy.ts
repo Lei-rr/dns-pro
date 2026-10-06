@@ -1,12 +1,11 @@
 import { computed, ref } from 'vue'
-import { createScopeGeneration } from './scope-generation'
+import { createScopeGeneration, type GenerationOwner } from './scope-generation'
 
 /**
  * Per-row operation ownership for list actions.
  * The same row is mutually exclusive; different rows may run concurrently.
  * A stale finally block can only release the token it acquired.
  */
-type RowOperationOwner = { active: () => boolean }
 
 export function useRowBusy() {
   const operations = ref(new Map<string, symbol>())
@@ -18,7 +17,7 @@ export function useRowBusy() {
     return !!k && operations.value.has(k)
   }
 
-  async function runBusy(key: string | number | null | undefined, task: (owner: RowOperationOwner) => Promise<void>) {
+  async function runBusy(key: string | number | null | undefined, task: (owner: GenerationOwner) => Promise<void>) {
     const k = String(key ?? '')
     if (!k || operations.value.has(k)) return
     const token = Symbol(k)

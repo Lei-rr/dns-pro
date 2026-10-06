@@ -2,13 +2,7 @@ import { mount, type VueWrapper } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import ConfirmHost from './ConfirmHost.vue'
-import {
-  confirmDeleteWithSkipCleanup,
-  confirmDialog,
-  confirmState,
-  settleConfirm,
-  SKIP_DNS_CLEANUP_OPTION,
-} from './confirm'
+import { confirmDeleteWithSkipCleanup, confirmDialog, confirmState, settleConfirm } from './confirm'
 
 /**
  * 勾选项必须在界面上真正可达（缺陷本身是「参数支持但入口不存在」）：
@@ -30,7 +24,7 @@ function buttonsWithText(text: string): HTMLButtonElement[] {
 }
 
 afterEach(() => {
-  if (confirmState.hasPending()) settleConfirm(false)
+  if (confirmState.open.value) settleConfirm(false)
   for (const wrapper of wrappers.splice(0)) wrapper.unmount()
   document.body.innerHTML = ''
 })
@@ -43,7 +37,7 @@ describe('ConfirmHost 勾选项渲染', () => {
     const pending = confirmDeleteWithSkipCleanup('api.example.com')
     await flush()
 
-    expect(document.body.textContent).toContain(SKIP_DNS_CLEANUP_OPTION.label)
+    expect(document.body.textContent).toContain('跳过 DNS 清理：保留当前解析记录，稍后自行处理')
     expect(document.querySelectorAll('[data-slot="checkbox"]')).toHaveLength(1)
     expect(confirmState.optionChecked.value).toBe(false)
 

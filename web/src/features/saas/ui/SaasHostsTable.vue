@@ -7,6 +7,7 @@ import { Checkbox } from '@/shared/ui/checkbox'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/shared/ui/dropdown-menu'
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
+import { hostnameKey } from '@/features/saas/lib/hostname-key'
 import { statusLabel, statusVariant } from '@/features/saas/lib/status'
 import type { SaaSHostname } from '@/features/saas/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
@@ -28,10 +29,6 @@ const emit = defineEmits<{
   edit: [record: SaaSHostname]
   remove: [record: SaaSHostname]
 }>()
-
-function hostnameKey(record: SaaSHostname) {
-  return String(record.hostname || record.id || '')
-}
 
 const selected = computed(() => new Set(props.selectedHostnames))
 const busy = computed(() => new Set(props.busyHostnames))

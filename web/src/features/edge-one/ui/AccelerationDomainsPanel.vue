@@ -33,7 +33,7 @@ import { useRowBusy, removeListItem } from '@/shared/lib/row-busy'
 import AccelerationDomainFormDialog from '@/features/edge-one/ui/AccelerationDomainFormDialog.vue'
 import CertificateFormDialog from '@/features/edge-one/ui/CertificateFormDialog.vue'
 import AccelerationDomainsTable from '@/features/edge-one/ui/AccelerationDomainsTable.vue'
-import { formatFailedJobItem, JobProgressAlert, runBatchJob, showBatchFailures, useJobProgress } from '@/shared/job'
+import { finishBatchJob, JobProgressAlert, runBatchJob, useJobProgress } from '@/shared/job'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { confirmDeleteWithSkipCleanup, confirmDialog } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
@@ -67,7 +67,7 @@ const filtered = computed(() => {
   const q = keyword.value.trim().toLowerCase()
   if (!q) return domains.value
   return domains.value.filter((item) => {
-    const name = String(item.domain_name || item.name || '').toLowerCase()
+    const name = domainName(item).toLowerCase()
     const cname = String(item.cname || '').toLowerCase()
     return name.includes(q) || cname.includes(q)
   })
@@ -102,7 +102,7 @@ watch(domainsQuery.data, (data) => {
   settleStatusTransitions(data.domains)
 })
 const { page, total, pagedItems: pagedDomains, resetPage } = useLocalPagination(filtered, pageSize)
-const selection = useRowSelection(pagedDomains, (row) => String(row.domain_name || row.name || ''))
+const selection = useRowSelection(pagedDomains, domainName)
 const selectedCount = computed(() => selection.selected.value.length)
 watch(keyword, () => {
   resetPage()
@@ -208,7 +208,6 @@ async function save(payload: EdgeOneDomainSubmitPayload) {
       if (!owner.active()) return
       notifyDnsSideEffect(dnsSideEffectFromData(response, 'sync'), '加速域名已创建')
     }
-    if (!owner.active()) return
     dialogOpen.value = false
     await runLoad()
   } catch (error) {
@@ -436,8 +435,8 @@ async function removeDomain(record: EdgeOneAccelerationDomain) {
 async function runEdgeBatch(
   create: () => Promise<{ data?: unknown }>,
   label: string,
-  scopeOwner = captureMutationOwner(),
-  providerId = props.providerId
+  scopeOwner: ScopeOwner<EdgeOneScope>,
+  providerId: string
 ) {
   if (!scopeOwner.active()) return
   await runBatchJob({
@@ -515,32 +514,27 @@ async function resumeJobs() {
       fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data,
     }
   )
-  if (finished) {
-    const jobId = String(finished.id || '')
-    const failed = jobProgress.failedItems(finished)
-    if (failed.length) {
-      await showBatchFailures(
-        finished.message || 'EdgeOne 批量完成',
-        failed.map((i) => formatFailedJobItem(i)),
-        '个',
-        {
-          onRetry: async () => {
-            if (!scopeOwner.active()) return null
-            await edgeOneApi.batchRetry(scopeOwner.value.providerId, jobId)
-            if (!scopeOwner.active()) return null
-            return jobProgress.pollJob(jobId, {
-              label: 'EdgeOne 批量',
-              fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data,
-            })
-          },
-          isActive: () => scopeOwner.active(),
-        }
-      )
-    } else if (scopeOwner.active()) {
-      toast.success(finished.message || 'EdgeOne 批量已完成')
-    }
-    await runLoad()
-  }
+  if (!finished) return
+  const jobId = String(finished.id || '')
+  // 收尾（失败项格式化 + 重试 + 成功提示 + 刷新）与 runBatchJob 共用：只有作用域守卫与重试闭包属于「恢复」路径
+  await finishBatchJob({
+    job: finished,
+    label: 'EdgeOne 批量',
+    jobProgress,
+    isActive: () => scopeOwner.active(),
+    onRetry: async () => {
+      if (!scopeOwner.active()) return null
+      await edgeOneApi.batchRetry(scopeOwner.value.providerId, jobId)
+      if (!scopeOwner.active()) return null
+      return jobProgress.pollJob(jobId, {
+        label: 'EdgeOne 批量',
+        fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data,
+      })
+    },
+    failureUnit: '个',
+    successText: 'EdgeOne 批量已完成',
+    onDone: () => runLoad(),
+  })
 }
 
 watch(

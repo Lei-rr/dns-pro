@@ -1,6 +1,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { preferredDomainApi, saasApi } from '@/features/saas/api/saas-api'
 import type { SaaSHostname, SaaSSyncProvider } from '@/features/saas/model/types'
+import { hostnameKey } from '@/features/saas/lib/hostname-key'
 import type { DnsZoneOption } from './types'
 
 import { toast } from '@/shared/lib/toast'
@@ -8,7 +9,7 @@ import { errorMessage } from '@/shared/lib/errors'
 import { serverFieldErrors, type FieldErrors } from '@/shared/lib/field-errors'
 import { localPreferenceSideEffectFromData, notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { dnsSideEffectFromData } from '@/shared/lib/side-effects'
-import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
+import { createScopeGeneration } from '@/shared/lib/scope-generation'
 
 /** 生效的优选域名：与后端 effectivePreferredDomain 同序（顶层优先，回退 custom_metadata） */
 export function preferredDomainOf(record: SaaSHostname | null | undefined): string {
@@ -51,7 +52,6 @@ export function useSaasHostEditor(options: {
     auto_sync: true,
   })
   const syncZones = ref<DnsZoneOption[]>([])
-  const loadingSyncZones = ref(false)
   const syncZonesError = ref('')
   const preferredOptions = ref<Array<{ domain: string }>>([])
   const preferredOptionsError = ref('')
@@ -73,10 +73,6 @@ export function useSaasHostEditor(options: {
   function beginFormSession() {
     saving.value = false
     return captureOwner()
-  }
-
-  function active(owner: GenerationOwner) {
-    return owner.active()
   }
 
   const syncProviders = computed(() => options.syncProviders())
@@ -105,11 +101,9 @@ export function useSaasHostEditor(options: {
     if (!providerId) {
       syncZones.value = []
       syncZonesError.value = ''
-      loadingSyncZones.value = false
       return
     }
     pendingSyncProvider = providerId
-    loadingSyncZones.value = true
     syncZonesError.value = ''
     syncZones.value = []
     try {
@@ -122,7 +116,6 @@ export function useSaasHostEditor(options: {
       if (owner.active()) syncZonesError.value = '同步域名加载失败。'
     } finally {
       if (pendingSyncProvider === providerId) pendingSyncProvider = ''
-      if (owner.active()) loadingSyncZones.value = false
     }
   }
 
@@ -177,13 +170,13 @@ export function useSaasHostEditor(options: {
     editing.value = null
     formErrors.value = {}
     await loadPreferredOptions()
-    if (!active(owner)) return
+    if (!owner.active()) return
     resetForm()
-    if (active(owner)) dialogOpen.value = true
+    dialogOpen.value = true
   }
 
   function openEdit(record: SaaSHostname) {
-    if (options.rowBusy(String(record.hostname || record.id || ''))) return
+    if (options.rowBusy(hostnameKey(record))) return
     options.closeDetail()
     beginFormSession()
     editing.value = record
@@ -241,7 +234,7 @@ export function useSaasHostEditor(options: {
           payload,
           { autoSync: form.auto_sync }
         )
-        if (!active(owner)) return
+        if (!owner.active()) return
         const localPreference = localPreferenceSideEffectFromData(response)
         if (localPreference?.status === 'failed') {
           toast.warning(`主机名已更新，但本地偏好保存失败：${localPreference.message || '未知错误'}`)
@@ -265,7 +258,7 @@ export function useSaasHostEditor(options: {
         const response = await saasApi.createHostname(options.providerId(), options.zoneName(), payload, {
           autoSync: form.auto_sync && !!payload.sync_target,
         })
-        if (!active(owner)) return
+        if (!owner.active()) return
         const localPreference = localPreferenceSideEffectFromData(response)
         if (localPreference?.status === 'failed') {
           toast.warning(`主机名已创建，但本地偏好保存失败：${localPreference.message || '未知错误'}`)
@@ -276,12 +269,12 @@ export function useSaasHostEditor(options: {
         await options.reload()
       }
     } catch (error) {
-      if (!active(owner)) return
+      if (!owner.active()) return
       formErrors.value = { ...formErrors.value, ...serverFieldErrors(error) }
       toast.error(errorMessage(error))
     } finally {
       // 只复位当前会话的保存态：会话换代时由 beginFormSession/openEdit 主动复位，站点切换由 reset 复位
-      if (active(owner)) saving.value = false
+      if (owner.active()) saving.value = false
     }
   }
 

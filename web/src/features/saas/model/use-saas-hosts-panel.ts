@@ -5,6 +5,7 @@ import type { SaaSHostname, SaaSSyncProvider } from '@/features/saas/model/types
 import { confirmDeleteWithSkipCleanup, confirmDialog } from '@/shared/ui/confirm'
 import { useSaasHostJobs } from './use-saas-host-jobs'
 import { preferredDomainOf, useSaasHostEditor } from './use-saas-host-editor'
+import { hostnameKey } from '@/features/saas/lib/hostname-key'
 import type { DnsZoneOption } from '../model/types'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
@@ -258,10 +259,6 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     })
   }
 
-  function hostnameKey(record: SaaSHostname) {
-    return String(record.hostname || record.id || '')
-  }
-
   async function removeHostname(record: SaaSHostname) {
     const scopeOwner = captureScope()
     const hostname = record.hostname
@@ -332,11 +329,16 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     })
   }
 
-  async function batchDeleteSelected() {
-    const scopeOwner = captureScope()
-    let hostnamesList = selectedAvailableRows(pagedHostnames.value, selection.selected.value, hostnameKey, (row) =>
+  /** 已勾选且当前不忙的主机名：批量删除与批量改优选共用的输入 */
+  function selectedAvailableHostnames() {
+    return selectedAvailableRows(pagedHostnames.value, selection.selected.value, hostnameKey, (row) =>
       isRowBusy(hostnameKey(row))
     ).map(hostnameKey)
+  }
+
+  async function batchDeleteSelected() {
+    const scopeOwner = captureScope()
+    let hostnamesList = selectedAvailableHostnames()
     if (!hostnamesList.length) {
       toast.warning('请先勾选主机名')
       return
@@ -390,9 +392,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
   async function batchUpdatePreferred() {
     if (batchSubmitting.value) return
     const scopeOwner = captureScope()
-    let selectedHostnames = selectedAvailableRows(pagedHostnames.value, selection.selected.value, hostnameKey, (row) =>
-      isRowBusy(hostnameKey(row))
-    ).map(hostnameKey)
+    let selectedHostnames = selectedAvailableHostnames()
     const preferred = batchPreferredDomain.value.trim()
     batchPreferredError.value = preferred ? '' : '请选择优选域名'
     if (batchPreferredError.value) return

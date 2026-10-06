@@ -18,5 +18,5 @@ export function useLocalPagination<T>(items: ComputedRef<T[]> | Ref<T[]>, pageSi
     page.value = 1
   }
 
-  return { page, total, totalPages, pagedItems, resetPage }
+  return { page, total, pagedItems, resetPage }
 }

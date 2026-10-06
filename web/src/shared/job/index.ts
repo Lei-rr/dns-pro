@@ -1,5 +1,5 @@
 export { default as JobProgressAlert } from './ui/JobProgressAlert.vue'
 export { useJobProgress } from './model/use-job-progress'
-export { runBatchJob } from './model/run-batch-job'
+export { finishBatchJob, runBatchJob } from './model/run-batch-job'
 export { formatFailedJobItem, showBatchFailures } from './lib/batch-results'
 export type { JobLike } from './model/types'

@@ -19,7 +19,6 @@ import { useProvidersQuery } from '../model/queries'
 
 const saving = ref(false)
 const providersQuery = useProvidersQuery()
-const providers = computed(() => providersQuery.allProviders.value)
 
 /** 按类型取服务商定义（密钥字段判定以内置定义为准） */
 function definitionForType(type: string): ProviderDefinition | undefined {
@@ -56,14 +55,14 @@ async function onRefresh() {
 }
 
 const filteredProviders = computed(() => {
-  if (typeFilter.value === 'all') return providers.value
-  return providers.value.filter((item) => item.type === typeFilter.value)
+  if (typeFilter.value === 'all') return providersQuery.allProviders.value
+  return providersQuery.allProviders.value.filter((item) => item.type === typeFilter.value)
 })
 
 function resetFormFields(type: string) {
   form.type = type
   form.fields = {}
-  const fields = definitions.value.find((item) => item.type === type)?.fields || []
+  const fields = definitionForType(type)?.fields ?? []
   for (const field of fields) form.fields[field] = ''
 }
 
@@ -121,7 +120,6 @@ async function save() {
     }
     // 空字段不覆盖；密钥留空=不修改
     for (const [key, value] of Object.entries(form.fields)) {
-      if (value == null) continue
       const text = String(value).trim()
       if (!text) continue
       payload[key] = text
@@ -220,7 +218,7 @@ onUnmounted(resetRowOperations)
 
       <ProvidersTable
         :providers="filteredProviders"
-        :all-providers="providers"
+        :all-providers="providersQuery.allProviders.value"
         :loading="loading"
         :refreshing="refreshing"
         :can-edit="!definitionsError && !!definitions.length"
@@ -238,7 +236,7 @@ onUnmounted(resetRowOperations)
       :saving="saving"
       :definitions="definitions"
       :labels="labels"
-      :providers="providers"
+      :providers="providersQuery.allProviders.value"
       :errors="formErrors"
       @save="save"
       @change-type="onCreateTypeChange"

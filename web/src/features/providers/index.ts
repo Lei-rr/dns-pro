@@ -1,4 +1,6 @@
 export { clearProvidersCache, getCachedProviderAny, loadProviders, useProvidersQuery } from './model/queries'
 export { providerPath, providerTypeLabel } from './model/paths'
 export { providerAvatarColor } from './model/branding'
+export { providerIcon } from './model/provider-icons'
+export { isDnsPlatform } from './model/provider-platforms'
 export { default as ProvidersPanel } from './ui/ProvidersPanel.vue'

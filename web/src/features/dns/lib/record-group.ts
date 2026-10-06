@@ -58,6 +58,12 @@ export function hostGroupLabel(hostKey: string, zoneName = ''): string {
   return hostKey
 }
 
+/** 优先级取值：priority 优先，缺省回退 mx；原值透传，是否数值化由调用方决定 */
+export function recordPriorityValue(record: unknown): number | string | undefined {
+  const { priority, mx } = record as { priority?: number | string; mx?: number | string }
+  return priority ?? mx
+}
+
 export function compareRecordsForGroup(a: RecordLike, b: RecordLike, zoneName = ''): number {
   const ha = recordHostKey(a, zoneName)
   const hb = recordHostKey(b, zoneName)
@@ -66,8 +72,8 @@ export function compareRecordsForGroup(a: RecordLike, b: RecordLike, zoneName = 
   const pb = purposeSortKey(inferRecordPurpose(b, zoneName).purpose)
   if (pa !== pb) return pa - pb
   // MX 多条按优先级
-  const priA = Number((a as { priority?: unknown; mx?: unknown }).priority ?? (a as { mx?: unknown }).mx ?? 0)
-  const priB = Number((b as { priority?: unknown; mx?: unknown }).priority ?? (b as { mx?: unknown }).mx ?? 0)
+  const priA = Number(recordPriorityValue(a) ?? 0)
+  const priB = Number(recordPriorityValue(b) ?? 0)
   if (priA !== priB && (String(a.type || '').toUpperCase() === 'MX' || String(b.type || '').toUpperCase() === 'MX')) {
     return priA - priB
   }

@@ -62,7 +62,7 @@ export function edgeOneDomainFormValues(
 }
 
 /** 提交给后端的字段：IP/域名源站总带 host_header（自定义填值、加速域名模式显式空串以清空旧值） */
-export interface EdgeOneDomainSubmitValues {
+interface EdgeOneDomainSubmitValues {
   origin_type: string
   origin: string
   origin_protocol: string

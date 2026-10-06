@@ -16,13 +16,6 @@ function presentDefinitions(definitions: ProviderDefinition[]): ApiResponse<Prov
 }
 
 export const providerApi = {
-  configured: async (): Promise<ApiResponse<Provider[]>> => {
-    const response = unwrapList<Provider>(await http.get('/providers'))
-    return {
-      ...response,
-      data: response.data.filter((provider) => provider.configured),
-    }
-  },
   list: async (signal?: AbortSignal): Promise<ApiResponse<Provider[]>> => {
     const response = unwrapList<Provider>(await http.get('/providers', { signal }))
     return response

@@ -11,7 +11,6 @@ export interface Zone {
   dns_status?: string
   provider?: string
   provider_type?: string
-  provider_name?: string
   name_servers?: string[]
   effective_dns?: string[]
   active_status?: string
@@ -43,17 +42,13 @@ export interface DnsRecord {
   priority?: number | string
   mx?: number | string
   line?: string
-  record_line?: string
   record_line_id?: string
   line_id?: string
   remark?: string
   comment?: string
   proxied?: boolean
-  subdomain?: string
-  record_type?: string
   provider?: string
   provider_type?: string
-  fqdn?: string
   zone_name?: string
   status?: string
   /** DNSPod 权重：编辑与批量写回时必须原样回传，否则上游重置 */

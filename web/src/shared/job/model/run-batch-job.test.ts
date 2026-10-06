@@ -19,7 +19,7 @@ async function waitFor(predicate: () => boolean, message: string) {
 
 afterEach(() => {
   // confirm 是模块级单例：用例结束前把未决弹窗收尾，避免跨用例串状态
-  if (confirmState.hasPending()) settleConfirm(false)
+  if (confirmState.open.value) settleConfirm(false)
 })
 
 describe('runBatchJob', () => {
@@ -50,7 +50,7 @@ describe('runBatchJob', () => {
       jobProgress,
     })
 
-    await waitFor(() => confirmState.hasPending(), 'failed-job confirmation did not open')
+    await waitFor(() => confirmState.open.value, 'failed-job confirmation did not open')
 
     jobProgress.reset()
     settleConfirm(true)

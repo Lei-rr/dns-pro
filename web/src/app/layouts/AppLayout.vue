@@ -1,21 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
-import {
-  ChevronDown,
-  Cloud,
-  Globe2,
-  LogOut,
-  Moon,
-  Radar,
-  RefreshCw,
-  Search,
-  Server,
-  Settings2,
-  Shield,
-  Sun,
-  UserRound,
-} from '@lucide/vue'
+import { ChevronDown, Globe2, LogOut, Moon, RefreshCw, Search, Settings2, Shield, Sun, UserRound } from '@lucide/vue'
 import { Button } from '@/shared/ui/button'
 import { ChangePasswordDialog } from '@/features/auth'
 import { Badge } from '@/shared/ui/badge'
@@ -29,12 +15,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/shared/ui/dropdown-menu'
-import { loadProviders, providerPath, providerTypeLabel, useProvidersQuery } from '@/features/providers'
+import { loadProviders, providerIcon, providerPath, providerTypeLabel, useProvidersQuery } from '@/features/providers'
 import { useSessionStore } from '@/features/auth'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
 import { cn } from '@/shared/lib/utils'
-import type { Component } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -53,18 +38,6 @@ const activeProviderId = computed(() => {
   return segments[0] === 'p' ? segments[1] || '' : ''
 })
 
-const providerIcons: Record<string, Component> = {
-  dnspod: Globe2,
-  cloudflare: Cloud,
-  saas: Shield,
-  edgeone: Radar,
-  cloudflared: Server,
-}
-
-function iconOf(type: string) {
-  return providerIcons[type] || Globe2
-}
-
 function isActivePath(href: string) {
   if (href === '/') return route.path === '/'
   return route.path === href || route.path.startsWith(`${href}/`)
@@ -72,7 +45,7 @@ function isActivePath(href: string) {
 
 /** 手机顶栏折叠按钮：显示当前模块名，而不是固定「控制台」 */
 const currentNavLabel = computed(() => {
-  if (route.path === '/' || route.path === '') return '控制台'
+  if (route.path === '/') return '控制台'
   if (route.path === '/providers' || route.path.startsWith('/providers/')) return '服务商'
   if (route.path === '/sync') return '同步健康'
   const active = providers.value.find((item) => item.id === activeProviderId.value)
@@ -124,7 +97,7 @@ const commandItems = computed<CommandItem[]>(() => {
       subtitle: `跳转至 ${providerTypeLabel(item.type)} 详情`,
       category: '服务商',
       badge: providerTypeLabel(item.type),
-      icon: iconOf(item.type),
+      icon: providerIcon(item.type),
       action: () => {
         commandOpen.value = false
         router.push(providerPath(item.id))

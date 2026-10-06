@@ -3,7 +3,7 @@ import type { ReconcileResult } from '@/features/sync/model/types'
 /** 单条写入结果：status 与后端 dns-writer 的闭合联合一致（含 failed） */
 export type RepairOutcome = ReconcileResult['results'][number]
 
-export type RepairNotice = {
+type RepairNotice = {
   /** success=没有失败项；error=存在失败项（包括全部失败） */
   tone: 'success' | 'error'
   message: string

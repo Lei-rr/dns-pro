@@ -29,7 +29,6 @@ export type PollJobOptions = {
    */
   fetchJob: (jobId: string) => Promise<JobLike | null>
   intervalMs?: number
-  onTick?: (job: JobLike) => void
   isActive?: (job: JobLike) => boolean
   label?: string
   /** 完成后横幅保留多久再淡出清除，默认 3000ms；0 = 不自动清除 */

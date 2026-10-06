@@ -7,7 +7,7 @@ import { errorMessage } from '@/shared/lib/errors'
 import { notifyDnsSideEffect } from '@/shared/lib/side-effects'
 import { serverFieldErrors } from '@/shared/lib/field-errors'
 import { useRowBusy } from '@/shared/lib/row-busy'
-import { createScopeGeneration, type GenerationOwner } from '@/shared/lib/scope-generation'
+import { createScopeGeneration } from '@/shared/lib/scope-generation'
 import { routeKey } from '@/features/tunnels/lib/route-key'
 import type { TunnelDetailScope } from './use-tunnel-detail'
 
@@ -27,10 +27,6 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
 
   /** hostname + path 唯一确定一条 ingress 规则，行 key 与 busy key 共用此口径（见 lib/route-key） */
   const isRouteBusy = (record: TunnelRoute) => isBusy(routeKey(record))
-
-  function captureMutationOwner(): GenerationOwner {
-    return mutationGeneration.capture({})
-  }
 
   function openCreate() {
     editingRoute.value = null
@@ -52,7 +48,7 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
 
   async function saveRoute() {
     if (saving.value) return
-    const owner = captureMutationOwner()
+    const owner = mutationGeneration.capture({})
     routeErrors.value = {}
     if (!form.hostname.trim()) routeErrors.value.hostname = '请填写 Hostname'
     if (!form.service.trim()) routeErrors.value.service = '请填写 Service'
@@ -91,7 +87,7 @@ export function useTunnelRoutes(props: TunnelDetailScope, invalidateDetail: () =
   }
 
   async function removeRoute(record: TunnelRoute) {
-    const scopeOwner = captureMutationOwner()
+    const scopeOwner = mutationGeneration.capture({})
     const providerId = props.providerId
     const tunnelId = props.tunnelId
     const hostname = record.hostname

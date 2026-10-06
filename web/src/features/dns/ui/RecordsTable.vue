@@ -114,6 +114,10 @@ function recordValue(record: DnsRecord) {
   return String(record.value || record.content || '')
 }
 
+function recordValueDisplay(record: DnsRecord) {
+  return recordValue(record) || '-'
+}
+
 const copiedKeys = ref<Record<string, boolean>>({})
 
 function onCopyClick(record: DnsRecord) {
@@ -220,7 +224,7 @@ function onCopyClick(record: DnsRecord) {
             >
             <TableCell class="w-[14rem] max-w-[18rem]">
               <div class="flex min-w-0 items-center gap-1">
-                <div class="min-w-0 flex-1 truncate" :title="recordValue(record)">{{ recordValue(record) || '-' }}</div>
+                <div class="min-w-0 flex-1 truncate" :title="recordValue(record)">{{ recordValueDisplay(record) }}</div>
                 <AppTooltip
                   v-if="recordValue(record)"
                   :content="copiedKeys[dnsRecordRowKey(record)] ? '已复制！' : '复制记录值'"
@@ -306,7 +310,7 @@ function onCopyClick(record: DnsRecord) {
             <TableCell class="w-[14rem] max-w-[18rem]">
               <div class="flex min-w-0 items-center gap-1">
                 <div class="min-w-0 flex-1 truncate" :title="recordValue(row.record)">
-                  {{ recordValue(row.record) || '-' }}
+                  {{ recordValueDisplay(row.record) }}
                 </div>
                 <AppTooltip
                   v-if="recordValue(row.record)"

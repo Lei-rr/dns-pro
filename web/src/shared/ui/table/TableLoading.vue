@@ -55,7 +55,7 @@ function syncSoft(loading: boolean, empty: boolean, delayMs: number) {
 watch(
   () => [props.loading, props.empty, props.delayMs] as const,
   ([loading, empty, delayMs]) => {
-    syncSoft(Boolean(loading), Boolean(empty), Number(delayMs ?? 120))
+    syncSoft(Boolean(loading), Boolean(empty), delayMs)
   },
   { immediate: true }
 )

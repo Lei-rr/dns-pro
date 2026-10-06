@@ -19,7 +19,7 @@ function isSaaSHostname(value: unknown): value is SaaSHostname {
  * 优选切换请求体：预览与创建共用。
  * 不含 dry_run——预览走独立的 preview 端点，创建端点收到 dry_run 不会再退化成预览。
  */
-export type PreferredApplyPayload = { preferred_domain: string; only_auto_preferred: boolean }
+type PreferredApplyPayload = { preferred_domain: string; only_auto_preferred: boolean }
 
 export const saasApi = {
   hostnames: async (

@@ -18,7 +18,6 @@ type ResourceQueryOptions<T> = {
   queryFn: (context: ResourceQueryContext) => Promise<T>
   /** 每页条数的 localStorage 记忆键；无分页 UI 的读路径不传，避免留下读不到也写不进的死配置 */
   pageSizeScope?: string
-  defaultPageSize?: number
   /** 刷新完成提示；默认「已刷新」，传空字符串则静默 */
   refreshNotice?: string
 }
@@ -42,14 +41,18 @@ type ResourceQuery<T> = {
 
 const REFRESH_MIN_MS = 120
 
+/** 未传 pageSizeScope（无分页 UI）时的每页条数兜底 */
+const FALLBACK_PAGE_SIZE = 20
+
 /**
  * 列表/详情读路径的统一入口：TanStack Query + 显式刷新语义。
  * 取代旧的 useListPage 手写 loading/refresh 组合式，是 shared 内唯一并发原语。
  */
 export function useResourceQuery<T>(options: ResourceQueryOptions<T>): ResourceQuery<T> {
   const client = useQueryClient()
-  const fallbackPageSize = options.defaultPageSize ?? 20
-  const pageSize = ref(options.pageSizeScope ? loadPageSize(options.pageSizeScope, fallbackPageSize) : fallbackPageSize)
+  const pageSize = ref(
+    options.pageSizeScope ? loadPageSize(options.pageSizeScope, FALLBACK_PAGE_SIZE) : FALLBACK_PAGE_SIZE
+  )
   const refreshing = ref(false)
   const refreshFlag = ref(false)
   const dispose = ref(true)

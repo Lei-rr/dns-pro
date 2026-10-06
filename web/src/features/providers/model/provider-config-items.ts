@@ -3,6 +3,11 @@ import type { Provider } from './types'
 
 type ProviderConfigItem = { key: string; value: string; ok?: boolean }
 
+/** 「已配置 / 未配置」徽章：两条返回路径共用同一构造口径 */
+function apiConfigBadge(provider: Provider): ProviderConfigItem {
+  return { key: 'api', value: provider.configured ? '已配置' : '未配置', ok: !!provider.configured }
+}
+
 function linkedProviderName(providers: Provider[], providerId: string) {
   const linked = providers.find((item) => item.id === providerId)
   if (!linked) return '未配置'
@@ -12,11 +17,11 @@ function linkedProviderName(providers: Provider[], providerId: string) {
 /** Present provider links without exposing credentials or account identifiers. */
 export function providerConfigItems(provider: Provider, providers: Provider[]): ProviderConfigItem[] {
   if (provider.type === 'dnspod' || provider.type === 'cloudflare') {
-    return [{ key: 'api', value: provider.configured ? '已配置' : '未配置', ok: !!provider.configured }]
+    return [apiConfigBadge(provider)]
   }
 
   const items: ProviderConfigItem[] = []
-  const fields = (provider.fields || {}) as Record<string, string>
+  const fields = provider.fields
   const pick = (key: string) => String(provider[key] || fields[key] || '').trim()
 
   if (provider.type === 'edgeone') {
@@ -46,7 +51,5 @@ export function providerConfigItems(provider: Provider, providers: Provider[]): 
     if (cloudflare) items.push({ key: 'tunnel-cf', value: linkedProviderName(providers, cloudflare), ok: true })
   }
 
-  return items.length
-    ? items
-    : [{ key: 'api', value: provider.configured ? '已配置' : '未配置', ok: !!provider.configured }]
+  return items.length ? items : [apiConfigBadge(provider)]
 }

@@ -127,7 +127,6 @@ function presentDomain(provider: DnsProviderRef, domain: Zone): Zone {
     ...domain,
     provider: provider.id,
     provider_type: type,
-    provider_name: provider.name || dnsProviderTypeLabel(type),
     name_servers: domain.name_servers || domain.effective_dns || [],
     access_status: domain.access_status || domain.status || domain.dns_status,
   }
@@ -148,7 +147,6 @@ function presentRecord(provider: DnsProviderRef, domain: string, record: DnsReco
       ...record,
       provider: provider.id,
       provider_type: 'cloudflare',
-      fqdn,
       name: host,
       value: record.content,
       line: '默认',

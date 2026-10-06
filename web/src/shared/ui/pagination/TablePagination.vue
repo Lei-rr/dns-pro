@@ -8,8 +8,7 @@ import PaginationNext from './PaginationNext.vue'
 import PaginationPrevious from './PaginationPrevious.vue'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
 import { cn } from '@/shared/lib/utils'
-
-const PAGE_SIZE_OPTIONS = [10, 20, 50, 100] as const
+import { PAGE_SIZE_OPTIONS } from '@/shared/lib/page-size'
 
 const props = withDefaults(
   defineProps<{

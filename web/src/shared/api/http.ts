@@ -216,8 +216,6 @@ const http = {
     request<T>('POST', url, { ...(config || {}), data }),
   put: <T = unknown>(url: string, data?: unknown, config?: RequestConfig) =>
     request<T>('PUT', url, { ...(config || {}), data }),
-  patch: <T = unknown>(url: string, data?: unknown, config?: RequestConfig) =>
-    request<T>('PATCH', url, { ...(config || {}), data }),
 }
 
 export function withRefresh(options: Record<string, unknown> = {}) {

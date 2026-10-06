@@ -1,7 +1,7 @@
 type MutationSideEffectStatus = 'completed' | 'skipped' | 'failed'
 
 /** @public 前端副作用契约，由审计探针校验 */
-export interface MutationSideEffect {
+interface MutationSideEffect {
   status: MutationSideEffectStatus
   message: string
   details?: unknown[] | { cleaned?: number; [key: string]: unknown }
