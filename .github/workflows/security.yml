@@ -47,7 +47,7 @@ jobs:
 
       # 第一遍只产出 SARIF：exit-code 保持 0，保证后续上报步骤一定执行
       - name: Trivy scan (SARIF)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dns-pro:scan
           format: sarif
@@ -67,7 +67,7 @@ jobs:
 
       # 第二遍是硬门禁：HIGH/CRITICAL 且存在修复版本 → exit 1
       - name: Trivy gate (HIGH,CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dns-pro:scan
           format: table
