@@ -179,6 +179,8 @@ describe('登录与会话', () => {
 
   it('同一来源连续失败触发 429 锁定，其它来源不受影响', async () => {
     // 登录路由限流：15 分钟窗口内第 6 次请求被拒；前 5 次失败只计失败次数
+    // 本用例是按来源限流 + 「其它来源不受影响」的唯一覆盖（security.test.ts 的重复用例已删除，
+    // 状态码之外的错误码 / retry_after 断言只有这里保留）
     for (let i = 0; i < 4; i++) {
       const res = await app.inject({
         method: 'POST',
@@ -488,7 +490,8 @@ describe('请求 schema 类型契约', () => {
     // 迁移自 isolated-api-probe.ts 的同名契约——它必须有一个模块外的实例化点，
     // 否则这一行会被 tsc 的 noUnusedLocals 当作未使用而失去意义。
     const contract: RequestSchemaTypeContract = true
-    expect(contract).toBe(true)
+    // 类型层已保证 contract 只能是 true：运行时不再断言恒真值，void 只为保留实例化点（noUnusedLocals）
+    void contract
     // 运行时值只承载上面的类型推导，不需要额外断言
     expect(requestSchemaTypeContractSchema).toBeTruthy()
   })

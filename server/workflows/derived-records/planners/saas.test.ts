@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CLOUDFLARE_ORIGIN_LABEL, cloudflareDnsCleanupRecipe, ownershipTxtName, syncRemark } from './saas.planner.js'
+import { cloudflareDnsCleanupRecipe } from './saas.planner.js'
 
 /**
  * 主机名已删除后的清理配方：主机名不存在，记录只能按「名称 + 类型 + 备注」匹配，
@@ -17,7 +17,7 @@ describe('cloudflareDnsCleanupRecipe：按名称定位且备注可证明归属',
     expect(origin?.fqdn).toBe('www.example.com')
     expect(origin?.record.type).toBe('CNAME')
     expect(origin?.record.value).toBe('')
-    expect(origin?.record.note).toBe(syncRemark('origin_cname', 'www.example.com', CLOUDFLARE_ORIGIN_LABEL))
+    expect(origin?.record.note).toBe('业务接入丨www.example.com')
 
     const dcv = byPurpose.get('dcv_delegation')
     expect(dcv?.fqdn).toBe('_acme-challenge.www.example.com')
@@ -25,7 +25,7 @@ describe('cloudflareDnsCleanupRecipe：按名称定位且备注可证明归属',
     expect(dcv?.record.value).toBe('')
 
     const ownership = byPurpose.get('ownership_verification')
-    expect(ownership?.fqdn).toBe(ownershipTxtName('www.example.com'))
+    expect(ownership?.fqdn).toBe('_cf-custom-hostname.www.example.com')
     expect(ownership?.record.type).toBe('TXT')
     expect(ownership?.record.value).toBe('')
 

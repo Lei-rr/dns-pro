@@ -269,26 +269,6 @@ describe('安全回归：会话 / CSRF / 上游路径 / 信息泄露 / 暴力破
     expect((await login(app, 'second-password', '10.0.0.4')).response.statusCode).toBe(200)
   })
 
-  it('同一来源连续失败：前 5 次 401，第 6 次触发限流；其它来源不受影响', async () => {
-    await seedCredentials('first-password')
-    const app = await startApp()
-
-    const attacker = '172.16.0.1'
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      expect((await login(app, 'wrong-password', attacker)).response.statusCode, `第 ${attempt} 次失败应为 401`).toBe(
-        401
-      )
-    }
-    expect((await login(app, 'first-password', attacker)).response.statusCode, '同一来源连续失败必须被限流').toBe(429)
-
-    // 被拦的只是攻击来源：管理员从其它 IP 仍可登录（否则任意来源都能锁死管理员）
-    expect(
-      (await login(app, 'first-password', '10.1.1.1')).response.statusCode,
-      '其它来源不应被攻击者的失败计数影响'
-    ).toBe(200)
-    // 连续失败要跑满 10+ 次 scrypt 校验，全量并行执行时默认 5s 超时不够
-  }, 30_000)
-
   it('轮换来源的分布式猜测最终被全局兜底拦截', async () => {
     await seedCredentials('first-password')
     const app = await startApp()

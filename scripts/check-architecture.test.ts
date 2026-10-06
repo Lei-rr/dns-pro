@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,6 +15,16 @@ import { afterAll, describe, expect, it } from 'vitest'
  * 注意：基础样例是「干净」的（无任何违规），因此每条负样本都能明确对应到被钉住的规则。
  */
 const checkerPath = fileURLToPath(new URL('./check-architecture.mjs', import.meta.url))
+
+/**
+ * 守卫源码里的规则执行范围清单（ruleScopes）：条数口径直接来自源码，不在测试里写死。
+ * 实测口径：always 16 条（两种模式都跑）、full 19 条（仅全量模式跑），合计 35 条。
+ */
+const declaredRuleScopes = [
+  ...readFileSync(checkerPath, 'utf8').matchAll(/\[\s*'ARCH\d+'\s*,\s*'(always|full)'\s*\]/g),
+].map((match) => match[1])
+const declaredAlwaysCount = declaredRuleScopes.filter((scope) => scope === 'always').length
+const declaredTotalCount = declaredRuleScopes.length
 
 const workspaces: string[] = []
 afterAll(() => {
@@ -418,7 +428,12 @@ describe('架构守卫：基础样例', () => {
 })
 
 describe('架构守卫：执行范围披露与清单自检', () => {
-  it('默认模式跑满全部规则，--fast 少跑并披露 final=0 与执行条数', () => {
+  it('默认模式跑满全部规则，--fast 只跑 always 集合并披露 final=0 与执行条数', () => {
+    // 自检：清单必须解析到，否则下面的条数断言会随解析失败一起失真
+    expect(declaredTotalCount).toBeGreaterThan(0)
+    expect(declaredAlwaysCount).toBeGreaterThan(0)
+    expect(declaredAlwaysCount).toBeLessThan(declaredTotalCount)
+
     const fixture = createFixture()
     const full = runChecker(fixture.dir)
     const fast = runChecker(fixture.dir, ['--fast'])
@@ -427,10 +442,14 @@ describe('架构守卫：执行范围披露与清单自检', () => {
     const fastScope = /rules=(\d+)\/(\d+) final=(\d)/.exec(fast.output)
     expect(fullScope).not.toBeNull()
     expect(fastScope).not.toBeNull()
-    expect(Number(fullScope?.[1])).toBe(Number(fullScope?.[2]))
+    // 全量模式：执行条数 = 清单总数，final=1
+    expect(Number(fullScope?.[1])).toBe(declaredTotalCount)
+    expect(Number(fullScope?.[2])).toBe(declaredTotalCount)
     expect(Number(fullScope?.[3])).toBe(1)
+    // --fast：只跳过 full 规则，真正执行的条数必须正好等于 always 集合（少一条就是漏跑规则）
+    expect(Number(fastScope?.[1])).toBe(declaredAlwaysCount)
+    expect(Number(fastScope?.[2])).toBe(declaredTotalCount)
     expect(Number(fastScope?.[3])).toBe(0)
-    expect(Number(fastScope?.[1])).toBeLessThan(Number(fastScope?.[2]))
     expect(fast.output).toContain('architecture-note=fast mode skips')
   })
 

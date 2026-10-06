@@ -34,7 +34,8 @@ function codeOf(error: unknown): string {
 }
 
 export function isTransportErrorCode(value: unknown): value is TransportErrorCode {
-  return typeof value === 'string' && value in TRANSPORT_ERROR_HINTS
+  // 必须挡原型链：`in` 会命中原型（'toString' in {} === true），命中的函数会被 errors.ts 当作提示文案返回
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(TRANSPORT_ERROR_HINTS, value)
 }
 
 /**

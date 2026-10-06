@@ -1,22 +1,34 @@
 import { readFile } from 'node:fs/promises'
+import type { FastifyReply } from 'fastify'
 import { describe, expect, it } from 'vitest'
 import { AuditLog, auditActor, type AuditEvent } from './audit-log.js'
+import {
+  createDnsBatchHandler,
+  deleteDnsBatchHandler,
+  updateDnsBatchHandler,
+} from '../../workflows/dns-batch/dns-batch.handlers.js'
+import {
+  createSaaSBatchDeleteHandler,
+  createSaaSBatchUpdateHandler,
+} from '../../workflows/saas-dns-sync/saas-batch.handlers.js'
+import {
+  createEdgeOneBatchDeleteHandler,
+  createEdgeOneBatchDisableHandler,
+} from '../../workflows/edge-one-dns-sync/edge-one-dns-sync.handlers.js'
+import { createPreferredApplyHandler } from '../../workflows/saas-dns-sync/preferred-apply.handlers.js'
 
 /**
  * 迁移自 scripts/isolated-audit-probe.ts（F6 关键操作审计：批量 / 凭据变更 / 会话吊销 / 派生记录对账）。
  * 审计的权威留痕是日志；内存环形缓冲只为 UI 提供最近事件的查询入口（不持久化）。
- * 这里校验：缓冲语义（最新在前 / 容量上限）+ 四类动作真的在写路径上落点 + 路由已注册。
+ * 这里校验：缓冲语义（最新在前 / 容量上限）+ 批量入口走真实 handler 落在 sink 上
+ * + 其余动作与查询路由的源码落点（凭据变更 / 会话吊销 / 对账的链路上游在各自测试域覆盖）。
  */
 
 // 静态断言读源码文件（不是构建产物）：写路径是否落点的权威在这里
 const read = async (file: string) => await readFile(new URL(`../../${file}`, import.meta.url), 'utf8')
-const [auth, providers, dnsBatch, saasBatch, edgeOne, preferred, reconcile, routes] = await Promise.all([
+const [auth, providers, reconcile, routes] = await Promise.all([
   read('modules/system/auth/auth.handlers.ts'),
   read('workflows/provider-management/provider-management.handlers.ts'),
-  read('workflows/dns-batch/dns-batch.handlers.ts'),
-  read('workflows/saas-dns-sync/saas-batch.handlers.ts'),
-  read('workflows/edge-one-dns-sync/edge-one-dns-sync.handlers.ts'),
-  read('workflows/saas-dns-sync/preferred-apply.handlers.ts'),
   read('workflows/derived-records/reconcile.handlers.ts'),
   read('app/routes.ts'),
 ])
@@ -73,6 +85,26 @@ describe('AuditLog 环形缓冲', () => {
   })
 })
 
+/** 最小回复桩：批量 handler 只调用 reply.status(...).send(...)，返回值不参与断言 */
+type ReplyStub = { status(code: number): ReplyStub; send(payload: unknown): unknown }
+const replyStub: ReplyStub = { status: () => replyStub, send: (payload) => payload }
+const stubReply = replyStub as unknown as FastifyReply
+
+/** 最小请求桩：批量 handler 只读 server.ctx / params / body / ip（auditActor 回退用）；as never 适配各自的 FastifyRequest 泛型 */
+function stubRequest(input: {
+  audit: AuditLog
+  workflows: Record<string, unknown>
+  params: Record<string, string>
+  body: Record<string, unknown>
+}): never {
+  return {
+    server: { ctx: { platform: { audit: input.audit }, workflows: input.workflows } },
+    params: input.params,
+    body: input.body,
+    ip: '198.51.100.7',
+  } as never
+}
+
 describe('审计写路径落点', () => {
   it('会话吊销与凭据变更在各自处理器内留痕', () => {
     expect(auth).toMatch(/action: 'session_revoked'/)
@@ -80,15 +112,104 @@ describe('审计写路径落点', () => {
     expect(providers).toMatch(/action: 'credential_change'/)
   })
 
-  it('三个批量操作共用同一审计入口，三种操作字面量齐全', () => {
-    expect((dnsBatch.match(/recordBatchAudit\(request, \{/g) ?? []).length).toBe(3)
-    expect(dnsBatch).toMatch(/action: 'batch'/)
-    for (const operation of ['create', 'delete', 'update']) {
-      expect(dnsBatch).toMatch(new RegExp(`operation: '${operation}'`))
+  it('三个批量操作共用同一审计入口，sink 逐条收到完整记录', async () => {
+    const events: AuditEvent[] = []
+    const audit = new AuditLog((event) => events.push(event))
+    const request = (
+      params: Record<string, string>,
+      body: Record<string, unknown>,
+      workflows: Record<string, unknown>
+    ) => stubRequest({ audit, workflows, params, body })
+
+    // DNS 三个批量操作（create / delete / update）全部走真实 handler
+    const dnsBatch = {
+      createCreate: async () => ({ id: 'job-create' }),
+      createDelete: async () => ({ id: 'job-delete' }),
+      createUpdate: async () => ({ id: 'job-update' }),
     }
-    expect((saasBatch.match(/action: 'batch'/g) ?? []).length).toBe(2)
-    expect((edgeOne.match(/action: 'batch'/g) ?? []).length).toBe(2)
-    expect((preferred.match(/action: 'batch'/g) ?? []).length).toBe(1)
+    const zoneParams = { providerId: 'cf-1', zone: 'example.com' }
+    await createDnsBatchHandler('cloudflare')(
+      request(zoneParams, { records: [{ name: 'www', type: 'A', value: '192.0.2.1' }] }, { dnsBatch }),
+      stubReply
+    )
+    await deleteDnsBatchHandler('cloudflare')(
+      request(zoneParams, { records: [{ id: 'record-1' }] }, { dnsBatch }),
+      stubReply
+    )
+    await updateDnsBatchHandler('cloudflare')(
+      request(zoneParams, { records: [{ id: 'record-1' }], patch: { value: '192.0.2.2' } }, { dnsBatch }),
+      stubReply
+    )
+
+    // SaaS / EdgeOne / 优选应用三条产品线的批量入口同样落在同一 sink 上
+    const saasBatch = {
+      createDelete: async () => ({ id: 'saas-job-delete' }),
+      createUpdate: async () => ({ id: 'saas-job-update' }),
+    }
+    await createSaaSBatchDeleteHandler(
+      request({ providerId: 'saas-1', zoneName: 'example.com' }, { hostnames: ['a.example.com'] }, { saasBatch }),
+      stubReply
+    )
+    await createSaaSBatchUpdateHandler(
+      request(
+        { providerId: 'saas-1', zoneName: 'example.com' },
+        { hostnames: ['a.example.com'], patch: { value: '192.0.2.3' } },
+        { saasBatch }
+      ),
+      stubReply
+    )
+
+    const edgeOneBatch = {
+      createDisable: async () => ({ id: 'edge-job-disable' }),
+      createDelete: async () => ({ id: 'edge-job-delete' }),
+    }
+    await createEdgeOneBatchDisableHandler(
+      request({ providerId: 'eo-1', zoneId: 'zone-1' }, { domains: ['a.example.com'] }, { edgeOneBatch }),
+      stubReply
+    )
+    await createEdgeOneBatchDeleteHandler(
+      request({ providerId: 'eo-1', zoneId: 'zone-1' }, { domains: ['a.example.com'] }, { edgeOneBatch }),
+      stubReply
+    )
+
+    const saasPreferredApply = { create: async () => ({ id: 'preferred-job-1' }) }
+    await createPreferredApplyHandler(
+      request(
+        { providerId: 'saas-1', zoneName: 'example.com' },
+        { preferred_domain: 'pref.example.com', hostnames: ['a.example.com'] },
+        { saasPreferredApply }
+      ),
+      stubReply
+    )
+
+    // sink 实际收到的记录：动作 / 目标 / 操作逐条核对（空记录、错目标或串操作都过不了）
+    expect(events.map((event) => [event.action, event.target])).toEqual([
+      ['batch', 'cloudflare:cf-1/example.com'],
+      ['batch', 'cloudflare:cf-1/example.com'],
+      ['batch', 'cloudflare:cf-1/example.com'],
+      ['batch', 'saas:saas-1/example.com'],
+      ['batch', 'saas:saas-1/example.com'],
+      ['batch', 'edgeone:eo-1/zone-1'],
+      ['batch', 'edgeone:eo-1/zone-1'],
+      ['batch', 'saas-preferred:saas-1/example.com'],
+    ])
+    expect(events.map((event) => event.detail.operation)).toEqual([
+      'create',
+      'delete',
+      'update',
+      'delete',
+      'update',
+      'disable',
+      'delete',
+      'preferred_apply',
+    ])
+    // DNS 三个操作共用 recordBatchAudit：detail 形状（job_id / 条目数）与操作者同样来自真实路径
+    expect(events[0]).toMatchObject({
+      action: 'batch',
+      actor: '198.51.100.7',
+      target: 'cloudflare:cf-1/example.com',
+      detail: { operation: 'create', job_id: 'job-create', records: 1 },
+    })
   })
 
   it('对账走审计入口（不再用 request.log.info 旁路留痕），且查询端点已注册', () => {

@@ -3,6 +3,7 @@ import type { ApiResponse, ApiResult } from '@/shared/api/types'
 import type { JobLike } from '@/shared/job'
 import type { DnsLine, DnsRecord, Zone } from '@/features/dns/model/types'
 import { encodePath } from '@/shared/lib/path'
+import { ownValue } from '@/shared/lib/own-value'
 
 type DnsProviderType = 'dnspod' | 'cloudflare' | 'saas'
 export type DnsProviderRef = { id: string; type: DnsProviderType; name?: string }
@@ -117,7 +118,7 @@ const providerTypeNames: Record<string, string> = {
 
 /** 服务商类型展示名：跨 feature 引用 providers 的同名映射违反分层约束（ARCH005），这里各自维护 */
 export function dnsProviderTypeLabel(type: DnsProviderType): string {
-  return providerTypeNames[type] || type
+  return ownValue<string>(providerTypeNames, type) ?? type
 }
 
 function presentDomain(provider: DnsProviderRef, domain: Zone): Zone {

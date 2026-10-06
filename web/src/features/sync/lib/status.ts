@@ -1,5 +1,6 @@
 import type { BadgeVariants } from '@/shared/ui/badge'
 import type { AuditAction, DerivedStatus, SourceKind, SyncAction } from '../model/types'
+import { ownValue } from '@/shared/lib/own-value'
 
 /** 徽章色与 Badge 组件的变体同源，避免手抄联合类型随组件增删而漂移（cva 的变体含 null/undefined，此处收窄） */
 type BadgeVariant = NonNullable<BadgeVariants['variant']>
@@ -48,11 +49,16 @@ const AUDIT_META: Record<AuditAction, { label: string; variant: BadgeVariant }> 
 
 /** 未知来源只回中文兜底，原始值由调用方放进 title 便于排查 */
 export function sourceLabel(kind: string): string {
-  return SOURCE_LABEL[kind as SourceKind] ?? '未知来源'
+  return ownValue<string>(SOURCE_LABEL, kind) ?? '未知来源'
 }
 
 export function statusMeta(status: string) {
-  return STATUS_META[status as DerivedStatus] ?? { label: '状态未知', variant: 'secondary' as BadgeVariant }
+  return (
+    ownValue<{ label: string; variant: BadgeVariant }>(STATUS_META, status) ?? {
+      label: '状态未知',
+      variant: 'secondary' as BadgeVariant,
+    }
+  )
 }
 
 /** 状态 → 计数文字色（未知状态走兜底色） */
@@ -62,5 +68,10 @@ export function statusTone(status: string): string {
 
 /** 审计动作 → 标签与徽章色；未知动作同样只回中文兜底 */
 export function auditMeta(action: AuditAction) {
-  return AUDIT_META[action] ?? { label: '未知动作', variant: 'secondary' as BadgeVariant }
+  return (
+    ownValue<{ label: string; variant: BadgeVariant }>(AUDIT_META, action) ?? {
+      label: '未知动作',
+      variant: 'secondary' as BadgeVariant,
+    }
+  )
 }

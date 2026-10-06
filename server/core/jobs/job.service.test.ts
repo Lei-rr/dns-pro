@@ -42,6 +42,7 @@ describe('任务快照体积守卫', () => {
     await jobs.patch(failed.id, { status: 'failed', finished_at: Date.now() })
 
     const failedItem = (await jobs.get(failed.id))?.items[0] ?? {}
-    expect(Array.isArray(failedItem.dns_before_records)).toBe(true)
+    // 快照内容必须完整保留：空数组或剥离后的字段都过不了重试恢复
+    expect(failedItem.dns_before_records).toEqual([bigSnapshot])
   })
 })

@@ -46,8 +46,8 @@ describe('DnsPodSaaSSyncAdapter.collectRecordsFor', () => {
 
     zoneError = new ApiError('saas_dnspod_zone_not_found', 'zone missing', 404)
     const missingZone = await adapter.collectRecordsFor('saas-owner', 'example.com', 'www.example.com')
-    // 域名没匹配到不是失败：记录以空 zone 保留，避免清理配方携带无归属目标
-    expect(missingZone.records.every((record) => record.zone === '')).toBe(true)
+    // 域名没匹配到不是失败：返回空快照，避免清理配方携带无归属目标
+    expect(missingZone).toEqual({ hostname_fqdn: 'www.example.com', records: [] })
   })
 })
 

@@ -7,6 +7,11 @@ dist/
 web/dist/
 *.tsbuildinfo
 
+# Test coverage
+coverage/
+coverage-*/
+cov-*/
+
 # Runtime data
 data/
 
@@ -35,5 +40,5 @@ pnpm-debug.log*
 .DS_Store
 Thumbs.db
 
-# 真机测试数据（含真实凭据，禁止提交）
+# 鐪熸満娴嬭瘯鏁版嵁锛堝惈鐪熷疄鍑嵁锛岀姝㈡彁浜わ級
 data-real/

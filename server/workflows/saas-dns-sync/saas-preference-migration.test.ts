@@ -181,7 +181,6 @@ describe('在管判定与所有权 TXT 清理门槛（B7）', () => {
         shouldCleanupOwnershipTxt(providerId: string, hostname: { id?: string; status?: string }): Promise<boolean>
       }
     ).shouldCleanupOwnershipTxt
-    expect(typeof shouldCleanup).toBe('function')
     expect(await shouldCleanup.call(gate, 'saas-owner', { id: 'h-1', status: 'moved' })).toBe(false)
     expect(lookups).toEqual([])
     expect(await shouldCleanup.call(gate, 'saas-owner', { id: 'h-1', status: 'active' })).toBe(true)

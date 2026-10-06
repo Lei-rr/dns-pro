@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getCachedProviderAny, loadProviders, useProvidersQuery } from '@/features/providers'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { ownValue } from '@/shared/lib/own-value'
 import { Button } from '@/shared/ui/button'
 import { Spinner } from '@/shared/ui/spinner'
 import type { ProviderPageProps } from './provider-page-props'
@@ -39,7 +40,9 @@ const PAGE_REGISTRY: Record<ProviderType, { list: Component; detail: Component }
 const page = computed<Component | null>(() => {
   const type = current.value?.type
   if (!type) return null
-  const entry = PAGE_REGISTRY[type]
+  // provider.type 来自接口数据，类型收窄只在编译期成立：裸查表会让 'constructor' 这类键取到原型成员
+  const entry = ownValue<{ list: Component; detail: Component }>(PAGE_REGISTRY, type)
+  if (!entry) return null
   return props.child ? entry.detail : entry.list
 })
 

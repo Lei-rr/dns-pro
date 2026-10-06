@@ -1,3 +1,5 @@
+import { ownValue } from '@/shared/lib/own-value'
+
 const defaultBrand = { avatarColor: '#2f54eb' }
 
 const providerBrands: Record<string, { avatarColor: string }> = {
@@ -9,7 +11,7 @@ const providerBrands: Record<string, { avatarColor: string }> = {
 }
 
 function providerBrand(type: string) {
-  return providerBrands[type] || defaultBrand
+  return ownValue<{ avatarColor: string }>(providerBrands, type) ?? defaultBrand
 }
 
 export function providerAvatarColor(type: string) {

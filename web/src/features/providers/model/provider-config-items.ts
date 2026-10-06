@@ -22,7 +22,12 @@ export function providerConfigItems(provider: Provider, providers: Provider[]): 
 
   const items: ProviderConfigItem[] = []
   const fields = provider.fields
-  const pick = (key: string) => String(provider[key] || fields[key] || '').trim()
+  // 先 trim 再判空：顶层值为纯空白串时它仍是 truthy，用 || 短路会遮住 fields 里的有效关联，
+  // trim 后成空串导致关联丢失并回退成「未配置」徽章
+  const pick = (key: string) => {
+    const top = String(provider[key] ?? '').trim()
+    return top || String(fields[key] ?? '').trim()
+  }
 
   if (provider.type === 'edgeone') {
     const dnspod = pick('dnspod_provider')

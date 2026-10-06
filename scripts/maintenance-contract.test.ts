@@ -34,11 +34,31 @@ function vulnerabilityTotal(run: ReturnType<typeof audit>): number | null {
   }
 }
 
+/**
+ * 取一条 Dockerfile 指令（含行尾 `\` 续行的后续行）；指令不存在直接抛错。
+ * 断言必须落在单条指令窗口内：全文匹配会让 node 与 /api/health 分处两条不相干的指令也算命中。
+ */
+function dockerInstruction(name: string): string {
+  const lines = dockerfile.split(/\r?\n/)
+  const start = lines.findIndex((line) => line.startsWith(`${name} `) || line === name)
+  if (start === -1) throw new Error(`Dockerfile 缺少指令：${name}`)
+  const instruction: string[] = []
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index] ?? ''
+    instruction.push(line)
+    if (!line.trimEnd().endsWith('\\')) break
+  }
+  return instruction.join('\n')
+}
+
 describe('Dockerfile 健康检查契约', () => {
   it('健康检查必须用 node 请求 /api/health，不得依赖镜像内不存在的 curl/wget', () => {
-    expect(dockerfile).toMatch(/^HEALTHCHECK\s/m)
-    expect(dockerfile).toMatch(/node[\s\S]*\/api\/health/)
-    expect(dockerfile).not.toMatch(/HEALTHCHECK[\s\S]{0,300}\b(curl|wget)\b/)
+    const healthcheck = dockerInstruction('HEALTHCHECK')
+
+    // node 与 /api/health 必须在同一条 HEALTHCHECK 指令里（跨指令命中不算数）
+    expect(healthcheck).toMatch(/\bnode\b[\s\S]*\/api\/health/)
+    // 同一条指令里不得出现镜像内没有的 curl/wget
+    expect(healthcheck).not.toMatch(/\b(curl|wget)\b/)
   })
 })
 

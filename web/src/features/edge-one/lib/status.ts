@@ -1,44 +1,50 @@
 import type { BadgeVariants } from '@/shared/ui/badge'
+import { ownValue } from '@/shared/lib/own-value'
+
+const EDGE_ONE_STATUS_LABELS: Record<string, string> = {
+  online: '已生效',
+  process: '配置中',
+  offline: '已停用',
+  forbidden: '已封禁',
+  init: '未生效',
+  active: '已生效',
+  pending: '配置中',
+}
 
 export function edgeOneStatusLabel(status?: string) {
-  const key = String(status || '').toLowerCase()
-  return (
-    {
-      online: '已生效',
-      process: '配置中',
-      offline: '已停用',
-      forbidden: '已封禁',
-      init: '未生效',
-      active: '已生效',
-      pending: '配置中',
-    }[key] || (key ? '状态未知' : '-')
-  )
+  const key = String(status ?? '')
+    .trim()
+    .toLowerCase()
+  return ownValue(EDGE_ONE_STATUS_LABELS, key) ?? (key ? '状态未知' : '-')
+}
+
+const EDGE_ONE_ACCESS_LABELS: Record<string, string> = {
+  dnsPodAccess: 'DNSPod',
+  partial: 'CNAME',
+  full: '全量',
+  noDomainAccess: '无域名',
+  pages: 'Pages',
+  ai: 'AI',
 }
 
 /** EdgeOne zone.Type is access mode, not an ID. */
 export function edgeOneAccessLabel(type?: string) {
-  const key = String(type || '')
-  const map: Record<string, string> = {
-    dnsPodAccess: 'DNSPod',
-    partial: 'CNAME',
-    full: '全量',
-    noDomainAccess: '无域名',
-    pages: 'Pages',
-    ai: 'AI',
-  }
-  return map[key] || map[key.toLowerCase()] || key || '-'
+  const raw = String(type ?? '')
+  return ownValue(EDGE_ONE_ACCESS_LABELS, raw) ?? ownValue(EDGE_ONE_ACCESS_LABELS, raw.toLowerCase()) ?? (raw || '-')
+}
+
+const CERTIFICATE_STATUS_LABELS: Record<string, string> = {
+  applying: '申请中',
+  deployed: '已部署',
+  processing: '部署中',
+  failed: '申请失败',
 }
 
 export function certificateStatusLabel(status?: string) {
-  const key = String(status || '').toLowerCase()
-  return (
-    {
-      applying: '申请中',
-      deployed: '已部署',
-      processing: '部署中',
-      failed: '申请失败',
-    }[key] || (key ? '状态未知' : '-')
-  )
+  const key = String(status ?? '')
+    .trim()
+    .toLowerCase()
+  return ownValue(CERTIFICATE_STATUS_LABELS, key) ?? (key ? '状态未知' : '-')
 }
 
 export function edgeOneHttpsStatusLabel(certificate?: {
@@ -71,7 +77,10 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
 }
 
 export function edgeOneStatusVariant(status?: string): BadgeVariant {
-  return STATUS_VARIANTS[String(status || '').toLowerCase()] || 'outline'
+  const key = String(status ?? '')
+    .trim()
+    .toLowerCase()
+  return ownValue(STATUS_VARIANTS, key) ?? 'outline'
 }
 
 /** HTTPS 展示（判定同 edgeOneHttpsStatusLabel）→ 徽章色 */

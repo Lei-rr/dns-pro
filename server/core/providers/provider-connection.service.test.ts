@@ -78,7 +78,8 @@ describe('ProviderConnectionService：关联链校验先于探测', () => {
     expect(error).toBeInstanceOf(ApiError)
     expect(error).toMatchObject({ code: 'provider_reference_cycle', statusCode: 422 })
     const details = (error as ApiError).details as Record<string, unknown>
-    expect(Array.isArray(details.chain)).toBe(true)
+    // 链路内容必须是「已访问链 + 当前 id」：空数组（未给出链路）过不了
+    expect(details.chain).toEqual(['saas-a', 'saas-a'])
   })
 
   it('正向控制：合法 SaaS → Cloudflare 关联必须探测一次并返回关联 ID', async () => {

@@ -139,9 +139,7 @@ describe('优选域名合并口径：本地偏好 → 顶层 → custom_metadata
     const merged = syncConfig.mergePreference(withMetadata, localPreference)
     expect(merged.preferred_domain).toBe('local.example.net')
     expect(merged.custom_metadata?.preferred_domain).toBe('local.example.net')
-    expect(syncConfig.mergePreference(withMetadata, null).preferred_domain).toBe(
-      effectivePreferredDomain(withMetadata, null)
-    )
+    expect(syncConfig.mergePreference(withMetadata, null).preferred_domain).toBe('top.example.net')
   })
 
   it('DNS 写回目标必须等于读接口给出的优选域名', () => {

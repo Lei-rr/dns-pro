@@ -196,18 +196,20 @@ async function openRowMenu(wrapper: VueWrapper) {
   await flush()
 }
 
-function clickMenuItem(text: string) {
+/**
+ * 取菜单项：找不到就抛错。
+ * 不能用「找不到返回 undefined」的取法——那会让「菜单项根本没渲染」也被可选链静默吞掉、断言照样通过。
+ */
+function getMenuItem(text: string): HTMLElement {
   const item = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
     (element) => String(element.textContent ?? '').trim() === text
   )
   if (!item) throw new Error(`菜单项未渲染：${text}`)
-  item.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  return item
 }
 
-function findMenuItem(text: string): HTMLElement | undefined {
-  return Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
-    (element) => String(element.textContent ?? '').trim() === text
-  )
+function clickMenuItem(text: string) {
+  getMenuItem(text).dispatchEvent(new MouseEvent('click', { bubbles: true }))
 }
 
 beforeEach(() => {
@@ -287,8 +289,8 @@ describe('AccelerationDomainsPanel 过渡态不被静默刷新覆盖', () => {
     expect(wrapper.text()).toContain('配置中')
     expect(wrapper.text()).not.toContain('已生效')
     await openRowMenu(wrapper)
-    expect(findMenuItem('停止加速')?.getAttribute('data-disabled')).not.toBeNull()
-    expect(findMenuItem('删除')?.getAttribute('data-disabled')).not.toBeNull()
+    expect(getMenuItem('停止加速').getAttribute('data-disabled')).not.toBeNull()
+    expect(getMenuItem('删除').getAttribute('data-disabled')).not.toBeNull()
     expect(document.body.textContent).toContain('配置中，暂不可操作')
   })
 

@@ -10,7 +10,6 @@ import { edgeOneHttpsStatusLabel } from './status'
 
 describe('EdgeOne HTTPS 状态文案（certificate → 展示）', () => {
   it('缺少证书或 mode=disable → 未开启', () => {
-    expect(typeof edgeOneHttpsStatusLabel).toBe('function')
     expect(edgeOneHttpsStatusLabel()).toBe('未开启')
     expect(edgeOneHttpsStatusLabel({ mode: 'disable' })).toBe('未开启')
   })

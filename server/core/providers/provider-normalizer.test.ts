@@ -115,19 +115,19 @@ describe('服务商 ID 与字段长度上限：两处校验共用的唯一口径
   })
 
   it('字段长度上限表：密钥与关联字段各有上限，未登记字段回落默认值 255', () => {
-    expect(PROVIDER_FIELD_MAX_LENGTHS.secret_key).toBe(256)
-    expect(PROVIDER_FIELD_MAX_LENGTHS.cloudflare_provider).toBe(64)
     expect(PROVIDER_FIELD_MAX_LENGTH_DEFAULT).toBe(255)
-    for (const field of [
-      'secret_id',
-      'secret_key',
-      'api_token',
-      'account_id',
-      'dnspod_provider',
-      'cloudflare_provider',
-      'cloudflare_dns_provider',
-    ]) {
-      expect(typeof PROVIDER_FIELD_MAX_LENGTHS[field], `${field} 缺少长度上限`).toBe('number')
+    // 逐字段断言具体上限：只查类型会放过任何数值漂移（schema 层与归一化共用本表）
+    const expectedMaxLengths: ReadonlyArray<readonly [string, number]> = [
+      ['secret_id', 128],
+      ['secret_key', 256],
+      ['api_token', 512],
+      ['account_id', 128],
+      ['dnspod_provider', 64],
+      ['cloudflare_provider', 64],
+      ['cloudflare_dns_provider', 64],
+    ]
+    for (const [field, maxLength] of expectedMaxLengths) {
+      expect(PROVIDER_FIELD_MAX_LENGTHS[field], `${field} 长度上限漂移`).toBe(maxLength)
     }
   })
 })

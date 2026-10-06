@@ -42,7 +42,6 @@ describe('加速域名分页缓存键', () => {
     const service = serviceWith(calls)
     // 带过滤的整页查询只在本服务内部使用：私有方法直取以覆盖真实缓存键
     const page = (service as unknown as PageCall).page
-    expect(typeof page).toBe('function')
 
     await page.call(service, 'cf-1', 'zone-1', 1, 100, { type: 'A', name: 'a.example.com' })
     await page.call(service, 'cf-1', 'zone-1', 1, 100, { type: 'A', name: 'a.example.com' })

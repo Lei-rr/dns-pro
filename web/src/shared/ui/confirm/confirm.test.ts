@@ -58,12 +58,10 @@ describe('确认手势契约：未决状态与结算', () => {
     const pending = confirmDialog({ title: '批量失败', description: '失败 1 条\n\nwww: 失败' })
 
     expect(confirmState.open.value).toBe(true)
-    expect(confirmState.open.value).toBe(true)
 
     settleConfirm(true)
 
     await expect(pending).resolves.toBe(true)
-    expect(confirmState.open.value).toBe(false)
     expect(confirmState.open.value).toBe(false)
   })
 })

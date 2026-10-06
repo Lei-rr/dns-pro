@@ -17,6 +17,7 @@ import {
 } from '@/features/providers'
 import { toast } from '@/shared/lib/toast'
 import { errorMessage } from '@/shared/lib/errors'
+import { ownValue } from '@/shared/lib/own-value'
 
 const { providers, loading } = useProvidersQuery()
 const count = computed(() => providers.value.length)
@@ -31,7 +32,7 @@ const typeBlurbs: Record<string, string> = {
 }
 
 function metaOf(type: string) {
-  return { blurb: typeBlurbs[type] || '进入管理', icon: providerIcon(type) }
+  return { blurb: ownValue<string>(typeBlurbs, type) ?? '进入管理', icon: providerIcon(type) }
 }
 
 onMounted(async () => {

@@ -23,7 +23,6 @@ describe('repairHostnameDns：复用既有 upsert 而非另写一套', () => {
         repairHostnameDns(providerId: string, zoneName: string, hostname: string): Promise<Record<string, unknown>>
       }
     ).repairHostnameDns
-    expect(typeof repair).toBe('function')
 
     const result = await repair.call(workflow, 'saas', 'example.com', 'www.example.com')
     expect(calls).toEqual(['sync:www.example.com'])
