@@ -100,7 +100,12 @@ export async function resolveDnsPodSaasTarget(
   if (dnspodProviderId === '') {
     throw new ApiError('saas_dnspod_provider_missing', 'SaaS provider is not linked to a DNSPod provider', 422)
   }
-  const zone = explicitZone.trim() || (await deps.hostnames.syncConfig(providerId, fqdn)).sync_zone
+  // 两个来源都要归一：sync_zone 是用户在前端配置的，带首尾空格时仍是 truthy，
+  // 会绕过下面的「空则退回后缀匹配」判定，拿一个带空格的站点名去 requireExplicit。
+  // 短路语义必须保留——显式站点已给出时不去读主机名同步配置。
+  const explicitZoneValue = explicitZone.trim()
+  const configuredZone = explicitZoneValue ? '' : (await deps.hostnames.syncConfig(providerId, fqdn)).sync_zone.trim()
+  const zone = explicitZoneValue || configuredZone
   if (zone) {
     try {
       return {
@@ -164,7 +169,9 @@ export async function resolveCloudflareSaasTarget(
   const sync = explicit.skipHostnameConfig ? null : await deps.hostnames.syncConfig(providerId, hostnameFqdn)
   const cloudflareProviderId =
     explicit.provider?.trim() || sync?.sync_provider_id || (await saasDefaultCloudflareProviderId(deps, providerId))
-  let zoneName = (explicit.zone?.trim() || sync?.sync_zone || '').toLowerCase()
+  // 两个来源都归一：zoneOwnsHostname 内部会 normalizeFqdn，所以归属判定本身不会错，
+  // 但 zoneName 还要作为返回值传出去写进解析记录，带空格会一路传播
+  let zoneName = (explicit.zone?.trim() || sync?.sync_zone?.trim() || '').toLowerCase()
   if (zoneName !== '' && !deps.hostnames.zoneOwnsHostname({ zone: zoneName, fqdn: hostnameFqdn })) zoneName = ''
   zoneName ||= normalizeFqdn(cfZoneName)
   if (zoneName === '') {

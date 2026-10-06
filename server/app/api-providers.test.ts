@@ -481,8 +481,9 @@ describe('Cloudflared 隧道令牌副作用与缓存', () => {
     expect(tunnelCreates).toBe(1)
     expect(createTunnel.json().data.tunnel.id).toBe('tunnel-1')
     expect(createTunnel.json().data.token).toBeNull()
-    expect(createTunnel.json().side_effects.tunnel.token.status).toBe('failed')
-    expect(createTunnel.json().side_effects.tunnel.token.message).toMatch(/token/i)
+    // 副作用随业务字段一起在 data 下（与全仓其它 handler 一致）
+    expect(createTunnel.json().data.side_effects.tunnel.token.status).toBe('failed')
+    expect(createTunnel.json().data.side_effects.tunnel.token.message).toMatch(/token/i)
 
     tokenFetchFails = false
     const retriedToken = await app.inject({

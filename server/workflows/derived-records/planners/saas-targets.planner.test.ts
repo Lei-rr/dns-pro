@@ -304,6 +304,22 @@ describe('resolveDnsPodSaasTarget：显式优先，显式站点失效时回退�
     expect(target).toEqual({ providerType: 'dnspod', providerId: 'dp-1', zone: 'example.com' })
     expect(calls).toEqual(['syncConfig:saas-1:a.example.com:', 'catalog.resolve:dp-1:a.example.com:saas'])
   })
+  it('同步站点带首尾空白时先归一，不拿带空格的站点名去 requireExplicit', async () => {
+    // 空白串是 truthy：不 trim 会穿过下面的「空则退回后缀匹配」判定，
+    // 拿 '  example.com  ' 去打一次必然失败的上游查询，再回退——白跑一趟
+    const { deps, calls } = plannerDeps({
+      syncConfig: () => explicitSyncConfig({ sync_provider_id: 'dp-1', sync_zone: '  example.com  ' }),
+    })
+    const target = await resolveDnsPodSaasTarget(
+      deps,
+      'saas-1',
+      hostname({ sync_provider_id: 'dp-1' }),
+      'www.example.com'
+    )
+
+    expect(target).toEqual({ providerType: 'dnspod', providerId: 'dp-1', zone: 'example.com' })
+    expect(calls).toContain('catalog.requireExplicit:dp-1:example.com:saas')
+  })
 })
 
 describe('optionalDnsPodSaasTarget：失败以 ok:false 显式标记，不与成功目标混用同一形状', () => {
@@ -378,6 +394,23 @@ describe('resolveCloudflareSaasTarget：站点必须托管主机名', () => {
       'zoneOwnsHostname:example.com:www.example.com',
       'idByName:cf-explicit:example.com',
     ])
+  })
+
+  it('同步站点带首尾空白时归一后再做归属判定与站点 ID 解析', async () => {
+    // zoneOwnsHostname 内部会 normalizeFqdn，所以归属判定不受空白影响；
+    // 但 zoneName 会作为返回值传出去写进解析记录，必须在源头归一
+    const { deps, calls } = plannerDeps({
+      syncConfig: () => explicitSyncConfig({ sync_zone: '  Example.COM  ', sync_provider_id: 'cf-sync' }),
+    })
+    const target = await resolveCloudflareSaasTarget(deps, 'saas-1', 'www.example.com')
+
+    expect(target).toEqual({
+      providerType: 'cloudflare',
+      providerId: 'cf-sync',
+      zone: 'example.com',
+      zoneId: 'zone-id:example.com',
+    })
+    expect(calls).toContain('idByName:cf-sync:example.com')
   })
 
   it('未显式指定时取主机名同步配置的站点与服务商，不读服务商默认值', async () => {

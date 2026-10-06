@@ -447,7 +447,7 @@ describe('隧道创建：响应、副作用与失败路径', () => {
       connections: [],
     })
     expect(response.json().data.token).toBe('tok-1')
-    expect(response.json().side_effects).toBeUndefined()
+    expect(response.json().data.side_effects).toBeUndefined()
 
     const postCall = callsOf('POST')[0]
     expect(postCall?.path).toBe(TUNNEL_PATH)
@@ -466,7 +466,7 @@ describe('隧道创建：响应、副作用与失败路径', () => {
     expect(response.statusCode, response.body).toBe(201)
     expect(response.json().data.token).toBeNull()
     expect(response.json().data.tunnel.id).toBe('tunnel-created')
-    expect(response.json().side_effects.tunnel.token).toEqual({
+    expect(response.json().data.side_effects.tunnel.token).toEqual({
       status: 'failed',
       message: 'Cloudflare connection failed',
       details: [{ tunnel_id: 'tunnel-created' }],
@@ -603,9 +603,9 @@ describe('隧道令牌：读取、形状与轮换', () => {
     const response = await injectJson('POST', `/${TUNNEL_ID}/token/rotate`)
 
     expect(response.statusCode, response.body).toBe(200)
-    // 副作用一律在响应顶层（与 create 同构），data 里只留业务字段
+    // 副作用随业务字段一起在 data 下（与全仓其它 handler 一致，前端 readSideEffect 按此读取）
     expect(response.json().data.token).toBeNull()
-    expect(response.json().side_effects.tunnel.token.status).toBe('failed')
+    expect(response.json().data.side_effects.tunnel.token.status).toBe('failed')
     expect(callsOf('PATCH')).toHaveLength(1)
   })
 })

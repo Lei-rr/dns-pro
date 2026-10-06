@@ -139,12 +139,28 @@ describe('成功响应形态：不臆造字段，也不吞掉非 JSON 文本', (
     await expect(new CloudflareClient('token').get('zones')).resolves.toEqual(payload)
   })
 
-  it('上游返回非 JSON 文本时原样返回文本', async () => {
+  it('上游返回非 JSON 文本时按无效响应拒绝，不冒充 API 响应对象', async () => {
+    // 网关 / 代理会直接吐 HTML：BaseHttpClient 此时把原始文本当字符串返回，
+    // client 门面必须拒绝——否则调用方读 .result 恒为 undefined 却不报错，故障被显示成空数据
     installFetch(
       () => new Response('<html>gateway error</html>', { status: 200, headers: { 'content-type': 'text/html' } })
     )
 
-    await expect(new CloudflareClient('token').get('zones')).resolves.toBe('<html>gateway error</html>')
+    const error = await captured(() => new CloudflareClient('token').get('zones'))
+
+    expect(error).toMatchObject({
+      code: 'cloudflare_invalid_response',
+      statusCode: 502,
+      details: { upstream_body: '<html>gateway error</html>' },
+    })
+  })
+
+  it('上游返回 JSON 数组时同样拒绝（数组不是 API 响应对象）', async () => {
+    installFetch(() => jsonResponse([1, 2, 3]))
+
+    const error = await captured(() => new CloudflareClient('token').get('zones'))
+
+    expect(error).toMatchObject({ code: 'cloudflare_invalid_response', statusCode: 502 })
   })
 
   it('上游返回空响应体时归一为空对象', async () => {

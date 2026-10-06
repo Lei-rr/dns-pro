@@ -50,9 +50,12 @@ export class CloudflareClient extends BaseHttpClient {
 
   private async send(config: HttpRequestConfig): Promise<CloudflareApiResponse> {
     try {
-      const response = (await this.request(config)) as CloudflareApiResponse | null
-      if (response?.success === false) throw cloudflareError(response)
-      return response ?? {}
+      // 上游不一定回 JSON：网关或代理会直接吐文本 / HTML，BaseHttpClient 此时把原始文本当字符串返回。
+      // 若在此断言成对象，调用方读 .result 会恒为 undefined 却看不出异常——防线不该只靠下游的
+      // parseCloudflare* 与调用点守卫，门面这一层就要把非对象挡掉。
+      const response = asApiResponse(await this.request(config))
+      if (response.success === false) throw cloudflareError(response)
+      return response
     } catch (error) {
       // 网络层失败（无上游响应体）统一为连接失败
       if (error instanceof ApiError && error.code === 'http_error' && error.statusCode === 502 && !error.details) {
@@ -63,6 +66,17 @@ export class CloudflareClient extends BaseHttpClient {
       throw error
     }
   }
+}
+
+/** 空响应体按空对象处理（DELETE 等无返回体的接口）；非对象一律拒绝，不冒充 CloudflareApiResponse */
+function asApiResponse(raw: unknown): CloudflareApiResponse {
+  if (raw === null || raw === undefined) return {}
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ApiError('cloudflare_invalid_response', 'Cloudflare returned a non-JSON response', 502, {
+      upstream_body: typeof raw === 'string' ? raw.slice(0, 500) : raw,
+    })
+  }
+  return raw as CloudflareApiResponse
 }
 
 function cloudflareError(response: CloudflareApiResponse): ApiError {

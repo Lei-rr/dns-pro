@@ -24,13 +24,17 @@ export async function listTunnelsHandler(
   return reply.send(success(result))
 }
 
+/**
+ * 注意：本模块的副作用（side_effects）随业务字段一起放在 data 下，与全仓其它 handler 一致；
+ * 前端经 shared/lib/side-effects.ts 的 readSideEffect 统一读取。api-response 的 success(data, sideEffects)
+ * 虽然支持顶层承载，但目前没有任何调用方使用，贸然在本模块单独切过去会造成半统一。
+ */
 export async function createTunnelHandler(
   request: FastifyRequest<RequestOf<typeof cloudflaredTunnelStoreSchema>>,
   reply: FastifyReply
 ) {
   const result = await request.server.ctx.modules.tunnels.tunnels.create(request.params.providerId, request.body.name)
-  const { side_effects, ...data } = result
-  return reply.status(201).send(success(data, side_effects))
+  return reply.status(201).send(success(result))
 }
 
 export async function getTunnelHandler(
@@ -75,9 +79,7 @@ export async function rotateTunnelTokenHandler(
     request.params.providerId,
     request.params.tunnelId
   )
-  // 与 createTunnelHandler 同构：副作用一律提到响应顶层，不在 data 里留第二套解构
-  const { side_effects, ...data } = result
-  return reply.send(success(data, side_effects))
+  return reply.send(success(result))
 }
 
 export async function getTunnelConfigHandler(
