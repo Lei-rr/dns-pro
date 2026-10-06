@@ -139,20 +139,20 @@ npm run dev:web
 
 ```text
 server/
-  src/
-    main.ts                  # 进程入口
-    app/                     # 唯一组装根：config / context / modules / workflows / routes / plugins
-    domains/                 # 产品线域：cloudflare、dnspod、edgeone、system
-    workflows/               # 跨域用例、DNS 同步与批量任务编排
-    kernel/                  # 通用运行时：store、jobs、cache、http、providers、crypto、contracts
-    lib/                     # 纯工具，无业务语义与 IO
-    types/fastify.d.ts
+  main.ts                    # 进程入口
+  app/                       # 唯一组装根：config / context / modules / workflows / routes / plugins
+  workflows/                 # 跨模块用例：DNS 批量、派生记录、Provider 管理、EdgeOne 与 SaaS 同步
+  modules/                   # 产品线实现：cloudflare（含 saas / tunnel）、dnspod、edge-one、system
+  core/                      # 通用运行时：contracts、http、store、jobs、cache、providers、crypto、security、backup、observability
+  shared/                    # 纯函数与常量，无业务语义与 IO
+
+依赖方向单向向右：app → workflows → modules → core → shared（由 npm run arch:final 强制）
 
 web/src/
   app/                      # 路由与应用壳
   pages/                    # 页面编排
-  features/                 # DNS / SaaS / EdgeOne / Tunnel 业务能力
-  shared/                   # shadcn-vue UI、HTTP、列表/分页/异步所有权工具
+  features/                 # DNS / SaaS / EdgeOne / Tunnel / Provider 业务能力
+  shared/                   # shadcn-vue UI、HTTP、任务轮询、列表与分页工具
 ```
 
 ### 前端组件说明
@@ -206,7 +206,7 @@ SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=127
 | `npm start`          | 生产启动                                                                               |
 | `npm run typecheck`  | TypeScript 检查                                                                        |
 | `npm run lint`       | ESLint                                                                                 |
-| `npm run verify`     | 格式、Lint、双端 Typecheck、架构、死代码、依赖、路由、专项 Probe、构建、静态资源全门禁 |
+| `npm run verify`     | 格式、Lint、双端 Typecheck、架构、死代码、依赖、路由、测试、构建、静态资源全门禁        |
 
 ## 安全建议
 

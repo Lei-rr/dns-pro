@@ -5,10 +5,10 @@ import ts from 'typescript'
 import { parse as parseSfc } from '@vue/compiler-sfc'
 
 /**
- * 架构守卫：单文件脚本，直接 node 运行（npm run arch / arch:final）。
+ * 架构守卫：单文件脚本，直接 node 运行（npm run arch:final）。
  *
  * 执行范围与披露（曾经的缺陷：默认模式静默少跑 19 条 finalMode 门控规则，两种模式的 ok 行文本却完全一致）：
- * - 默认（`npm run arch`、`npm run arch:final`、CI 的 npm run verify）执行**全部**规则；
+ * - 默认（`npm run arch:final`、CI 的 npm run verify）执行**全部**规则；
  * - `--fast`（或 ARCH_FAST=1）才跳过 full 规则，供本地快速迭代，且失败/成功行都会披露 final 与 rules 执行范围；
  * - 全量模式下由 ARCH099 自检「规则清单里声明过的规则是否真的被执行过」，防止清单与实际检查脱节。
  *
@@ -74,20 +74,17 @@ const normalize = (value) => value.replaceAll(path.sep, '/')
 const absolute = (file) => path.join(root, file)
 const exists = (file) => fs.existsSync(absolute(file))
 const read = (file) => fs.readFileSync(absolute(file), 'utf8')
-const walk = (dir) => {
+/**
+ * 统一目录遍历：默认返回树下所有文件；directoriesOnly=true 时返回所有目录（前序，含嵌套）。
+ * （此前 walk 与 walkDirectories 各写一份递归，且 walk 只返回文件曾导致 ARCH015 恒为假）
+ */
+const walk = (dir, { directoriesOnly = false } = {}) => {
   if (!exists(dir)) return []
   return fs.readdirSync(absolute(dir), { withFileTypes: true }).flatMap((entry) => {
     const next = path.posix.join(dir, entry.name)
-    return entry.isDirectory() ? walk(next) : [next]
-  })
-}
-/** 真正枚举目录（walk 只返回文件，曾导致 ARCH015 恒为假） */
-const walkDirectories = (dir) => {
-  if (!exists(dir)) return []
-  return fs.readdirSync(absolute(dir), { withFileTypes: true }).flatMap((entry) => {
-    if (!entry.isDirectory()) return []
-    const next = path.posix.join(dir, entry.name)
-    return [next, ...walkDirectories(next)]
+    if (!entry.isDirectory()) return directoriesOnly ? [] : [next]
+    const children = walk(next, { directoriesOnly })
+    return directoriesOnly ? [next, ...children] : children
   })
 }
 const lineAt = (code, position) => code.slice(0, position).split('\n').length
@@ -947,10 +944,13 @@ if (checkErrorCodes) {
   }
 }
 
-if (checkRoutesFile)
+if (checkRoutesFile) {
+  // 方法清单与扫描期 routeMethods 同源，避免出现第二份硬编码清单
+  const routeCallPattern = new RegExp(`\\bapp\\.(?:${[...routeMethods].join('|')})\\s*\\(`)
   for (const file of backendFiles)
-    if (/\bapp\.(?:get|post|put|patch|delete|head|options)\s*\(/.test(read(file)) && !file.endsWith('.routes.ts'))
+    if (routeCallPattern.test(read(file)) && !file.endsWith('.routes.ts'))
       report('ARCH014', file, 1, 'Fastify route declarations belong in *.routes.ts')
+}
 
 if (checkBatchPresenter) {
   const forbiddenBatchJobFields = new Set(['items', 'execution_owner', 'execution_token', 'lease_until'])
@@ -1066,7 +1066,7 @@ if (checkLegacyRequestParse) {
 // ARCH015：真正枚举目录（此前由 walk(...).map(dirname) 推导候选，而 walk 只返回文件，判定恒为假）
 if (checkEmptyDirs) {
   for (const dir of ['server', 'web/src']) {
-    for (const candidate of walkDirectories(dir)) {
+    for (const candidate of walk(dir, { directoriesOnly: true })) {
       if (fs.readdirSync(absolute(candidate)).length === 0) report('ARCH015', candidate, 1, 'empty directory')
     }
   }
@@ -1127,13 +1127,6 @@ if (finalMode) {
     if (!executedRules.has(id))
       report('ARCH099', 'scripts/check-architecture.mjs', 1, `rule declared but never executed: ${id}`)
   }
-  if (executedRules.size !== ruleScopes.size)
-    report(
-      'ARCH099',
-      'scripts/check-architecture.mjs',
-      1,
-      `executed rule coverage ${executedRules.size}/${ruleScopes.size} in final mode`
-    )
 }
 
 const scopeLine = `rules=${executedRules.size}/${ruleScopes.size} final=${finalMode ? 1 : 0}`

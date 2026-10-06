@@ -74,7 +74,7 @@ COPY --from=builder /app/web/dist ./web/dist
 COPY --chmod=0755 docker/entrypoint.sh /entrypoint.sh
 
 # 以非 root 用户运行；程序文件只读，仅数据目录可写
-RUN mkdir -p /app/data/saas /app/data/jobs \
+RUN mkdir -p /app/data/saas \
   && chown -R node:node /app/data \
   && chmod 700 /app/data
 
