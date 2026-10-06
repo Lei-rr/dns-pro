@@ -41,7 +41,6 @@ const LAYOUT_FILES: Record<string, string> = {
   'server/modules/index.ts': 'export const modulesLayer = 1',
   'server/core/index.ts': 'export const coreLayer = 1',
   'server/shared/index.ts': 'export const sharedLayer = 1',
-  'server/types/index.ts': 'export const typesLayer = 1',
   'web/src/app/index.ts': 'export const appLayer = 1',
   'web/src/pages/index.ts': 'export const pagesLayer = 1',
   'web/src/features/index.ts': 'export const featuresLayer = 1',

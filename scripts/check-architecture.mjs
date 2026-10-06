@@ -620,7 +620,6 @@ for (const file of sourceFiles) {
 if (checkEdgeFull || checkEdgeAlways) {
   function backendLayer(file) {
     if (file === 'server/main.ts') return 'shell'
-    if (file.startsWith('server/types/')) return 'core'
     for (const layer of ['app', 'workflows', 'modules', 'core', 'shared'])
       if (file.startsWith(`server/${layer}/`)) return layer
     return 'other'
@@ -1076,7 +1075,7 @@ if (checkEmptyDirs) {
 // ARCH035：布局前缀目录存在、各层有源文件、别名映射可用（防止「目录/别名改了，门禁照报 ok」）
 if (checkLayout) {
   const layoutLayers = new Map([
-    ['server', ['app', 'workflows', 'modules', 'core', 'shared', 'types']],
+    ['server', ['app', 'workflows', 'modules', 'core', 'shared']],
     ['web/src', ['app', 'pages', 'features', 'shared']],
   ])
   for (const [dir, layers] of layoutLayers) {

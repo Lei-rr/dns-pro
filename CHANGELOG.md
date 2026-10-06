@@ -30,6 +30,8 @@
 ### 移除
 
 - 探针瘦身（Phase 4）：删除源码文本断言型探针（含 `isolated-functional-surface-probe.ts`，约 -233 行），全部行为探针保留。
+- 摘掉 Phase 4 遗漏的两处「源码文本断言」残留及其同类项（读源码断言字符串出现：注释掉关键字照样通过、表格加一列却误报）：`scripts/reconcile-ui-wiring.test.ts`、`scripts/saas-repair-ui.test.ts`，以及 `status.test.ts` 里的表格结构用例。路由注册契约改由 `web/src/app/router/routes.test.ts` 直接断言导出的路由表（兜底路由、登录页 public、布局子路由含 sync/providers、`/p` 前缀与旧链接重定向）。
+- 删除 `server/types/` 顶层：该层只有一个 12 行的 `fastify.d.ts` 模块增强，其内容本就是 HTTP 请求与路由配置的扩展，移入 `server/core/http/fastify.d.ts`；后端顶层由 6 个收敛为 5 个（守卫的层清单与布局样例同步更新）。
 
 ### 安全
 
