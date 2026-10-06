@@ -35,7 +35,7 @@ jobs:
 
       # 只构建到本地 daemon（不推送）；扫描对象与发布镜像共用 Dockerfile
       - name: Build image for scanning
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
