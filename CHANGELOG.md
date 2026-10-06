@@ -3,6 +3,17 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.2] - 2026-10-07
+
+跨模块小标签外观统一：徽章只用灰/黑三档，状态语义改由文案承担。
+
+### 变更
+
+- 标签统一：Badge 删除 `success`（绿）与 `warning`（黄）两个变体，全站只剩 `default`（黑底）/ `secondary`（灰底）/ `outline`（灰描边）/ `destructive`（仅按钮与菜单项使用，没有标签在用）。状态标签收敛为三档——常态 → `secondary`、中间态 → `outline`、异常 → `default`，区分靠 `statusLabel` / `edgeOneStatusLabel` 的中文词表，不再靠色相。
+- 影响面：`saas/lib/status.ts` 的 `statusVariant()` 与 `edge-one/lib/status.ts` 的 `STATUS_VARIANTS` 共 11 条状态映射；`RecordImportDialog` 的导入预览标签，以及同一区块里原本是绿/黄的「新增 / 覆盖」统计数字（同行的「重复跳过」早已是灰的）。
+- 新增 `saas/lib/status.test.ts`（3 例）并为 `edge-one/lib/status.test.ts` 追加 4 例——「只用灰黑三档」这条契约此前没有测试兜底，谁把彩色变体加回来都不会被发现。
+- CSS 产物减少约 1.7 kB（81.90 kB → 80.19 kB），即移除的颜色工具类。
+
 ## [1.2.1] - 2026-10-07
 
 DNS 记录页交互回调，同步健康（统一对账）功能下线。

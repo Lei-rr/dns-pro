@@ -1,6 +1,6 @@
 {
   "name": "dns-pro",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / 腾讯云 EdgeOne 一体的 DNS 与隧道管理面板（Node.js 版）",
   "type": "module",
   "workspaces": [

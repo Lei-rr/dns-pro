@@ -38,12 +38,16 @@ export function statusLabel(status?: string | null) {
   return STATUS_LABELS[statusKey(status)] || '状态未知'
 }
 
+/**
+ * 状态 → 徽章色：标签统一只用灰/黑三档（secondary 常态 / outline 中间态 / default 异常），
+ * 语义靠文案区分，不靠色相。跨模块的小标签外观因此保持一致。
+ */
 export function statusVariant(status?: string | null): NonNullable<BadgeVariants['variant']> {
   if (!status) return 'outline'
   const key = statusKey(status)
-  if (GREEN.has(key)) return 'success'
-  if (RED.has(key)) return 'destructive'
-  if (GOLD.has(key)) return 'warning'
+  if (GREEN.has(key)) return 'secondary'
+  if (RED.has(key)) return 'default'
+  if (GOLD.has(key)) return 'outline'
   return 'outline'
 }
 

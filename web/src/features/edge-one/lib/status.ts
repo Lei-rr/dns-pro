@@ -61,19 +61,22 @@ export function edgeOneHttpsStatusLabel(certificate?: {
 /** 徽章色与 Badge 组件的变体同源，避免手抄联合类型随组件增删而漂移（cva 的变体含 null/undefined，此处收窄） */
 type BadgeVariant = NonNullable<BadgeVariants['variant']>
 
-/** 状态 → 徽章色：与 edgeOneStatusLabel/certificateStatusLabel 的词表对齐 */
+/**
+ * 状态 → 徽章色：与 saas/lib/status.ts 用同一套灰/黑三档
+ * （secondary 常态 / outline 中间态 / default 异常），语义靠文案区分，不靠色相。
+ */
 const STATUS_VARIANTS: Record<string, BadgeVariant> = {
-  online: 'success',
-  active: 'success',
-  deployed: 'success',
-  process: 'warning',
-  pending: 'warning',
-  init: 'warning',
-  applying: 'warning',
-  processing: 'warning',
-  offline: 'destructive',
-  forbidden: 'destructive',
-  failed: 'destructive',
+  online: 'secondary',
+  active: 'secondary',
+  deployed: 'secondary',
+  process: 'outline',
+  pending: 'outline',
+  init: 'outline',
+  applying: 'outline',
+  processing: 'outline',
+  offline: 'default',
+  forbidden: 'default',
+  failed: 'default',
 }
 
 export function edgeOneStatusVariant(status?: string): BadgeVariant {

@@ -139,13 +139,13 @@ function handleConfirm() {
       <div v-if="parsedRecords.length" class="space-y-3">
         <div class="grid grid-cols-3 gap-2 text-center">
           <div class="rounded-lg border border-border/60 bg-muted/30 px-2 py-2">
-            <div class="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+            <div class="text-lg font-semibold tabular-nums text-foreground">
               {{ preview.added.length }}
             </div>
             <div class="text-[11px] text-muted-foreground">新增</div>
           </div>
           <div class="rounded-lg border border-border/60 bg-muted/30 px-2 py-2">
-            <div class="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+            <div class="text-lg font-semibold tabular-nums text-foreground">
               {{ preview.overwritten.length }}
             </div>
             <div class="text-[11px] text-muted-foreground">覆盖同名同类型</div>
@@ -168,7 +168,7 @@ function handleConfirm() {
             class="flex items-center justify-between gap-2 p-2 hover:bg-muted/40"
           >
             <div class="flex items-center gap-1.5 min-w-0">
-              <Badge variant="secondary" class="text-[10px] h-4 px-1 shrink-0 text-emerald-600">新增</Badge>
+              <Badge variant="secondary" class="text-[10px] h-4 px-1 shrink-0">新增</Badge>
               <span class="font-semibold truncate max-w-[110px]">{{ rec.name }}</span>
               <Badge variant="outline" class="text-[10px] h-4 px-1 shrink-0">{{ rec.type }}</Badge>
             </div>
@@ -180,7 +180,7 @@ function handleConfirm() {
             class="flex items-center justify-between gap-2 p-2 hover:bg-muted/40"
           >
             <div class="flex items-center gap-1.5 min-w-0">
-              <Badge variant="secondary" class="text-[10px] h-4 px-1 shrink-0 text-amber-600">覆盖</Badge>
+              <Badge variant="outline" class="text-[10px] h-4 px-1 shrink-0">覆盖</Badge>
               <span class="font-semibold truncate max-w-[110px]">{{ item.incoming.name }}</span>
               <Badge variant="outline" class="text-[10px] h-4 px-1 shrink-0">{{ item.incoming.type }}</Badge>
             </div>
