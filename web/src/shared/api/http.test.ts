@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import http from '@/shared/api/http'
+import http, { unwrapItem, unwrapList } from '@/shared/api/http'
 import { CANCELED_CODE, isCanceledError, TIMEOUT_CODE, TRANSPORT_ERROR_HINTS } from '@/shared/api/transport-errors'
 import { errorMessage } from '@/shared/lib/errors'
 
@@ -140,6 +140,70 @@ describe('网络层的中断分类', () => {
     )
 
     await expect(http.get('/ok')).resolves.toMatchObject({ data: { ok: true } })
+  })
+})
+
+/** JSON 成功信封桩：解包器用例只关心 body 形状 */
+function jsonFetch(payload: unknown, status = 200) {
+  return vi.fn(
+    async () => new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } })
+  )
+}
+
+function isHostnamePayload(value: unknown): value is { hostname: string } {
+  return typeof value === 'object' && value !== null && 'hostname' in value && typeof value.hostname === 'string'
+}
+
+describe('成功响应的载荷形状', () => {
+  it('204 空体：载荷如实为 null，不再构造 null as T', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 204 }))
+    )
+    await expect(http.delete('/providers/one')).resolves.toMatchObject({ code: 0, message: 'success', data: null })
+  })
+
+  it('信封缺少 data：同样归一为 null（成功但无载荷）', async () => {
+    vi.stubGlobal('fetch', jsonFetch({ code: 0, message: 'success' }))
+    await expect(http.get('/maybe')).resolves.toMatchObject({ data: null })
+  })
+
+  it('unwrapList：空体归一为空数组', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 204 }))
+    )
+    expect(unwrapList(await http.get('/items')).data).toEqual([])
+  })
+
+  it('unwrapList：{ items } 形状保留分页元数据', async () => {
+    vi.stubGlobal(
+      'fetch',
+      jsonFetch({ code: 0, message: 'success', data: { items: [{ id: 'a' }], pagination: { total: 3 } } })
+    )
+    const response = unwrapList(await http.get('/items'))
+    expect(response.data).toEqual([{ id: 'a' }])
+    expect(response.meta).toMatchObject({ total: 3, count: 1 })
+  })
+
+  it('unwrapList：形状不认识时抛错，而不是把原响应断言成列表', async () => {
+    vi.stubGlobal('fetch', jsonFetch({ code: 0, message: 'success', data: { hostname: 'a.example.com' } }))
+    const response = await http.get('/items')
+    expect(() => unwrapList(response)).toThrowError(/列表/)
+  })
+
+  it('unwrapItem：空体/异形响应抛错，不再把 [] 断言成单条记录透传', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 204 }))
+    )
+    const response = await http.get('/hostname')
+    expect(() => unwrapItem(response, isHostnamePayload)).toThrowError(/详情/)
+  })
+
+  it('unwrapItem：守卫命中时返回载荷本身', () => {
+    const response = unwrapItem({ code: 0, message: 'success', data: { hostname: 'a.example.com' } }, isHostnamePayload)
+    expect(response.data).toEqual({ hostname: 'a.example.com' })
   })
 })
 

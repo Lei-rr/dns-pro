@@ -2,13 +2,12 @@ import type { ProviderRepository } from '../../../core/providers/provider.reposi
 import type { SaaSProvider } from '../../../core/providers/provider.types.js'
 import { ApiError } from '../../../core/http/api-error.js'
 import { normalizeFqdn } from '../../../shared/values.js'
-import type { SaaSSyncDefaultsPort } from '../../../core/contracts/saas-sync-config.port.js'
+import type { SaaSSyncDefaultsPort, SyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
+import { parseSyncTarget, unsupportedSyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import { guessZoneFromFqdn, zoneOwnsHostname, effectivePreferredDomain } from './saas-hostname-rules.js'
 import type { HostnamePreference, SaaSPreferenceService, SyncPreference } from './saas-preference.service.js'
 import { preferenceOf } from './saas-preference.service.js'
-
-type SyncTarget = 'dnspod' | 'cloudflare_dns' | ''
 
 type ExplicitSyncConfig = SyncPreference & { hostname: string }
 type EffectiveSyncConfig = ExplicitSyncConfig & { explicit: boolean }
@@ -59,7 +58,8 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
   presentExplicit(preference: Partial<HostnamePreference> | null | undefined): ExplicitSyncConfig {
     return {
       hostname: text(preference?.hostname),
-      sync_target: text(preference?.sync_target),
+      // 存储行里的目标值在这里显式解析：脏值（手改 JSON / 旧版本写入）直接 422，不静默当成未配置
+      sync_target: parseSyncTarget(preference?.sync_target),
       sync_provider_id: text(preference?.sync_provider_id),
       sync_zone: zoneText(preference?.sync_zone),
       auto_preferred: Boolean(preference?.auto_preferred),
@@ -75,11 +75,18 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
   }
 
   /** 目标对应的默认同步服务商 */
-  async defaultSyncProviderId(saasProviderId: string, target: string): Promise<string> {
+  async defaultSyncProviderId(saasProviderId: string, target: SyncTarget): Promise<string> {
     const provider = await this.requireSaaS(saasProviderId)
-    if (target === 'dnspod') return text(provider.dnspod_provider)
-    if (target === 'cloudflare_dns') return text(provider.cloudflare_dns_provider) || text(provider.cloudflare_provider)
-    return ''
+    switch (target) {
+      case 'dnspod':
+        return text(provider.dnspod_provider)
+      case 'cloudflare_dns':
+        return text(provider.cloudflare_dns_provider) || text(provider.cloudflare_provider)
+      case '':
+        return ''
+      default:
+        return unsupportedSyncTarget(target)
+    }
   }
 
   /** 显式配置 + 默认值 → 生效配置；Cloudflare 目标站点不覆盖主机名时回退 */
@@ -118,25 +125,26 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
       }
     }
 
-    const stored: SyncPreference = {
+    // 已存配置先按原始值读取：脏值只在真正要沿用它时才解析失败，显式提交能直接覆盖修复
+    const storedRaw = {
       sync_target: text(existing?.sync_target),
       sync_provider_id: text(existing?.sync_provider_id),
       sync_zone: zoneText(existing?.sync_zone),
       auto_preferred: Boolean(existing?.auto_preferred),
     }
-    const explicitTarget = text(data.sync_target)
+    const explicitTarget = parseSyncTarget(data.sync_target)
     // 目标被显式切换时旧目标的 provider 不再适用：未显式提交就交回 resolve 取新目标的默认服务商，
     // 否则旧值会把 provider ||= 短路掉，落成目标与类型不匹配的配置（写入时 422 provider_reference_not_found）
-    const providerFallback =
-      explicitTarget !== '' && explicitTarget !== stored.sync_target ? '' : stored.sync_provider_id
+    const switched = explicitTarget !== '' && explicitTarget !== storedRaw.sync_target
     let candidate: SyncPreference = {
-      sync_target: explicitTarget || stored.sync_target,
-      sync_provider_id: text(data.sync_provider_id) || providerFallback,
-      sync_zone: zoneText(data.sync_zone) || stored.sync_zone,
-      auto_preferred: 'auto_preferred' in data ? Boolean(data.auto_preferred) : stored.auto_preferred,
+      sync_target: explicitTarget || parseSyncTarget(storedRaw.sync_target),
+      sync_provider_id: text(data.sync_provider_id) || (switched ? '' : storedRaw.sync_provider_id),
+      sync_zone: zoneText(data.sync_zone) || storedRaw.sync_zone,
+      auto_preferred: 'auto_preferred' in data ? Boolean(data.auto_preferred) : storedRaw.auto_preferred,
     }
     // 请求组合非法时先回退到已存配置，已存配置也非法则清空
     if (isMismatchedCloudflareZone(candidate, fqdn)) {
+      const stored: SyncPreference = { ...storedRaw, sync_target: parseSyncTarget(storedRaw.sync_target) }
       candidate = isMismatchedCloudflareZone(stored, fqdn)
         ? { ...candidate, sync_target: '', sync_provider_id: '', sync_zone: '' }
         : { ...stored, auto_preferred: candidate.auto_preferred }
@@ -212,5 +220,9 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
 
 /** Cloudflare DNS 目标但站点不覆盖主机名（脏配置） */
 function isMismatchedCloudflareZone(config: SyncPreference, fqdn: string): boolean {
-  return config.sync_target === 'cloudflare_dns' && config.sync_zone !== '' && !zoneOwnsHostname(config.sync_zone, fqdn)
+  return (
+    config.sync_target === 'cloudflare_dns' &&
+    config.sync_zone !== '' &&
+    !zoneOwnsHostname({ zone: config.sync_zone, fqdn })
+  )
 }

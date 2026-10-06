@@ -103,7 +103,7 @@ const updateWorkflow = new SaaSDnsSyncWorkflow(
   {
     resolveZoneRef: async () => ({ cloudflareProviderId: 'cf-owner', zoneId: 'zone-1' }),
     updateHostname: async () => ({ id: 'host-1', hostname: 'www.example.com' }),
-    invalidateHostnameCache: () => {},
+    invalidateHostnameAndList: () => {},
   } as never,
   {} as never,
   {

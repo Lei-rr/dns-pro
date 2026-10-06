@@ -5,6 +5,7 @@
  * 在查询时解析。未被任何派生关系声明的主机名一律视为 manual（人工记录，绝不自动删）。
  */
 import { normalizeFqdn } from '../../shared/values.js'
+import type { DnsProviderType } from './dns-record.port.js'
 
 export type RecordOwner = 'saas' | 'tunnel' | 'edgeone' | 'manual'
 
@@ -19,7 +20,7 @@ export interface RecordOwnership {
 }
 
 export interface OwnershipTarget {
-  providerType: string
+  providerType: DnsProviderType
   providerId: string
   zone: string
 }

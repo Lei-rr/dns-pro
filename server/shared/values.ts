@@ -15,6 +15,18 @@ export function parseBool(value: unknown): boolean {
 }
 
 /**
+ * 去空、去重、按需归一大小写。
+ * 是否忽略大小写必须由调用方显式声明：主机名 / 域名列表按不敏感去重，
+ * 而「大小写不同即两个标识」的场景必须原样保留——隐藏的默认值会让调用方看错语义。
+ */
+export function dedupeStrings(values: readonly string[], options: { caseInsensitive: boolean }): string[] {
+  const normalize = options.caseInsensitive
+    ? (value: string) => value.trim().toLowerCase()
+    : (value: string) => value.trim()
+  return [...new Set(values.map((value) => normalize(String(value ?? ''))).filter(Boolean))]
+}
+
+/**
  * 域名转 ASCII（punycode）。上游（Cloudflare 等）以 punycode 存储/返回域名，
  * 含非 ASCII 时才转换，避免无谓开销。
  */

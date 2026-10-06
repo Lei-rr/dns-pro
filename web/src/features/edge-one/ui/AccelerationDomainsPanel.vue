@@ -34,7 +34,6 @@ import AccelerationDomainFormDialog from '@/features/edge-one/ui/AccelerationDom
 import CertificateFormDialog from '@/features/edge-one/ui/CertificateFormDialog.vue'
 import AccelerationDomainsTable from '@/features/edge-one/ui/AccelerationDomainsTable.vue'
 import { formatFailedJobItem, JobProgressAlert, runBatchJob, showBatchFailures, useJobProgress } from '@/shared/job'
-import type { JobLike } from '@/shared/job'
 import { selectedAvailableRows, useRowSelection } from '@/shared/lib/row-selection'
 import { confirmDeleteWithSkipCleanup, confirmDialog } from '@/shared/ui/confirm'
 import { encodePath } from '@/shared/lib/path'
@@ -444,7 +443,7 @@ async function runEdgeBatch(
   await runBatchJob({
     label,
     create,
-    fetchJob: async (id) => (await edgeOneApi.batchJob(providerId, id)).data as Record<string, unknown>,
+    fetchJob: async (id) => (await edgeOneApi.batchJob(providerId, id)).data,
     retry: (id) => edgeOneApi.batchRetry(providerId, id),
     clearSelection: () => selection.clear(),
     onDone: () => runLoad(),
@@ -513,7 +512,7 @@ async function resumeJobs() {
     () => edgeOneApi.batchActive(scopeOwner.value.providerId, scopeOwner.value.zoneId),
     {
       label: 'EdgeOne 批量',
-      fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data as JobLike,
+      fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data,
     }
   )
   if (finished) {
@@ -531,7 +530,7 @@ async function resumeJobs() {
             if (!scopeOwner.active()) return null
             return jobProgress.pollJob(jobId, {
               label: 'EdgeOne 批量',
-              fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data as JobLike,
+              fetchJob: async (id) => (await edgeOneApi.batchJob(scopeOwner.value.providerId, id)).data,
             })
           },
           isActive: () => scopeOwner.active(),

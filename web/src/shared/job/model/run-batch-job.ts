@@ -10,7 +10,8 @@ import type { CreateJobResult, JobLike } from './types'
 export async function runBatchJob(options: {
   label: string
   create: () => Promise<CreateJobResult>
-  fetchJob: (jobId: string) => Promise<JobLike | Record<string, unknown>>
+  /** 详情缺失（空体/null）如实返回 null：类型单一，调用点不需要二次断言成 JobLike */
+  fetchJob: (jobId: string) => Promise<JobLike | null>
   retry?: (jobId: string) => Promise<unknown>
   /** 任务已创建、开始轮询前（适合关弹窗） */
   onStart?: () => void | Promise<void>
@@ -41,15 +42,7 @@ export async function runBatchJob(options: {
 
   await options.onStart?.()
 
-  const poll = () =>
-    jobProgress.pollJob(
-      jobId,
-      {
-        label: options.label,
-        fetchJob: async (id) => (await options.fetchJob(id)) as JobLike,
-      },
-      owner
-    )
+  const poll = () => jobProgress.pollJob(jobId, { label: options.label, fetchJob: options.fetchJob }, owner)
 
   const job = await poll()
   if (!jobProgress.owns(owner) || !job) return null
@@ -74,5 +67,5 @@ export async function runBatchJob(options: {
   if (!jobProgress.owns(owner)) return null
   await options.onDone?.()
   if (!jobProgress.owns(owner)) return null
-  return (job as JobLike) || null
+  return job
 }

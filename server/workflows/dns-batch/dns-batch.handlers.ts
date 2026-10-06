@@ -2,7 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { success } from '../../core/http/api-response.js'
 import type { RequestOf } from '../../core/http/request-schema.js'
 import { auditActor } from '../../core/observability/audit-log.js'
-import type { DnsProviderType } from './dns-batch.workflow.js'
+import type { DnsProviderType } from '../../core/contracts/dns-record.port.js'
 import {
   dnsBatchCreateSchema,
   dnsBatchDeleteSchema,

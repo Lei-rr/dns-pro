@@ -5,12 +5,13 @@
  * 避免"同步"与"对账"两套判据漂移。对外仍经 saas.planner 再导出，调用方不感知。
  */
 import { ApiError } from '../../../core/http/api-error.js'
-import type { DnsRecordValue } from '../../../core/contracts/dns-record.port.js'
+import type { DnsProviderType, DnsRecordValue } from '../../../core/contracts/dns-record.port.js'
 import type { SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
 import type { SaaSHostnameValue } from '../../../core/contracts/saas-hostname.port.js'
 import { recordIdentity, type DesiredRecord } from '../sync-plan.js'
 
-/** SaaS 同步目标厂商：DNSPod 与 Cloudflare DNS */ export type SaaSSyncProviderType = 'dnspod' | 'cloudflare'
+/** SaaS 同步目标厂商：与端口层 DnsProviderType 同源（保留别名，避免调用方大面积改名） */
+export type SaaSSyncProviderType = DnsProviderType
 
 /** 记录归属的服务商类型 + 写入目标（跨阶段使用，因此自带 provider 与 zone） */
 export interface SaaSSyncRecord extends DesiredRecord {

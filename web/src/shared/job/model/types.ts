@@ -23,7 +23,11 @@ export type JobLike = {
 }
 
 export type PollJobOptions = {
-  fetchJob: (jobId: string) => Promise<JobLike>
+  /**
+   * 拉取任务详情。详情缺失（204/空体/后端 data:null）如实返回 null，由轮询层按未知状态处理；
+   * 不要在这里补 {} —— 空对象同样判为缺失，但会掩盖「读不到详情」的真实原因。
+   */
+  fetchJob: (jobId: string) => Promise<JobLike | null>
   intervalMs?: number
   onTick?: (job: JobLike) => void
   isActive?: (job: JobLike) => boolean

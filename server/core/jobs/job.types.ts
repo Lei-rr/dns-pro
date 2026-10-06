@@ -1,11 +1,13 @@
 /** 任务类型定义 */
+import type { JobType } from './job-registry.js'
+
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed'
 
 export type JobItem = Record<string, unknown>
 
 export type JobRecord = {
   id: string
-  type: string
+  type: JobType
   status: JobStatus
   total: number
   done: number
@@ -28,7 +30,7 @@ export type JobRecord = {
  */
 export type JobLock = {
   /** 互斥范围：会写同一底层资源的全部任务类型 */
-  types: readonly string[]
+  types: readonly JobType[]
   /** 唯一主判据：本次会写入的底层资源键，与活跃作业的 resource_keys 相交即互斥 */
   resourceKeys?: readonly string[]
   /** 降级判据：作业没有 resource_keys（早于资源键机制的记录）时的 payload 同名字段相等 */

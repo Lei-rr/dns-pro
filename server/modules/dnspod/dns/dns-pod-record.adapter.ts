@@ -1,9 +1,12 @@
-import type {
-  DnsRecordPort,
-  DnsRecordProbe,
-  DnsRecordRef,
-  DnsRecordValue,
+import {
+  dnsRecordStatusOf,
+  type DnsRecordPort,
+  type DnsRecordProbe,
+  type DnsRecordRef,
+  type DnsRecordStatus,
+  type DnsRecordValue,
 } from '../../../core/contracts/dns-record.port.js'
+import { ApiError } from '../../../core/http/api-error.js'
 import {
   DNSPOD_DEFAULT_LINE,
   type DnsPodRecordItem,
@@ -23,16 +26,29 @@ function toInput(value: DnsRecordValue): RecordCreateInput {
   if (value.priority !== undefined) input.mx = Number(value.priority)
   if (value.note !== undefined) input.remark = String(value.note)
   if (value.lineId !== undefined && value.lineId !== '') input.record_line_id = String(value.lineId)
-  if (value.status !== undefined && value.status !== '') {
-    input.status = String(value.status).toUpperCase() === 'DISABLE' ? 'DISABLE' : 'ENABLE'
-  }
+  if (value.status !== undefined) input.status = recordStatusFlag(value.status)
   if (value.weight !== undefined) input.weight = Number(value.weight)
   return input
 }
 
+/**
+ * 启停状态 → DNSPod 状态标志：联合已闭合，穷尽映射。
+ * 未知值只可能来自绕过类型的调用，显式 422 而不是归一成 ENABLE——「要求停用」被写成启用是用户不可见的错误。
+ */
+function recordStatusFlag(status: DnsRecordStatus): 'ENABLE' | 'DISABLE' {
+  switch (status) {
+    case 'ENABLE':
+      return 'ENABLE'
+    case 'DISABLE':
+      return 'DISABLE'
+    default:
+      throw new ApiError('dns_record_status_invalid', `Unsupported DNS record status: ${String(status)}`, 422)
+  }
+}
+
 /** DNSPod 记录 → 端口值（name 已是相对主机记录） */
 function toValue(item: DnsPodRecordItem): DnsRecordValue {
-  return {
+  const value: DnsRecordValue = {
     type: String(item.type ?? '').toUpperCase(),
     name: String(item.name ?? ''),
     value: String(item.value ?? ''),
@@ -41,9 +57,12 @@ function toValue(item: DnsPodRecordItem): DnsRecordValue {
     lineId: String(item.line_id ?? ''),
     priority: Number(item.mx),
     note: String(item.remark ?? ''),
-    status: String(item.status ?? ''),
     weight: Number(item.weight),
   }
+  // 上游状态未知（非 ENABLE/DISABLE）时不设置该字段：判等时按「现状未声明」处理，宁可更新也不误判一致
+  const status = dnsRecordStatusOf(item.status)
+  if (status !== undefined) value.status = status
+  return value
 }
 
 /** DNSPod 记录端口：zone 即域名 */

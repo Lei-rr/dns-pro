@@ -1,4 +1,9 @@
-import type { DnsRecordProbe, DnsRecordRef, DnsRecordValue } from '../../core/contracts/dns-record.port.js'
+import type {
+  DnsProviderType,
+  DnsRecordProbe,
+  DnsRecordRef,
+  DnsRecordValue,
+} from '../../core/contracts/dns-record.port.js'
 import { dnsRecordMatches, relativeRecordName, sameDnsValue } from '../../core/contracts/dns-record.port.js'
 import type { DerivedOwner } from '../../core/contracts/ownership.port.js'
 
@@ -36,7 +41,7 @@ export interface SyncPlanEntry {
 }
 
 export interface SyncPlan {
-  providerType: string
+  providerType: DnsProviderType
   providerId: string
   zone: string
   entries: SyncPlanEntry[]
@@ -83,7 +88,7 @@ export function recordProbe(
  * 清理只认「能证明归属」的记录：值相同，或备注与声明一致；归属不明一律不动。
  */
 export function planSync(input: {
-  providerType: string
+  providerType: DnsProviderType
   providerId: string
   zone: string
   desired: DesiredRecord[]

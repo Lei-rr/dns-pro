@@ -7,7 +7,12 @@
  *   - apply() 只把 create/update 条目交给 DnsWriter.apply，删除与人工记录永不自动处理。
  * 手动触发，无定时器（符合单用户与惰性哲学）。
  */
-import { relativeRecordName, type DnsRecordPort, type DnsRecordRef } from '../../core/contracts/dns-record.port.js'
+import {
+  relativeRecordName,
+  type DnsProviderType,
+  type DnsRecordPort,
+  type DnsRecordRef,
+} from '../../core/contracts/dns-record.port.js'
 import { errorMessage } from '../../shared/values.js'
 import { findCurrentRecords } from './current-records.js'
 import type { DnsWriter, WriteOutcome } from './dns-writer.js'
@@ -37,7 +42,7 @@ export interface ReconcileResult extends ReconcileReport {
 
 /** 同一写入目标（服务商账号 + 站点）下的一组条目 */
 type TargetGroup<T> = {
-  providerType: string
+  providerType: DnsProviderType
   providerId: string
   zone: string
   rows: T[]
@@ -53,7 +58,7 @@ const STATUS_BY_ACTION: Record<SyncAction, DerivedStatus> = {
 export class ReconcileService {
   constructor(
     private readonly planners: readonly DerivedSourcePlanner[],
-    private readonly ports: Record<string, DnsRecordPort>,
+    private readonly ports: Record<DnsProviderType, DnsRecordPort>,
     private readonly writer: DnsWriter
   ) {}
 
@@ -105,11 +110,8 @@ export class ReconcileService {
   }
 
   private async detectGroup(group: TargetGroup<PlannedRecord>): Promise<ReconcileItem[]> {
+    // 端口表按闭合联合取用：配置缺失在装配期由 Record<DnsProviderType, ...> 拒绝，不再走运行期兜底
     const port = this.ports[group.providerType]
-    if (!port) {
-      const reason = `dns_provider_unsupported: ${group.providerType}`
-      return group.rows.map((item) => failedItem(item, reason))
-    }
     const desired = group.rows.map((item) => item.desired)
     const current: DnsRecordRef[] = []
     try {
@@ -183,7 +185,7 @@ function itemKey(item: ReconcileItem): string {
 }
 
 /** 写入目标（服务商 + 站点）：检测与执行共用同一分组键 */
-type ReconcileTarget = { providerType: string; providerId: string; zone: string }
+type ReconcileTarget = { providerType: DnsProviderType; providerId: string; zone: string }
 
 /** 按写入目标分组 */
 function groupBy<T>(items: readonly T[], targetOf: (item: T) => ReconcileTarget): TargetGroup<T>[] {

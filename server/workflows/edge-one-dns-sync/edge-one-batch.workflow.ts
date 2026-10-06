@@ -3,9 +3,6 @@ import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
 import {
   BatchJobKind,
-  dedupeStrings,
-  dnsEffectNote,
-  dnsEffectOf,
   finishBatchJob,
   persistItemStage,
   runBatchItems,
@@ -18,7 +15,10 @@ import {
   EDGEONE_ZONE_JOB_TYPES,
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
+  type JobType,
 } from '../../core/jobs/job-registry.js'
+import { dedupeStrings } from '../../shared/values.js'
+import { dnsEffectNote, dnsEffectOf } from '../../core/providers/side-effect-result.js'
 import { completedEdgeOneDeleteStages, type EdgeOneDnsSyncWorkflow } from './edge-one-dns-sync.workflow.js'
 
 type EdgeOneBatchJobView = BatchJobViewBase & { provider_id: string; zone_id: string }
@@ -86,13 +86,13 @@ export class EdgeOneBatchWorkflow {
   }
 
   private items(domains: string[], extra: () => Record<string, unknown>) {
-    const unique = dedupeStrings(domains ?? [])
+    const unique = dedupeStrings(domains ?? [], { caseInsensitive: true })
     if (!unique.length) throw new ApiError('batch_empty', 'No domains selected', 422)
     return unique.map((domain) => ({ domain, ...extra() }))
   }
 
   private async enqueue(
-    type: string,
+    type: JobType,
     scope: ZoneScope,
     extra: Record<string, unknown>,
     items: Array<Record<string, unknown>>,

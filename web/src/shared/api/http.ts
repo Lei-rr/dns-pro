@@ -7,7 +7,7 @@
  * - 401 → unauthorizedHandler
  * - 中断语义：内部超时 → TIMEOUT（用户可见）；外部 signal 取消 → CANCELED（消费侧静默），见 transport-errors.ts
  */
-import type { ApiResponse, ListResponse } from '@/shared/api/types'
+import type { ApiResponse, ApiResult, ListResponse } from '@/shared/api/types'
 import {
   CANCELED_CODE,
   NETWORK_ERROR_CODE,
@@ -85,7 +85,39 @@ function toRequestError(
   })
 }
 
-async function request<T = unknown>(method: string, url: string, config: RequestConfig = {}): Promise<ApiResponse<T>> {
+/** 契约错误码：成功响应的形状与端点声明不符（解包器抛出，消费侧按失败处理而不是静默降级） */
+const INVALID_RESPONSE_CODE = 'INVALID_RESPONSE'
+
+function invalidResponse(message: string, status = 0): RequestError {
+  return toRequestError(message, { code: INVALID_RESPONSE_CODE, status })
+}
+
+/** JSON 信封与分页元数据都要求「非 null、非数组的对象」 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * 反序列化边界唯一一次「未知载荷 → 声明类型」的转换：浏览器运行期没有泛型，
+ * 载荷形状由后端 schema 与调用点声明共同保证；这里只把缺失归一成 null，
+ * 让可空性如实进入类型，而不是在别处写成 `null as T`。
+ */
+function declarePayload<T>(data: unknown): T | null {
+  return data == null ? null : (data as T)
+}
+
+/** 兼容成功响应的唯一来源：信封形状在此校验，载荷可空性由 ApiResult<T> 表达 */
+function successPayload<T>(payload: unknown, status: number): ApiResult<T> {
+  if (!isRecord(payload)) throw invalidResponse('接口返回的响应体格式不正确', status)
+  return {
+    ...payload,
+    code: 0,
+    message: 'success',
+    data: declarePayload<T>(payload.data),
+  }
+}
+
+async function request<T = unknown>(method: string, url: string, config: RequestConfig = {}): Promise<ApiResult<T>> {
   const controller = new AbortController()
 
   /**
@@ -138,7 +170,7 @@ async function request<T = unknown>(method: string, url: string, config: Request
     const payload = await parseBody(response)
 
     if (!response.ok) {
-      const obj = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {}
+      const obj = isRecord(payload) ? payload : {}
       const code = String(obj.code || 'REQUEST_FAILED')
       const error = toRequestError(String(obj.message || response.statusText || '请求失败'), {
         code,
@@ -153,11 +185,11 @@ async function request<T = unknown>(method: string, url: string, config: Request
       throw error
     }
 
-    // 204 / empty
+    // 204 / 空体：成功但没有载荷。如实归一为 null（ApiResult），不构造 `null as T` 冒充载荷
     if (payload == null) {
-      return { code: 0, message: 'success', data: null as T }
+      return { code: 0, message: 'success', data: null }
     }
-    return payload as ApiResponse<T>
+    return successPayload<T>(payload, response.status)
   } catch (error) {
     // 本层构造的 RequestError（HTTP 状态错误）：原样上抛，不再按中断或网络重新分类
     if (error instanceof Error && 'code' in error && 'status' in error) throw error
@@ -189,8 +221,9 @@ const http = {
 }
 
 export function withRefresh(options: Record<string, unknown> = {}) {
-  const { refresh, params = {} } = options
-  const queryParams = { ...(params as Record<string, unknown>) }
+  const { refresh, params } = options
+  // 非对象 params 直接丢弃：调用方契约是对象，spread 字符串只会产出无意义的字符键
+  const queryParams: Record<string, unknown> = isRecord(params) ? { ...params } : {}
 
   for (const [key, value] of Object.entries(queryParams)) {
     if (key === 'refresh' || value === undefined || value === null || value === '') delete queryParams[key]
@@ -199,42 +232,53 @@ export function withRefresh(options: Record<string, unknown> = {}) {
   return { params: refresh ? { ...queryParams, refresh: true } : queryParams }
 }
 
-function isListResponse<T>(data: unknown): data is ListResponse<T> {
-  return typeof data === 'object' && data !== null && Array.isArray((data as ListResponse<T>).items)
+function isListPayload(data: unknown): data is ListResponse<unknown> {
+  return isRecord(data) && Array.isArray(data.items)
 }
 
-export function unwrapItems<T>(response: ApiResponse<unknown>): ApiResponse<T> {
-  // 204/empty body yields null — a list endpoint always resolves to an array.
+/** 分页元数据可能在 meta 或 pagination 之下；CF SaaS 用 total_count，DNSPod/EdgeOne 用 total */
+function listMeta(items: unknown[], data: ListResponse<unknown>): Record<string, unknown> {
+  const pagination = isRecord(data.pagination) ? data.pagination : {}
+  const metaObj = isRecord(data.meta) ? data.meta : {}
+  return {
+    ...metaObj,
+    ...pagination,
+    total: Number(pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? items.length),
+    count: Number(pagination.count ?? metaObj.count ?? items.length),
+    offset: Number(pagination.offset ?? metaObj.offset ?? 0),
+    limit: Number(pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? items.length),
+    page: Number(pagination.page ?? metaObj.page ?? 0) || undefined,
+    per_page: Number(pagination.per_page ?? metaObj.per_page ?? pagination.limit ?? 0) || undefined,
+    total_count: Number(pagination.total_count ?? metaObj.total_count ?? 0) || undefined,
+    total_pages: Number(pagination.total_pages ?? metaObj.total_pages ?? 0) || undefined,
+  }
+}
+
+/** 数组形状已由守卫确认；元素类型是调用方声明的后端契约（运行期无法逐个校验元素） */
+function itemsAs<T>(items: unknown[]): T[] {
+  return items as T[]
+}
+
+/**
+ * 列表端点解包：只认两种真实形状（顶层数组 / { items }），形状不认识就抛错。
+ * 空体/null 归一到空数组——列表端点的「无数据」语义就是空列表，不是把 [] 断言成别的类型。
+ */
+export function unwrapList<T>(response: ApiResponse<unknown>): ApiResponse<T[]> {
   const data = response.data
-  if (data == null) return { ...response, data: [] as unknown as T }
-  if (Array.isArray(data)) {
-    return { ...response, data: data as T }
-  }
-  if (isListResponse<T>(data)) {
-    // Prefer pagination.total (DNSPod/EdgeOne) then meta.total
-    const pagination = (data.pagination && typeof data.pagination === 'object' ? data.pagination : {}) as Record<
-      string,
-      unknown
-    >
-    const metaObj = (data.meta && typeof data.meta === 'object' ? data.meta : {}) as Record<string, unknown>
-    const meta = {
-      ...metaObj,
-      ...pagination,
-      // CF SaaS uses total_count; DNSPod/EdgeOne use total
-      total: Number(
-        pagination.total_count ?? pagination.total ?? metaObj.total_count ?? metaObj.total ?? data.items.length
-      ),
-      count: Number(pagination.count ?? metaObj.count ?? data.items.length),
-      offset: Number(pagination.offset ?? metaObj.offset ?? 0),
-      limit: Number(pagination.limit ?? metaObj.limit ?? metaObj.per_page ?? pagination.per_page ?? data.items.length),
-      page: Number(pagination.page ?? metaObj.page ?? 0) || undefined,
-      per_page: Number(pagination.per_page ?? metaObj.per_page ?? pagination.limit ?? 0) || undefined,
-      total_count: Number(pagination.total_count ?? metaObj.total_count ?? 0) || undefined,
-      total_pages: Number(pagination.total_pages ?? metaObj.total_pages ?? 0) || undefined,
-    }
-    return { ...response, data: data.items as T, meta }
-  }
-  return response as ApiResponse<T>
+  if (data == null) return { ...response, data: [] }
+  if (Array.isArray(data)) return { ...response, data: itemsAs<T>(data) }
+  if (isListPayload(data)) return { ...response, data: itemsAs<T>(data.items), meta: listMeta(data.items, data) }
+  throw invalidResponse('接口返回的列表数据格式不正确')
+}
+
+/**
+ * 详情端点解包：必须命中调用方给的守卫才返回，否则抛错。
+ * 详情端点若沿用列表解包，空体时会得到 [] 并被断言成单条对象，消费侧的 truthy 判断拦不住空数组。
+ */
+export function unwrapItem<T>(response: ApiResponse<unknown>, guard: (value: unknown) => value is T): ApiResponse<T> {
+  const data = response.data
+  if (!guard(data)) throw invalidResponse('接口返回的详情数据格式不正确')
+  return { ...response, data }
 }
 
 export default http

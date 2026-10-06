@@ -24,17 +24,43 @@ export const SAAS_BATCH_UPDATE_JOB = 'saas.batch_update'
 export const PREFERRED_APPLY_JOB = 'saas.preferred_apply'
 export const SAAS_ZONE_LOCK_MESSAGE = 'A SaaS batch or preferred-domain apply job is already running for this zone'
 
-/**
- * 只要会写底层 DNS / 加速域名，就参与同一把资源锁：
- * DNS 批量直接写记录，SaaS 批量与优选写回关联的 DNS 服务商，EdgeOne 批量清理记录。
- */
-export const ZONE_WRITE_JOB_TYPES = [
-  ...DNS_ZONE_JOB_TYPES,
-  ...EDGEONE_ZONE_JOB_TYPES,
+/** 全部任务类型：JobType 的唯一事实来源；新增任务必须先登记，否则无法注册执行器或创建任务 */
+const ALL_JOB_TYPES = [
+  DNS_BATCH_CREATE_JOB,
+  DNS_BATCH_DELETE_JOB,
+  DNS_BATCH_UPDATE_JOB,
+  EDGEONE_BATCH_DISABLE_JOB,
+  EDGEONE_BATCH_DELETE_JOB,
   SAAS_BATCH_DELETE_JOB,
   SAAS_BATCH_UPDATE_JOB,
   PREFERRED_APPLY_JOB,
 ] as const
+
+/** 任务类型：闭合联合。registerRunner / create / BatchJobKind 只接受登记过的类型，两个字符串写岔即编译失败 */
+export type JobType = (typeof ALL_JOB_TYPES)[number]
+
+/**
+ * 任务类型 → 是否参与底层 zone 写锁：跨工作流互斥范围的唯一事实来源。
+ * Record<JobType, ...> 强制每个新任务显式表态，漏登记即编译错误（漏了就会出现两个工作流并发写同一 zone）。
+ */
+const ZONE_WRITE_SCOPE: Record<JobType, 'zone-write' | 'independent'> = {
+  [DNS_BATCH_CREATE_JOB]: 'zone-write',
+  [DNS_BATCH_DELETE_JOB]: 'zone-write',
+  [DNS_BATCH_UPDATE_JOB]: 'zone-write',
+  [EDGEONE_BATCH_DISABLE_JOB]: 'zone-write',
+  [EDGEONE_BATCH_DELETE_JOB]: 'zone-write',
+  [SAAS_BATCH_DELETE_JOB]: 'zone-write',
+  [SAAS_BATCH_UPDATE_JOB]: 'zone-write',
+  [PREFERRED_APPLY_JOB]: 'zone-write',
+}
+
+/**
+ * 只要会写底层 DNS / 加速域名，就参与同一把资源锁：
+ * DNS 批量直接写记录，SaaS 批量与优选写回关联的 DNS 服务商，EdgeOne 批量清理记录。
+ */
+export const ZONE_WRITE_JOB_TYPES: readonly JobType[] = ALL_JOB_TYPES.filter(
+  (type) => ZONE_WRITE_SCOPE[type] === 'zone-write'
+)
 
 /** 底层 DNS 写入目标键；跨工作流互斥以键集合是否有交集为准 */
 export function dnsZoneKey(system: 'dnspod' | 'cloudflare', providerId: string, zone: string): string {

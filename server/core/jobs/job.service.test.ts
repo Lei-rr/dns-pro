@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { JobService } from './job.service.js'
+import { SAAS_BATCH_UPDATE_JOB } from './job-registry.js'
 
 /**
  * 迁移自 scripts/isolated-provider-retry-probe.ts 的任务快照部分（P1：内存实现，无 IO）。
@@ -12,7 +13,7 @@ describe('任务快照体积守卫', () => {
   it('已完成任务剥离执行期快照，保留展示字段', async () => {
     const jobs = new JobService()
     const created = await jobs.create(
-      'size.probe',
+      SAAS_BATCH_UPDATE_JOB,
       {},
       [
         {
@@ -34,7 +35,7 @@ describe('任务快照体积守卫', () => {
 
   it('失败任务保留快照（重试才能恢复更新前状态）', async () => {
     const jobs = new JobService()
-    const failed = await jobs.create('size.probe', {}, [{ hostname: 'b.example.com', status: 'pending' }], {
+    const failed = await jobs.create(SAAS_BATCH_UPDATE_JOB, {}, [{ hostname: 'b.example.com', status: 'pending' }], {
       start: false,
     })
     await jobs.patchItem(failed.id, () => true, { status: 'failed', dns_before_records: [bigSnapshot] })

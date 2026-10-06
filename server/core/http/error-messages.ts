@@ -12,6 +12,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   http_error: '请求失败',
   server_error: '服务内部错误',
   dns_provider_unsupported: '不支持的 DNS 服务商',
+  dns_record_status_invalid: '记录启停状态无效，仅支持 ENABLE / DISABLE',
   credential_decrypt_failed: '凭据解密失败：密钥文件（credential.key）可能已丢失或被替换',
   internal_error: '服务内部错误',
   request_error: '请求错误',
@@ -27,7 +28,6 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   batch_job_running: '该站点已有批量任务在执行',
   batch_job_not_found: '批量任务不存在',
   batch_no_failed: '没有失败项可重试',
-  batch_provider_unsupported: '当前服务商不支持该批量操作',
   batch_resource_keys_missing: '任务缺少资源键，无法判定互斥范围',
 
   // Provider 通用
@@ -74,8 +74,8 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
 
   // EdgeOne
   edgeone_provider_not_found: 'EdgeOne 服务商不存在',
-  edgeone_dnspod_provider_not_found: '关联的 DNSPod 服务商不存在',
-  // DnsPodAccess 以 `${source}_dnspod_provider_missing` 模板拼码，edgeone 来源对应本项
+  // DnsPodAccess 以 `${source}_dnspod_provider_missing` 模板拼码，edgeone 来源对应本项；
+  // 该条件是「未关联」，与「关联对象不存在」（provider_reference_not_found）是两回事
   edgeone_dnspod_provider_missing: 'EdgeOne 未关联 DNSPod 服务商',
   edgeone_dnspod_zone_not_found: 'DNSPod 中找不到与该加速域名匹配的域名',
   edgeone_zone_not_found: 'EdgeOne 站点不存在',
@@ -100,6 +100,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   saas_cloudflare_sync_zone_missing: '未选择 Cloudflare DNS 同步域名',
   saas_business_target_missing: '缺少业务主 CNAME 的目标域名',
   saas_dnspod_provider_missing: 'SaaS 未关联 DNSPod 服务商',
+  saas_sync_target_invalid: '同步目标配置无效，仅支持 DNSPod 或 Cloudflare DNS',
   saas_dnspod_zone_not_found: 'DNSPod 中找不到与该主机名匹配的域名',
   saas_fqdn_missing: '主机名 FQDN 缺失',
   saas_fqdn_empty: '主机名 FQDN 不能为空',

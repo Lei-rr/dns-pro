@@ -12,6 +12,17 @@ interface SaaSPreferredDomainSource {
   custom_metadata?: unknown
 }
 
+/**
+ * 站点归属判定入参。
+ * 用对象承载参数是为了消除 (zone, fqdn) 的位置陷阱：该方法曾有两份实现、
+ * 参数顺序相反（hostInZone(fqdn, zone) 与 zoneOwnsHostname(zone, fqdn)），
+ * 顺序写反不会报错，只会静默得出「不在站点内」。
+ */
+export interface SaaSHostnameOwnership {
+  zone: string
+  fqdn: string
+}
+
 export interface SaaSHostnameRulesPort {
   /** 生效优选域名：本地偏好 → 顶层字段 → custom_metadata（顺序唯一） */
   effectivePreferredDomain(
@@ -21,5 +32,5 @@ export interface SaaSHostnameRulesPort {
   /** 主机名是否仍在管理内（active / active_renewing）；moved 已迁出，不得清理所有权 TXT */
   isHostnameActive(hostname: { status?: unknown }): boolean
   /** 站点是否托管该主机名（同名或为其子域） */
-  zoneOwnsHostname(zone: string, fqdn: string): boolean
+  zoneOwnsHostname(host: SaaSHostnameOwnership): boolean
 }

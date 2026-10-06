@@ -8,12 +8,18 @@ import {
   type JobLock,
   type JobRecord,
 } from './job.types.js'
-import { peekResourceKeys, payloadMatchesScope } from './job-registry.js'
+import { peekResourceKeys, payloadMatchesScope, type JobType } from './job-registry.js'
+
+/**
+ * 站点标识字段名：payload 里构成互斥范围的字段。
+ * 各批量工作流只用到这四个键，用闭合联合把它钉住——写错字段名会让互斥范围悄悄变空。
+ */
+export type BatchScopeKey = 'provider_id' | 'zone' | 'zone_name' | 'zone_id'
 
 /** 批量任务对外视图公共字段 */
 export type BatchJobViewBase = {
   id: string
-  type: string
+  type: JobType
   status: string
   total: number
   done: number
@@ -44,11 +50,11 @@ export class BatchJobKind<View> {
     private readonly jobs: JobService,
     private readonly options: {
       /** 本族可查询的任务类型：详情/重试的取值与归属范围；不参与互斥判定（反查可能命中别族任务） */
-      types: readonly string[]
+      types: readonly JobType[]
       /** 互斥范围：参与同一底层资源竞争的全部任务类型（创建/重试/反查共用） */
-      lockTypes: readonly string[]
+      lockTypes: readonly JobType[]
       /** payload 中构成站点标识的字段（展示取值与老作业降级判定共用同一套投影） */
-      scopeKeys: readonly string[]
+      scopeKeys: readonly BatchScopeKey[]
       /** 创建路径的资源键：payload 里已经算好的键；跨工作流以交集判定互斥 */
       resourceKeys?: (payload: Record<string, unknown>) => string[]
       lockMessage?: string
@@ -234,25 +240,4 @@ function presentBatchJobBase(job: JobRecord): BatchJobViewBase {
     updated_at: job.updated_at,
     finished_at: job.finished_at,
   }
-}
-
-/** 去空、去重、规范化 */
-export function dedupeStrings(values: string[], normalize = (v: string) => v.trim().toLowerCase()): string[] {
-  return [...new Set(values.map((value) => normalize(String(value ?? ''))).filter(Boolean))]
-}
-
-/** 从批量条目结果中读取 DNS 副作用 */
-export function dnsEffectOf(
-  result: Record<string, unknown>,
-  kind: 'sync' | 'cleanup'
-): { status?: string; message?: string } | undefined {
-  return (result as { side_effects?: { dns?: Record<string, { status?: string; message?: string }> } }).side_effects
-    ?.dns?.[kind]
-}
-
-/** DNS 副作用 → 条目消息后缀 */
-export function dnsEffectNote(effect: { status?: string; message?: string } | undefined, done: string): string {
-  if (effect?.status === 'completed') return `（${done}）`
-  if (effect?.status === 'skipped') return `（DNS 跳过：${effect.message || '已跳过'}）`
-  return ''
 }

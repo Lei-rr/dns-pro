@@ -69,8 +69,7 @@ export function useSaasHostJobs(options: {
           scopeOwner.active()
             ? saasApi.preferredApply(scopeOwner.value.providerId, scopeOwner.value.zoneName, body)
             : Promise.resolve({ data: undefined }),
-        fetchJob: async (id) =>
-          (await saasApi.preferredApplyJob(scopeOwner.value.providerId, id)).data as Record<string, unknown>,
+        fetchJob: async (id) => (await saasApi.preferredApplyJob(scopeOwner.value.providerId, id)).data,
         retry: (id) => saasApi.preferredApplyRetry(scopeOwner.value.providerId, id),
         onDone: () => (scopeOwner.active() ? options.reload() : undefined),
         failureUnit: '个',
@@ -88,7 +87,7 @@ export function useSaasHostJobs(options: {
     return runBatchJob({
       label,
       create: () => (scopeOwner.active() ? create() : Promise.resolve({ data: undefined })),
-      fetchJob: async (id) => (await saasApi.batchJob(scopeOwner.value.providerId, id)).data as Record<string, unknown>,
+      fetchJob: async (id) => (await saasApi.batchJob(scopeOwner.value.providerId, id)).data,
       retry: (id) => saasApi.batchRetry(scopeOwner.value.providerId, id),
       clearSelection: () => {
         if (scopeOwner.active()) options.clearSelection()
@@ -109,7 +108,7 @@ export function useSaasHostJobs(options: {
     const fetchers: Array<{
       label: string
       fetchActive: () => Promise<{ data?: unknown }>
-      fetchJob: (id: string) => Promise<JobLike>
+      fetchJob: (id: string) => Promise<JobLike | null>
       retry: (id: string) => Promise<unknown>
     }> = [
       {
@@ -118,7 +117,7 @@ export function useSaasHostJobs(options: {
           probeActive(() =>
             saasApi.preferredApplyActive(options.providerId(), options.zoneName(), { timeout: PROBE_TIMEOUT_MS })
           ),
-        fetchJob: async (id) => (await saasApi.preferredApplyJob(options.providerId(), id)).data as JobLike,
+        fetchJob: async (id) => (await saasApi.preferredApplyJob(options.providerId(), id)).data,
         retry: (id) => saasApi.preferredApplyRetry(options.providerId(), id),
       },
       {
@@ -127,7 +126,7 @@ export function useSaasHostJobs(options: {
           probeActive(() =>
             saasApi.batchActive(options.providerId(), options.zoneName(), { timeout: PROBE_TIMEOUT_MS })
           ),
-        fetchJob: async (id) => (await saasApi.batchJob(options.providerId(), id)).data as JobLike,
+        fetchJob: async (id) => (await saasApi.batchJob(options.providerId(), id)).data,
         retry: (id) => saasApi.batchRetry(options.providerId(), id),
       },
     ]

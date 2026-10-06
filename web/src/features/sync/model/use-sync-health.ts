@@ -49,7 +49,7 @@ export function useReconcileRepair() {
 export function useAuditTrailQuery() {
   const query = useResourceQuery<AuditEvent[]>({
     key: () => ['sync', 'audit'],
-    queryFn: async ({ refresh, signal }) => (await syncApi.audit({ refresh, signal })).data.items ?? [],
+    queryFn: async ({ refresh, signal }) => (await syncApi.audit({ refresh, signal })).data,
     refreshNotice: '',
   })
 

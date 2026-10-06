@@ -93,3 +93,61 @@ export function toCleanupSideEffect(result: Record<string, unknown>, defaultMess
     status === 'completed' ? defaultMessage : result.reason ? 'DNS 清理已跳过' : '未找到需要清理的 DNS 记录'
   return { status, message: String(result.message ?? fallback), details: [result] }
 }
+
+/** 普通对象判定：数组、null、原始值都不算 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isSideEffectStatus(value: string): value is SideEffectStatus {
+  return value === 'completed' || value === 'skipped' || value === 'failed'
+}
+
+/** 逐字段校验副作用摘要：结构不符（旧数据 / 手工构造）返回 undefined，不做类型断言 */
+function parseDnsSideEffect(value: unknown): DnsSideEffect | undefined {
+  if (!isRecord(value)) return undefined
+  const status = typeof value.status === 'string' ? value.status : ''
+  if (!isSideEffectStatus(status)) return undefined
+  return {
+    ...value,
+    status,
+    message: String(value.message ?? ''),
+    details: Array.isArray(value.details) ? value.details : [],
+  }
+}
+
+/**
+ * 结果里的副作用分组：逐组校验后重建，越界结构一律忽略。
+ * 断言式读取会把脏结构一路带进条目消息，读取方反而以为自己拿到的是 SideEffects。
+ */
+export function sideEffectsOf(result: Record<string, unknown>): SideEffects {
+  const effects: SideEffects = {}
+  const raw = result.side_effects
+  if (!isRecord(raw)) return effects
+  if (isRecord(raw.dns)) {
+    const sync = parseDnsSideEffect(raw.dns.sync)
+    const cleanup = parseDnsSideEffect(raw.dns.cleanup)
+    if (sync || cleanup) effects.dns = { ...(sync ? { sync } : {}), ...(cleanup ? { cleanup } : {}) }
+  }
+  if (isRecord(raw.tunnel)) {
+    const token = parseDnsSideEffect(raw.tunnel.token)
+    if (token) effects.tunnel = { token }
+  }
+  if (isRecord(raw.local)) {
+    const preference = parseDnsSideEffect(raw.local.preference)
+    if (preference) effects.local = { preference }
+  }
+  return effects
+}
+
+/** 从批量条目结果中读取 DNS 副作用 */
+export function dnsEffectOf(result: Record<string, unknown>, kind: 'sync' | 'cleanup'): DnsSideEffect | undefined {
+  return sideEffectsOf(result).dns?.[kind]
+}
+
+/** DNS 副作用 → 条目消息后缀 */
+export function dnsEffectNote(effect: DnsSideEffect | undefined, done: string): string {
+  if (effect?.status === 'completed') return `（${done}）`
+  if (effect?.status === 'skipped') return `（DNS 跳过：${effect.message || '已跳过'}）`
+  return ''
+}

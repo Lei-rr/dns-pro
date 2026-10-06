@@ -1,5 +1,5 @@
-import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
-import type { ApiResponse } from '@/shared/api/types'
+import http, { POLL_TIMEOUT_MS, unwrapList, withRefresh } from '@/shared/api/http'
+import type { ApiResponse, ApiResult } from '@/shared/api/types'
 import type { JobLike } from '@/shared/job'
 import type { DnsLine, DnsRecord, Zone } from '@/features/dns/model/types'
 import { encodePath } from '@/shared/lib/path'
@@ -168,7 +168,7 @@ function presentRecord(provider: DnsProviderRef, domain: string, record: DnsReco
 
 export const dnsApi = {
   zones: async (provider: DnsProviderRef, options: DnsReadOptions = {}): Promise<ApiResponse<Zone[]>> => {
-    const response = unwrapItems<Zone[]>(
+    const response = unwrapList<Zone>(
       await http.get(endpoints.zones(provider), {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,
@@ -176,7 +176,7 @@ export const dnsApi = {
     )
     return { ...response, data: response.data.map((domain) => presentDomain(provider, domain)) }
   },
-  createZone: (provider: DnsProviderRef, data: DnsZoneWriteInput): Promise<ApiResponse<Zone>> =>
+  createZone: (provider: DnsProviderRef, data: DnsZoneWriteInput): Promise<ApiResult<Zone>> =>
     http.post(endpoints.zones(provider), provider.type === 'cloudflare' ? { name: data.domain ?? data.name } : data),
   deleteZone: (provider: DnsProviderRef, zone: string) => http.delete(endpoints.zone(provider, zone)),
   /** DNSPod 解析线路（Cloudflare 无线路概念，直接返回空） */
@@ -186,19 +186,19 @@ export const dnsApi = {
     options: DnsReadOptions = {}
   ): Promise<ApiResponse<{ items: DnsLine[]; groups: DnsLine[] }>> => {
     if (provider.type !== 'dnspod') return { code: 0, message: 'success', data: { items: [], groups: [] } }
-    const response = await http.get(endpoints.lines(provider, zone), {
+    const response = await http.get<{ items?: DnsLine[]; groups?: DnsLine[] }>(endpoints.lines(provider, zone), {
       ...withRefresh({ refresh: options.refresh }),
       signal: options.signal,
     })
-    const data = (response.data ?? {}) as { items?: DnsLine[]; groups?: DnsLine[] }
-    return { ...response, data: { items: data.items ?? [], groups: data.groups ?? [] } }
+    const payload = response.data
+    return { ...response, data: { items: payload?.items ?? [], groups: payload?.groups ?? [] } }
   },
   records: async (
     provider: DnsProviderRef,
     domain: string,
     options: DnsReadOptions = {}
   ): Promise<ApiResponse<DnsRecord[]>> => {
-    const response = unwrapItems<DnsRecord[]>(
+    const response = unwrapList<DnsRecord>(
       await http.get(endpoints.records(provider, domain), {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,
@@ -211,7 +211,7 @@ export const dnsApi = {
     domain: string,
     data: DnsRecordWriteInput,
     options?: DnsWriteOptions
-  ): Promise<ApiResponse<DnsRecord>> =>
+  ): Promise<ApiResult<DnsRecord>> =>
     http.post(endpoints.records(provider, domain), recordPayload(provider, domain, data, options || {})),
   updateRecord: (
     provider: DnsProviderRef,
@@ -219,7 +219,7 @@ export const dnsApi = {
     recordId: string,
     data: DnsRecordWriteInput,
     options?: DnsWriteOptions
-  ): Promise<ApiResponse<DnsRecord>> =>
+  ): Promise<ApiResult<DnsRecord>> =>
     http.put(endpoints.record(provider, domain, recordId), recordPayload(provider, domain, data, options || {})),
   deleteRecord: (provider: DnsProviderRef, domain: string, recordId: string) =>
     http.delete(endpoints.record(provider, domain, recordId)),
@@ -236,18 +236,19 @@ export const dnsApi = {
     data: { records: DnsRecordWriteInput[]; patch: DnsRecordBatchPatch }
   ) => http.post(endpoints.recordsBatchUpdate(provider, domain), data),
   batchJob: (provider: DnsProviderRef, jobId: string) =>
-    http.get(endpoints.recordsBatchJob(provider, jobId), { timeout: POLL_TIMEOUT_MS }),
+    http.get<JobLike>(endpoints.recordsBatchJob(provider, jobId), { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (provider: DnsProviderRef, jobId: string) => http.post(endpoints.recordsBatchRetry(provider, jobId)),
   batchActive: (provider: DnsProviderRef, domain: string) =>
-    http.get(endpoints.recordsBatchActive(provider, domain), { timeout: POLL_TIMEOUT_MS }),
+    http.get<JobLike>(endpoints.recordsBatchActive(provider, domain), { timeout: POLL_TIMEOUT_MS }),
 }
 
 /**
  * 批量任务轮询适配：runBatchJob / PollJobOptions 要裸任务对象，接口返回的是 ApiResponse 包装。
- * 详情缺失时原样返回，由轮询层按未知状态处理：补 {} 会把「读不到详情」伪装成任务已完成。
+ * 详情缺失时如实回 null（不是伪造的 JobLike），由轮询层按未知状态处理：
+ * 补 {} 会把「读不到详情」伪装成任务已完成。
  */
-export function batchJobFetcher(provider: DnsProviderRef): (jobId: string) => Promise<JobLike> {
-  return async (jobId) => (await dnsApi.batchJob(provider, jobId)).data as JobLike
+export function batchJobFetcher(provider: DnsProviderRef): (jobId: string) => Promise<JobLike | null> {
+  return async (jobId) => (await dnsApi.batchJob(provider, jobId)).data
 }
 
 /** 批量任务重试适配：把 provider 固定进任务创建时返回的 retry 回调 */

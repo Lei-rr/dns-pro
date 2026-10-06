@@ -7,8 +7,8 @@ export type DnsPodLinkSource = LinkedDnsAccountSource
 
 /**
  * D3-2 底座：provider → 关联 DNSPod 账号 的解析（`LinkedDnsAccountPort` 实现）。
- * EdgeOne / SaaS 两条产品线只依赖本类；edgeone 模块不得反向引用本模块，
- * 故 edgeone/access.ts 内保留一份等效实现（错误码与归一方式与其保持一致）。
+ * EdgeOne / SaaS 两条产品线的编排只依赖本类；edge-one 模块在构造腾讯云客户端前
+ * 也复用本类的 requireLinkedProviderId——「未关联 DNSPod」的错误码与文案因此只有一份。
  */
 export class DnsPodAccess implements LinkedDnsAccountPort {
   constructor(private readonly providers: ProviderRepository) {}

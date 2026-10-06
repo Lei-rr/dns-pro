@@ -20,7 +20,9 @@ const jobs = new JobService()
 const activeItem = async () => (await jobs.listActive())[0]?.items[0] ?? {}
 
 const workflow = {
-  async deleteHostname(
+  // 方法名必须与 SaaSBatchWorkflow 实际调用的一致：批量路径走 deleteHostnameInBatch
+  // （单条写入的 deleteHostname 会顺带失效站点列表缓存，批量路径不能逐条清）
+  async deleteHostnameInBatch(
     _providerId: string,
     _zoneName: string,
     hostname: string,
@@ -83,7 +85,7 @@ assert.ok(
 )
 assert.equal('cleanup_recipe' in (failed?.items[0] ?? {}), false, '内部清理配方不应出现在任务视图')
 
-await batch.retryFailed(created.id)
+await batch.retryFailed(created.id, 'saas-owner')
 await jobs.drain()
 const retried = await batch.require(created.id, 'saas-owner')
 assert.equal(retried?.status, 'completed')

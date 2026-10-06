@@ -1,5 +1,6 @@
 /**
- * 解析列表聚组：按「主机前缀 / 邮箱套件」关系，不靠备注。
+ * 解析记录聚组、用途推断与排序：按「主机前缀 / 邮箱套件」关系归并同主机记录，不靠备注。
+ * 备注只在用途推断的最后兜底（见 inferRecordPurpose），不是分组依据。
  *
  * SaaS 写回：
  * - api + 默认 CNAME  → 默认回源
@@ -14,7 +15,7 @@
  * → 合成「邮箱」折叠组
  */
 
-type SaasRemarkPurpose =
+type RecordPurpose =
   | 'origin'
   | 'preferred'
   | 'dcv'
@@ -27,15 +28,15 @@ type SaasRemarkPurpose =
   | 'other'
   | 'none'
 
-type ParsedSaasRemark = {
-  purpose: SaasRemarkPurpose
+type RecordPurposeInfo = {
+  purpose: RecordPurpose
   purposeLabel: string
   fqdn: string
   raw: string
   isLinked: boolean
 }
 
-const PURPOSE_ORDER: Record<SaasRemarkPurpose, number> = {
+const PURPOSE_ORDER: Record<RecordPurpose, number> = {
   origin: 0,
   preferred: 1,
   dcv: 2,
@@ -49,14 +50,11 @@ const PURPOSE_ORDER: Record<SaasRemarkPurpose, number> = {
   none: 10,
 }
 
-/** 组头徽章固定顺序 */
-const PURPOSE_LABEL_ORDER = ['默认回源', '优选域名', 'DCV委派', '所有权验证', 'MX', 'SPF', 'DKIM', 'DMARC'] as const
-
 const ACME_PREFIX = '_acme-challenge.'
 const CF_OWNERSHIP_PREFIX = '_cf-custom-hostname.'
 const MAIL_KEY_PREFIX = '__mail__:'
 
-type RecordLike = {
+export type RecordLike = {
   name?: string | null
   type?: string | null
   line?: string | null
@@ -201,8 +199,9 @@ export function hostGroupLabel(hostKey: string, zoneName = ''): string {
 
 /**
  * 推断用途：主机结构 + 线路 + 邮箱类型；备注仅兜底。
+ * 导出给组头徽章（record-display）复用同一份推断，避免展示层另立一套规则。
  */
-function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaasRemark {
+export function inferRecordPurpose(record: RecordLike, zoneName = ''): RecordPurposeInfo {
   const rel = relativeHostLabel(record.name, zoneName)
   const type = String(record.type || '').toUpperCase()
   const line = String(record.line || '').trim()
@@ -277,7 +276,7 @@ function inferRecordPurpose(record: RecordLike, zoneName = ''): ParsedSaasRemark
   return { purpose: 'none', purposeLabel: '', fqdn: '', raw: remark, isLinked: false }
 }
 
-function purposeSortKey(purpose: SaasRemarkPurpose): number {
+function purposeSortKey(purpose: RecordPurpose): number {
   return PURPOSE_ORDER[purpose]
 }
 
@@ -301,22 +300,6 @@ export function compareRecordsForGroup(a: RecordLike, b: RecordLike, zoneName = 
   const tb = String(b.type || '')
   if (ta !== tb) return ta.localeCompare(tb)
   return relativeHostLabel(a.name, zoneName).localeCompare(relativeHostLabel(b.name, zoneName), 'en')
-}
-
-/** 组头用途徽章：固定顺序，只显示本组有的 */
-export function orderedPurposeLabels(records: RecordLike[], zoneName = ''): string[] {
-  const present = new Set<string>()
-  const extras: string[] = []
-  for (const r of records) {
-    const v = inferRecordPurpose(r, zoneName)
-    if (!v.isLinked || !v.purposeLabel) continue
-    if ((PURPOSE_LABEL_ORDER as readonly string[]).includes(v.purposeLabel)) {
-      present.add(v.purposeLabel)
-    } else if (!extras.includes(v.purposeLabel)) {
-      extras.push(v.purposeLabel)
-    }
-  }
-  return [...PURPOSE_LABEL_ORDER.filter((l) => present.has(l)), ...extras]
 }
 
 /**

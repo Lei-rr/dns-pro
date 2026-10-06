@@ -77,11 +77,12 @@ export function createModules(config: AppConfig, deps: { credentialKey: Buffer }
     zoneCatalog,
     new TunnelDnsService(cloudflareRecordPort(cloudflareZones, cloudflareRecords))
   )
-  // D4：归属由派生关系即时解析（不落盘），DnsWriter 仲裁与记录列表徽标共用同一份查询
+  // D4：归属由派生关系即时解析（不落盘），DnsWriter 仲裁与记录列表徽标共用同一份查询；
+  // 站点归属判据统一注入 SaaSHostnameRulesPort（saasHostnames），三来源不再各自判定
   const ownership = new OwnershipService([
-    tunnelOwnershipSource({ providers, tunnels, routes: tunnelRoutes }),
-    saasOwnershipSource({ providers, hostnames: saasHostnames }),
-    edgeOneOwnershipSource({ providers, zones: edgeOneZones, domains: edgeOneDomains }),
+    tunnelOwnershipSource({ providers, tunnels, routes: tunnelRoutes, rules: saasHostnames }),
+    saasOwnershipSource({ providers, hostnames: saasHostnames, rules: saasHostnames }),
+    edgeOneOwnershipSource({ providers, zones: edgeOneZones, domains: edgeOneDomains, rules: saasHostnames }),
   ])
 
   return {

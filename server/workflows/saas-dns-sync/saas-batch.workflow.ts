@@ -3,9 +3,6 @@ import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
 import {
   BatchJobKind,
-  dedupeStrings,
-  dnsEffectNote,
-  dnsEffectOf,
   finishBatchJob,
   persistItemStage,
   runBatchItems,
@@ -18,11 +15,14 @@ import {
   SAAS_ZONE_LOCK_MESSAGE,
   ZONE_WRITE_JOB_TYPES,
   readResourceKeys,
+  type JobType,
 } from '../../core/jobs/job-registry.js'
+import { dedupeStrings } from '../../shared/values.js'
+import { dnsEffectNote, dnsEffectOf } from '../../core/providers/side-effect-result.js'
 import type { SaaSDeleteCleanupRecipe, SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 import { completedDeleteStages, completedUpdateStages } from './saas-dns-sync.workflow.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
-import { invalidateSaasZoneListCache } from './saas-zone.cache.js'
+import { invalidateSaasZoneHostnameCaches } from './saas-zone.cache.js'
 import type { SaaSPlannerHostnames, SaaSSyncRecord } from '../derived-records/planners/saas.planner.js'
 
 type SaaSBatchJobView = BatchJobViewBase & { provider_id: string; zone_name: string }
@@ -33,13 +33,23 @@ const PATCH_STRING_FIELDS = ['preferred_domain', 'custom_origin_server', 'method
 
 const byHostname = (hostname: string) => (row: Record<string, unknown>) => String(row.hostname ?? '') === hostname
 
+/**
+ * 批量路径真正依赖的同步能力：结构化声明而不是整个具体类。
+ * 批量写入只能走 InBatch 入口（单条入口会顺带失效站点列表缓存，逐条清会让下一条整站重拉），
+ * 把这个约束写进类型，mock 与测试也按同一份契约实现——方法名对不上时不必等到运行时才炸。
+ */
+export type SaaSBatchSyncWorkflow = Pick<
+  SaaSDnsSyncWorkflow,
+  'updateHostnameInBatch' | 'deleteHostnameInBatch' | 'resourceKeys'
+>
+
 /** SaaS 主机名批量 删除/修改；与优选应用共用站点互斥锁 */
 export class SaaSBatchWorkflow {
   private readonly kind: BatchJobKind<SaaSBatchJobView>
 
   constructor(
     private readonly jobs: JobService,
-    private readonly workflow: SaaSDnsSyncWorkflow,
+    private readonly workflow: SaaSBatchSyncWorkflow,
     private readonly hostnames: SaaSPlannerHostnames & SaaSHostnameCachePort
   ) {
     this.kind = new BatchJobKind(jobs, {
@@ -111,13 +121,13 @@ export class SaaSBatchWorkflow {
   }
 
   private items(hostnames: string[], extra: Record<string, unknown>) {
-    const unique = dedupeStrings(hostnames)
+    const unique = dedupeStrings(hostnames, { caseInsensitive: true })
     if (!unique.length) throw new ApiError('batch_empty', 'No hostnames selected', 422)
     return unique.map((hostname) => ({ hostname, ...extra }))
   }
 
   private async enqueue(
-    type: string,
+    type: JobType,
     scope: ZoneScope,
     extra: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
@@ -144,10 +154,11 @@ export class SaaSBatchWorkflow {
       runningMessage: '删除中',
       progressMessage: '批量删除执行中',
       execute: async (item, hostname) => {
-        const result = await this.workflow.deleteHostname(providerId, zoneName, hostname, autoCleanup, {
+        // 批量逐条删除只失效主机名详情缓存：列表缓存若在这里逐条清，下一条就要重新分页拉取
+        // 整站主机名（O(N²) 上游放大）；列表由本方法末尾的收尾统一失效
+        const result = await this.workflow.deleteHostnameInBatch(providerId, zoneName, hostname, autoCleanup, {
           completed: completedDeleteStages(item),
           cleanup: cleanupRecipeOf(item.cleanup_recipe),
-          deferListInvalidation: true,
           onStage: (_stage, patch) => persistItemStage(this.jobs, job.id, byHostname(hostname), patch),
         })
         const cleanup = dnsEffectOf(result, 'cleanup')
@@ -169,7 +180,8 @@ export class SaaSBatchWorkflow {
       },
     })
     await finishBatchJob(this.jobs, job.id, '批量删除')
-    await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
+    // 收尾统一失效详情 + 列表：逐条只清过详情，列表留到这里一次性清，避免逐条整站重拉
+    await invalidateSaasZoneHostnameCaches(this.hostnames, providerId, zoneName)
   }
 
   /** 修改前保存 DNS 快照并落盘，重试时远端已应用则不重复 PATCH */
@@ -186,9 +198,10 @@ export class SaaSBatchWorkflow {
           : undefined
         // 补丁对象每条目复制一份，防止下游修改污染后续条目
         const patch = { ...(job.payload.patch as Record<string, unknown>) }
-        const updated = await this.workflow.updateHostname(providerId, zoneName, hostname, patch, autoSync, {
+        // 批量逐条修改只失效主机名详情缓存：列表缓存若在这里逐条清，下一条就要重新分页拉取
+        // 整站主机名（O(N²) 上游放大）；列表由本方法末尾的收尾统一失效
+        const updated = await this.workflow.updateHostnameInBatch(providerId, zoneName, hostname, patch, autoSync, {
           completed: completedUpdateStages(item),
-          deferListInvalidation: true,
           beforeRecords,
           onStage: (_stage, stagePatch) => persistItemStage(this.jobs, job.id, byHostname(hostname), stagePatch),
         })
@@ -201,7 +214,8 @@ export class SaaSBatchWorkflow {
       },
     })
     await finishBatchJob(this.jobs, job.id, '批量修改')
-    await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
+    // 收尾统一失效详情 + 列表：逐条只清过详情，列表留到这里一次性清，避免逐条整站重拉
+    await invalidateSaasZoneHostnameCaches(this.hostnames, providerId, zoneName)
   }
 }
 

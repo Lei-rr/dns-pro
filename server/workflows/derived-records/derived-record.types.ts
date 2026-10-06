@@ -5,7 +5,7 @@
  * 同一形状，检测与执行共用：检测只读，执行经 DnsWriter。
  * 注意：不持久化派生关系表，`lastSyncedAt` 恒为 null。
  */
-import type { DnsRecordValue } from '../../core/contracts/dns-record.port.js'
+import type { DnsProviderType, DnsRecordValue } from '../../core/contracts/dns-record.port.js'
 import type { DerivedOwner } from '../../core/contracts/ownership.port.js'
 import type { DesiredRecord, SyncAction } from './sync-plan.js'
 
@@ -17,7 +17,7 @@ export type DerivedStatus = 'synced' | 'drifted' | 'missing' | 'failed'
 
 type DerivedSource = { kind: SourceKind; providerId: string; id: string }
 
-type DerivedTarget = { providerType: string; providerId: string; zone: string; fqdn: string }
+type DerivedTarget = { providerType: DnsProviderType; providerId: string; zone: string; fqdn: string }
 
 /** 一条派生关系：来源声明 → DNS 目标（期望记录 + 归属） */
 type DerivedRecord = {

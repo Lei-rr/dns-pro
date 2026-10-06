@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import http from '@/shared/api/http'
-import type { ApiResponse } from '@/shared/api/types'
 import { saasApi } from './saas-api'
 
 /**
@@ -11,7 +10,7 @@ import { saasApi } from './saas-api'
 const DELETE_URL = '/saas/providers/provider-1/zones/example.com/hostnames/api.example.com'
 
 function mockDelete() {
-  return vi.spyOn(http, 'delete').mockResolvedValue({ code: 0, message: 'success', data: null } as ApiResponse<unknown>)
+  return vi.spyOn(http, 'delete').mockResolvedValue({ code: 0, message: 'success', data: null })
 }
 
 afterEach(() => {

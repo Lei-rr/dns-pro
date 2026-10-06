@@ -10,6 +10,11 @@ import {
 } from '../../core/http/request-schema.js'
 
 const uint = Type.Integer({ minimum: 0 })
+/**
+ * 记录启停状态：与单条端点（modules/dnspod/dns-pod.schema.ts）同一闭合联合。
+ * 自由文本会让 'disabled' / 'PAUSED' 这类值在写入侧被静默归一，等于把「停用」写成启用。
+ */
+const recordStatus = Type.Union([Type.Literal('ENABLE'), Type.Literal('DISABLE')])
 const recordFields = {
   name: Type.Optional(optionalText()),
   type: Type.Optional(optionalText()),
@@ -20,7 +25,7 @@ const recordFields = {
   priority: Type.Optional(uint),
   remark: Type.Optional(optionalText(65535)),
   proxied: Type.Optional(bool),
-  status: Type.Optional(optionalText()),
+  status: Type.Optional(recordStatus),
   weight: Type.Optional(uint),
 }
 const createRecord = Type.Object(
@@ -43,7 +48,7 @@ const patch = objectSchema({
   remark: optionalText(65535),
   priority: uint,
   proxied: bool,
-  status: optionalText(),
+  status: recordStatus,
   weight: uint,
 })
 const zoneParams = paramsSchema('providerId', 'zone')

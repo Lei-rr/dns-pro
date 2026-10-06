@@ -7,9 +7,19 @@ const OWNER_LABELS: Record<RecordOwner, string> = {
   manual: '人工',
 }
 
+/**
+ * 归属判定：只认词表自有键。
+ * `in` 判定会命中原型链（'toString' in {} === true），命中的原型方法被当作归属后
+ * 会被标签渲染成非字符串；词表本身即键集合的唯一来源，判定与标签不可能不同步。
+ */
+function isRecordOwner(value: string): value is RecordOwner {
+  // web 的 lib 配置停在 ES2020，Object.hasOwn 没有类型定义；hasOwnProperty.call 语义等价且不查原型链
+  return Object.prototype.hasOwnProperty.call(OWNER_LABELS, value)
+}
+
 function ownerOf(record: DnsRecord): RecordOwner | '' {
   const owner = String(record.owner || '')
-  return owner in OWNER_LABELS ? (owner as RecordOwner) : ''
+  return isRecordOwner(owner) ? owner : ''
 }
 
 /** D4 归属徽标文案：后端未返回归属时为空串（不渲染徽标） */

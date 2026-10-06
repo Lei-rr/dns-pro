@@ -6,8 +6,8 @@ import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import { toFullListResult } from '../../../core/providers/provider-call.js'
 import type { SaaSHostnameCachePort } from '../../../core/contracts/saas-hostname-cache.port.js'
 import type { SaaSHostnamePort } from '../../../core/contracts/saas-hostname.port.js'
-import type { SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
-import type { SaaSSyncConfigPort } from '../../../core/contracts/saas-sync-config.port.js'
+import type { SaaSHostnameOwnership, SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
+import type { SaaSSyncConfigPort, SyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
 import type { PreferredDomainService } from './preferred-domain.service.js'
 import type { SaaSCustomHostnameClient, CloudflareCustomHostname } from './saas-custom-hostname.client.js'
 import type { FallbackOriginInfo, SaaSFallbackOriginClient } from './saas-fallback-origin.client.js'
@@ -17,7 +17,7 @@ import {
   tryNormalizeFallbackOrigin,
   zoneOwnsHostname,
 } from './saas-hostname-rules.js'
-import { invalidateSaaSHostnameCache, invalidateSaaSHostnameDetailsCache } from './saas.cache.js'
+import { invalidateSaaSHostnameDetailsCache, invalidateSaaSHostnameListAndDetailsCache } from './saas.cache.js'
 import { preferenceOf } from './saas-preference.service.js'
 import type { HostnameIdentity, SaaSPreferenceService } from './saas-preference.service.js'
 import type { MergedHostname, SaaSSyncConfigService } from './saas-sync-config.service.js'
@@ -199,7 +199,7 @@ export class SaaSHostnameService
       // 站点不托管该 FQDN：这不是「远端已删除」，而是请求把别的站点的主机名带到了本站点。
       // 既不能清偏好（clearForFqdn 只按行内 hostname 匹配，会连另一站点同名 FQDN 的偏好一起删掉），
       // 也不能返回成功——批量任务会把它记成「已删除」，而那条主机名其实还在别的站点活着。
-      if (!zoneOwnsHostname(zoneName, hostnameFqdn)) {
+      if (!zoneOwnsHostname({ zone: zoneName, fqdn: hostnameFqdn })) {
         throw new ApiError(
           'validation_failed',
           `SaaS hostname ${hostnameFqdn} does not belong to zone ${zoneName}`,
@@ -264,7 +264,7 @@ export class SaaSHostnameService
     return this.syncConfigs.effectiveSyncConfig(providerId, hostnameFqdn, explicit)
   }
 
-  defaultSyncTarget(providerId: string): Promise<string> {
+  defaultSyncTarget(providerId: string): Promise<SyncTarget> {
     return this.syncConfigs.defaultSyncTarget(providerId)
   }
 
@@ -282,20 +282,24 @@ export class SaaSHostnameService
   }
 
   /** 端口 SaaSHostnameRulesPort：站点归属判定（同名或为其子域） */
-  zoneOwnsHostname(zone: string, fqdn: string): boolean {
-    return zoneOwnsHostname(zone, fqdn)
+  zoneOwnsHostname(host: SaaSHostnameOwnership): boolean {
+    return zoneOwnsHostname(host)
   }
 
-  /** 端口 SaaSHostnameCachePort：按站点身份失效；includeList=false 只失效详情（批量逐条用） */
-  invalidateHostnameCache(cloudflareProviderId: string, zoneId: string, includeList: boolean): void {
-    if (includeList) invalidateSaaSHostnameCache(cloudflareProviderId, zoneId, true)
-    else invalidateSaaSHostnameDetailsCache(cloudflareProviderId, zoneId)
+  /** 端口 SaaSHostnameCachePort：只失效主机名详情（批量任务逐条写后调用） */
+  invalidateHostnameDetails(cloudflareProviderId: string, zoneId: string): void {
+    invalidateSaaSHostnameDetailsCache(cloudflareProviderId, zoneId)
   }
 
-  /** 端口 SaaSHostnameCachePort：按 SaaS 服务商 + 站点名解析站点后失效 */
-  async invalidateZoneCache(providerId: string, zoneName: string, includeList: boolean): Promise<void> {
+  /** 端口 SaaSHostnameCachePort：详情与站点主机名列表一起失效（单条写路径） */
+  invalidateHostnameAndList(cloudflareProviderId: string, zoneId: string): void {
+    invalidateSaaSHostnameListAndDetailsCache(cloudflareProviderId, zoneId)
+  }
+
+  /** 端口 SaaSHostnameCachePort：按 SaaS 服务商 + 站点名解析站点后，详情与列表一起失效（任务收尾） */
+  async invalidateZoneHostnameAndList(providerId: string, zoneName: string): Promise<void> {
     const zone = await this.resolveZoneRef(providerId, zoneName)
-    this.invalidateHostnameCache(zone.cloudflareProviderId, zone.zoneId, includeList)
+    this.invalidateHostnameAndList(zone.cloudflareProviderId, zone.zoneId)
   }
 
   /**
@@ -325,8 +329,8 @@ export class SaaSHostnameService
     const fqdn = normalizeFqdn(hostnameFqdn)
     const cloudflareProviderId = await this.cloudflareProviderId(providerId)
     const zones = (await this.cloudflareZones.listAll(cloudflareProviderId)).items
-    const owned = zones.filter((zone) => zoneOwnsHostname(String(zone.name ?? ''), fqdn))
-    const rest = zones.filter((zone) => !zoneOwnsHostname(String(zone.name ?? ''), fqdn))
+    const owned = zones.filter((zone) => zoneOwnsHostname({ zone: String(zone.name ?? ''), fqdn }))
+    const rest = zones.filter((zone) => !zoneOwnsHostname({ zone: String(zone.name ?? ''), fqdn }))
 
     const found =
       (await this.findHostname(cloudflareProviderId, fqdn, owned, true)) ??

@@ -46,26 +46,26 @@ describe('FQDN → 相对主机记录（与 zone 相同为 @）', () => {
 
 describe('幂等重放判定：现状是否已经等于期望（厂商字段差异不参与比较）', () => {
   it('期望未声明的可选字段不参与比较：现状多出 TTL / 权重 / 备注也算命中', () => {
-    const actual = record({ ttl: 600, weight: 10, note: '上游写入', status: 'enable', line: '默认' })
+    const actual = record({ ttl: 600, weight: 10, note: '上游写入', status: 'ENABLE', line: '默认' })
     expect(dnsRecordMatches(actual, record())).toBe(true)
   })
 
   it('期望声明的字段必须一致：TTL / 优先级 / 备注 / 状态 / 权重任一不同即未命中', () => {
-    const expected = record({ ttl: 60, priority: 5, note: 'edgeone:domain-1', status: 'enable', weight: 1 })
+    const expected = record({ ttl: 60, priority: 5, note: 'edgeone:domain-1', status: 'ENABLE', weight: 1 })
     expect(
       dnsRecordMatches(
-        record({ ttl: 60, priority: 5, note: 'edgeone:domain-1', status: 'enable', weight: 1 }),
+        record({ ttl: 60, priority: 5, note: 'edgeone:domain-1', status: 'ENABLE', weight: 1 }),
         expected
       )
     ).toBe(true)
     expect(
       dnsRecordMatches(
-        record({ ttl: 600, priority: 5, note: 'edgeone:domain-1', status: 'enable', weight: 1 }),
+        record({ ttl: 600, priority: 5, note: 'edgeone:domain-1', status: 'ENABLE', weight: 1 }),
         expected
       )
     ).toBe(false)
     expect(
-      dnsRecordMatches(record({ ttl: 60, priority: 5, note: '别的备注', status: 'enable', weight: 1 }), expected)
+      dnsRecordMatches(record({ ttl: 60, priority: 5, note: '别的备注', status: 'ENABLE', weight: 1 }), expected)
     ).toBe(false)
   })
 

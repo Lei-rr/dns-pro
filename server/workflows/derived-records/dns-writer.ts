@@ -1,7 +1,8 @@
-import { ApiError } from '../../core/http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
 import {
   relativeRecordName,
+  unsupportedDnsProvider,
+  type DnsProviderType,
   type DnsRecordPort,
   type DnsRecordRef,
   type DnsRecordValue,
@@ -41,13 +42,13 @@ export interface WriteOutcome {
  */
 export class DnsWriter {
   constructor(
-    private readonly ports: Record<string, DnsRecordPort>,
+    private readonly ports: Record<DnsProviderType, DnsRecordPort>,
     private readonly ownership: OwnershipPort
   ) {}
 
   /** 声明期望记录 → 查现状 → 算计划 → 执行；单条失败不中断其余条目 */
   async sync(
-    providerType: string,
+    providerType: DnsProviderType,
     providerId: string,
     zone: string,
     desired: DesiredRecord[]
@@ -59,7 +60,7 @@ export class DnsWriter {
 
   /** 冲突清理：删除同名下与目标类型冲突的记录，为写入让路（保留 CNAME/TXT/NS/SOA） */
   async preclean(
-    providerType: string,
+    providerType: DnsProviderType,
     providerId: string,
     zone: string,
     target: { fqdn: string; type: string },
@@ -109,10 +110,16 @@ export class DnsWriter {
     return outcomes
   }
 
-  private portOf(providerType: string): DnsRecordPort {
-    const port = this.ports[providerType]
-    if (!port) throw new ApiError('dns_provider_unsupported', `Unsupported DNS provider: ${providerType}`, 422)
-    return port
+  /** 端口按类型取用：Record<DnsProviderType, ...> 保证两个键在装配期就位，未知类型只可能来自绕过类型的调用 */
+  private portOf(providerType: DnsProviderType): DnsRecordPort {
+    switch (providerType) {
+      case 'dnspod':
+        return this.ports.dnspod
+      case 'cloudflare':
+        return this.ports.cloudflare
+      default:
+        return unsupportedDnsProvider(providerType)
+    }
   }
 
   private async removeRef(

@@ -226,10 +226,9 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
     try {
       const response = await saasApi.hostname(props.providerId, routeZoneName.value, record.hostname)
       if (!isCurrentDetail(owner, identity)) return
-      if (response.data) {
-        detailRecord.value = response.data
-        patchHostnameRow(response.data)
-      }
+      // 载荷非空由 unwrapItem 的守卫保证（空体/异形响应在 API 层抛错）：不需要再靠 truthy 拦截
+      detailRecord.value = response.data
+      patchHostnameRow(response.data)
     } catch (error) {
       if (isCurrentDetail(owner, identity)) toast.error(errorMessage(error))
     } finally {
@@ -305,7 +304,7 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
           refresh: true,
         })
         if (!owner.active()) return
-        patchHostnameRow(response.data || null)
+        patchHostnameRow(response.data)
         toast.success('已刷新')
       } catch (error) {
         if (owner.active()) toast.error(errorMessage(error))

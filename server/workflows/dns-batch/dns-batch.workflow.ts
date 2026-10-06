@@ -17,6 +17,7 @@ import {
   ZONE_WRITE_JOB_TYPES,
   dnsZoneKey,
   readResourceKeys,
+  type JobType,
 } from '../../core/jobs/job-registry.js'
 import {
   normalizeCreateRecords,
@@ -25,13 +26,13 @@ import {
   type BatchRecordInput,
 } from './dns-record-payload.js'
 import { findExistingRecord } from './dns-batch.idempotency.js'
-import type { DnsRecordPort, DnsRecordValue } from '../../core/contracts/dns-record.port.js'
-
-export type DnsProviderType = 'cloudflare' | 'dnspod'
-
-function isDnsProviderType(value: string): value is DnsProviderType {
-  return value === 'cloudflare' || value === 'dnspod'
-}
+import {
+  isDnsProviderType,
+  parseDnsRecordStatus,
+  type DnsProviderType,
+  type DnsRecordPort,
+  type DnsRecordValue,
+} from '../../core/contracts/dns-record.port.js'
 
 type DnsBatchJobView = BatchJobViewBase & { provider_type: string; provider_id: string; zone: string }
 type JobScope = { providerType: DnsProviderType; providerId: string; zone: string }
@@ -115,15 +116,13 @@ export class DnsBatchWorkflow {
   }
 
   private async enqueue(
-    type: string,
+    type: JobType,
     scope: JobScope,
     extra: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
     message: string
   ): Promise<DnsBatchJobView> {
-    if (!this.ports[scope.providerType]) {
-      throw new ApiError('batch_provider_unsupported', `Unsupported provider type: ${scope.providerType}`, 422)
-    }
+    // 端口表按闭合联合取用：缺项在装配期由 Record<DnsProviderType, DnsRecordPort> 拒绝，运行期不再兜底
     const payload = {
       provider_type: scope.providerType,
       provider_id: scope.providerId,
@@ -240,9 +239,9 @@ function toRecordValue(item: Record<string, unknown>): DnsRecordValue {
   if (item.remark !== undefined) value.note = String(item.remark)
   if (item.proxied !== undefined) value.proxied = Boolean(item.proxied)
   // 记录启停状态取自 record_status：item.status 是任务条目状态（执行骨架会覆写为 running）
-  if (item.record_status !== undefined && item.record_status !== '') {
-    value.status = String(item.record_status).toUpperCase()
-  }
+  // 未知值显式失败而不是归一：把「要求停用」写成启用比报错更危险
+  const status = parseDnsRecordStatus(item.record_status)
+  if (status !== undefined) value.status = status
   if (item.weight !== undefined && item.weight !== '') value.weight = Number(item.weight)
   return value
 }

@@ -8,8 +8,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Spinner } from '@/shared/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableLoading, TableRow } from '@/shared/ui/table'
 import { AppTooltip } from '@/shared/ui/tooltip'
-import { orderedPurposeLabels } from '@/features/dns/lib/record-remark'
-import { dnsRecordRowKey, dnsRecordTtlDisplay, type DnsRecordDisplayRow } from '@/features/dns/lib/record-display'
+import {
+  dnsRecordRowKey,
+  dnsRecordTtlDisplay,
+  orderedPurposeLabels,
+  type DnsRecordDisplayRow,
+} from '@/features/dns/lib/record-display'
 import { recordOwnerHint, recordOwnerLabel } from '@/features/dns/lib/record-owner'
 import type { DnsRecord } from '@/features/dns/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'

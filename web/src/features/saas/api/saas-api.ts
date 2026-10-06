@@ -1,5 +1,6 @@
-import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
-import type { ApiResponse } from '@/shared/api/types'
+import http, { POLL_TIMEOUT_MS, unwrapItem, unwrapList, withRefresh } from '@/shared/api/http'
+import type { ApiResponse, ApiResult } from '@/shared/api/types'
+import type { JobLike } from '@/shared/job'
 import type { SaaSDnsRepairResult, SaaSFallbackOrigin, SaaSHostname } from '@/features/saas/model/types'
 import { encodePath } from '@/shared/lib/path'
 
@@ -8,6 +9,11 @@ const zoneBase = (provider: string, zone: string) => `${providerBase(provider)}/
 
 /** 读接口选项：signal 由 useResourceQuery 的 queryFn 注入 */
 type SaasReadOptions = { refresh?: boolean; signal?: AbortSignal }
+
+/** 详情端点契约守卫：响应必须是一条主机名对象，形状不符由解包器抛错而不是被透传 */
+function isSaaSHostname(value: unknown): value is SaaSHostname {
+  return typeof value === 'object' && value !== null && 'hostname' in value && typeof value.hostname === 'string'
+}
 
 /**
  * 优选切换请求体：预览与创建共用。
@@ -21,7 +27,7 @@ export const saasApi = {
     zone: string,
     options: SaasReadOptions = {}
   ): Promise<ApiResponse<SaaSHostname[]>> =>
-    unwrapItems<SaaSHostname[]>(
+    unwrapList<SaaSHostname>(
       await http.get(`${zoneBase(provider, zone)}/hostnames`, {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,
@@ -33,18 +39,19 @@ export const saasApi = {
     hostname: string,
     options: SaasReadOptions = {}
   ): Promise<ApiResponse<SaaSHostname>> =>
-    unwrapItems<SaaSHostname>(
+    unwrapItem(
       await http.get(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`, {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,
-      })
+      }),
+      isSaaSHostname
     ),
   createHostname: (
     provider: string,
     zone: string,
     data: Record<string, unknown>,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<SaaSHostname>> =>
+  ): Promise<ApiResult<SaaSHostname>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames`, data, options.autoSync ? { params: { auto_sync: true } } : {}),
   updateHostname: (
     provider: string,
@@ -52,7 +59,7 @@ export const saasApi = {
     hostname: string,
     data: Record<string, unknown>,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<SaaSHostname>> =>
+  ): Promise<ApiResult<SaaSHostname>> =>
     http.put(
       `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
       data,
@@ -63,25 +70,25 @@ export const saasApi = {
     zone: string,
     hostname: string,
     options: Record<string, unknown> = {}
-  ): Promise<ApiResponse<SaaSHostname>> =>
+  ): Promise<ApiResult<SaaSHostname>> =>
     http.delete(
       `${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}`,
       options.skipCleanup ? { params: { auto_cleanup: false } } : {}
     ),
-  reconcileHostname: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSHostname>> =>
+  reconcileHostname: (provider: string, zone: string, hostname: string): Promise<ApiResult<SaaSHostname>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/reconcile`),
-  repairHostnameDns: (provider: string, zone: string, hostname: string): Promise<ApiResponse<SaaSDnsRepairResult>> =>
+  repairHostnameDns: (provider: string, zone: string, hostname: string): Promise<ApiResult<SaaSDnsRepairResult>> =>
     http.post(`${zoneBase(provider, zone)}/hostnames/${encodePath(hostname)}/dns-repair`),
   fallbackOrigin: (
     provider: string,
     zone: string,
     options: SaasReadOptions = {}
-  ): Promise<ApiResponse<SaaSFallbackOrigin>> =>
+  ): Promise<ApiResult<SaaSFallbackOrigin>> =>
     http.get(`${zoneBase(provider, zone)}/fallback-origin`, {
       ...withRefresh({ refresh: options.refresh }),
       signal: options.signal,
     }),
-  setFallbackOrigin: (provider: string, zone: string, origin: string): Promise<ApiResponse<SaaSFallbackOrigin>> =>
+  setFallbackOrigin: (provider: string, zone: string, origin: string): Promise<ApiResult<SaaSFallbackOrigin>> =>
     http.put(`${zoneBase(provider, zone)}/fallback-origin`, { origin }),
   deleteFallbackOrigin: (provider: string, zone: string) => http.delete(`${zoneBase(provider, zone)}/fallback-origin`),
   preferredApplyPreview: (provider: string, zone: string, data: PreferredApplyPayload) =>
@@ -89,10 +96,12 @@ export const saasApi = {
   preferredApply: (provider: string, zone: string, data: PreferredApplyPayload) =>
     http.post(`${zoneBase(provider, zone)}/preferred-apply`, data),
   preferredApplyActive: (provider: string, zone: string, options: { timeout?: number } = {}) =>
-    http.get(`${zoneBase(provider, zone)}/preferred-apply/active`, { timeout: options.timeout ?? POLL_TIMEOUT_MS }),
+    http.get<JobLike>(`${zoneBase(provider, zone)}/preferred-apply/active`, {
+      timeout: options.timeout ?? POLL_TIMEOUT_MS,
+    }),
   // 任务端点挂在服务商作用域下：归属校验要求路径带 providerId
   preferredApplyJob: (provider: string, jobId: string) =>
-    http.get(`${providerBase(provider)}/preferred-apply/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
+    http.get<JobLike>(`${providerBase(provider)}/preferred-apply/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   preferredApplyRetry: (provider: string, jobId: string) =>
     http.post(`${providerBase(provider)}/preferred-apply/${encodePath(jobId)}/retry`),
   batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
@@ -100,21 +109,20 @@ export const saasApi = {
   batchUpdate: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/update`, data),
   batchActive: (provider: string, zone: string, options: { timeout?: number } = {}) =>
-    http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: options.timeout ?? POLL_TIMEOUT_MS }),
+    http.get<JobLike>(`${zoneBase(provider, zone)}/batch/active`, { timeout: options.timeout ?? POLL_TIMEOUT_MS }),
   batchJob: (provider: string, jobId: string) =>
-    http.get(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
+    http.get<JobLike>(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (provider: string, jobId: string) =>
     http.post(`${providerBase(provider)}/batch/${encodePath(jobId)}/retry`),
 }
 
 export const preferredDomainApi = {
   list: async (): Promise<ApiResponse<Array<{ domain: string }>>> =>
-    unwrapItems<Array<{ domain: string }>>(await http.get('/saas/preferred-domains')),
-  create: (domain: string): Promise<ApiResponse<{ domain: string }>> =>
-    http.post('/saas/preferred-domains', { domain }),
-  rename: (oldDomain: string, newDomain: string): Promise<ApiResponse<{ domain: string }>> =>
+    unwrapList<{ domain: string }>(await http.get('/saas/preferred-domains')),
+  create: (domain: string): Promise<ApiResult<{ domain: string }>> => http.post('/saas/preferred-domains', { domain }),
+  rename: (oldDomain: string, newDomain: string): Promise<ApiResult<{ domain: string }>> =>
     http.put(`/saas/preferred-domains/${encodePath(oldDomain)}`, { domain: newDomain }),
   delete: (domain: string) => http.delete(`/saas/preferred-domains/${encodePath(domain)}`),
   sort: async (domains: string[]): Promise<ApiResponse<Array<{ domain: string }>>> =>
-    unwrapItems<Array<{ domain: string }>>(await http.put('/saas/preferred-domains/sort-order', { domains })),
+    unwrapList<{ domain: string }>(await http.put('/saas/preferred-domains/sort-order', { domains })),
 }

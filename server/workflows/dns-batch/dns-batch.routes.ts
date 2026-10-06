@@ -14,7 +14,7 @@ import {
   dnsJobParamsSchema,
   dnsZoneParamsSchema,
 } from './dns-batch.schema.js'
-import type { DnsProviderType } from './dns-batch.workflow.js'
+import type { DnsProviderType } from '../../core/contracts/dns-record.port.js'
 
 /** 同一套批量路由分别挂到 DNSPod / Cloudflare 前缀下 */
 export function createDnsBatchRoutes(providerType: DnsProviderType) {

@@ -1,4 +1,4 @@
-import http, { unwrapItems } from '@/shared/api/http'
+import http, { unwrapList } from '@/shared/api/http'
 import type { Provider, ProviderDefinition, ProviderDefinitions } from '../model/types'
 import type { ApiResponse } from '@/shared/api/types'
 import { encodePath } from '@/shared/lib/path'
@@ -17,18 +17,18 @@ function presentDefinitions(definitions: ProviderDefinition[]): ApiResponse<Prov
 
 export const providerApi = {
   configured: async (): Promise<ApiResponse<Provider[]>> => {
-    const response = unwrapItems<Provider[]>(await http.get('/providers'))
+    const response = unwrapList<Provider>(await http.get('/providers'))
     return {
       ...response,
       data: response.data.filter((provider) => provider.configured),
     }
   },
   list: async (signal?: AbortSignal): Promise<ApiResponse<Provider[]>> => {
-    const response = unwrapItems<Provider[]>(await http.get('/providers', { signal }))
+    const response = unwrapList<Provider>(await http.get('/providers', { signal }))
     return response
   },
   definitions: async (signal?: AbortSignal): Promise<ApiResponse<ProviderDefinitions>> =>
-    presentDefinitions(unwrapItems<ProviderDefinition[]>(await http.get('/providers/definitions', { signal })).data),
+    presentDefinitions(unwrapList<ProviderDefinition>(await http.get('/providers/definitions', { signal })).data),
   create: (data: Record<string, unknown>) => http.post('/providers', data),
   update: (provider: string, data: Record<string, unknown>) => http.put(`/providers/${encodePath(provider)}`, data),
   remove: (provider: string) => http.delete(`/providers/${encodePath(provider)}`),

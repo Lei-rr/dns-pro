@@ -2,9 +2,11 @@ import type { DnsRecord } from '@/features/dns/model/types'
 import {
   compareRecordsForGroup,
   hostGroupLabel,
+  inferRecordPurpose,
   recordHostKey,
   shouldCollapseHostGroup,
-} from '@/features/dns/lib/record-remark'
+  type RecordLike,
+} from '@/features/dns/lib/record-group'
 
 export type DnsRecordDisplayRow =
   | { kind: 'single'; record: DnsRecord; key: string }
@@ -71,4 +73,22 @@ export function dnsRecordTtlDisplay(ttl?: number | string | null): string {
   if (ttl === 1 || ttl === '1') return '自动'
   if (ttl == null || ttl === '') return '-'
   return String(ttl)
+}
+
+/** 组头徽章固定顺序 */
+const PURPOSE_LABEL_ORDER = ['默认回源', '优选域名', 'DCV委派', '所有权验证', 'MX', 'SPF', 'DKIM', 'DMARC'] as const
+
+const PURPOSE_LABEL_SET: ReadonlySet<string> = new Set<string>(PURPOSE_LABEL_ORDER)
+
+/** 组头用途徽章：固定顺序在前，只显示本组有的；固定顺序之外的标签按出现顺序追加 */
+export function orderedPurposeLabels(records: RecordLike[], zoneName = ''): string[] {
+  const present = new Set<string>()
+  const extras: string[] = []
+  for (const record of records) {
+    const { isLinked, purposeLabel } = inferRecordPurpose(record, zoneName)
+    if (!isLinked || !purposeLabel) continue
+    if (PURPOSE_LABEL_SET.has(purposeLabel)) present.add(purposeLabel)
+    else if (!extras.includes(purposeLabel)) extras.push(purposeLabel)
+  }
+  return [...PURPOSE_LABEL_ORDER.filter((label) => present.has(label)), ...extras]
 }

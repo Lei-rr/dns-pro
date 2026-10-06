@@ -12,7 +12,7 @@ import {
 } from '../../core/jobs/job-registry.js'
 import type { SaaSPlannerHostnames } from '../derived-records/planners/saas.planner.js'
 import { itemResultFromSideEffects } from './saas-batch-item-result.js'
-import { invalidateSaasZoneListCache } from './saas-zone.cache.js'
+import { invalidateSaasZoneHostnameCaches } from './saas-zone.cache.js'
 import type { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 
 type PreferredApplyJob = BatchJobViewBase & {
@@ -139,14 +139,14 @@ export class SaaSPreferredApplyWorkflow {
       runningMessage: '处理中',
       progressMessage: '后台执行中',
       execute: async (_item, hostname) => {
-        const updated = await this.workflow.updateHostname(
+        // 批量逐条更新只失效主机名详情缓存：列表缓存若在这里逐条清，下一条就要重新分页拉取
+        // 整站主机名（O(N²) 上游请求）；列表由本方法末尾的收尾统一失效
+        const updated = await this.workflow.updateHostnameInBatch(
           providerId,
           zoneName,
           hostname,
           { preferred_domain: preferred, auto_preferred: true },
-          true,
-          // 批量逐条更新：抑制逐条列表缓存失效，否则每条都要重新分页拉取整站主机名（O(N²) 上游请求）
-          { deferListInvalidation: true }
+          true
         )
         return itemResultFromSideEffects(updated, {
           successMessage: `已切换为 ${preferred}`,
@@ -157,7 +157,8 @@ export class SaaSPreferredApplyWorkflow {
       },
     })
     await finishBatchJob(this.jobs, job.id, '优选应用')
-    await invalidateSaasZoneListCache(this.hostnames, providerId, zoneName)
+    // 收尾统一失效详情 + 列表：逐条只清过详情，列表留到这里一次性清，避免逐条整站重拉
+    await invalidateSaasZoneHostnameCaches(this.hostnames, providerId, zoneName)
   }
 
   private async resolveTargets(input: ApplyInput): Promise<SaaSHostnameValue[]> {

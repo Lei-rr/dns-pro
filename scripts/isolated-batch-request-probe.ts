@@ -10,7 +10,7 @@ import { buildApp } from '../server/app/lifecycle.js'
 import { CloudflareClient } from '../server/modules/cloudflare/cloudflare.client.js'
 import { DnsPodClient } from '../server/modules/dnspod/dns-pod.client.js'
 import { EdgeOneClient } from '../server/modules/edge-one/edge-one.client.js'
-import { invalidateSaaSHostnameCache } from '../server/modules/cloudflare/saas/saas.cache.js'
+import { invalidateSaaSHostnameListAndDetailsCache } from '../server/modules/cloudflare/saas/saas.cache.js'
 import { DNS_BATCH_CREATE_JOB } from '../server/core/jobs/job-registry.js'
 import type { DesiredRecord } from '../server/workflows/derived-records/sync-plan.js'
 import {
@@ -507,7 +507,7 @@ try {
   // ---- 7. 优选切换批量：逐条更新只失效详情缓存，主机名列表不得随条目数重复拉取 ----
   await app.ctx.modules.saas.preferredDomains.create('preferred.example.net')
   // 上一轮批量收尾会清掉站点主机名缓存；先还原这一前置状态，才能验证本任务的列表拉取次数
-  invalidateSaaSHostnameCache('cf-owner', 'zone-1', true)
+  invalidateSaaSHostnameListAndDetailsCache('cf-owner', 'zone-1')
   cloudflareGets.length = 0
   // DnsWriter 的归属取证会按 DNSPod 目标扫描 EdgeOne 加速域名：返回空站点即可（无归属冲突）
   EdgeOneClient.prototype.call = async function (action: string): Promise<unknown> {

@@ -108,7 +108,11 @@ export class ProviderNormalizer {
   }
 
   validateName(name: unknown): string {
-    return String(name ?? '').trim()
+    const value = String(name ?? '').trim()
+    // 与其它字段共用同一张长度上限表和同一段校验：HTTP 路由的 schema 已拦下超长输入，
+    // 但本类是 core 的公开 API，脚本 / 探针 / 迁移会直接调用它，长度不能只靠调用方自觉
+    this.validateField('name', value)
+    return value
   }
 
   validateField(field: string, value: string): void {

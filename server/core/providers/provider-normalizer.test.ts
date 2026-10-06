@@ -77,3 +77,23 @@ describe('密钥字段：拒绝密文前缀输入', () => {
     expect(provider.secret_id).toBe('enc:v1:not-a-secret')
   })
 })
+
+describe('服务商名称：与其它字段共用同一张长度上限表', () => {
+  it('name 超过默认上限（255）被拒：非 HTTP 调用方（脚本/探针/迁移）不经 schema，长度必须在此兜底', async () => {
+    const error = await captured(() =>
+      normalizer.normalize(
+        { id: 'dns', type: 'dnspod', name: 'a'.repeat(256), secret_id: 'AKID', secret_key: 'plain-key' },
+        dnspodDefinition
+      )
+    )
+    expect(error).toMatchObject({ code: 'validation_failed' })
+  })
+
+  it('name 允许为空（可选字段），纯空白归一为空串', () => {
+    const provider = normalizer.normalize(
+      { id: 'dns', type: 'dnspod', name: '   ', secret_id: 'AKID', secret_key: 'plain-key' },
+      dnspodDefinition
+    )
+    expect(provider.name).toBe('')
+  })
+})

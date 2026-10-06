@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { parseDnsFile } from '../web/src/features/dns/lib/record-import.js'
 import { buildImportPreview } from '../web/src/features/dns/lib/record-import-preview.js'
-import { recordHostKey, shouldCollapseHostGroup } from '../web/src/features/dns/lib/record-remark.js'
+import { recordHostKey, shouldCollapseHostGroup } from '../web/src/features/dns/lib/record-group.js'
 
 // 无表头 CSV 的首行是数据：单个 `mx` 之类的短词命中不得把整行当表头吞掉
 const headerless = parseDnsFile('mail,MX,10 mx.example.com\n@,A,192.0.2.1', 'records.csv')

@@ -1,4 +1,4 @@
-import http, { unwrapItems, withRefresh } from '@/shared/api/http'
+import http, { unwrapList, withRefresh } from '@/shared/api/http'
 import type { ApiResponse, SideEffects } from '@/shared/api/types'
 import type { Tunnel as CloudflaredTunnel, TunnelRoute as CloudflaredRoute } from '@/features/tunnels/model/types'
 import { encodePath } from '@/shared/lib/path'
@@ -21,7 +21,7 @@ const tunnelBase = (provider: string, tunnelId: string) => `${providerBase(provi
 
 export const tunnelApi = {
   tunnels: async (provider: string, options: RefreshOptions = {}): Promise<ApiResponse<CloudflaredTunnel[]>> =>
-    unwrapItems<CloudflaredTunnel[]>(
+    unwrapList<CloudflaredTunnel>(
       await http.get(`${providerBase(provider)}/tunnels`, {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,

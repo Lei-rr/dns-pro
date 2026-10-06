@@ -1,4 +1,5 @@
 import { normalizeFqdn } from '../../../shared/values.js'
+import type { SaaSHostnameOwnership } from '../../../core/contracts/saas-hostname-rules.port.js'
 /** Pure SaaS hostname helpers (no I/O) — keep SaaSHostnameService focused on orchestration. */
 
 /**
@@ -25,11 +26,15 @@ export function tryNormalizeFallbackOrigin(zoneName: string, origin: string): st
   return value
 }
 
-export function zoneOwnsHostname(zone: string, fqdn: string): boolean {
-  const z = normalizeFqdn(zone)
-  const h = normalizeFqdn(fqdn)
-  if (!z || !h) return false
-  return h === z || h.endsWith('.' + z)
+/**
+ * 站点是否托管该主机名（同名或为其子域）。
+ * 参数用对象承载：该判定被读接口 / DNS 写回 / 归属查询共用，位置参数写反只会静默判负。
+ */
+export function zoneOwnsHostname(host: SaaSHostnameOwnership): boolean {
+  const zone = normalizeFqdn(host.zone)
+  const fqdn = normalizeFqdn(host.fqdn)
+  if (!zone || !fqdn) return false
+  return fqdn === zone || fqdn.endsWith('.' + zone)
 }
 
 /**

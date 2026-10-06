@@ -66,11 +66,7 @@ export class ProviderConnectionService {
           }
         }
         case 'edgeone': {
-          const linked = await this.requireLinked(
-            provider,
-            { code: 'edgeone_dnspod_provider_not_found', message: 'EdgeOne 未关联 DNSPod' },
-            nextVisited
-          )
+          const linked = await this.requireLinked(provider, 'edgeone_dnspod_provider_missing', nextVisited)
           const zones = await this.probes.edgeoneZones.zones(provider.id, true)
           return {
             ok: true,
@@ -80,11 +76,7 @@ export class ProviderConnectionService {
           }
         }
         case 'saas': {
-          const linked = await this.requireLinked(
-            provider,
-            { code: 'saas_cloudflare_provider_missing', message: 'SaaS 未关联 Cloudflare' },
-            nextVisited
-          )
+          const linked = await this.requireLinked(provider, 'saas_cloudflare_provider_missing', nextVisited)
           return {
             ok: true,
             type: provider.type,
@@ -93,11 +85,7 @@ export class ProviderConnectionService {
           }
         }
         case 'cloudflared': {
-          const linked = await this.requireLinked(
-            provider,
-            { code: 'cloudflared_cloudflare_provider_missing', message: 'Tunnel 未关联 Cloudflare' },
-            nextVisited
-          )
+          const linked = await this.requireLinked(provider, 'cloudflared_cloudflare_provider_missing', nextVisited)
           const tunnels = await this.probes.tunnels.list(provider.id, true)
           return {
             ok: true,
@@ -124,11 +112,7 @@ export class ProviderConnectionService {
   }
 
   /** 关联字段与目标类型统一取自 PROVIDER_LINK_RULES，避免各处硬编码漂移 */
-  private async requireLinked(
-    provider: Provider,
-    missing: { code: string; message: string },
-    visited: ReadonlySet<string>
-  ): Promise<string> {
+  private async requireLinked(provider: Provider, missingCode: string, visited: ReadonlySet<string>): Promise<string> {
     const rule = requiredLinkRule(provider.type)
     if (!rule) {
       // 规则表与 provider definition 脱节属于装配错误：宁可测通失败也不静默跳过
@@ -138,7 +122,11 @@ export class ProviderConnectionService {
       })
     }
     const linked = String((provider as Record<string, unknown>)[rule.field] ?? '').trim()
-    if (!linked) throw new ApiError(missing.code, missing.message, 422)
+    if (!linked) {
+      // 面向用户的文案由 server/core/http/error-messages.ts 的码→中文映射决定：
+      // 这里传中文 message 会被 api-response 原样透出，让同一错误码在不同路径给出不同文案
+      throw new ApiError(missingCode, `Provider ${provider.type} is missing a linked provider`, 422)
+    }
     await this.testLinked(linked, rule.targetType, visited)
     return linked
   }

@@ -28,7 +28,7 @@ export async function showBatchFailures(
   suffix = '条',
   options?: {
     /** 提交重试并轮询完成，返回最终 job（或 null） */
-    onRetry?: () => void | Promise<JobLike | null | undefined>
+    onRetry?: () => Promise<JobLike | null | undefined>
     retryText?: string
     /** 重试后结果弹窗标题前缀，默认「重试结果」 */
     retryTitle?: string
@@ -70,7 +70,7 @@ export async function showBatchFailures(
 
   const toastId = toast.loading('正在重试…')
   try {
-    const job = (await options.onRetry()) as JobLike | null | undefined
+    const job = await options.onRetry()
     toast.dismiss(toastId)
     if (options.isActive?.() === false) return
     const retryFailed = failedLinesFromJob(job || null)

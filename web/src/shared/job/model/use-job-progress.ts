@@ -2,14 +2,18 @@ import { ref } from 'vue'
 import type { JobLike, PollJobOptions } from './types'
 import { createScopeGeneration, type GenerationOwner } from '../../lib/scope-generation'
 
+/** 任务详情的形状极弱（字段全可选）：非 null 对象即满足 JobLike，字段缺失由消费侧默认值兜住 */
+function isJobRecord(value: unknown): value is JobLike {
+  return typeof value === 'object' && value !== null
+}
+
 export function extractJobId(data: unknown): string {
-  if (!data || typeof data !== 'object') return ''
-  const d = data as Record<string, unknown>
-  if (d.id != null && d.id !== '') return String(d.id)
-  if (d.job_id != null && d.job_id !== '') return String(d.job_id)
-  const nested = d.job
-  if (nested && typeof nested === 'object' && (nested as { id?: unknown }).id != null) {
-    return String((nested as { id?: unknown }).id)
+  if (!isJobRecord(data)) return ''
+  if (data.id != null && data.id !== '') return String(data.id)
+  if (data.job_id != null && data.job_id !== '') return String(data.job_id)
+  const nested = data.job
+  if (nested && typeof nested === 'object' && 'id' in nested && nested.id != null) {
+    return String(nested.id)
   }
   return ''
 }
@@ -17,7 +21,7 @@ export function extractJobId(data: unknown): string {
 /** 详情端点返回 null/{} 都算详情缺失：空对象同样不能证明任务已完成 */
 function isMissingJobPayload(data: unknown): boolean {
   if (!data || typeof data !== 'object') return true
-  return Object.keys(data as Record<string, unknown>).length === 0
+  return Object.keys(data).length === 0
 }
 
 /** 连续读不到详情的容忍次数：超过即按未知状态上报，而不是当成任务已完成 */
@@ -153,10 +157,10 @@ export function useJobProgress() {
         return null
       }
       running.value = true
-      if (typeof data === 'object') {
-        job.value = data as JobLike
-        text.value = progressText(data as JobLike, options.label)
-        percent.value = progressPercent(data as JobLike)
+      if (isJobRecord(data)) {
+        job.value = data
+        text.value = progressText(data, options.label)
+        percent.value = progressPercent(data)
       }
       return await pollOwned(jobId, options, owner)
     } catch (error) {
@@ -173,7 +177,7 @@ export function useJobProgress() {
   }
 
   function failedItems(current?: JobLike | null) {
-    return ((current?.items || []) as Array<Record<string, unknown>>).filter((item) => item.status === 'failed')
+    return (current?.items || []).filter((item) => item.status === 'failed')
   }
 
   function release(owner: GenerationOwner) {

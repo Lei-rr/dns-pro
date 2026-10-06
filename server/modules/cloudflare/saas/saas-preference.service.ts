@@ -6,6 +6,7 @@ import { normalizeFqdn } from '../../../shared/values.js'
 import type { JsonStore } from '../../../core/store/json-store.js'
 import type { SaaSPreferencesFile } from '../../../core/store/store-shapes.js'
 import type { SaaSPreferencePort } from '../../../core/contracts/saas-preference.port.js'
+import type { SyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
 import { zoneOwnsHostname } from './saas-hostname-rules.js'
 
 export interface HostnamePreference {
@@ -15,6 +16,7 @@ export interface HostnamePreference {
   /** 远端主机名 ID：仅作辅助索引，键不依赖它 */
   hostname_id: string
   preferred_domain: string
+  /** 存储行形状：读取侧逐层解析，脏值在解析点显式失败而不是在这里假定合法 */
   sync_target: string
   sync_provider_id: string
   sync_zone: string
@@ -25,10 +27,13 @@ export interface HostnamePreference {
 /** 形状权威在 store 注册表同层；此处再导出，既有导入路径不变 */
 export type { SaaSPreferencesFile } from '../../../core/store/store-shapes.js'
 
-export type SyncPreference = Pick<
-  HostnamePreference,
-  'sync_target' | 'sync_provider_id' | 'sync_zone' | 'auto_preferred'
->
+/** 同步配置子集：已解析的业务形状，目标用端口层闭合联合 */
+export type SyncPreference = {
+  sync_target: SyncTarget
+  sync_provider_id: string
+  sync_zone: string
+  auto_preferred: boolean
+}
 
 /** 主机名偏好身份：站点名 + FQDN。用身份而非远端 hostnameId 作键，主机名重建后偏好仍命中 */
 export interface HostnameIdentity {
@@ -44,7 +49,11 @@ const STRING_FIELDS = [
   'sync_provider_id',
   'sync_zone',
 ] as const
-const SYNC_TARGET_PROVIDER_TYPE: Record<string, Provider['type']> = { dnspod: 'dnspod', cloudflare_dns: 'cloudflare' }
+/** 同步目标 → 该目标要求的服务商类型；空串（关闭自动同步）没有对应服务商，见 assertSyncProvider */
+const SYNC_TARGET_PROVIDER_TYPE: Record<Exclude<SyncTarget, ''>, Provider['type']> = {
+  dnspod: 'dnspod',
+  cloudflare_dns: 'cloudflare',
+}
 
 /** 站点名 + FQDN → 偏好键（不含服务商前缀；站点为空表示站点未知行） */
 function hostnameIdentityKey(identity: HostnameIdentity): string {
@@ -148,7 +157,7 @@ export class SaaSPreferenceService implements SaaSPreferencePort {
     cloudflareProviderId: string
     identity: HostnameIdentity
     hostnameId?: string
-    syncTarget: string
+    syncTarget: SyncTarget
     syncProviderId: string
     syncZone: string
     autoPreferred: boolean
@@ -347,7 +356,7 @@ function isAdoptable(value: unknown, key: string, fqdn: string, zone: string): b
   // 站点已知的行不参与收编，避免跨站点误认
   if (parts.length === 2 && (parts[0] ?? '') !== '') return false
   // 站点未知/旧 id 行：只有写入站点确实托管该 FQDN 时才收编，否则它多半属于别的站点
-  return zoneOwnsHostname(zone, fqdn)
+  return zoneOwnsHostname({ zone, fqdn })
 }
 
 /** 定位偏好行：精确身份键 → 同 FQDN 的站点未知/旧 id 行 → 行内 hostname_id */
@@ -400,7 +409,8 @@ function migratedKey(cfId: string, key: string, value: Record<string, unknown>):
 
 function toSyncChanges(sync: SyncPreference): Partial<HostnamePreference> {
   return {
-    sync_target: sync.sync_target.trim(),
+    // sync_target 已由端口层的解析器归一到合法值，这里不再做字符串清洗
+    sync_target: sync.sync_target,
     sync_provider_id: sync.sync_provider_id.trim(),
     sync_zone: sync.sync_zone.trim().toLowerCase(),
     auto_preferred: Boolean(sync.auto_preferred),
@@ -426,13 +436,14 @@ function presentPreference(row: Record<string, unknown>): HostnamePreference {
 
 /** 同步目标与服务商必须同时为空或类型匹配 */
 function assertSyncProvider(sync: SyncPreference, providers: Provider[]): void {
-  const target = sync.sync_target.trim()
+  const target = sync.sync_target
   const providerId = sync.sync_provider_id.trim()
-  if (!target && !providerId) return
-  const requiredType = SYNC_TARGET_PROVIDER_TYPE[target]
-  if (!requiredType || !providerId) {
-    throw new ApiError('validation_failed', 'Invalid SaaS sync provider configuration', 422)
+  if (target === '') {
+    if (providerId !== '') throw new ApiError('validation_failed', 'Invalid SaaS sync provider configuration', 422)
+    return
   }
+  if (providerId === '') throw new ApiError('validation_failed', 'Invalid SaaS sync provider configuration', 422)
+  const requiredType = SYNC_TARGET_PROVIDER_TYPE[target]
   const provider = providers.find((item) => item.id === providerId)
   if (!provider || provider.type !== requiredType) {
     throw new ApiError('provider_reference_not_found', 'SaaS sync provider not found or has invalid type', 422)

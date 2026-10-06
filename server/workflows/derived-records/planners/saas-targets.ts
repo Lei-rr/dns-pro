@@ -11,6 +11,7 @@ import type { LinkedDnsAccountPort } from '../../../core/contracts/linked-dns-ac
 import type { SaaSHostnameRulesPort } from '../../../core/contracts/saas-hostname-rules.port.js'
 import type { SaaSHostnamePort, SaaSHostnameValue } from '../../../core/contracts/saas-hostname.port.js'
 import type { SaaSSyncConfigPort, SaaSSyncDefaultsPort } from '../../../core/contracts/saas-sync-config.port.js'
+import { unsupportedSyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
 import type { ProviderRepository } from '../../../core/providers/provider.repository.js'
 import { normalizeFqdn } from '../../../shared/values.js'
 import type { SaaSSyncProviderType } from './saas-records.js'
@@ -164,13 +165,13 @@ export async function resolveCloudflareSaasTarget(
   const cloudflareProviderId =
     explicit.provider?.trim() || sync?.sync_provider_id || (await saasDefaultCloudflareProviderId(deps, providerId))
   let zoneName = (explicit.zone?.trim() || sync?.sync_zone || '').toLowerCase()
-  if (zoneName !== '' && !deps.hostnames.zoneOwnsHostname(zoneName, hostnameFqdn)) zoneName = ''
+  if (zoneName !== '' && !deps.hostnames.zoneOwnsHostname({ zone: zoneName, fqdn: hostnameFqdn })) zoneName = ''
   zoneName ||= normalizeFqdn(cfZoneName)
   if (zoneName === '') {
     throw new ApiError('saas_cloudflare_sync_zone_missing', 'Cloudflare DNS sync zone is required', 422)
   }
   const fqdn = normalizeFqdn(hostnameFqdn)
-  if (!deps.hostnames.zoneOwnsHostname(zoneName, fqdn)) {
+  if (!deps.hostnames.zoneOwnsHostname({ zone: zoneName, fqdn })) {
     throw new ApiError(
       'saas_cloudflare_sync_zone_mismatch',
       `Cloudflare DNS sync zone ${zoneName} does not match hostname ${fqdn}`,
@@ -195,13 +196,20 @@ export async function resolveSaaSSyncTarget(
   cfZoneName: string
 ): Promise<SaaSDnsTarget> {
   const config = await deps.hostnames.effectiveSyncConfig(providerId, fqdn, cfZoneName)
-  if (config.sync_target === 'cloudflare_dns') {
-    const target = await resolveCloudflareSaasTarget(deps, providerId, fqdn, {
-      zone: config.sync_zone,
-      provider: config.sync_provider_id,
-      cfZoneName,
-    })
-    return { providerType: 'cloudflare', providerId: target.providerId, zone: target.zone }
+  switch (config.sync_target) {
+    case 'cloudflare_dns': {
+      const target = await resolveCloudflareSaasTarget(deps, providerId, fqdn, {
+        zone: config.sync_zone,
+        provider: config.sync_provider_id,
+        cfZoneName,
+      })
+      return { providerType: 'cloudflare', providerId: target.providerId, zone: target.zone }
+    }
+    case 'dnspod':
+    case '':
+      // 空目标＝未配置：与写入路径一致地走 DNSPod（未关联时由 resolveDnsPodSaasTarget 显式失败）
+      return resolveDnsPodSaasTarget(deps, providerId, hostname, fqdn, config.sync_zone)
+    default:
+      return unsupportedSyncTarget(config.sync_target)
   }
-  return resolveDnsPodSaasTarget(deps, providerId, hostname, fqdn, config.sync_zone)
 }

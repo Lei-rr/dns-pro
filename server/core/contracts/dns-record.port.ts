@@ -3,6 +3,28 @@
  * 新增服务商只实现本端口，不新增 workflow。
  * 值模型厂商无关：name 为相对主机记录（'@' 或 'www'），各适配器负责与厂商字段互转。
  */
+import { ApiError } from '../http/api-error.js'
+
+/**
+ * DNS 服务商类型：providerType / 端口表的判别键只此一处。
+ * 注意与 SaaS 同步目标的词表区分（sync_target 用 'cloudflare_dns'，见 saas-sync-config.port），
+ * 类型闭合后把 'cloudflare_dns' 写进 provider_type 会直接编译失败。
+ */
+export type DnsProviderType = 'dnspod' | 'cloudflare'
+
+/** 运行时收窄：任务 payload 与 JSON 数据里的厂商取值必须先过守卫，不能靠 string 直接下标 */
+export function isDnsProviderType(value: unknown): value is DnsProviderType {
+  return value === 'dnspod' || value === 'cloudflare'
+}
+
+/** 判别键穷尽自检：switch 覆盖全部成员后 default 分支才可传入 never；未知值只可能来自绕过类型的运行时数据 */
+export function unsupportedDnsProvider(value: never): never {
+  throw new ApiError('dns_provider_unsupported', `Unsupported DNS provider: ${String(value)}`, 422)
+}
+
+/** 记录启停状态：写入侧只认这两个值，避免「要求停用」被静默写成启用 */
+export type DnsRecordStatus = 'ENABLE' | 'DISABLE'
+
 export interface DnsRecordValue {
   type: string
   name: string
@@ -13,7 +35,7 @@ export interface DnsRecordValue {
   priority?: number
   note?: string
   proxied?: boolean
-  status?: string
+  status?: DnsRecordStatus
   weight?: number
 }
 
@@ -35,6 +57,27 @@ export interface DnsRecordPort {
 }
 
 const text = (value: unknown) => String(value ?? '').trim()
+
+/** 上游返回值 → 启停状态：只认 ENABLE / DISABLE（忽略大小写），未知返回 undefined（不参与判等） */
+export function dnsRecordStatusOf(value: unknown): DnsRecordStatus | undefined {
+  const raw = text(value).toUpperCase()
+  return raw === 'ENABLE' || raw === 'DISABLE' ? raw : undefined
+}
+
+/**
+ * 解析写入用的启停状态：缺失 / 空串表示「不改动该字段」，未知值显式 422。
+ * 归一到 ENABLE 会让「要求停用」静默变成启用，所以宁可失败也不猜。
+ */
+export function parseDnsRecordStatus(value: unknown): DnsRecordStatus | undefined {
+  if (value === undefined || value === null) return undefined
+  const raw = text(value)
+  if (raw === '') return undefined
+  const status = dnsRecordStatusOf(raw)
+  if (status === undefined) {
+    throw new ApiError('dns_record_status_invalid', `Unsupported DNS record status: ${raw}`, 422, { status: raw })
+  }
+  return status
+}
 
 /** 域名类记录的值比较忽略大小写与尾点 */
 function normalizeDnsValue(type: string, value: unknown): string {

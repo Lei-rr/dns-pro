@@ -1,5 +1,6 @@
-import http, { POLL_TIMEOUT_MS, unwrapItems, withRefresh } from '@/shared/api/http'
-import type { ApiResponse } from '@/shared/api/types'
+import http, { POLL_TIMEOUT_MS, unwrapList, withRefresh } from '@/shared/api/http'
+import type { ApiResponse, ApiResult } from '@/shared/api/types'
+import type { JobLike } from '@/shared/job'
 import type { EdgeOneAccelerationDomain, EdgeOneZone } from '@/features/edge-one/model/types'
 import { encodePath } from '@/shared/lib/path'
 
@@ -13,13 +14,13 @@ type EdgeOneReadOptions = { refresh?: boolean; signal?: AbortSignal }
 
 export const edgeOneApi = {
   zones: async (provider: string, options: EdgeOneReadOptions = {}): Promise<ApiResponse<EdgeOneZone[]>> =>
-    unwrapItems<EdgeOneZone[]>(
+    unwrapList<EdgeOneZone>(
       await http.get(`${providerBase(provider)}/zones`, {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,
       })
     ),
-  zone: (provider: string, zoneId: string, options: EdgeOneReadOptions = {}): Promise<ApiResponse<EdgeOneZone>> =>
+  zone: (provider: string, zoneId: string, options: EdgeOneReadOptions = {}): Promise<ApiResult<EdgeOneZone>> =>
     http.get(`${providerBase(provider)}/zones/${encodePath(zoneId)}`, {
       ...withRefresh({ refresh: options.refresh }),
       signal: options.signal,
@@ -29,7 +30,7 @@ export const edgeOneApi = {
     zone: string,
     options: EdgeOneReadOptions = {}
   ): Promise<ApiResponse<EdgeOneAccelerationDomain[]>> =>
-    unwrapItems<EdgeOneAccelerationDomain[]>(
+    unwrapList<EdgeOneAccelerationDomain>(
       await http.get(`${zoneBase(provider, zone)}/records`, {
         ...withRefresh({ refresh: options.refresh }),
         signal: options.signal,
@@ -56,9 +57,9 @@ export const edgeOneApi = {
   batchDelete: (provider: string, zone: string, data: Record<string, unknown>) =>
     http.post(`${zoneBase(provider, zone)}/batch/delete`, data),
   batchActive: (provider: string, zone: string) =>
-    http.get(`${zoneBase(provider, zone)}/batch/active`, { timeout: POLL_TIMEOUT_MS }),
+    http.get<JobLike>(`${zoneBase(provider, zone)}/batch/active`, { timeout: POLL_TIMEOUT_MS }),
   batchJob: (provider: string, jobId: string) =>
-    http.get(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
+    http.get<JobLike>(`${providerBase(provider)}/batch/${encodePath(jobId)}`, { timeout: POLL_TIMEOUT_MS }),
   batchRetry: (provider: string, jobId: string) =>
     http.post(`${providerBase(provider)}/batch/${encodePath(jobId)}/retry`),
 }

@@ -2,8 +2,14 @@ import { ApiError } from '../../core/http/api-error.js'
 import type { CloudflareZonePort } from '../../core/contracts/cloudflare-zone.port.js'
 import type { DnsZoneCatalogPort } from '../../core/contracts/dns-zone-catalog.port.js'
 import type { LinkedDnsAccountPort } from '../../core/contracts/linked-dns-account.port.js'
+import type { DnsProviderType } from '../../core/contracts/dns-record.port.js'
 import type { SaaSHostnameValue } from '../../core/contracts/saas-hostname.port.js'
-import type { SaaSSyncDefaultsPort } from '../../core/contracts/saas-sync-config.port.js'
+import {
+  parseSyncTarget,
+  unsupportedSyncTarget,
+  type SaaSSyncDefaultsPort,
+  type SyncTarget,
+} from '../../core/contracts/saas-sync-config.port.js'
 import { normalizeFqdn } from '../../shared/values.js'
 import { runDnsSideEffect } from '../../core/providers/side-effect-result.js'
 import type { DnsWriter } from '../derived-records/dns-writer.js'
@@ -40,7 +46,7 @@ export class SaaSDnsSyncCoordinator {
 
   /** 创建前预检同步目标 */
   async preflight(providerId: string, hostnameFqdn: string, data: Record<string, unknown> = {}) {
-    const target = String(data.sync_target ?? '').trim() || (await this.syncDefaults.defaultSyncTarget(providerId))
+    const target = parseSyncTarget(data.sync_target) || (await this.syncDefaults.defaultSyncTarget(providerId))
     return this.adapterFor(target).preflight(providerId, hostnameFqdn, data)
   }
 
@@ -66,7 +72,7 @@ export class SaaSDnsSyncCoordinator {
    */
   async cleanup(providerId: string, _zoneName: string, hostnameFqdn: string, records: SaaSSyncRecord[]) {
     return runDnsSideEffect(() => {
-      const providerType = String(records[0]?.provider_type ?? '')
+      const providerType = records[0]?.provider_type
       if (!providerType) return Promise.resolve({ cleaned: 0, records: [] })
       const adapter = this.adapterForProvider(providerType)
       // 厂商未知说明清理配方被脏数据污染：显式跳过，不能默认按 DNSPod 误写
@@ -124,7 +130,7 @@ export class SaaSDnsSyncCoordinator {
       if (config.sync_target === 'cloudflare_dns') {
         const provider = explicitProvider || defaultCloudflareDnsId || cloudflareId
         // 站点不覆盖主机名时与写入路径一致地回退到主机名所在站点
-        const dnsZone = this.hostnames.zoneOwnsHostname(explicitZone, fqdn) ? explicitZone : zone
+        const dnsZone = this.hostnames.zoneOwnsHostname({ zone: explicitZone, fqdn }) ? explicitZone : zone
         if (provider && dnsZone) keys.add(dnsZoneKey('cloudflare', provider, dnsZone))
         continue
       }
@@ -144,16 +150,32 @@ export class SaaSDnsSyncCoordinator {
     return (await this.catalog.match(providerId, zone).catch(() => '')) === zone ? zone : ''
   }
 
-  /** 外部配置里的同步目标取值（cloudflare_dns / dnspod） */
-  private adapterFor(target: string): SaaSSyncAdapter {
-    return target === 'cloudflare_dns' ? this.cloudflareDns : this.dnspod
+  /**
+   * 外部配置里的同步目标取值 → 适配器：联合已闭合，逐值显式映射。
+   * 未知值只可能来自绕过类型的旧数据，显式 422 而不是默认走 DNSPod——写错厂商账号是静默故障。
+   */
+  private adapterFor(target: SyncTarget): SaaSSyncAdapter {
+    switch (target) {
+      case 'cloudflare_dns':
+        return this.cloudflareDns
+      case 'dnspod':
+      case '':
+        return this.dnspod
+      default:
+        return unsupportedSyncTarget(target)
+    }
   }
 
   /** 记录自带的厂商类型 → 适配器；未知厂商返回 null（由调用方显式拒绝） */
-  private adapterForProvider(type: string): SaaSSyncAdapter | null {
-    if (type === 'cloudflare') return this.cloudflareDns
-    if (type === 'dnspod') return this.dnspod
-    return null
+  private adapterForProvider(type: DnsProviderType): SaaSSyncAdapter | null {
+    switch (type) {
+      case 'cloudflare':
+        return this.cloudflareDns
+      case 'dnspod':
+        return this.dnspod
+      default:
+        return null
+    }
   }
 
   private async adapterForHostname(providerId: string, zoneName: string, hostnameFqdn: string) {
@@ -174,7 +196,7 @@ export class SaaSDnsSyncCoordinator {
       const zone = config?.sync_zone ?? ''
       const provider =
         config?.sync_provider_id || (await this.hostnames.cloudflareProviderId(providerId).catch(() => ''))
-      if (!provider || !zone || !this.hostnames.zoneOwnsHostname(zone, fqdn)) return empty
+      if (!provider || !zone || !this.hostnames.zoneOwnsHostname({ zone, fqdn })) return empty
       return { hostname_fqdn: fqdn, records: cloudflareDnsCleanupRecipe(fqdn, provider, zone) }
     }
 

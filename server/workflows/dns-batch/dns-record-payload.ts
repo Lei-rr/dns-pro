@@ -1,4 +1,5 @@
 /** DNS 批量操作：统一指令归一化（厂商请求体映射由 domains 侧适配器负责） */
+import type { DnsRecordStatus } from '../../core/contracts/dns-record.port.js'
 
 export type BatchRecordInput = {
   id?: string
@@ -11,7 +12,7 @@ export type BatchRecordInput = {
   priority?: number
   remark?: string
   proxied?: boolean
-  status?: string
+  status?: DnsRecordStatus
   weight?: number
 }
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import type { DnsRecordPort, DnsRecordRef, DnsRecordValue } from '../../core/contracts/dns-record.port.js'
+import type {
+  DnsProviderType,
+  DnsRecordPort,
+  DnsRecordRef,
+  DnsRecordValue,
+} from '../../core/contracts/dns-record.port.js'
 import {
   normalizeOwnershipHost,
   ownerOf,
@@ -8,7 +13,11 @@ import {
   type OwnershipPort,
 } from '../../core/contracts/ownership.port.js'
 import { DnsWriter } from './dns-writer.js'
+import { zoneOwnsHostname } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
 import { edgeOneOwnershipSource, OwnershipService, saasOwnershipSource, tunnelOwnershipSource } from './ownership.js'
+
+/** 站点归属规则注入真实实现：ownership 侧的判据必须与端口规则同源 */
+const rules = { zoneOwnsHostname }
 
 /**
  * 迁移自 scripts/isolated-ownership-probe.ts（P1：契约类）。
@@ -63,7 +72,7 @@ describe('三来源解析：只认派生关系', () => {
       }),
     } as never
 
-    const tunnelClaims = await tunnelOwnershipSource({ providers, tunnels, routes }).claimsFor({
+    const tunnelClaims = await tunnelOwnershipSource({ providers, tunnels, routes, rules }).claimsFor({
       providerType: 'cloudflare',
       providerId: 'cf-1',
       zone,
@@ -100,7 +109,7 @@ describe('三来源解析：只认派生关系', () => {
       }),
     } as never
 
-    const saasDnspod = await saasOwnershipSource({ providers, hostnames }).claimsFor({
+    const saasDnspod = await saasOwnershipSource({ providers, hostnames, rules }).claimsFor({
       providerType: 'dnspod',
       providerId: 'dp-1',
       zone,
@@ -109,7 +118,7 @@ describe('三来源解析：只认派生关系', () => {
       ['_acme-challenge.www.example.com', '_cf-custom-hostname.www.example.com', 'www.example.com'].sort()
     )
 
-    const saasCloudflare = await saasOwnershipSource({ providers, hostnames }).claimsFor({
+    const saasCloudflare = await saasOwnershipSource({ providers, hostnames, rules }).claimsFor({
       providerType: 'cloudflare',
       providerId: 'cf-1',
       zone,
@@ -131,6 +140,7 @@ describe('三来源解析：只认派生关系', () => {
           ],
         }),
       } as never,
+      rules,
     }).claimsFor({ providerType: 'dnspod', providerId: 'dp-1', zone })
 
     expect(edgeOne.map((claim) => [claim.fqdn, claim.owner, claim.refId])).toEqual([
@@ -169,10 +179,18 @@ function lookup(claims: Array<{ fqdn: string; owner: DerivedOwner; refId: string
   return { claimsFor: async () => claims }
 }
 
+/**
+ * DnsWriter 的端口表按 DnsProviderType 要求全量：契约闭合后只传当前用例用到的厂商会编译失败。
+ * 这些用例只走 dnspod 路径，cloudflare 槽位复用同一假实现即可（不会被调用）。
+ */
+function writerPorts(port: DnsRecordPort): Record<DnsProviderType, DnsRecordPort> {
+  return { dnspod: port, cloudflare: port }
+}
+
 describe('DnsWriter 门禁', () => {
   it('manual 记录（无派生归属）+ 备注恰好匹配：未声明来源仍拒绝自动删', async () => {
     const { port, removed } = fakePort([row('r1', 'www', 'old.example.net', '业务接入丨www.example.com')])
-    const writer = new DnsWriter({ dnspod: port }, lookup([]))
+    const writer = new DnsWriter(writerPorts(port), lookup([]))
     const [outcome] = await writer.sync('dnspod', 'p1', zone, [
       {
         purpose: 'origin_cname',
@@ -190,7 +208,7 @@ describe('DnsWriter 门禁', () => {
   it('owner 不匹配：即使备注可证明归属也拒绝删除', async () => {
     const { port, removed } = fakePort([row('r2', 'tunnel', 'old.example.net', '业务接入丨tunnel.example.com')])
     const writer = new DnsWriter(
-      { dnspod: port },
+      writerPorts(port),
       lookup([{ fqdn: 'tunnel.example.com', owner: 'tunnel', refId: 't-1' }])
     )
     const [outcome] = await writer.sync('dnspod', 'p1', zone, [
@@ -210,7 +228,7 @@ describe('DnsWriter 门禁', () => {
 
   it('资源已删除的清理：显式声明来源才放行', async () => {
     const { port, removed } = fakePort([row('r3', 'www', 'old.example.net', '业务接入丨www.example.com')])
-    const writer = new DnsWriter({ dnspod: port }, lookup([]))
+    const writer = new DnsWriter(writerPorts(port), lookup([]))
     const [outcome] = await writer.sync('dnspod', 'p1', zone, [
       {
         purpose: 'origin_cname',
@@ -228,7 +246,7 @@ describe('DnsWriter 门禁', () => {
   it('他人主机名：create/update 被拒，unchanged 不误报', async () => {
     const claims = [{ fqdn: 'tunnel.example.com', owner: 'tunnel' as const, refId: 't-1' }]
     const created = fakePort([])
-    const [createdOutcome] = await new DnsWriter({ dnspod: created.port }, lookup(claims)).sync('dnspod', 'p1', zone, [
+    const [createdOutcome] = await new DnsWriter(writerPorts(created.port), lookup(claims)).sync('dnspod', 'p1', zone, [
       {
         purpose: 'origin_cname',
         fqdn: 'tunnel.example.com',
@@ -252,7 +270,7 @@ describe('DnsWriter 门禁', () => {
         },
       },
     ])
-    const [unchanged] = await new DnsWriter({ dnspod: exact.port }, lookup(claims)).sync('dnspod', 'p1', zone, [
+    const [unchanged] = await new DnsWriter(writerPorts(exact.port), lookup(claims)).sync('dnspod', 'p1', zone, [
       {
         purpose: 'origin_cname',
         fqdn: 'tunnel.example.com',
@@ -266,7 +284,7 @@ describe('DnsWriter 门禁', () => {
 
   it('preclean：manual 主机名不清理，自己名下才清理冲突记录', async () => {
     const manual = fakePort([{ id: 'a1', value: { type: 'A', name: 'www', value: '192.0.2.9', line: '默认' } }])
-    const manualOutcomes = await new DnsWriter({ dnspod: manual.port }, lookup([])).preclean(
+    const manualOutcomes = await new DnsWriter(writerPorts(manual.port), lookup([])).preclean(
       'dnspod',
       'p1',
       zone,
@@ -278,7 +296,7 @@ describe('DnsWriter 门禁', () => {
 
     const owned = fakePort([{ id: 'a2', value: { type: 'A', name: 'www', value: '192.0.2.9', line: '默认' } }])
     const ownedOutcomes = await new DnsWriter(
-      { dnspod: owned.port },
+      writerPorts(owned.port),
       lookup([{ fqdn: 'www.example.com', owner: 'saas', refId: 'h1' }])
     ).preclean('dnspod', 'p1', zone, { fqdn: 'www.example.com', type: 'CNAME' }, 'saas')
     expect(ownedOutcomes[0]?.status).toBe('deleted')

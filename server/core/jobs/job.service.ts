@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto'
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
-import { jobConflictsWith } from './job-registry.js'
+import { jobConflictsWith, type JobType } from './job-registry.js'
 import {
   EXECUTION_SNAPSHOT_FIELDS,
   summarizeJobItems,
@@ -26,17 +26,17 @@ type ItemExecutionClaim = { state: 'execute'; item: Record<string, unknown> } | 
  */
 export class JobService {
   private readonly jobs = new Map<string, JobRecord>()
-  private readonly runners = new Map<string, (job: JobRecord) => Promise<void>>()
+  private readonly runners = new Map<JobType, (job: JobRecord) => Promise<void>>()
   private readonly inflight = new Map<string, Promise<void>>()
   private readonly starting = new Map<string, Promise<boolean>>()
   private closed = false
 
-  registerRunner(type: string, runner: (job: JobRecord) => Promise<void>): void {
+  registerRunner(type: JobType, runner: (job: JobRecord) => Promise<void>): void {
     this.runners.set(type, runner)
   }
 
   create(
-    type: string,
+    type: JobType,
     payload: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
     options: { start?: boolean; message?: string } = {}
@@ -45,7 +45,7 @@ export class JobService {
   }
 
   async createTerminalExclusive(
-    type: string,
+    type: JobType,
     payload: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
     lock: JobLock | undefined,
@@ -74,7 +74,7 @@ export class JobService {
   }
 
   async createExclusive(
-    type: string,
+    type: JobType,
     payload: Record<string, unknown>,
     items: Array<Record<string, unknown>>,
     lock: JobLock | undefined,
@@ -99,7 +99,7 @@ export class JobService {
 
   /** 任务骨架：id / 时间戳 / 计数集中构造，创建与终态创建共用 */
   private buildJob(input: {
-    type: string
+    type: JobType
     payload: Record<string, unknown>
     items: Array<Record<string, unknown>>
     status: JobStatus
@@ -136,7 +136,7 @@ export class JobService {
     return cloneJob(job)
   }
 
-  async listActive(type?: string): Promise<JobRecord[]> {
+  async listActive(type?: JobType): Promise<JobRecord[]> {
     return this.activeJobs()
       .filter((job) => !type || job.type === type)
       .map((job) => cloneJob(job))

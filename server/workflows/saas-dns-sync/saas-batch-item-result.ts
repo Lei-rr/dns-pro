@@ -1,5 +1,5 @@
-import { dnsEffectNote, dnsEffectOf, type BatchItemResult } from '../../core/jobs/batch-job.js'
-import type { SideEffects } from '../../core/providers/side-effect-result.js'
+import type { BatchItemResult } from '../../core/jobs/batch-job.js'
+import { dnsEffectNote, dnsEffectOf, sideEffectsOf } from '../../core/providers/side-effect-result.js'
 
 /**
  * 更新主机名的结果 → 批量条目结果（批量修改与优选切换共用）。
@@ -21,7 +21,7 @@ export function itemResultFromSideEffects(
   }
 ): BatchItemResult {
   const base = options.extra ?? {}
-  const local = (updated as { side_effects?: SideEffects }).side_effects?.local?.preference
+  const local = sideEffectsOf(updated).local?.preference
   if (local?.status === 'failed') {
     const prefix = options.localFailureMessage ?? '远端配置已更新，但本地偏好保存失败'
     return {
