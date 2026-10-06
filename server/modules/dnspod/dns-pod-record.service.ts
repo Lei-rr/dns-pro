@@ -1,7 +1,7 @@
 import type { ProviderRepository } from '../../core/providers/provider.repository.js'
 import { buildCacheKey, providerCacheTag, recordCacheTag, withProviderCache } from '../../core/cache/provider-cache.js'
 import { ApiError } from '../../core/http/api-error.js'
-import { parseBool, toAsciiFqdn } from '../../shared/values.js'
+import { toAsciiFqdn } from '../../shared/values.js'
 import {
   callProvider,
   collectOffsetPages,
@@ -10,7 +10,7 @@ import {
 } from '../../core/providers/provider-call.js'
 import { providerFiniteNumber, providerOptionalString, providerString } from '../../core/providers/provider-values.js'
 import { DNSPOD_PROVIDER_TYPE, invalidateDnsPodRecordCache } from './dns-pod.cache.js'
-import { DnsPodClient, dnsPodClientFor } from './dns-pod.client.js'
+import { dnsPodClientFor } from './dns-pod.client.js'
 import {
   dnspodMutationResponseSchema,
   dnspodRecordListResponseSchema,
@@ -42,10 +42,7 @@ export interface DnsPodRecordItem {
   ttl: number
   mx: number
   weight: number
-  monitor_status: string
   remark: string
-  default_ns: boolean
-  updated_on: string
 }
 
 /** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
@@ -133,7 +130,7 @@ export class DnsPodRecordService {
   async delete(providerId: string, domain: string, recordId: string): Promise<RecordMutationResult> {
     const normalized = normalizeDomain(domain)
     const id = requireRecordId(recordId)
-    const client = await this.clientFor(providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const response = await callProvider(
       {
         code: 'dnspod_record_delete_failed',
@@ -156,7 +153,7 @@ export class DnsPodRecordService {
     code: string,
     verb: string
   ): Promise<RecordMutationResult> {
-    const client = await this.clientFor(providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const response = await callProvider(
       { code, message: `DNSPod record ${verb} failed`, providerId, details: { domain } },
       () => client.call(action, payload)
@@ -167,7 +164,7 @@ export class DnsPodRecordService {
   }
 
   private async fetchAll(providerId: string, domain: string, filter: UpstreamFilter = {}): Promise<RecordListResult> {
-    const client = await this.clientFor(providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const { items, requestId } = await collectOffsetPages(
       async (offset, limit) => {
         const response = await callProvider(
@@ -196,10 +193,6 @@ export class DnsPodRecordService {
       }
     )
     return toFullListResult(items, requestId)
-  }
-
-  private clientFor(providerId: string): Promise<DnsPodClient> {
-    return dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
   }
 }
 
@@ -291,9 +284,6 @@ function presentRecord(record: DnsPodRecord): DnsPodRecordItem {
     ttl: providerFiniteNumber(record.TTL),
     mx: providerFiniteNumber(record.MX),
     weight: providerFiniteNumber(record.Weight),
-    monitor_status: providerString(record.MonitorStatus),
     remark: providerString(record.Remark),
-    default_ns: parseBool(record.DefaultNS ?? false),
-    updated_on: providerString(record.UpdatedOn),
   }
 }

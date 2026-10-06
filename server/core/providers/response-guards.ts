@@ -6,6 +6,11 @@ export function asRecord(value: unknown): Record<string, any> {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : {}
 }
 
+/** 与 asRecord 同判据，但非普通对象时为 null：用于「对象或空」的可选字段呈现 */
+export function asRecordOrNull(value: unknown): Record<string, any> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : null
+}
+
 export function asArray(value: unknown): any[] {
   return Array.isArray(value) ? value : []
 }

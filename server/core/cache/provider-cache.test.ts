@@ -30,19 +30,19 @@ describe('withProviderCache：命中、refresh 与标签失效', () => {
     const tags = ['provider:p1', 'probe:cache-tag']
 
     const first = await withProviderCache({ key, tags, loader })
-    expect(first.hit).toBe(false)
+    expect(first.value).toEqual({ loads: 1 })
     const second = await withProviderCache({ key, tags, loader })
-    expect(second.hit).toBe(true)
-    expect(loads).toBe(1)
+    expect(second.value).toEqual({ loads: 1 })
+    expect(loads, '第二次读取必须命中缓存，不再回源').toBe(1)
 
     const refreshed = await withProviderCache({ key, tags, loader, refresh: true })
-    expect(refreshed.hit).toBe(false)
-    expect(loads).toBe(2)
+    expect(refreshed.value).toEqual({ loads: 2 })
+    expect(loads, 'refresh 必须绕过缓存回源').toBe(2)
 
     invalidateProviderCache({ tags })
     const afterInvalidate = await withProviderCache({ key, tags, loader })
-    expect(afterInvalidate.hit).toBe(false)
-    expect(loads).toBe(3)
+    expect(afterInvalidate.value).toEqual({ loads: 3 })
+    expect(loads, '标签失效后必须重新回源').toBe(3)
   })
 })
 

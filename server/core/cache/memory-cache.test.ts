@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CACHE_MAX_ENTRIES, CACHE_TTL_MS, MemoryCache } from './memory-cache.js'
+import { MemoryCache } from './memory-cache.js'
 
 /**
  * 迁移自 scripts/isolated-cache-probe.ts 的 MemoryCache 部分（P1：纯内存，无 IO）。
@@ -48,8 +48,14 @@ describe('MemoryCache 标签失效', () => {
 })
 
 describe('默认上限（防止无上限增长）', () => {
-  it('默认上限与存活时间均为正数', () => {
-    expect(CACHE_MAX_ENTRIES).toBeGreaterThan(0)
-    expect(CACHE_TTL_MS).toBeGreaterThan(0)
+  it('未显式配置上限时写入远超上限的条目，size 收敛为有限值', () => {
+    const cache = new MemoryCache({ ttlMs: 60_000 })
+    for (let index = 0; index < 1000; index += 1) cache.set(`bulk:${index}`, index)
+    const bounded = cache.stats().size
+    expect(bounded).toBeGreaterThan(0)
+    expect(bounded, '默认上限必须挡住无上限增长').toBeLessThan(1000)
+    // 已达上限：继续写入不再增长（默认上限不导出，只能以行为观察）
+    for (let index = 1000; index < 1200; index += 1) cache.set(`bulk:${index}`, index)
+    expect(cache.stats().size).toBe(bounded)
   })
 })

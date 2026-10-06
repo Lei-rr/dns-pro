@@ -76,12 +76,25 @@ function envTrustProxy(env: NodeJS.ProcessEnv): AppConfig['trustProxy'] | undefi
     .filter(Boolean)
 }
 
+/** PORT 的合法闭区间：环境变量与命令行两条入口共用同一份边界 */
+const PORT_RANGE = { min: 1, max: 65535 } as const
+
+/**
+ * 整数 + 闭区间校验：环境变量与命令行共用同一实现，边界与报错口径只有一处字面量。
+ * label 用实际入口名（如 PORT / --port），报错能直接指回用户输入的那一项。
+ */
+function assertIntInRange(value: string, label: string, min: number, max: number): number {
+  const num = Number(value)
+  if (!Number.isInteger(num) || num < min || num > max) {
+    throw new Error(`${label} must be an integer in [${min}, ${max}]`)
+  }
+  return num
+}
+
 function envInt(env: NodeJS.ProcessEnv, key: string, min: number, max: number): number | undefined {
   const value = envString(env, key)
   if (value === undefined) return undefined
-  const num = Number(value)
-  if (!Number.isInteger(num) || num < min || num > max) throw new Error(`${key} must be an integer in [${min}, ${max}]`)
-  return num
+  return assertIntInRange(value, key, min, max)
 }
 
 const PINO_LEVELS = new Set(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
@@ -111,7 +124,7 @@ export function loadAppConfig(overrides: Partial<AppConfig> = {}, env: NodeJS.Pr
 
   const fromEnv: Partial<AppConfig> = {
     host: envString(env, 'HOST'),
-    port: envInt(env, 'PORT', 1, 65535),
+    port: envInt(env, 'PORT', PORT_RANGE.min, PORT_RANGE.max),
     logLevel: envLogLevel(env),
     dataDir: dataDir ? path.resolve(dataDir) : undefined,
     webDistDir: webDistDir ? path.resolve(webDistDir) : undefined,
@@ -148,9 +161,7 @@ export function parseCliOverrides(args: string[]): Partial<AppConfig> {
       overrides.logLevel = normalizeLogLevel('--log-level', value)
       i++
     } else if (arg === '--port' || arg === '-p') {
-      const port = Number(value)
-      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invalid port: ${value}`)
-      overrides.port = port
+      overrides.port = assertIntInRange(value, arg, PORT_RANGE.min, PORT_RANGE.max)
       i++
     } else {
       throw new Error(`Unknown option: ${arg}`)

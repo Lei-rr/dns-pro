@@ -1,10 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-
-function isCode(error: unknown, code: string): boolean {
-  return error instanceof Error && 'code' in error && error.code === code
-}
+import { isErrorCode } from '../../shared/values.js'
 
 /** 读取前收紧权限（0600）；不存在或内容不合规（parse 返回 null）时返回 null */
 async function readSecretFile<T>(filePath: string, parse: (raw: string) => T | null): Promise<T | null> {
@@ -13,7 +10,7 @@ async function readSecretFile<T>(filePath: string, parse: (raw: string) => T | n
     const raw = (await fs.readFile(filePath, 'utf8')).trim()
     return parse(raw)
   } catch (error) {
-    if (isCode(error, 'ENOENT')) return null
+    if (isErrorCode(error, 'ENOENT')) return null
     throw error
   }
 }
@@ -46,7 +43,7 @@ export async function loadOrCreateSecretFile<T>(options: {
     await fs.chmod(options.filePath, 0o600)
     return value
   } catch (error) {
-    if (!isCode(error, 'EEXIST')) throw error
+    if (!isErrorCode(error, 'EEXIST')) throw error
     const winner = await readSecretFile(options.filePath, options.parse)
     if (winner !== null) return winner
     throw Object.assign(new Error(options.invalidMessage), { cause: error })

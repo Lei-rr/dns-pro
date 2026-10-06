@@ -1,10 +1,8 @@
 import { ApiError } from '../http/api-error.js'
 
-function upstreamStatus(error: unknown): number | null {
-  if (!(error instanceof ApiError)) return null
-  const details = error.details
-  if (!details || typeof details !== 'object' || Array.isArray(details)) return null
-  const value = Number((details as Record<string, unknown>).upstream_status)
+/** 上游 HTTP 状态码（details.upstream_status，兼容字符串形式）；无有效值返回 null */
+export function upstreamStatus(error: unknown): number | null {
+  const value = Number(upstreamDetails(error)?.upstream_status)
   return Number.isInteger(value) ? value : null
 }
 
@@ -46,7 +44,7 @@ export function isExplicitNotFound(error: unknown, options: ExplicitNotFoundOpti
   if (upstreamStatus(error) === 404) return true
   if (options.localCodes?.includes(error.code)) return true
   if (!options.providerCode) return false
-  const details = error.details
-  if (!details || typeof details !== 'object' || Array.isArray(details)) return false
-  return options.providerCode.test(String((details as Record<string, unknown>).code ?? ''))
+  const details = upstreamDetails(error)
+  if (!details) return false
+  return options.providerCode.test(String(details.code ?? ''))
 }

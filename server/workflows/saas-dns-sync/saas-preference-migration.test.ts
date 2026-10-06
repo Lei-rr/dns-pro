@@ -6,11 +6,9 @@ import { loadAppConfig } from '../../app/config.js'
 import { createModules, type AppModules } from '../../app/modules.js'
 import { ApiError } from '../../core/http/api-error.js'
 import { JsonStore } from '../../core/store/json-store.js'
+import type { PreferredDomainsFile } from '../../core/store/store-shapes.js'
 import { isHostnameActive } from '../../modules/cloudflare/saas/saas-hostname-rules.js'
-import {
-  PreferredDomainService,
-  type PreferredDomainsFile,
-} from '../../modules/cloudflare/saas/preferred-domain.service.js'
+import { PreferredDomainService } from '../../modules/cloudflare/saas/preferred-domain.service.js'
 import { SaaSDnsSyncWorkflow } from './saas-dns-sync.workflow.js'
 
 /**
@@ -118,15 +116,12 @@ describe('偏好键身份 (zone, FQDN)：启动收编、写入即收编与按 FQ
     expect(rows['cf-owner:example.com:www.example.com']?.hostname_id).toBe('h-1')
 
     // 3. 同一 FQDN 跨站点不互相命中（旧键模型下会被同一个 hostnameId 覆盖）
-    await preferences.setSyncConfig({
-      cloudflareProviderId: 'cf-owner',
-      identity: { zone: 'other.com', fqdn: 'www.example.com' },
-      hostnameId: 'h-1',
-      syncTarget: 'dnspod',
-      syncProviderId: 'dns-target',
-      syncZone: 'example.com',
-      autoPreferred: false,
-    })
+    await preferences.setNormalizedSyncConfig(
+      'cf-owner',
+      { zone: 'other.com', fqdn: 'www.example.com' },
+      { sync_target: 'dnspod', sync_provider_id: 'dns-target', sync_zone: 'example.com', auto_preferred: false },
+      'h-1'
+    )
     const sameFqdn = await preferences.get('cf-owner', { zone: 'example.com', fqdn: 'www.example.com' })
     expect(sameFqdn?.preferred_domain).toBe('pref.example.com')
     expect(sameFqdn?.sync_target).toBe('')

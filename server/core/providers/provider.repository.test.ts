@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ApiError } from '../http/api-error.js'
 import { createSecretBox } from '../crypto/secret-box.js'
 import { createStore } from '../store/store-registry.js'
-import { ProviderRepository, type ProvidersFile } from './provider.repository.js'
+import type { ProvidersFile } from '../store/store-shapes.js'
+import { ProviderRepository } from './provider.repository.js'
 import type { Provider } from './provider.types.js'
 
 /**

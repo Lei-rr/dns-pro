@@ -81,7 +81,7 @@ function expectNoBatchInternals(value: unknown, location = 'response'): void {
   }
   if (!value || typeof value !== 'object') return
   const row = value as Record<string, unknown>
-  for (const field of ['attempt', 'item_key', 'dns_before_records', 'cleanup_recipe']) {
+  for (const field of ['item_key', 'dns_before_records', 'cleanup_recipe']) {
     expect(field in row, `${location} leaked ${field}`).toBe(false)
   }
   for (const [key, child] of Object.entries(row)) expectNoBatchInternals(child, `${location}.${key}`)
@@ -140,7 +140,6 @@ describe('批量任务详情视图与归属校验', () => {
     {
       hostname: 'www.example.com',
       status: 'failed',
-      attempt: 2,
       item_key: 'internal-item',
     },
   ]
@@ -211,6 +210,8 @@ describe('批量任务详情视图与归属校验', () => {
       })
       expect(response.statusCode, `${presenter.type} presenter status`).toBe(200)
       expectNoBatchInternals(response.json().data, presenter.type)
+      // 剥离内部字段的同时，条目自身的可见字段必须原样保留
+      expect(response.json().data?.items?.[0]?.hostname, `${presenter.type} 条目可见字段`).toBe('www.example.com')
       if (presenter.foreign) {
         const foreignRead = await app.inject({
           method: 'GET',

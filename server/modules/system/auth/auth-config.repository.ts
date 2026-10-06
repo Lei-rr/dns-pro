@@ -4,6 +4,7 @@ import type { JsonStore } from '../../../core/store/json-store.js'
 import type { AuthConfigData } from '../../../core/store/store-shapes.js'
 import { storePath } from '../../../core/store/store-registry.js'
 import { generatePassword, hashPassword } from '../../../core/security/password.js'
+import { isErrorCode } from '../../../shared/values.js'
 
 /** 形状权威在 store 注册表同层（各数据文件的形状清单）；此处再导出，既有导入路径不变 */
 export type { AuthConfigData } from '../../../core/store/store-shapes.js'
@@ -46,7 +47,7 @@ export async function createInitialAuthConfig(dataDir: string): Promise<string |
     })
     return password
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'EEXIST') return null
+    if (isErrorCode(error, 'EEXIST')) return null
     throw error
   }
 }

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto'
 
 /** 会话载荷：用户名 + 过期时间 + 版本指纹（凭据/会话代次变化即失效） */
-export interface SessionClaims {
+interface SessionClaims {
   username: string
   expiresAt: number
   version: string

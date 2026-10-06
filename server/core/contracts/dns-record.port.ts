@@ -4,6 +4,7 @@
  * 值模型厂商无关：name 为相对主机记录（'@' 或 'www'），各适配器负责与厂商字段互转。
  */
 import { ApiError } from '../http/api-error.js'
+import { normalizeHostStrict, toText } from '../../shared/values.js'
 
 /**
  * DNS 服务商类型：providerType / 端口表的判别键只此一处。
@@ -56,11 +57,9 @@ export interface DnsRecordPort {
   remove(providerId: string, zone: string, recordId: string): Promise<void>
 }
 
-const text = (value: unknown) => String(value ?? '').trim()
-
 /** 上游返回值 → 启停状态：只认 ENABLE / DISABLE（忽略大小写），未知返回 undefined（不参与判等） */
 export function dnsRecordStatusOf(value: unknown): DnsRecordStatus | undefined {
-  const raw = text(value).toUpperCase()
+  const raw = toText(value).toUpperCase()
   return raw === 'ENABLE' || raw === 'DISABLE' ? raw : undefined
 }
 
@@ -70,7 +69,7 @@ export function dnsRecordStatusOf(value: unknown): DnsRecordStatus | undefined {
  */
 export function parseDnsRecordStatus(value: unknown): DnsRecordStatus | undefined {
   if (value === undefined || value === null) return undefined
-  const raw = text(value)
+  const raw = toText(value)
   if (raw === '') return undefined
   const status = dnsRecordStatusOf(raw)
   if (status === undefined) {
@@ -82,19 +81,19 @@ export function parseDnsRecordStatus(value: unknown): DnsRecordStatus | undefine
 /** 域名类记录的值比较忽略大小写与尾点 */
 function normalizeDnsValue(type: string, value: unknown): string {
   const upper = type.toUpperCase()
-  return ['CNAME', 'NS', 'PTR', 'MX'].includes(upper) ? text(value).toLowerCase().replace(/\.+$/, '') : text(value)
+  return ['CNAME', 'NS', 'PTR', 'MX'].includes(upper) ? toText(value).toLowerCase().replace(/\.+$/, '') : toText(value)
 }
 
 /** 值相等判定（只比较记录值本身，用于识别"同一条记录的另一个版本"） */
 export function sameDnsValue(actual: DnsRecordValue, expected: DnsRecordValue): boolean {
-  const type = text(expected.type).toUpperCase()
+  const type = toText(expected.type).toUpperCase()
   return normalizeDnsValue(type, actual.value) === normalizeDnsValue(type, expected.value)
 }
 
 /** FQDN → 相对主机记录（与 zone 相同时返回 '@'） */
 export function relativeRecordName(fqdn: string, zone: string): string {
-  const host = text(fqdn).toLowerCase().replace(/\.+$/, '')
-  const base = text(zone).toLowerCase().replace(/\.+$/, '')
+  const host = normalizeHostStrict(fqdn)
+  const base = normalizeHostStrict(zone)
   if (base === '' || host === base) return '@'
   const suffix = `.${base}`
   return host.endsWith(suffix) ? host.slice(0, -suffix.length) : host
@@ -102,16 +101,16 @@ export function relativeRecordName(fqdn: string, zone: string): string {
 
 /** 幂等重放判定：创建前用它确认记录是否已存在（厂商字段差异不参与比较） */
 export function dnsRecordMatches(actual: DnsRecordValue, expected: DnsRecordValue): boolean {
-  const type = text(expected.type).toUpperCase()
+  const type = toText(expected.type).toUpperCase()
   const sameNumber = (a?: number, e?: number) => e === undefined || Number(a) === Number(e)
-  const sameText = (a?: string, e?: string) => e === undefined || e === '' || text(a) === text(e)
+  const sameText = (a?: string, e?: string) => e === undefined || e === '' || toText(a) === toText(e)
   const lineMatches = expected.lineId
-    ? text(actual.lineId) === text(expected.lineId)
+    ? toText(actual.lineId) === toText(expected.lineId)
     : sameText(actual.line, expected.line)
   return (
-    text(actual.name).toLowerCase() === text(expected.name).toLowerCase() &&
-    text(actual.type).toUpperCase() === type &&
-    normalizeDnsValue(type, actual.value) === normalizeDnsValue(type, expected.value) &&
+    toText(actual.name).toLowerCase() === toText(expected.name).toLowerCase() &&
+    toText(actual.type).toUpperCase() === type &&
+    sameDnsValue(actual, expected) &&
     lineMatches &&
     sameNumber(actual.ttl, expected.ttl) &&
     sameNumber(actual.priority, expected.priority) &&

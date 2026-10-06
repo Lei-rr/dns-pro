@@ -23,7 +23,7 @@ type NamedBooleanQueries<Names extends readonly string[]> = {
   [Name in Names[number]]: TOptional<TUnion<[TLiteral<'true'>, TLiteral<'false'>]>>
 }
 
-export type RequestParts = { params?: TSchema; querystring?: TSchema; body?: TSchema }
+type RequestParts = { params?: TSchema; querystring?: TSchema; body?: TSchema }
 
 export type RequestOf<Schema extends RequestParts> = (Schema extends { params: infer Params extends TSchema }
   ? { Params: Static<Params> }
@@ -96,16 +96,3 @@ export function requestSchema<const Parts extends RequestParts>(parts: Parts): P
 }
 
 export const noRequestSchema = {} satisfies FastifySchema
-
-// 编译期契约：确保 RequestOf 推导出的请求类型正确。
-// 断言只在类型层生效，需要有一个实例化点才会被编译——消费方见 server/app/api-contract.test.ts。
-type Equal<Left, Right> =
-  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false
-type Expect<Value extends true> = Value
-export const requestSchemaTypeContractSchema = requestSchema({
-  params: paramsSchema('providerId', 'zone'),
-  body: objectSchema({ username: text(255), nickname: text(255) }, ['username']),
-})
-type ContractRequest = RequestOf<typeof requestSchemaTypeContractSchema>
-export type RequestSchemaTypeContract = Expect<Equal<ContractRequest['Params'], { providerId: string; zone: string }>> &
-  Expect<Equal<ContractRequest['Body'], { username: string; nickname?: string }>>

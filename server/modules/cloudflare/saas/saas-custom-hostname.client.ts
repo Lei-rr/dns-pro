@@ -18,7 +18,7 @@ import { callProvider, collectNumberedPages } from '../../../core/providers/prov
 import { CLOUDFLARE_PAGE_LIMIT } from '../cloudflare-pagination.js'
 import { CLOUDFLARE_PROVIDER_TYPE } from '../cloudflare.cache.js'
 import { providerOptionalString, providerString } from '../../../core/providers/provider-values.js'
-import { asRecord, asRecordArray } from '../../../core/providers/response-guards.js'
+import { asRecord, asRecordArray, asRecordOrNull } from '../../../core/providers/response-guards.js'
 
 /** 变更动作 → 错误码；模板拼接的码无法静态穷举，集中声明为映射常量供架构守卫 ARCH028 收集 */
 const SAAS_HOSTNAME_ACTION_ERROR_CODES = {
@@ -75,7 +75,6 @@ export interface CloudflareCustomHostname {
   effective_sync_target?: string
   effective_sync_provider_id?: string
   effective_sync_zone?: string
-  sync_config_explicit?: boolean
   /** 远端已成功、本地偏好写入失败时的降级标记 */
   local_preference_error?: string
   [key: string]: unknown
@@ -86,7 +85,7 @@ export interface CloudflareCustomHostname {
  * 批量查找（一个 FQDN 对多个站点）靠它把「刷新策略」挡在查找之外，
  * 否则每个未命中的站点都会各自决定刷新一次。
  */
-export interface CustomHostnameIndex {
+interface CustomHostnameIndex {
   findId(hostnameFqdn: string): string | undefined
 }
 
@@ -270,7 +269,6 @@ function presentHostname(hostname: unknown): CloudflareCustomHostname {
   const certificates = asRecordArray(ssl.certificates)
   const firstCert = certificates[0] ?? {}
   const ownership = asRecord(parsed.ownership_verification)
-  const metadata = parsed.custom_metadata
 
   return {
     ...parsed,
@@ -297,6 +295,6 @@ function presentHostname(hostname: unknown): CloudflareCustomHostname {
       name: providerOptionalString(ownership.name),
       value: providerOptionalString(ownership.value),
     },
-    custom_metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : null,
+    custom_metadata: asRecordOrNull(parsed.custom_metadata),
   }
 }

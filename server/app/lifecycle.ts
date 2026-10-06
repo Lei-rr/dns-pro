@@ -12,7 +12,7 @@ import { securityPlugin } from './plugins/security.js'
 import { staticPlugin } from './plugins/static.js'
 import { ensureDataDirs } from '../core/store/ensure-dirs.js'
 import { storeSubdirectories } from '../core/store/store-registry.js'
-import { resolveSessionSecret } from '../core/security/session-secret.js'
+import { resolveSessionSecret, SECRET_MIN_LENGTH } from '../core/security/session-secret.js'
 import { migrateDataRoot } from '../core/store/migrations.js'
 import { loadCredentialKey } from '../core/security/credential-key.js'
 import { createInitialAuthConfig } from '../modules/system/auth/auth-config.repository.js'
@@ -42,14 +42,14 @@ class Boot {
 
 /** 显式启动阶段：顺序即代码；任一阶段抛错即终止启动（fail-fast） */
 const STARTUP_STAGES = [
-  { name: 'initConfig', run: initConfig },
-  { name: 'initStore', run: initStore },
-  { name: 'runMigrations', run: runMigrations },
-  { name: 'initKernel', run: initKernel },
-  { name: 'initDomains', run: initDomains },
-  { name: 'initWorkflows', run: initWorkflows },
-  { name: 'recoverJobs', run: recoverJobs },
-  { name: 'ready', run: ready },
+  initConfig,
+  initStore,
+  runMigrations,
+  initKernel,
+  initDomains,
+  initWorkflows,
+  recoverJobs,
+  ready,
 ] as const
 
 /** 探针与测试的装配入口：注入已解析配置（进程入口走 bootServer，见下） */
@@ -68,7 +68,7 @@ export async function bootServer(): Promise<{ app: FastifyInstance; config: AppC
 }
 
 async function runStartupStages(boot: Boot): Promise<void> {
-  for (const stage of STARTUP_STAGES) await stage.run(boot)
+  for (const stage of STARTUP_STAGES) await stage(boot)
 }
 
 /** initConfig：读取配置（CLI > env > 默认）+ 解析会话密钥；调用方已注入配置时只补建外壳 */
@@ -93,8 +93,8 @@ async function runMigrations(boot: Boot): Promise<void> {
 
 /** initKernel：内核设施（凭据密钥、初始账号、内存任务执行器） */
 async function initKernel(boot: Boot): Promise<void> {
-  if (boot.config.sessionSecret.trim().length < 32) {
-    throw new Error('SESSION_SECRET must contain at least 32 characters')
+  if (boot.config.sessionSecret.trim().length < SECRET_MIN_LENGTH) {
+    throw new Error(`SESSION_SECRET must contain at least ${SECRET_MIN_LENGTH} characters`)
   }
   boot.platform = {
     jobs: new JobService(),

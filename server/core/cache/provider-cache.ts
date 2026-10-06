@@ -2,7 +2,6 @@ import { activeMemoryCache } from './memory-cache.js'
 
 type CachedResult<T> = {
   value: T
-  hit: boolean
 }
 
 type CacheKey = string | { prefix: string; parts: Record<string, unknown> }
@@ -93,7 +92,7 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
   if (!options.refresh) {
     const hit = cache.get<T>(key)
     if (hit !== undefined) {
-      return { value: hit, hit: true }
+      return { value: hit }
     }
     const pending = state.pending(key)
     if (pending && pending.tagGenerations.every(([tag, generation]) => generation === state.tagGeneration(tag))) {
@@ -113,7 +112,7 @@ export async function withProviderCache<T>(options: ProviderCacheOptions<T>): Pr
       fence.tags.every(([tag, generation]) => generation === state.tagGeneration(tag))
     if (current) cache.set(key, value, tags)
 
-    return { value, hit: false }
+    return { value }
   })()
   const inflightEntry: InflightEntry = { promise: loading, tagGenerations: fence.tags }
   if (!options.refresh) state.track(key, inflightEntry)

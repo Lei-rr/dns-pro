@@ -1,5 +1,6 @@
 import { ApiError } from '../http/api-error.js'
 import { SEALED_VALUE_PREFIX } from '../crypto/secret-box.js'
+import { PROVIDER_LINK_RULES } from './provider-reference.js'
 import type { ProviderDefinition, ProviderInput } from './provider.types.js'
 
 /**
@@ -42,8 +43,11 @@ export const PROVIDER_FIELD_MAX_LENGTHS: Record<string, number> = {
 
 export const PROVIDER_FIELD_MAX_LENGTH_DEFAULT = 255
 
-/** 指向其它服务商的关联字段：取值必须是合法的服务商 ID */
-const PROVIDER_REFERENCE_FIELDS = ['dnspod_provider', 'cloudflare_provider', 'cloudflare_dns_provider'] as const
+/**
+ * 指向其它服务商的关联字段：取值必须是合法的服务商 ID。
+ * 字段名从 PROVIDER_LINK_RULES 推导，不再与那份规则表各写一份、各自漂移。
+ */
+const PROVIDER_REFERENCE_FIELDS: readonly string[] = [...new Set(PROVIDER_LINK_RULES.map((rule) => rule.field))]
 
 export class ProviderNormalizer {
   normalize(data: Record<string, unknown>, definition: ProviderDefinition): ProviderInput {
@@ -124,7 +128,7 @@ export class ProviderNormalizer {
       })
     }
 
-    if ((PROVIDER_REFERENCE_FIELDS as readonly string[]).includes(field) && !PROVIDER_ID_PATTERN.test(value)) {
+    if (PROVIDER_REFERENCE_FIELDS.includes(field) && !PROVIDER_ID_PATTERN.test(value)) {
       throw new ApiError('validation_failed', 'Invalid referenced provider id', 422, {
         errors: { [field]: PROVIDER_ID_MESSAGE },
       })

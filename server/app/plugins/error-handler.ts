@@ -2,6 +2,7 @@ import type { FastifyError, FastifyPluginAsync, FastifySchemaValidationError } f
 import fp from 'fastify-plugin'
 import { ApiError } from '../../core/http/api-error.js'
 import { error } from '../../core/http/api-response.js'
+import { AUTH_RATE_LIMITED_CODE } from '../../core/http/auth-rate-limit.js'
 import { translateError } from '../../core/http/error-messages.js'
 
 /** 5xx 未登记中文文案时的兜底文案：绝不透出原始 message（可能含文件路径、上游响应、底层库报错文本） */
@@ -75,7 +76,7 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
       !isPath(pathname, '/api') &&
       !isPath(pathname, '/assets')
 
-    if (spaNavigation && typeof reply.sendFile === 'function') {
+    if (spaNavigation) {
       try {
         return await reply.sendFile('index.html')
       } catch {
@@ -105,11 +106,18 @@ const errorHandlerPluginImpl: FastifyPluginAsync = async (app) => {
         .send(error('参数校验未通过', 400, 'validation_error', { errors: validationFieldErrors(err.validation ?? []) }))
     }
     if (status === 429) {
+      // 429 信封由 core/http 的 authRateLimited 产出（见 plugins/security 与 auth.service），
+      // 这里只做透传：code 不再硬编码，缺字段的第三方 429 才回落到同一信封的 code
       const limited = err as unknown as { code?: string; message?: string; details?: unknown }
       return reply
         .status(429)
         .send(
-          error(limited.message || '请求过于频繁，请稍后重试', 429, 'auth_rate_limited', publicDetails(limited.details))
+          error(
+            limited.message || '请求过于频繁，请稍后重试',
+            429,
+            limited.code || AUTH_RATE_LIMITED_CODE,
+            publicDetails(limited.details)
+          )
         )
     }
     if (status < 500) return reply.status(status).send(error(err.message, status, 'request_error'))

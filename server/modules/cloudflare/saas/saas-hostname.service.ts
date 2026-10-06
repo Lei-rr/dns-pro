@@ -1,7 +1,7 @@
 import type { CloudflareZoneService, ZoneListResult } from '../cloudflare-zone.service.js'
 import type { ZoneCatalog } from '../zone-catalog.js'
 import { ApiError } from '../../../core/http/api-error.js'
-import { errorMessage, normalizeFqdn } from '../../../shared/values.js'
+import { errorMessage, normalizeFqdn, toText } from '../../../shared/values.js'
 import { isExplicitNotFound } from '../../../core/providers/provider-error.js'
 import { toFullListResult } from '../../../core/providers/provider-call.js'
 import type { SaaSHostnameCachePort } from '../../../core/contracts/saas-hostname-cache.port.js'
@@ -371,7 +371,7 @@ export class SaaSHostnameService
    * 返回归一化后的域名：该值会落库并作为 DNS 目标（'https://x.com' 这类等价写法不能原样带下去）。
    */
   async ensurePreferredDomainAllowed(value: string): Promise<string> {
-    const preferred = String(value ?? '').trim()
+    const preferred = toText(value)
     if (preferred === '') return ''
     const normalized = this.preferredDomains.normalize(preferred)
     if (normalized === null || !(await this.preferredDomains.isAllowed(normalized))) {
@@ -434,7 +434,6 @@ export class SaaSHostnameService
       effective_sync_target: effective.sync_target,
       effective_sync_provider_id: effective.sync_provider_id,
       effective_sync_zone: effective.sync_zone,
-      sync_config_explicit: effective.explicit,
     }
   }
 }

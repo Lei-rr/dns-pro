@@ -1,11 +1,10 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { ApiError } from '../http/api-error.js'
-import { errorMessage } from '../../shared/values.js'
+import { errorMessage, isErrorCode } from '../../shared/values.js'
 import { runSerial } from '../../shared/serial-queue.js'
+import { writeJsonAtomic } from './atomic-write.js'
 import { resolveDataPath } from './data-root.js'
-
-const isMissing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT'
 
 /**
  * JSON 文件存储（单进程独占数据目录）。
@@ -66,18 +65,9 @@ export class JsonStore<T extends object = Record<string, unknown>> {
   private async writeUnlocked(data: T): Promise<void> {
     const filePath = this.absolutePath()
     await fs.mkdir(path.dirname(filePath), { recursive: true })
-    const temporary = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
     try {
-      const handle = await fs.open(temporary, 'wx', 0o600)
-      try {
-        await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
-        await handle.sync()
-      } finally {
-        await handle.close()
-      }
-      await fs.rename(temporary, filePath)
+      await writeJsonAtomic(filePath, data)
     } catch (error) {
-      await fs.rm(temporary, { force: true }).catch(() => undefined)
       throw new ApiError('server_error', `Failed to write ${this.relativePath}: ${errorMessage(error)}`, 500)
     }
     this.memory.set(filePath, structuredClone(data))
@@ -89,7 +79,7 @@ export class JsonStore<T extends object = Record<string, unknown>> {
     try {
       content = await fs.readFile(filePath, 'utf8')
     } catch (error) {
-      if (isMissing(error)) return structuredClone(this.defaultValue)
+      if (isErrorCode(error, 'ENOENT')) return structuredClone(this.defaultValue)
       throw new ApiError('server_error', `Failed to read ${this.relativePath}: ${errorMessage(error)}`, 500)
     }
     // 收紧历史文件权限；失败（如只读挂载）不影响读取

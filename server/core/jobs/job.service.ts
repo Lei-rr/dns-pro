@@ -11,8 +11,6 @@ import {
   type JobStatus,
 } from './job.types.js'
 
-export type { JobRecord } from './job.types.js'
-
 const ACTIVE: JobStatus[] = ['pending', 'running']
 const TERMINAL: JobStatus[] = ['completed', 'failed']
 /** 终态任务保留上限：超出后按结束时间淘汰最旧，避免长进程内存无界增长 */
@@ -171,8 +169,8 @@ export class JobService {
       ...source,
       status: 'pending',
       finished_at: undefined,
-      message: patch.message || 'requeued',
       ...patch,
+      message: patch.message ?? 'requeued',
       updated_at: Date.now(),
     }
     this.put(updated)

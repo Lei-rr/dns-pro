@@ -1,4 +1,5 @@
 import { ApiError } from '../../core/http/api-error.js'
+import { toText } from '../../shared/values.js'
 import type { JobService } from '../../core/jobs/job.service.js'
 import type { JobRecord } from '../../core/jobs/job.types.js'
 import { BatchJobKind, finishBatchJob, runBatchItems, type BatchJobViewBase } from '../../core/jobs/batch-job.js'
@@ -182,7 +183,7 @@ export class SaaSPreferredApplyWorkflow {
 }
 
 function requirePreferred(value: string): string {
-  const preferred = String(value ?? '').trim()
+  const preferred = toText(value)
   if (!preferred) throw new ApiError('preferred_domain_invalid', 'Preferred domain is required', 422)
   return preferred
 }

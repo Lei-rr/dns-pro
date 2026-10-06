@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { ApiError } from '../../../core/http/api-error.js'
+import { authRateLimited } from '../../../core/http/auth-rate-limit.js'
 import { deriveSessionKey, openSession, sealSession, sessionVersion } from '../../../core/security/session-token.js'
 import { safeEqual, verifyPassword } from '../../../core/security/password.js'
 import { storePath } from '../../../core/store/store-registry.js'
@@ -198,15 +199,8 @@ export class AuthService {
     const perIpUntil = this.ipLocks.get(clientIp)?.lockedUntil ?? 0
     const until = Math.max(perIpUntil > now ? perIpUntil : 0, this.globalLockedUntil)
     if (until <= now) return
-    const retryAfter = Math.ceil((until - now) / 1000)
-    throw new ApiError(
-      'auth_rate_limited',
-      `失败次数过多，已临时锁定，请 ${Math.ceil(retryAfter / 60)} 分钟后再试`,
-      429,
-      {
-        retry_after: retryAfter,
-      }
-    )
+    const limited = authRateLimited(until - now)
+    throw new ApiError(limited.code, limited.message, 429, limited.details)
   }
 
   /**

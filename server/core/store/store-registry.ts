@@ -3,14 +3,14 @@ import { JsonStore } from './json-store.js'
 import type { AuthConfigData, PreferredDomainsFile, ProvidersFile, SaaSPreferencesFile } from './store-shapes.js'
 
 /** StoreName → 数据形状 的唯一映射：createStore 由名字推导返回类型，调用点不再手写泛型 */
-export type StoreShapes = {
+type StoreShapes = {
   auth: AuthConfigData
   providers: ProvidersFile
   preferredDomains: PreferredDomainsFile
   saasPreferences: SaaSPreferencesFile
 }
 
-export type StoreName = keyof StoreShapes
+type StoreName = keyof StoreShapes
 
 /** 数据文件规格：路径 + 默认值。defaults 必须匹配 StoreShapes 声明的形状，写错形状在这里就编译失败 */
 interface StoreSpec<K extends StoreName> {

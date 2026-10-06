@@ -31,12 +31,15 @@ export class ProviderPresenter {
 
   /** 关联服务商判定需要完整列表：不给默认值，避免单参调用静默把关联判成未配置 */
   private isConfigured(provider: Provider, definition: ProviderDefinition, allProviders: Provider[]): boolean {
+    return this.hasAllRequiredFields(provider, definition) && this.isLinkedProviderConfigured(provider, allProviders)
+  }
+
+  /** required 字段全非空；presenter 自身与其关联目标的配置判定共用同一份规则 */
+  private hasAllRequiredFields(provider: Provider, definition: ProviderDefinition): boolean {
     for (const field of definition.required) {
-      if (String((provider as Record<string, unknown>)[field] ?? '').trim() === '') {
-        return false
-      }
+      if (String((provider as Record<string, unknown>)[field] ?? '').trim() === '') return false
     }
-    return this.isLinkedProviderConfigured(provider, allProviders)
+    return true
   }
 
   private isLinkedProviderConfigured(provider: Provider, allProviders: Provider[]): boolean {
@@ -71,16 +74,10 @@ export class ProviderPresenter {
     const candidate = allProviders.find((p) => p.id === refId && p.type === expectedType)
     if (!candidate) return false
 
-    for (const field of definition.required) {
-      if (String((candidate as Record<string, unknown>)[field] ?? '').trim() === '') {
-        return false
-      }
-    }
-    return true
+    return this.hasAllRequiredFields(candidate, definition)
   }
 
-  private hideSecretFields(provider: Provider, definition: ReturnType<typeof getProviderDefinition>): Provider {
-    if (!definition) return provider
+  private hideSecretFields(provider: Provider, definition: ProviderDefinition): Provider {
     const copy = { ...provider } as Record<string, unknown>
     for (const field of definition.secret_fields) {
       const hasValue = (copy[field] ?? '') !== ''
@@ -92,13 +89,9 @@ export class ProviderPresenter {
 
   private withPresentationFields(
     provider: Provider,
-    definition: ReturnType<typeof getProviderDefinition>,
+    definition: ProviderDefinition,
     configured: boolean
   ): PresentedProvider {
-    if (!definition) {
-      return { ...provider, configured, fields: {}, editable_fields: [] } as PresentedProvider
-    }
-
     const presented = { ...provider } as Record<string, unknown>
     presented.editable_fields = definition.fields
     presented.fields = {}
@@ -113,8 +106,8 @@ export class ProviderPresenter {
     return presented as PresentedProvider
   }
 
-  private displayName(provider: Provider, definition: ReturnType<typeof getProviderDefinition>): string {
+  private displayName(provider: Provider, definition: ProviderDefinition): string {
     const name = (provider.name ?? '').trim()
-    return name !== '' ? name : (definition?.name ?? '')
+    return name !== '' ? name : definition.name
   }
 }

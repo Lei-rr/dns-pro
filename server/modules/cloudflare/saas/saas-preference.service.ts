@@ -24,9 +24,6 @@ export interface HostnamePreference {
   ownership_txt_cleaned: boolean
 }
 
-/** 形状权威在 store 注册表同层；此处再导出，既有导入路径不变 */
-export type { SaaSPreferencesFile } from '../../../core/store/store-shapes.js'
-
 /** 同步配置子集：已解析的业务形状，目标用端口层闭合联合 */
 export type SyncPreference = {
   sync_target: SyncTarget
@@ -150,28 +147,6 @@ export class SaaSPreferenceService implements SaaSPreferencePort {
   /** 校验同步服务商引用（创建远端资源前预检用） */
   async validateSyncConfig(cloudflareProviderId: string, sync: SyncPreference): Promise<void> {
     await this.withOwner(cloudflareProviderId, async (providers) => assertSyncProvider(sync, providers))
-  }
-
-  /** 校验并保存同步配置（校验与写入在同一把锁内） */
-  setSyncConfig(input: {
-    cloudflareProviderId: string
-    identity: HostnameIdentity
-    hostnameId?: string
-    syncTarget: SyncTarget
-    syncProviderId: string
-    syncZone: string
-    autoPreferred: boolean
-  }): Promise<HostnamePreference> {
-    const sync: SyncPreference = {
-      sync_target: input.syncTarget,
-      sync_provider_id: input.syncProviderId,
-      sync_zone: input.syncZone,
-      auto_preferred: input.autoPreferred,
-    }
-    return this.withOwner(input.cloudflareProviderId, async (providers) => {
-      assertSyncProvider(sync, providers)
-      return this.save(input.cloudflareProviderId, input.identity, input.hostnameId ?? '', toSyncChanges(sync))
-    })
   }
 
   /** 保存已在远端变更前校验过的同步配置（远端已不可回滚，不再重复校验） */

@@ -1,6 +1,6 @@
 import type { ProviderRepository } from './provider.repository.js'
 import { ApiError } from '../http/api-error.js'
-import type { PresentedProvider, Provider } from './provider.types.js'
+import type { PresentedProvider, Provider, ProviderDefinition } from './provider.types.js'
 import { getProviderDefinition, getProviderDefinitionsList } from './provider-definitions.js'
 import { ProviderNormalizer } from './provider-normalizer.js'
 import { ProviderPresenter } from './provider-presenter.js'
@@ -137,10 +137,8 @@ export class ProviderService {
   private mergeUpdatePayload(
     current: Provider,
     data: Record<string, unknown>,
-    definition: ReturnType<typeof getProviderDefinition>
+    definition: ProviderDefinition
   ): Record<string, unknown> {
-    if (!definition) return { ...current, ...data }
-
     const merged: Record<string, unknown> = { ...current }
     merged.id = current.id
     merged.type = current.type

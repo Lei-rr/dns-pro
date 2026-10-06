@@ -1,7 +1,7 @@
 import { ApiError } from '../http/api-error.js'
 import { errorMessage } from '../../shared/values.js'
 import type { ProviderRepository } from './provider.repository.js'
-import { requiredLinkRule } from './provider-reference.js'
+import { assertLinkTarget, requiredLinkRule } from './provider-reference.js'
 import type { Provider, ProviderType } from './provider.types.js'
 
 export type ProviderConnectionResult = {
@@ -137,20 +137,11 @@ export class ProviderConnectionService {
     visited: ReadonlySet<string>
   ): Promise<ProviderConnectionResult> {
     const provider = await this.providers.find(id)
-    if (!provider) {
-      throw new ApiError('provider_reference_not_found', `Linked provider ${id} not found`, 422, {
-        provider_id: id,
-        expected_type: expectedType,
-      })
-    }
-    if (provider.type !== expectedType) {
-      throw new ApiError(
-        'provider_reference_type_mismatch',
-        `Linked provider ${id} must be ${expectedType}, got ${provider.type}`,
-        422,
-        { provider_id: id, expected_type: expectedType, actual_type: provider.type }
-      )
-    }
+    assertLinkTarget(provider, id, expectedType, (failure) => ({
+      provider_id: id,
+      expected_type: expectedType,
+      ...(failure.kind === 'type_mismatch' ? { actual_type: failure.actualType } : {}),
+    }))
     return this.test(id, visited)
   }
 }

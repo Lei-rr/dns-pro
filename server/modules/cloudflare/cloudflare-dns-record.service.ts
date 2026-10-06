@@ -27,7 +27,6 @@ export interface CloudflareRecord {
   content: string | null
   ttl: number | null
   proxied: boolean | null
-  proxiable: boolean | null
   priority: number | null
   comment: string | null
   tags: string[]
@@ -189,7 +188,7 @@ export class CloudflareDnsRecordService {
  * 记录分页缓存键：type/name 过滤条件必须参与计算。
  * 缺了它们，不同记录类型或不同主机名的查询会命中同一缓存条目（读串）。
  */
-export function cloudflareRecordPageKey(
+function cloudflareRecordPageKey(
   providerId: string,
   zoneId: string,
   page: number,
@@ -232,7 +231,6 @@ function presentRecord(record: unknown): CloudflareRecord {
     content: providerNullableString(r.content),
     ttl: providerNullableNumber(r.ttl),
     proxied: r.proxied == null ? null : parseBool(r.proxied),
-    proxiable: r.proxiable == null ? null : parseBool(r.proxiable),
     priority: providerNullableNumber(r.priority),
     comment: providerNullableString(r.comment),
     tags: r.tags,

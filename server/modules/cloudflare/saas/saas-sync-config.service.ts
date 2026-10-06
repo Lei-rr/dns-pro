@@ -1,7 +1,7 @@
 import type { ProviderRepository } from '../../../core/providers/provider.repository.js'
 import type { SaaSProvider } from '../../../core/providers/provider.types.js'
 import { ApiError } from '../../../core/http/api-error.js'
-import { normalizeFqdn } from '../../../shared/values.js'
+import { normalizeFqdn, toText } from '../../../shared/values.js'
 import type { SaaSSyncDefaultsPort, SyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
 import { parseSyncTarget, unsupportedSyncTarget } from '../../../core/contracts/saas-sync-config.port.js'
 import type { CloudflareCustomHostname } from './saas-custom-hostname.client.js'
@@ -15,8 +15,7 @@ type EffectiveSyncConfig = ExplicitSyncConfig & { explicit: boolean }
 /** 主机名 + 本地偏好合并后的形状：读路径的生效配置与写路径的响应都由它派生 */
 export type MergedHostname = CloudflareCustomHostname & Partial<HostnamePreference>
 
-const text = (value: unknown) => String(value ?? '').trim()
-const zoneText = (value: unknown) => text(value).toLowerCase()
+const zoneText = (value: unknown) => toText(value).toLowerCase()
 
 /** SaaS DNS 同步配置解析与脏数据修复（与主机名 CRUD 解耦）；服务商默认值经端口 SaaSSyncDefaultsPort 供编排消费 */
 export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
@@ -57,10 +56,10 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
 
   presentExplicit(preference: Partial<HostnamePreference> | null | undefined): ExplicitSyncConfig {
     return {
-      hostname: text(preference?.hostname),
+      hostname: toText(preference?.hostname),
       // 存储行里的目标值在这里显式解析：脏值（手改 JSON / 旧版本写入）直接 422，不静默当成未配置
       sync_target: parseSyncTarget(preference?.sync_target),
-      sync_provider_id: text(preference?.sync_provider_id),
+      sync_provider_id: toText(preference?.sync_provider_id),
       sync_zone: zoneText(preference?.sync_zone),
       auto_preferred: Boolean(preference?.auto_preferred),
     }
@@ -69,8 +68,8 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
   /** 服务商默认同步目标：配置了 DNSPod 优先，否则 Cloudflare DNS */
   async defaultSyncTarget(saasProviderId: string): Promise<SyncTarget> {
     const provider = await this.requireSaaS(saasProviderId)
-    if (text(provider.dnspod_provider)) return 'dnspod'
-    if (text(provider.cloudflare_dns_provider) || text(provider.cloudflare_provider)) return 'cloudflare_dns'
+    if (toText(provider.dnspod_provider)) return 'dnspod'
+    if (toText(provider.cloudflare_dns_provider) || toText(provider.cloudflare_provider)) return 'cloudflare_dns'
     return ''
   }
 
@@ -79,9 +78,9 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
     const provider = await this.requireSaaS(saasProviderId)
     switch (target) {
       case 'dnspod':
-        return text(provider.dnspod_provider)
+        return toText(provider.dnspod_provider)
       case 'cloudflare_dns':
-        return text(provider.cloudflare_dns_provider) || text(provider.cloudflare_provider)
+        return toText(provider.cloudflare_dns_provider) || toText(provider.cloudflare_provider)
       case '':
         return ''
       default:
@@ -127,8 +126,8 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
 
     // 已存配置先按原始值读取：脏值只在真正要沿用它时才解析失败，显式提交能直接覆盖修复
     const storedRaw = {
-      sync_target: text(existing?.sync_target),
-      sync_provider_id: text(existing?.sync_provider_id),
+      sync_target: toText(existing?.sync_target),
+      sync_provider_id: toText(existing?.sync_provider_id),
       sync_zone: zoneText(existing?.sync_zone),
       auto_preferred: Boolean(existing?.auto_preferred),
     }
@@ -138,7 +137,7 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
     const switched = explicitTarget !== '' && explicitTarget !== storedRaw.sync_target
     let candidate: SyncPreference = {
       sync_target: explicitTarget || parseSyncTarget(storedRaw.sync_target),
-      sync_provider_id: text(data.sync_provider_id) || (switched ? '' : storedRaw.sync_provider_id),
+      sync_provider_id: toText(data.sync_provider_id) || (switched ? '' : storedRaw.sync_provider_id),
       sync_zone: zoneText(data.sync_zone) || storedRaw.sync_zone,
       auto_preferred: 'auto_preferred' in data ? Boolean(data.auto_preferred) : storedRaw.auto_preferred,
     }
@@ -166,9 +165,9 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
       ...hostname,
       custom_metadata: Object.keys(metadata).length > 0 ? metadata : null,
       preferred_domain: preferred,
-      sync_target: text(preference?.sync_target ?? hostname.sync_target),
-      sync_provider_id: text(preference?.sync_provider_id ?? hostname.sync_provider_id),
-      sync_zone: text(preference?.sync_zone ?? hostname.sync_zone),
+      sync_target: toText(preference?.sync_target ?? hostname.sync_target),
+      sync_provider_id: toText(preference?.sync_provider_id ?? hostname.sync_provider_id),
+      sync_zone: toText(preference?.sync_zone ?? hostname.sync_zone),
       auto_preferred: preference ? preference.auto_preferred : Boolean(hostname.auto_preferred),
     }
   }
@@ -177,13 +176,13 @@ export class SaaSSyncConfigService implements SaaSSyncDefaultsPort {
   buildCloudflareUpdatePayload(current: CloudflareCustomHostname, data: Record<string, unknown>) {
     const payload: Record<string, unknown> = {}
     if (Object.hasOwn(data, 'custom_origin_server')) {
-      const next = text(data.custom_origin_server)
-      if (next !== text(current.custom_origin_server)) payload.custom_origin_server = next
+      const next = toText(data.custom_origin_server)
+      if (next !== toText(current.custom_origin_server)) payload.custom_origin_server = next
     }
-    const method = text(data.method)
-    if (method !== '' && method !== text(current.ssl?.method)) payload.method = method
-    const minTls = text(data.min_tls_version)
-    if (minTls !== '' && minTls !== text(current.ssl?.settings?.min_tls_version)) payload.min_tls_version = minTls
+    const method = toText(data.method)
+    if (method !== '' && method !== toText(current.ssl?.method)) payload.method = method
+    const minTls = toText(data.min_tls_version)
+    if (minTls !== '' && minTls !== toText(current.ssl?.settings?.min_tls_version)) payload.min_tls_version = minTls
     return payload
   }
 

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from './lifecycle.js'
 import type { AppConfig } from './config.js'
 import { CloudflareClient } from '../modules/cloudflare/cloudflare.client.js'
-import { requestSchemaTypeContractSchema, type RequestSchemaTypeContract } from '../core/http/request-schema.js'
+import { objectSchema, paramsSchema, requestSchema, text, type RequestOf } from '../core/http/request-schema.js'
 
 /**
  * 迁移自 scripts/isolated-api-probe.ts 的对外 HTTP 契约部分：
@@ -466,11 +466,27 @@ describe('健康检查与会话注销', () => {
   })
 })
 
+/**
+ * 请求 schema 的类型层契约夹具：由本测试独占持有（放在 request-schema.ts 只会是生产死导出）。
+ * 断言只在类型层生效，必须在本模块有一个实例化点，tsc 的 noUnusedLocals 才不会判它未使用。
+ */
+type Equal<Left, Right> =
+  (<Type>() => Type extends Left ? 1 : 2) extends <Type>() => Type extends Right ? 1 : 2 ? true : false
+type Expect<Value extends true> = Value
+const requestSchemaTypeContractSchema = requestSchema({
+  params: paramsSchema('providerId', 'zone'),
+  body: objectSchema({ username: text(255), nickname: text(255) }, ['username']),
+})
+type ContractRequest = RequestOf<typeof requestSchemaTypeContractSchema>
+type RequestSchemaTypeContract = Expect<Equal<ContractRequest['Params'], { providerId: string; zone: string }>> &
+  Expect<Equal<ContractRequest['Body'], { username: string; nickname?: string }>>
+
 describe('请求 schema 类型契约', () => {
   it('requestSchema 的 RequestOf 推导与手写预期精确一致', () => {
     // 断言在类型层：RequestOf 推导被改坏时 RequestSchemaTypeContract 不再是 true，这一行会先编译失败。
+    // 夹具（Equal / Expect / requestSchemaTypeContractSchema）定义在本文件模块顶层，
     // 迁移自 isolated-api-probe.ts 的同名契约——它必须有一个模块外的实例化点，
-    // 否则 request-schema.ts 里的断言会被 tsc 的 noUnusedLocals 当作未使用而失去意义。
+    // 否则这一行会被 tsc 的 noUnusedLocals 当作未使用而失去意义。
     const contract: RequestSchemaTypeContract = true
     expect(contract).toBe(true)
     // 运行时值只承载上面的类型推导，不需要额外断言

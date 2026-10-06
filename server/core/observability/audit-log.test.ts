@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
-import { AuditLog, auditActor, type AuditAction } from './audit-log.js'
+import { AuditLog, auditActor, type AuditEvent } from './audit-log.js'
 
 /**
  * 迁移自 scripts/isolated-audit-probe.ts（F6 关键操作审计：批量 / 凭据变更 / 会话吊销 / 派生记录对账）。
@@ -68,7 +68,7 @@ describe('AuditLog 环形缓冲', () => {
     const second = new AuditLog().record({ action: 'credential_change', actor: 'admin', target: 'x' })
     const third = new AuditLog().record({ action: 'session_revoked', actor: 'admin', target: 'x' })
     const fourth = new AuditLog().record({ action: 'reconcile', actor: 'admin', target: 'x' })
-    const actions: AuditAction[] = [first.action, second.action, third.action, fourth.action]
+    const actions: AuditEvent['action'][] = [first.action, second.action, third.action, fourth.action]
     expect(new Set(actions)).toEqual(new Set(['batch', 'credential_change', 'session_revoked', 'reconcile']))
   })
 })

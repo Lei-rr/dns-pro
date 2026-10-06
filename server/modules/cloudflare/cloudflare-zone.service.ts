@@ -8,6 +8,7 @@ import {
   type FullListPagination,
 } from '../../core/providers/provider-call.js'
 import { providerNullableString } from '../../core/providers/provider-values.js'
+import { asRecordOrNull } from '../../core/providers/response-guards.js'
 import { invalidateCloudflareZoneCache, CLOUDFLARE_PROVIDER_TYPE } from './cloudflare.cache.js'
 import { CLOUDFLARE_PAGE_LIMIT } from './cloudflare-pagination.js'
 import { providerAccountId, type CloudflareAccess } from './access.js'
@@ -140,7 +141,7 @@ function presentZone(zone: unknown): ZonePresentation {
     status: providerNullableString(z.status),
     type: providerNullableString(z.type),
     paused: z.paused == null ? null : parseBool(z.paused),
-    account: z.account && typeof z.account === 'object' && !Array.isArray(z.account) ? z.account : null,
+    account: asRecordOrNull(z.account),
     name_servers: z.name_servers.map(String),
     original_name_servers: z.original_name_servers.map(String),
     created_on: providerNullableString(z.created_on),

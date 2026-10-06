@@ -43,7 +43,6 @@ export interface SaaSHostnameValue {
   effective_sync_target?: string
   effective_sync_provider_id?: string
   effective_sync_zone?: string
-  sync_config_explicit?: boolean
   /** 远端已成功、本地偏好写入失败时的降级标记 */
   local_preference_error?: string
 }

@@ -1,4 +1,10 @@
-export type ProviderType = 'dnspod' | 'cloudflare' | 'edgeone' | 'saas' | 'cloudflared'
+/**
+ * 服务商类型白名单：类型别名与 HTTP 校验 schema 共用同一份事实来源。
+ * 新增类型只改这里，schema 自动跟随，不会再出现「TS 编译通过、HTTP 400 拒收」的漂移。
+ */
+export const PROVIDER_TYPES = ['dnspod', 'cloudflare', 'edgeone', 'saas', 'cloudflared'] as const
+
+export type ProviderType = (typeof PROVIDER_TYPES)[number]
 
 export interface ProviderDefinition {
   type: ProviderType

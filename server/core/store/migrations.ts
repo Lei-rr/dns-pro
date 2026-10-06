@@ -5,6 +5,7 @@ import type { Provider } from '../providers/provider.types.js'
 import { loadCredentialKey } from '../security/credential-key.js'
 import { createSecretBox } from '../crypto/secret-box.js'
 import { backupDataRoot, backupLabel, pruneBackups } from '../backup/backup.service.js'
+import { writeJsonAtomic } from './atomic-write.js'
 import { storePaths } from './store-registry.js'
 
 /** 当前数据结构版本；新增迁移时递增并追加到 migrations 末尾 */
@@ -13,7 +14,7 @@ export const CURRENT_SCHEMA_VERSION = 1
 const META_FILE = '__meta.json'
 const BACKUP_RETENTION = 5
 
-export interface MigrationLogger {
+interface MigrationLogger {
   info: (message: string) => void
 }
 
@@ -98,25 +99,6 @@ async function readMeta(metaPath: string): Promise<DataMeta | null> {
 
 async function writeMeta(metaPath: string, version: number): Promise<void> {
   await writeJsonAtomic(metaPath, { schema_version: version, updated_at: new Date().toISOString() })
-}
-
-/** 临时文件 + fsync + rename 的原子 JSON 写入（迁移期 store 尚未创建） */
-async function writeJsonAtomic(filePath: string, data: unknown): Promise<void> {
-  // 临时名必须含 pid + 时间 + 随机数：多进程可能同时启动并迁移同一数据目录，同名临时文件会互相覆盖
-  const temporary = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
-  try {
-    const handle = await fs.open(temporary, 'wx', 0o600)
-    try {
-      await handle.writeFile(`${JSON.stringify(data, null, 2)}\n`, 'utf8')
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    await fs.rename(temporary, filePath)
-  } catch (error) {
-    await fs.rm(temporary, { force: true }).catch(() => undefined)
-    throw error
-  }
 }
 
 async function hasExistingData(dataRoot: string): Promise<boolean> {

@@ -14,7 +14,7 @@ interface DnsPodLine {
   line_id: string
 }
 
-export interface DnsPodLineListResult {
+interface DnsPodLineListResult {
   /** 可单独选择的线路（默认、电信、联通…） */
   items: DnsPodLine[]
   /** 线路分组（境内、境外…），按名称提交 */

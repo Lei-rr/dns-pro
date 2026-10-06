@@ -7,9 +7,6 @@ interface PreferredDomain {
   sort: number
 }
 
-/** 形状权威在 store 注册表同层；此处再导出，既有导入路径不变 */
-export type { PreferredDomainsFile } from '../../../core/store/store-shapes.js'
-
 export class PreferredDomainService {
   constructor(private readonly store: JsonStore<PreferredDomainsFile>) {}
 

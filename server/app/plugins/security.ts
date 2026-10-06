@@ -4,6 +4,7 @@ import fastifyCookie from '@fastify/cookie'
 import fastifyHelmet from '@fastify/helmet'
 import fastifyRateLimit from '@fastify/rate-limit'
 import { ApiError } from '../../core/http/api-error.js'
+import { authRateLimited } from '../../core/http/auth-rate-limit.js'
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
@@ -36,15 +37,10 @@ function assertSameOrigin(request: FastifyRequest): void {
 const securityPluginImpl: FastifyPluginAsync = async (app) => {
   await app.register(fastifyRateLimit, {
     global: false,
-    errorResponseBuilder: (_request, context) => {
-      const secondsLeft = Math.ceil(context.ttl / 1000)
-      return {
-        statusCode: 429,
-        code: 'auth_rate_limited',
-        message: `登录尝试过于频繁，已临时锁定，请 ${Math.ceil(secondsLeft / 60)} 分钟后再试`,
-        details: { retry_after: secondsLeft },
-      }
-    },
+    errorResponseBuilder: (_request, context) => ({
+      statusCode: 429,
+      ...authRateLimited(context.ttl),
+    }),
   })
 
   await app.register(fastifyHelmet, {

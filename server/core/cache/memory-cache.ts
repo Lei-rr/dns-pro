@@ -5,9 +5,9 @@ type CacheEntry<T> = {
 }
 
 /** 默认存活时间：外部（控制台/其它工具）改动最多滞后这么久；显式 refresh 与变更失效不受影响 */
-export const CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_TTL_MS = 5 * 60 * 1000
 /** 默认容量：超出后按最久未使用淘汰，避免 key 含用户输入时无限增长 */
-export const CACHE_MAX_ENTRIES = 500
+const CACHE_MAX_ENTRIES = 500
 
 /**
  * 进程内缓存：带存活时间与容量上限。
@@ -44,20 +44,12 @@ export class MemoryCache {
     this.prune()
   }
 
-  delete(key: string): void {
-    this.entries.delete(key)
-  }
-
   invalidateTags(tags: string[]): void {
     if (tags.length === 0) return
     const invalid = new Set(tags)
     for (const [key, entry] of this.entries) {
       if (entry.tags.some((tag) => invalid.has(tag))) this.entries.delete(key)
     }
-  }
-
-  clear(): void {
-    this.entries.clear()
   }
 
   /** 统计未过期条目：惰性过期下没有写入时 size 也必须反映真实容量 */

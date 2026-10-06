@@ -14,7 +14,7 @@ import { peekResourceKeys, payloadMatchesScope, type JobType } from './job-regis
  * 站点标识字段名：payload 里构成互斥范围的字段。
  * 各批量工作流只用到这四个键，用闭合联合把它钉住——写错字段名会让互斥范围悄悄变空。
  */
-export type BatchScopeKey = 'provider_id' | 'zone' | 'zone_name' | 'zone_id'
+type BatchScopeKey = 'provider_id' | 'zone' | 'zone_name' | 'zone_id'
 
 /** 批量任务对外视图公共字段 */
 export type BatchJobViewBase = {
@@ -42,7 +42,7 @@ export type BatchItemResult = {
 }
 
 // 内部执行字段不对外暴露（执行期快照清单与 job.service 的内存剥离共用一份）
-const INTERNAL_ITEM_FIELDS = new Set(['attempt', 'item_key', ...EXECUTION_SNAPSHOT_FIELDS])
+const INTERNAL_ITEM_FIELDS = new Set(['item_key', ...EXECUTION_SNAPSHOT_FIELDS])
 
 /** 批量任务族：互斥范围与资源键同族共享，创建/重试/反查共用同一份互斥判定 */
 export class BatchJobKind<View> {
@@ -169,9 +169,7 @@ async function requeueFailedBatchItems(jobs: JobService, job: JobRecord, lock: J
     throw new ApiError('batch_no_failed', 'No failed items to retry', 422)
   }
   const items = job.items.map((item) =>
-    item.status === 'failed'
-      ? { ...item, status: 'pending', message: undefined, attempt: Number(item.attempt || 0) + 1 }
-      : item
+    item.status === 'failed' ? { ...item, status: 'pending', message: undefined } : item
   )
   return jobs.requeue(job.id, { items, ...summarizeJobItems(items), message: '失败项重试中' }, lock)
 }

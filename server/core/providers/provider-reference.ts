@@ -39,24 +39,47 @@ export function requiredLinkRule(type: ProviderType): ProviderLinkRule | undefin
   return PROVIDER_LINK_RULES.find((rule) => rule.appliesTo.includes(type) && definition.required.includes(rule.field))
 }
 
+/** 关联目标的失败形态：details 由调用方按场景补充 */
+export type LinkTargetFailure = { kind: 'missing' } | { kind: 'type_mismatch'; actualType: ProviderType }
+
+/**
+ * 关联目标断言：目标不存在或类型不符时抛出同一对错误码与文案。
+ * 取数方式（内存列表 / repository）与 details 形状由调用方决定。
+ */
+export function assertLinkTarget(
+  candidate: Provider | null | undefined,
+  id: string,
+  expectedType: ProviderType,
+  details: (failure: LinkTargetFailure) => Record<string, unknown>
+): void {
+  if (!candidate) {
+    throw new ApiError(
+      'provider_reference_not_found',
+      `Linked provider ${id} not found`,
+      422,
+      details({ kind: 'missing' })
+    )
+  }
+  if (candidate.type !== expectedType) {
+    throw new ApiError(
+      'provider_reference_type_mismatch',
+      `Linked provider ${id} must be ${expectedType}, got ${candidate.type}`,
+      422,
+      details({ kind: 'type_mismatch', actualType: candidate.type })
+    )
+  }
+}
+
 export function validateProviderReferences(candidate: Provider, providers: Provider[]): void {
   for (const rule of PROVIDER_LINK_RULES) {
     if (!rule.appliesTo.includes(candidate.type)) continue
     const targetId = String(candidate[rule.field] ?? '').trim()
     if (!targetId) continue
     const target = providers.find((provider) => provider.id === targetId)
-    if (!target) {
-      throw new ApiError('provider_reference_not_found', `Linked provider ${targetId} not found`, 422, {
-        errors: { [rule.field]: '关联服务商不存在' },
-      })
-    }
-    if (target.type !== rule.targetType) {
-      throw new ApiError(
-        'provider_reference_type_mismatch',
-        `Linked provider ${targetId} must be ${rule.targetType}`,
-        422,
-        { errors: { [rule.field]: `关联服务商必须是 ${rule.targetType}` } }
-      )
-    }
+    assertLinkTarget(target, targetId, rule.targetType, (failure) => ({
+      errors: {
+        [rule.field]: failure.kind === 'missing' ? '关联服务商不存在' : `关联服务商必须是 ${rule.targetType}`,
+      },
+    }))
   }
 }

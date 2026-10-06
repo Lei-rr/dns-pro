@@ -171,15 +171,12 @@ describe('服务商删除的引用完整性', () => {
     }
 
     try {
-      const preferenceWrite = app.ctx.modules.saas.preferences.setSyncConfig({
-        cloudflareProviderId: preferenceOwnerId,
-        identity: { zone: 'example.com', fqdn: 'www.example.com' },
-        hostnameId: preferenceHostnameId,
-        syncTarget: 'dnspod',
-        syncProviderId: 'dns-target',
-        syncZone: 'example.com',
-        autoPreferred: false,
-      })
+      const preferenceWrite = app.ctx.modules.saas.preferences.setNormalizedSyncConfig(
+        preferenceOwnerId,
+        { zone: 'example.com', fqdn: 'www.example.com' },
+        { sync_target: 'dnspod', sync_provider_id: 'dns-target', sync_zone: 'example.com', auto_preferred: false },
+        preferenceHostnameId
+      )
       await ownerLookupReached.promise
       const deleteOwner = app.ctx.workflows.providerManagement.delete(preferenceOwnerId)
       preferenceGate.resolve()
@@ -376,15 +373,12 @@ describe('SaaS 主机名删除的本地偏好清理策略', () => {
       ['missing-pref', 'missing.example.com'],
       ['upstream-missing-pref', 'upstream-missing.example.com'],
     ] as const) {
-      await app.ctx.modules.saas.preferences.setSyncConfig({
-        cloudflareProviderId: 'cf-owner',
-        identity: { zone: 'example.com', fqdn: hostname },
-        hostnameId,
-        syncTarget: 'dnspod',
-        syncProviderId: 'dns-target',
-        syncZone: 'example.com',
-        autoPreferred: false,
-      })
+      await app.ctx.modules.saas.preferences.setNormalizedSyncConfig(
+        'cf-owner',
+        { zone: 'example.com', fqdn: hostname },
+        { sync_target: 'dnspod', sync_provider_id: 'dns-target', sync_zone: 'example.com', auto_preferred: false },
+        hostnameId
+      )
     }
 
     try {
@@ -418,15 +412,12 @@ describe('SaaS 主机名删除的本地偏好清理策略', () => {
         expect(localPreference === null, `${hostname} local preference clear policy`).toBe(shouldClear)
       }
 
-      await app.ctx.modules.saas.preferences.setSyncConfig({
-        cloudflareProviderId: 'cf-owner',
-        identity: { zone: 'example.com', fqdn: 'delete-404.example.com' },
-        hostnameId: 'delete-404-pref',
-        syncTarget: 'dnspod',
-        syncProviderId: 'dns-target',
-        syncZone: 'example.com',
-        autoPreferred: false,
-      })
+      await app.ctx.modules.saas.preferences.setNormalizedSyncConfig(
+        'cf-owner',
+        { zone: 'example.com', fqdn: 'delete-404.example.com' },
+        { sync_target: 'dnspod', sync_provider_id: 'dns-target', sync_zone: 'example.com', auto_preferred: false },
+        'delete-404-pref'
+      )
       hostnameGateway.idByHostname = async () => 'delete-404-pref'
       hostnameGateway.delete = async () => {
         throw new ApiError('saas_hostname_delete_failed', 'upstream hostname missing', 502, { upstream_status: 404 })

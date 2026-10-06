@@ -1,5 +1,5 @@
 import { ApiError } from './api-error.js'
-import { hasRateLimitCode, isHttpRateLimited, retryAfterMs } from '../providers/provider-error.js'
+import { hasRateLimitCode, isHttpRateLimited, retryAfterMs, upstreamStatus } from '../providers/provider-error.js'
 
 interface HttpClientOptions {
   baseURL: string
@@ -83,17 +83,25 @@ function shouldRetry(method: string, error: unknown): boolean {
   if (isHttpRateLimited(error)) return true
   if (method !== 'GET' && method !== 'HEAD') return false
   if (error instanceof ApiError) {
-    const upstreamStatus = (error.details as Record<string, unknown> | undefined)?.upstream_status
-    if (typeof upstreamStatus === 'number') return [500, 502, 503, 504].includes(upstreamStatus)
-    return error.statusCode === 502
+    const status = upstreamStatus(error)
+    // 无 upstream_status（非 HTTP 层错误）时退回请求自身的 502 判定
+    return status === null ? error.statusCode === 502 : [500, 502, 503, 504].includes(status)
   }
   return true
 }
 
-/** 重试等待：优先遵循上游 Retry-After，否则指数退避；超过上限返回 null 表示放弃重试 */
+/** 指数退避：第 n 次重试等待 INITIAL_BACKOFF_MS × 2^(n-1) */
+function backoffMs(attempt: number): number {
+  return INITIAL_BACKOFF_MS * 2 ** (attempt - 1)
+}
+
+/**
+ * HTTP 重试等待：优先遵循上游 Retry-After，否则指数退避；超过上限返回 null 表示放弃重试。
+ * 只有 HTTP 429 分支会写入 retry_after_ms（见 sendOnce），调用方据此决定是否值得等待。
+ */
 function retryDelayMs(error: unknown, attempt: number): number | null {
   const requested = retryAfterMs(error)
-  if (requested === null) return INITIAL_BACKOFF_MS * 2 ** (attempt - 1)
+  if (requested === null) return backoffMs(attempt)
   return requested > MAX_RETRY_AFTER_MS ? null : requested
 }
 
@@ -108,9 +116,9 @@ export async function withRateLimitRetry<T>(task: () => Promise<T>): Promise<T> 
       return await task()
     } catch (error) {
       if (attempt >= MAX_RETRIES || isHttpRateLimited(error) || !hasRateLimitCode(error)) throw error
-      const delay = retryDelayMs(error, attempt + 1)
-      if (delay === null) throw error
-      await sleep(delay)
+      // 业务限流码不携带 retry_after_ms（唯一写入点是 HTTP 429 分支，已被上面的 isHttpRateLimited 排除），
+      // 因此这里恒为指数退避，retryDelayMs 的「等待过久放弃」分支不可达。
+      await sleep(backoffMs(attempt + 1))
     }
   }
 }
@@ -189,7 +197,7 @@ export class BaseHttpClient {
       })
 
       const text = await response.text()
-      let data: unknown = text
+      let data: unknown
       if (text !== '') {
         try {
           data = JSON.parse(text)

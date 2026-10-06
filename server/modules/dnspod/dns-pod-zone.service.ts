@@ -14,7 +14,7 @@ import {
 } from '../../core/providers/provider-values.js'
 import { toAsciiFqdn } from '../../shared/values.js'
 import { DNSPOD_PROVIDER_TYPE, invalidateDnsPodZoneCache } from './dns-pod.cache.js'
-import { DnsPodClient, dnsPodClientFor } from './dns-pod.client.js'
+import { dnsPodClientFor } from './dns-pod.client.js'
 import {
   dnspodDomainCreateResponseSchema,
   dnspodDomainInfoSchema,
@@ -35,14 +35,12 @@ interface ZoneListItem {
   status: string
   dns_status: string | null
   grade: string
-  grade_title: string
   group_id: number
   record_count: number
   ttl: number
   remark: string
   effective_dns: string[]
   created_on: string
-  updated_on: string
 }
 
 /** 与 core 的 toFullListResult 保持同一形状，避免各服务重复声明分页元数据 */
@@ -68,7 +66,7 @@ export class DnsPodZoneService {
   async create(providerId: string, zone: string) {
     // IDN 与匹配侧同源：统一 punycode，保证缓存键与失效标签在 UI/同步两条路径上一致
     const domain = toAsciiFqdn(zone)
-    const client = await this.clientFor(providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const response = await callProvider(
       {
         code: 'dnspod_zone_create_failed',
@@ -95,7 +93,7 @@ export class DnsPodZoneService {
   async delete(providerId: string, zone: string) {
     // 同上：失效标签必须与记录/线路缓存的键同源（punycode）
     const domain = toAsciiFqdn(zone)
-    const client = await this.clientFor(providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const response = await callProvider(
       {
         code: 'dnspod_zone_delete_failed',
@@ -112,7 +110,7 @@ export class DnsPodZoneService {
   }
 
   private async fetchAll(providerId: string): Promise<ZoneListResult> {
-    const client = await this.clientFor(providerId)
+    const client = await dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
     const { items, requestId } = await collectOffsetPages(
       async (offset, limit) => {
         const response = await callProvider(
@@ -134,10 +132,6 @@ export class DnsPodZoneService {
     )
     return toFullListResult(items, requestId)
   }
-
-  private clientFor(providerId: string): Promise<DnsPodClient> {
-    return dnsPodClientFor(this.providers, providerId, this.httpTimeoutMs)
-  }
 }
 
 function presentZone(zone: DnsPodDomain): ZoneListItem {
@@ -148,7 +142,6 @@ function presentZone(zone: DnsPodDomain): ZoneListItem {
     status: providerString(zone.Status),
     dns_status: providerNullableString(zone.DnsStatus ?? zone.DNSStatus),
     grade: providerString(zone.Grade),
-    grade_title: providerString(zone.GradeTitle),
     group_id: providerFiniteNumber(zone.GroupId),
     record_count: providerFiniteNumber(zone.RecordCount),
     ttl: providerFiniteNumber(zone.TTL),
@@ -156,6 +149,5 @@ function presentZone(zone: DnsPodDomain): ZoneListItem {
     // dnspodDomainSchema 已把 EffectiveDNS 归一为字符串数组，这里不再重复过滤
     effective_dns: zone.EffectiveDNS as string[],
     created_on: providerString(zone.CreatedOn),
-    updated_on: providerString(zone.UpdatedOn),
   }
 }

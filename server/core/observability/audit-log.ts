@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 import type { FastifyRequest } from 'fastify'
 
 /** 审计动作（§4.3 F6）：批量 / 凭据变更 / 会话吊销 / 派生记录对账 */
-export type AuditAction = 'batch' | 'credential_change' | 'session_revoked' | 'reconcile'
+type AuditAction = 'batch' | 'credential_change' | 'session_revoked' | 'reconcile'
 
 export interface AuditEvent {
   id: string

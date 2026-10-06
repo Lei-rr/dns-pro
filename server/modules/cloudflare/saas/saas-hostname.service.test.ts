@@ -9,7 +9,6 @@ import { ProviderRepository } from '../../../core/providers/provider.repository.
 import type { Provider } from '../../../core/providers/provider.types.js'
 import { createStore } from '../../../core/store/store-registry.js'
 import { SaaSHostnameService } from './saas-hostname.service.js'
-import type { CustomHostnameIndex } from './saas-custom-hostname.client.js'
 import { SaaSPreferenceService } from './saas-preference.service.js'
 import { SaaSSyncConfigService } from './saas-sync-config.service.js'
 
@@ -44,7 +43,9 @@ const seededProviders: Provider[] = [
   { type: 'saas', id: 'saas-1', name: 'SaaS', cloudflare_provider: 'cf-1' },
 ]
 
-/** 测试用的站点主机名快照：与 client 的 CustomHostnameIndex 同形，只做 FQDN → ID 查表 */
+/** client 的 CustomHostnameIndex 已收进模块内部，测试按同形结构重建，只做 FQDN → ID 查表 */
+type CustomHostnameIndex = { findId(hostnameFqdn: string): string | undefined }
+
 function indexOf(byFqdn: Record<string, string> = {}): CustomHostnameIndex {
   return { findId: (hostnameFqdn: string) => byFqdn[hostnameFqdn] }
 }

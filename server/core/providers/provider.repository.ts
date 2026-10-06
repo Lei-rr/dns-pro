@@ -5,9 +5,6 @@ import { ApiError } from '../http/api-error.js'
 import { openProviderSecrets, sealProviderSecrets } from './provider-secrets.js'
 import type { Provider, ProviderInput, ProviderType } from './provider.types.js'
 
-/** providers.json 的形状权威在 store 注册表同层；这里再导出，既有导入路径保持不变 */
-export type { ProvidersFile } from '../store/store-shapes.js'
-
 /** type 判别键 → Provider 子类型；requireType 的返回类型由此推导，调用方不必再手写泛型 */
 type ProviderByType<T extends ProviderType> = Extract<Provider, { type: T }>
 

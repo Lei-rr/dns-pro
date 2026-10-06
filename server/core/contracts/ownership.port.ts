@@ -4,7 +4,7 @@
  * 归属不落盘、不手工维护：由派生关系（SaaS 主机名 / 隧道 Ingress 路由 / EdgeOne 加速域名）
  * 在查询时解析。未被任何派生关系声明的主机名一律视为 manual（人工记录，绝不自动删）。
  */
-import { normalizeFqdn } from '../../shared/values.js'
+import { normalizeHostStrict } from '../../shared/values.js'
 import type { DnsProviderType } from './dns-record.port.js'
 
 export type RecordOwner = 'saas' | 'tunnel' | 'edgeone' | 'manual'
@@ -31,11 +31,11 @@ export interface OwnershipPort {
 }
 
 /**
- * 主机名归一：小写、去空白、去全部尾点。
- * 注意比 shared/values 的 normalizeFqdn（只去一个尾点）更严格，`a.com..` 与 `a.com` 视为同一主机。
+ * 主机名归一：小写、去空白、去全部尾点（与 shared/values 的 normalizeHostStrict 同一实现）。
+ * 注意比 normalizeFqdn（只去一个尾点）更严格，`a.com..` 与 `a.com` 视为同一主机。
  */
 export function normalizeOwnershipHost(value: unknown): string {
-  return normalizeFqdn(value).replace(/\.+$/, '')
+  return normalizeHostStrict(value)
 }
 
 /**
