@@ -603,9 +603,9 @@ describe('隧道令牌：读取、形状与轮换', () => {
     const response = await injectJson('POST', `/${TUNNEL_ID}/token/rotate`)
 
     expect(response.statusCode, response.body).toBe(200)
-    // 轮换接口把 token 与 side_effects 一并发在 data 下（不像 create 提升到顶层）
+    // 副作用一律在响应顶层（与 create 同构），data 里只留业务字段
     expect(response.json().data.token).toBeNull()
-    expect(response.json().data.side_effects.tunnel.token.status).toBe('failed')
+    expect(response.json().side_effects.tunnel.token.status).toBe('failed')
     expect(callsOf('PATCH')).toHaveLength(1)
   })
 })

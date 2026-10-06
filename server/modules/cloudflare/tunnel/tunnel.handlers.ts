@@ -75,7 +75,9 @@ export async function rotateTunnelTokenHandler(
     request.params.providerId,
     request.params.tunnelId
   )
-  return reply.send(success(result))
+  // 与 createTunnelHandler 同构：副作用一律提到响应顶层，不在 data 里留第二套解构
+  const { side_effects, ...data } = result
+  return reply.send(success(data, side_effects))
 }
 
 export async function getTunnelConfigHandler(
