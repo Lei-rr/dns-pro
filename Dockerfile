@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS builder
+FROM node:25-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY . .
 
 RUN npm run build
 
-FROM node:20-bookworm-slim AS prod-deps
+FROM node:25-bookworm-slim AS prod-deps
 
 WORKDIR /app
 
@@ -53,7 +53,7 @@ function walk(dir, base = dir) {
 walk('/app/node_modules')
 NODE
 
-FROM node:20-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 
 WORKDIR /app
 
