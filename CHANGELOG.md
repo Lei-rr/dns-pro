@@ -3,6 +3,22 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-10-07
+
+DNS 记录页交互回调，同步健康（统一对账）功能下线。
+
+### 变更
+
+- DNS 记录页：折叠组恢复整体前置。1.2.0 曾把分组与独立记录改为按排序混排（见 1.2.0 的「记录表排序不再被分组打乱」），本次改回「折叠组集中在顶部、独立记录随后」，组内与组间顺序仍由 `compareRecordsForGroup` 决定。新增 `web/src/features/dns/lib/record-display.test.ts` 钉住该顺序——此前只有集成测试覆盖「先分组后分页」，排序本身没有测试。
+- DNS 记录页：备注列去掉归属标签（SaaS / 隧道 / EdgeOne / 人工），只保留备注文本；`web/src/features/dns/lib/record-owner.ts` 及其测试、`DnsRecord` 上的 `owner` 字段随之删除。折叠组行上的用途标签（业务 CNAME / DCV 委派 / 所有权验证）不受影响。
+
+### 移除
+
+- 移除「同步健康」页面与统一对账功能：前端删除 `web/src/pages/sync/SyncPage.vue`、`web/src/features/sync/`（10 个文件）、路由项、桌面与移动导航入口、命令面板项；后端删除 `/api/reconcile` 路由与 `ReconcileService`、三个派生 planner 中只服务对账的部分（`saasDerivedPlanner`、`edgeOneDerivedPlanner`、`tunnel.planner.ts`）以及 `derived-record.types.ts`，共 20 个源文件。
+- 保留共用底座与独立功能：`derived-records/` 下的 `dns-writer`、`ownership`、`sync-plan`、`current-records` 与 `saas-records` / `saas-targets` 两个 planner 仍服务 SaaS、EdgeOne、隧道的同步与 repair；三条产品线各自的 `dns-repair` 与 SaaS 详情「刷新状态」（`POST /api/saas/.../reconcile`）未受影响。
+- 审计动作白名单收缩为三类（批量 / 凭据变更 / 会话吊销），去掉已无写入方的 `reconcile`；`/api/audit` 查询接口保留——审计留痕被 6 处写入路径调用，属独立安全能力。
+- 路由清单重新生成：94 → 92 条。
+
 ## [1.2.0] - 2026-10-06
 
 后端全量重构（Phase 1-4：数据安全、可观测性、契约链路、探针瘦身；Phase 5a：五顶层结构；Phase 5b：D2 共享底座与 D1-1 DNS 端口）、交付成熟度补齐（Phase 6）、性能优化与安全加固、测试体系迁移（探针退役 → Vitest）与第三轮门禁补全。

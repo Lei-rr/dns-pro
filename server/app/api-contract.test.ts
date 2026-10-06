@@ -6,15 +6,11 @@ import type { FastifyInstance, HTTPMethods } from 'fastify'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildApp } from './lifecycle.js'
 import type { AppConfig } from './config.js'
-import { CloudflareClient } from '../modules/cloudflare/cloudflare.client.js'
 import { objectSchema, paramsSchema, requestSchema, text, type RequestOf } from '../core/http/request-schema.js'
 
 /**
  * 迁移自 scripts/isolated-api-probe.ts 的对外 HTTP 契约部分：
- * 路由清单、未认证/404/SPA 回退、登录与按来源 IP 限流、请求 schema 拒绝面、对账入口、健康检查与会话注销。
- *
- * 对账入口（/api/reconcile）横跨 SaaS / Tunnel / EdgeOne 三条产品线的检测与执行，
- * 不属于 records / jobs / providers 任一域，按迁移约定收在这里（见返回值的 residual）。
+ * 路由清单、未认证/404/SPA 回退、登录与按来源 IP 限流、请求 schema 拒绝面、健康检查与会话注销。
  */
 
 /** 路由清单是注册面的快照：routes.ts 漏挂/改名会在这里逐条暴露（表驱动，失败即指名路由） */
@@ -295,153 +291,6 @@ describe('请求 schema 契约：拒绝缺字段与历史字段', () => {
   it.each(rejectedPayloads)('$title → 400', async ({ url, payload }) => {
     const response = await app.inject({ method: 'POST', url, headers: { cookie: sessionCookie }, payload })
     expect(response.statusCode, `${url} => ${response.statusCode}: ${response.body}`).toBe(400)
-  })
-})
-
-describe('对账入口（/api/reconcile）检测与执行契约', () => {
-  /**
-   * refresh 由前端 withRefresh 统一下发（sync-api.detect + useResourceQuery.refresh），
-   * schema 里漏放行它会让「重新检测 / 一键修复后的刷新」全量 400；
-   * 检测本身只读，这里把三条产品线的上游都固定在假数据上（EdgeOne 站点为空 → 无派生记录）。
-   */
-  it('检测只读且放行 refresh，执行返回执行痕迹；未知参数继续被拒', async () => {
-    const originalGet = CloudflareClient.prototype.get
-    const originalPost = CloudflareClient.prototype.post
-    const edgeOneZonesService = app.ctx.modules.edgeOne.zones
-    const edgeOneDomainsService = app.ctx.modules.edgeOne.domains
-    const originalEdgeZonesList = edgeOneZonesService.zones
-    const originalEdgeDomainsList = edgeOneDomainsService.accelerationDomains
-    let customHostnameCreates = 0
-    let customHostnameLists = 0
-    let tunnelCreates = 0
-
-    CloudflareClient.prototype.get = async function (requestPath: string) {
-      if (requestPath === 'zones') {
-        return {
-          result: [{ id: 'zone-1', name: 'example.com', status: 'active' }],
-          result_info: { page: 1, per_page: 100, total_count: 1, total_pages: 1 },
-        }
-      }
-      if (requestPath === 'zones/zone-1/custom_hostnames') {
-        customHostnameLists++
-        return { result: [], result_info: { page: 1, per_page: 100, total_count: 0, total_pages: 1 } }
-      }
-      if (requestPath === 'accounts/probe-account/cfd_tunnel') {
-        return { result: [{ id: 'tunnel-1', name: 'probe-tunnel', status: 'inactive', connections: [] }] }
-      }
-      if (requestPath === 'accounts/probe-account/cfd_tunnel/tunnel-1/configurations') {
-        return { result: { version: 1, config: { ingress: [{ service: 'http_status:404' }] } } }
-      }
-      throw new Error(`Unexpected fake Cloudflare GET ${requestPath}`)
-    }
-    CloudflareClient.prototype.post = async function (requestPath: string) {
-      if (requestPath === 'zones/zone-1/custom_hostnames') {
-        customHostnameCreates++
-        return {
-          result: {
-            id: `hostname-${customHostnameCreates + 1}`,
-            hostname: 'www.example.com',
-            status: 'pending',
-            ssl: {},
-          },
-        }
-      }
-      if (requestPath === 'accounts/probe-account/cfd_tunnel') {
-        tunnelCreates++
-        return { result: { id: 'tunnel-1', name: 'probe-tunnel', status: 'inactive', connections: [] } }
-      }
-      throw new Error(`Unexpected fake Cloudflare POST ${requestPath}`)
-    }
-
-    const emptyEdgePage = async () => ({
-      items: [],
-      pagination: {
-        page: 1,
-        per_page: 0,
-        offset: 0,
-        limit: 0,
-        count: 0,
-        total: 0,
-        total_count: 0,
-        total_pages: 1,
-      },
-    })
-    edgeOneZonesService.zones = emptyEdgePage as unknown as typeof edgeOneZonesService.zones
-    edgeOneDomainsService.accelerationDomains =
-      emptyEdgePage as unknown as typeof edgeOneDomainsService.accelerationDomains
-
-    try {
-      const createsBeforeDetect = customHostnameCreates
-      const tunnelsBeforeDetect = tunnelCreates
-
-      const detectHealth = await app.inject({
-        method: 'GET',
-        url: '/api/reconcile',
-        headers: { cookie: sessionCookie },
-      })
-      expect(detectHealth.statusCode, `GET /api/reconcile => ${detectHealth.statusCode}: ${detectHealth.body}`).toBe(
-        200
-      )
-      const report = detectHealth.json().data
-      expect(report.scope, '无参检测的 scope 必须为空').toEqual({})
-      expect(typeof report.scanned_at).toBe('string')
-      expect(Number.isNaN(Date.parse(String(report.scanned_at))), '检测必须带可解析的 scanned_at').toBe(false)
-      expect(Array.isArray(report.items), '检测报告必须带 items 数组').toBe(true)
-      expect(report.summary.total, 'summary.total 必须与 items 一致').toBe(report.items.length)
-      expect('executed_at' in report, '只读检测响应不得带执行痕迹').toBe(false)
-
-      const refreshed = await app.inject({
-        method: 'GET',
-        url: '/api/reconcile?refresh=true',
-        headers: { cookie: sessionCookie },
-      })
-      expect(
-        refreshed.statusCode,
-        `GET /api/reconcile?refresh=true => ${refreshed.statusCode}: ${refreshed.body}`
-      ).toBe(200)
-      const notRefreshed = await app.inject({
-        method: 'GET',
-        url: '/api/reconcile?refresh=false',
-        headers: { cookie: sessionCookie },
-      })
-      expect(notRefreshed.statusCode, `GET /api/reconcile?refresh=false => ${notRefreshed.statusCode}`).toBe(200)
-
-      // 前端实际查询串（scopeParams + withRefresh）必须整串通过
-      const frontendQuery = '/api/reconcile?provider_id=saas-owner&kind=saas-hostname&refresh=true'
-      const scopedDetect = await app.inject({ method: 'GET', url: frontendQuery, headers: { cookie: sessionCookie } })
-      expect(scopedDetect.statusCode, `GET ${frontendQuery} => ${scopedDetect.statusCode}`).toBe(200)
-      expect(scopedDetect.json().data.scope).toEqual({ providerId: 'saas-owner', kind: 'saas-hostname' })
-
-      // 反向控制：schema 仍是 additionalProperties:false，未知参数继续被拒
-      const unknownQuery = await app.inject({
-        method: 'GET',
-        url: '/api/reconcile?cache=true',
-        headers: { cookie: sessionCookie },
-      })
-      expect(unknownQuery.statusCode, 'reconcile 检测必须继续拒绝未知查询参数').toBe(400)
-
-      // 检测 + 执行（无漂移项）都不得写远端
-      expect(customHostnameCreates, '检测创建了 SaaS 主机名').toBe(createsBeforeDetect)
-      expect(tunnelCreates, '检测创建了隧道').toBe(tunnelsBeforeDetect)
-      expect(customHostnameLists >= 1, '检测必须真正读取 SaaS 主机名列表').toBe(true)
-
-      const apply = await app.inject({
-        method: 'POST',
-        url: '/api/reconcile',
-        headers: { cookie: sessionCookie },
-        payload: { provider_id: 'saas-owner', kind: 'saas-hostname' },
-      })
-      expect(apply.statusCode, `POST /api/reconcile => ${apply.statusCode}: ${apply.body}`).toBe(200)
-      const applied = apply.json().data
-      expect(typeof applied.executed_at, '执行必须带 executed_at').toBe('string')
-      expect(applied.results, '无漂移项时不得产生写入结果').toEqual([])
-      expect(customHostnameCreates, '无漂移项的对账不得写远端').toBe(createsBeforeDetect)
-    } finally {
-      CloudflareClient.prototype.get = originalGet
-      CloudflareClient.prototype.post = originalPost
-      edgeOneZonesService.zones = originalEdgeZonesList
-      edgeOneDomainsService.accelerationDomains = originalEdgeDomainsList
-    }
   })
 })
 

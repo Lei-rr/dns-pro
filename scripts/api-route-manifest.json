@@ -253,14 +253,6 @@
   },
   {
     "method": "GET",
-    "path": "/api/reconcile"
-  },
-  {
-    "method": "POST",
-    "path": "/api/reconcile"
-  },
-  {
-    "method": "GET",
     "path": "/api/saas/preferred-domains"
   },
   {

@@ -57,7 +57,7 @@ const PARAM_FORMATS: Record<string, () => TString> = {
 export const text = (maxLength = 1024): TString => Type.String({ minLength: 1, maxLength })
 export const optionalText = (maxLength = 1024): TString => Type.String({ maxLength })
 export const bool: TBoolean = Type.Boolean()
-export const boolQuery: TUnion<[TLiteral<'true'>, TLiteral<'false'>]> = Type.Union([
+const boolQuery: TUnion<[TLiteral<'true'>, TLiteral<'false'>]> = Type.Union([
   Type.Literal('true'),
   Type.Literal('false'),
 ])

@@ -12,10 +12,16 @@ export type DnsRecordDisplayRow =
   | { kind: 'single'; record: DnsRecord; key: string }
   | { kind: 'group'; hostKey: string; label: string; records: DnsRecord[]; key: string }
 
-/** Build the display-only host groups used by the DNS records table. */
+/**
+ * Build the display-only host groups used by the DNS records table.
+ *
+ * 折叠组整体前置，单条记录随后：折叠行是「摘要」，散在单条之间会把列表切成碎片，
+ * 也让「当前有几组折叠、各自多少条」无法一眼扫完。组内与组间顺序仍由 compareRecordsForGroup 决定。
+ */
 export function buildDnsRecordDisplayRows(records: DnsRecord[], zoneName: string): DnsRecordDisplayRow[] {
   const sorted = [...records].sort((a, b) => compareRecordsForGroup(a, b, zoneName))
-  const rows: DnsRecordDisplayRow[] = []
+  const groups: DnsRecordDisplayRow[] = []
+  const singles: DnsRecordDisplayRow[] = []
 
   for (let i = 0; i < sorted.length;) {
     // Index bounds are guaranteed by the loop conditions; the casts keep the grouping scan linear.
@@ -26,7 +32,7 @@ export function buildDnsRecordDisplayRows(records: DnsRecord[], zoneName: string
 
     const chunk = sorted.slice(i, end)
     if (shouldCollapseHostGroup(chunk, zoneName)) {
-      rows.push({
+      groups.push({
         kind: 'group',
         hostKey,
         label: hostGroupLabel(hostKey, zoneName),
@@ -34,7 +40,7 @@ export function buildDnsRecordDisplayRows(records: DnsRecord[], zoneName: string
         key: `g:${hostKey}`,
       })
     } else {
-      rows.push(
+      singles.push(
         ...chunk.map((item) => ({
           kind: 'single' as const,
           record: item,
@@ -45,8 +51,7 @@ export function buildDnsRecordDisplayRows(records: DnsRecord[], zoneName: string
     i = end
   }
 
-  // 按排序顺序返回：分组与单条混排，不能再把分组整体前置
-  return rows
+  return [...groups, ...singles]
 }
 
 export function dnsRecordRowKey(record: DnsRecord): string {

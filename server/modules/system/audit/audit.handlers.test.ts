@@ -118,10 +118,10 @@ describe('审计查询：字段完整性与顺序', () => {
       detail: { total: 3, succeeded: 2, failed: 1 },
     })
     const second = app.ctx.platform.audit.record({
-      action: 'reconcile',
+      action: 'credential_change',
       actor: 'audit-admin',
       target: 'derived-records',
-      detail: { repaired: 1 },
+      detail: { changed: 1 },
     })
 
     const response = await listAudit(sessionCookie)
@@ -134,7 +134,7 @@ describe('审计查询：字段完整性与顺序', () => {
     expect(String(items[0]?.id)).toMatch(UUID_PATTERN)
     expect(Number.isNaN(Date.parse(String(items[0]?.at)))).toBe(false)
     expect(items[0]?.at).toBe(second.at)
-    expect(items[0]?.detail).toEqual({ repaired: 1 })
+    expect(items[0]?.detail).toEqual({ changed: 1 })
   })
 
   it('未声明的查询参数不参与过滤（当前契约：返回全部）', async () => {

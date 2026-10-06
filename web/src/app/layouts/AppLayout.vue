@@ -33,7 +33,7 @@ const commandOpen = ref(false)
 const isDark = ref(false)
 
 const activeProviderId = computed(() => {
-  // 服务商页面统一在 /p/:provider 前缀下，取第二段；其余首段都是系统页面（控制台/服务商/同步健康/登录）
+  // 服务商页面统一在 /p/:provider 前缀下，取第二段；其余首段都是系统页面（控制台/服务商/登录）
   const segments = route.path.split('/').filter(Boolean)
   return segments[0] === 'p' ? segments[1] || '' : ''
 })
@@ -47,7 +47,6 @@ function isActivePath(href: string) {
 const currentNavLabel = computed(() => {
   if (route.path === '/') return '控制台'
   if (route.path === '/providers' || route.path.startsWith('/providers/')) return '服务商'
-  if (route.path === '/sync') return '同步健康'
   const active = providers.value.find((item) => item.id === activeProviderId.value)
   if (active?.name) return String(active.name)
   return '控制台'
@@ -75,17 +74,6 @@ const commandItems = computed<CommandItem[]>(() => {
       action: () => {
         commandOpen.value = false
         router.push('/providers')
-      },
-    },
-    {
-      id: 'nav-sync',
-      title: '同步健康',
-      subtitle: '查看派生记录一致性并一键修复',
-      category: '导航',
-      icon: RefreshCw,
-      action: () => {
-        commandOpen.value = false
-        router.push('/sync')
       },
     },
   ]
@@ -232,11 +220,6 @@ function toggleDark() {
               控制台
             </RouterLink>
           </Button>
-          <Button variant="ghost" as-child size="sm" class="h-9 shrink-0 px-3 text-[15px] cursor-pointer">
-            <RouterLink to="/sync" :class="cn(isActivePath('/sync') && 'bg-accent text-accent-foreground font-medium')">
-              同步健康
-            </RouterLink>
-          </Button>
           <Button
             v-for="item in providers"
             :key="item.id"
@@ -267,15 +250,6 @@ function toggleDark() {
               <DropdownMenuItem as-child>
                 <RouterLink to="/" class="w-full" :class="cn(isActivePath('/') && 'bg-accent text-accent-foreground')">
                   控制台
-                </RouterLink>
-              </DropdownMenuItem>
-              <DropdownMenuItem as-child>
-                <RouterLink
-                  to="/sync"
-                  class="w-full"
-                  :class="cn(isActivePath('/sync') && 'bg-accent text-accent-foreground')"
-                >
-                  同步健康
                 </RouterLink>
               </DropdownMenuItem>
               <DropdownMenuSeparator />

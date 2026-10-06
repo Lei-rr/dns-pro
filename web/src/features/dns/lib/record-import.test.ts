@@ -8,7 +8,7 @@ import { buildImportPreview } from './record-import-preview'
  * 迁移自 scripts/isolated-dns-import-probe.ts（探针已退役），断言逐条等价迁入。
  */
 
-/** 后端载荷不受前端类型约束：用 JSON 反序列化构造测试记录（同 record-owner.test.ts 的做法） */
+/** 后端载荷不受前端类型约束：用 JSON 反序列化构造测试记录 */
 function dnsRecord(payload: Record<string, unknown>): DnsRecord {
   return JSON.parse(JSON.stringify(payload)) as DnsRecord
 }

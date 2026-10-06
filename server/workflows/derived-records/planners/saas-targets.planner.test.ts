@@ -14,14 +14,14 @@ import {
   resolveSaaSSyncTarget,
   saasDefaultCloudflareProviderId,
   saasDnsPodProviderId,
-  type SaaSDerivedPlannerDeps,
+  type SaaSPlannerDeps,
   type SaaSPlannerHostnames,
 } from './saas-targets.planner.js'
 
 /**
  * SaaS 同步目标解析（§4.2 planner 的目标侧）。
  *
- * 这里的每条分支都同时服务写入路径与对账扫描：写错一条，同一台主机名的「同步」与「检测」就会分叉。
+ * 这里的每条分支都服务写入路径与 repair：写错一条，同一台主机名的「同步」与「修复」就会分叉。
  * 因此断言落在三件事上——值域（显式 > 同步配置 > 服务商默认）、归属门禁（站点必须托管该主机名），
  * 以及失败语义（未关联 → 422；站点待定 → ok:false 跳过；其它错误一律上抛）。
  */
@@ -69,7 +69,7 @@ function zoneOwns(host: { zone: string; fqdn: string }): boolean {
 }
 
 /** 端口桩：所有调用按序记入 calls；未覆盖的端口方法不会被 planner 触碰 */
-function plannerDeps(options: DepsOptions = {}): { deps: SaaSDerivedPlannerDeps; calls: string[] } {
+function plannerDeps(options: DepsOptions = {}): { deps: SaaSPlannerDeps; calls: string[] } {
   const calls: string[] = []
   const hostnames = {
     syncConfig: async (providerId: string, fqdn: string, zoneName?: string) => {
@@ -117,7 +117,7 @@ function plannerDeps(options: DepsOptions = {}): { deps: SaaSDerivedPlannerDeps;
       return options.idByName?.(providerId, zoneName) ?? `zone-id:${zoneName}`
     },
   }
-  const deps: SaaSDerivedPlannerDeps = {
+  const deps: SaaSPlannerDeps = {
     hostnames: hostnames as unknown as SaaSPlannerHostnames,
     access: access as unknown as LinkedDnsAccountPort,
     catalog: catalog as unknown as DnsZoneCatalogPort,

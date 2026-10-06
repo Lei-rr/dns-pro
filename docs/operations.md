@@ -101,8 +101,6 @@ npm run test:static                             # 构建产物契约（需先 np
 | ---- | -------- |
 | `scripts/check-architecture.test.ts` | 架构守卫规则样例（层矩阵、产品线互不引用、缓存实现白名单等） |
 | `scripts/maintenance-contract.test.ts` | 部署契约：Dockerfile 健康检查必须走 node 请求 `/api/health`，镜像内不得依赖 curl / wget；npm audit 用例默认跳过（`DNS_PRO_RUN_NPM_AUDIT=1` 显式开启） |
-| `scripts/reconcile-ui-wiring.test.ts` | 同步健康视图接入（前端接线静态断言） |
-| `scripts/saas-repair-ui.test.ts` | 修复域名解析入口统一（前端接线静态断言） |
 
 ### 3.2 API 契约与装配（server/app）
 
@@ -188,10 +186,9 @@ npm run test:static                             # 构建产物契约（需先 np
 | `server/workflows/saas-dns-sync/saas-dns-repair.test.ts` | SaaS DNS repair 编排：复用既有 upsert 而非另写一套 |
 | `server/workflows/saas-dns-sync/batch-request-budget.test.ts` | 请求量守卫：过滤下推上游、不随条目数重复全量拉取 |
 | `server/workflows/saas-dns-sync/saas-sync-adapter.test.ts` | 同步适配器记录采集（DNSPod / Cloudflare 两侧） |
-| `server/workflows/derived-records/reconcile.service.test.ts` | 对账检测与执行：只读检测零写、执行只写 create/update |
 | `server/workflows/derived-records/ownership.test.ts` | 归属查询：未声明即 `manual` |
 | `server/workflows/derived-records/planners/saas.test.ts` | 清理按名称定位、备注证明归属 |
-| `server/workflows/derived-records/sync-plan.test.ts` | 记录身份与查询条件（写入与只读检测共用判据） |
+| `server/workflows/derived-records/sync-plan.test.ts` | 记录身份与查询条件（写入与 repair 共用判据） |
 | `server/workflows/dns-batch/dns-record-payload.test.ts` | 创建记录槽位去重不吞掉不同取值 |
 | `server/workflows/provider-management/provider-dependency.workflow.test.ts` | 服务商依赖反查与原型链隔离 |
 
@@ -227,7 +224,6 @@ npm run test:static                             # 构建产物契约（需先 np
 | `web/src/features/saas/model/use-saas-host-editor.test.ts` | 保存与优选域名加载的所有权分离 |
 | `web/src/features/saas/api/saas-api.test.ts` | `deleteHostname` 的 `auto_cleanup` 映射 |
 | `web/src/features/tunnels/model/use-tunnel-detail.test.ts` | 令牌读写所有权 |
-| `web/src/features/sync/lib/repair-notice.test.ts` | 修复结果提示 |
 
 ### 3.9 构建产物契约（`test:static`）
 

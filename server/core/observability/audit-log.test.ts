@@ -18,18 +18,17 @@ import {
 import { createPreferredApplyHandler } from '../../workflows/saas-dns-sync/preferred-apply.handlers.js'
 
 /**
- * 迁移自 scripts/isolated-audit-probe.ts（F6 关键操作审计：批量 / 凭据变更 / 会话吊销 / 派生记录对账）。
+ * 迁移自 scripts/isolated-audit-probe.ts（F6 关键操作审计：批量 / 凭据变更 / 会话吊销）。
  * 审计的权威留痕是日志；内存环形缓冲只为 UI 提供最近事件的查询入口（不持久化）。
  * 这里校验：缓冲语义（最新在前 / 容量上限）+ 批量入口走真实 handler 落在 sink 上
- * + 其余动作与查询路由的源码落点（凭据变更 / 会话吊销 / 对账的链路上游在各自测试域覆盖）。
+ * + 其余动作与查询路由的源码落点（凭据变更 / 会话吊销的链路上游在各自测试域覆盖）。
  */
 
 // 静态断言读源码文件（不是构建产物）：写路径是否落点的权威在这里
 const read = async (file: string) => await readFile(new URL(`../../${file}`, import.meta.url), 'utf8')
-const [auth, providers, reconcile, routes] = await Promise.all([
+const [auth, providers, routes] = await Promise.all([
   read('modules/system/auth/auth.handlers.ts'),
   read('workflows/provider-management/provider-management.handlers.ts'),
-  read('workflows/derived-records/reconcile.handlers.ts'),
   read('app/routes.ts'),
 ])
 
@@ -46,42 +45,29 @@ describe('AuditLog 环形缓冲', () => {
     })
     const second = audit.record({ action: 'credential_change', actor: 'admin', target: 'provider-1' })
     const third = audit.record({ action: 'session_revoked', actor: 'admin', target: 'auth.session' })
-    const fourth = audit.record({
-      action: 'reconcile',
-      actor: 'admin',
-      target: 'derived-records:all/all',
-      detail: { scope: {}, summary: { total: 0 } },
-    })
 
-    expect(first.id !== '' && fourth.id !== '').toBe(true)
+    expect(first.id !== '' && third.id !== '').toBe(true)
     expect(first.at).toMatch(/^\d{4}-\d{2}-\d{2}T/)
-    // 动作白名单：批量 / 凭据变更 / 会话吊销 / 派生记录对账四类
-    expect([first.action, second.action, third.action, fourth.action]).toEqual([
-      'batch',
-      'credential_change',
-      'session_revoked',
-      'reconcile',
-    ])
+    // 动作白名单：批量 / 凭据变更 / 会话吊销三类
+    expect([first.action, second.action, third.action]).toEqual(['batch', 'credential_change', 'session_revoked'])
     // 权威留痕走 sink（日志），顺序即写入顺序
     expect(logged).toEqual([
       'batch:cloudflare:p1/example.com',
       'credential_change:provider-1',
       'session_revoked:auth.session',
-      'reconcile:derived-records:all/all',
     ])
     // 容量为 2：只剩最近两条，且最新在前
-    expect(audit.list().map((event) => event.action)).toEqual(['reconcile', 'session_revoked'])
+    expect(audit.list().map((event) => event.action)).toEqual(['session_revoked', 'credential_change'])
     // 未提供 detail 的事件默认空对象
     expect(audit.list()[0]?.detail.operation).toBeUndefined()
   })
 
-  it('动作白名单闭合为四类', () => {
+  it('动作白名单闭合为三类', () => {
     const first = new AuditLog().record({ action: 'batch', actor: 'admin', target: 'x' })
     const second = new AuditLog().record({ action: 'credential_change', actor: 'admin', target: 'x' })
     const third = new AuditLog().record({ action: 'session_revoked', actor: 'admin', target: 'x' })
-    const fourth = new AuditLog().record({ action: 'reconcile', actor: 'admin', target: 'x' })
-    const actions: AuditEvent['action'][] = [first.action, second.action, third.action, fourth.action]
-    expect(new Set(actions)).toEqual(new Set(['batch', 'credential_change', 'session_revoked', 'reconcile']))
+    const actions: AuditEvent['action'][] = [first.action, second.action, third.action]
+    expect(new Set(actions)).toEqual(new Set(['batch', 'credential_change', 'session_revoked']))
   })
 })
 
@@ -212,9 +198,7 @@ describe('审计写路径落点', () => {
     })
   })
 
-  it('对账走审计入口（不再用 request.log.info 旁路留痕），且查询端点已注册', () => {
-    expect(reconcile).toMatch(/action: 'reconcile'/)
-    expect(reconcile).toMatch(/platform\.audit\.record/)
+  it('审计查询端点已注册', () => {
     expect(routes).toMatch(/auditRoutes/)
   })
 })

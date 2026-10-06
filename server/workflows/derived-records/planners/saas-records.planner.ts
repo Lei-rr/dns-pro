@@ -1,8 +1,8 @@
 /**
  * SaaS 期望记录构造（§4.2 planner 的记录侧）。
  *
- * 单一数据源：写入路径（SaaS 同步适配器）与对账检测共用本文件的记录构造与清理配方，
- * 避免"同步"与"对账"两套判据漂移。对外仍经 saas.planner 再导出，调用方不感知。
+ * 单一数据源：写入路径（SaaS 同步适配器）与 repair 共用本文件的记录构造与清理配方，
+ * 避免两套判据漂移。对外仍经 saas.planner 再导出，调用方不感知。
  */
 import { ApiError } from '../../../core/http/api-error.js'
 import type { DnsProviderType, DnsRecordValue } from '../../../core/contracts/dns-record.port.js'
@@ -129,7 +129,7 @@ export function desiredRecord(input: {
 /** 清理配方：记录归属已由备注/值证明，keep=false 让写入口只删"自己的"记录 */
 export const cleanupDesired = (record: SaaSSyncRecord): SaaSSyncRecord => ({ ...record, keep: false })
 
-/** 记录稳定身份：类型|全名|线路（值与备注变化视为同一记录原地更新；判据来自 sync-plan，与对账检测同口径） */
+/** 记录稳定身份：类型|全名|线路（值与备注变化视为同一记录原地更新；判据来自 sync-plan） */
 export const syncRecordIdentity = (record: SaaSSyncRecord): string =>
   recordIdentity({ ...record.record, name: record.fqdn })
 
@@ -180,8 +180,8 @@ export function dnspodSaaSCleanupRecipe(
 }
 
 /**
- * 主机名应有的全部 DNS 记录（写入路径与对账检测共用）。
- * includeAll：用于清理快照/检测，强制包含所有权 TXT（即使已激活）。
+ * 主机名应有的全部 DNS 记录（写入路径与 repair 共用）。
+ * includeAll：用于清理快照，强制包含所有权 TXT（即使已激活）。
  * rules：主机名判定规则端口（优选域名取值与在管状态由端口实现委派，写入与读取共用同一判据）。
  */
 export function saasDesiredRecords(input: {

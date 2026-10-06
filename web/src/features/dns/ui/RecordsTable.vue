@@ -14,7 +14,6 @@ import {
   orderedPurposeLabels,
   type DnsRecordDisplayRow,
 } from '@/features/dns/lib/record-display'
-import { recordOwnerHint, recordOwnerLabel } from '@/features/dns/lib/record-owner'
 import type { DnsRecord } from '@/features/dns/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
 
@@ -250,21 +249,11 @@ function onCopyClick(record: DnsRecord) {
               <template v-else>{{ record.line || '默认' }}</template>
             </TableCell>
             <TableCell>
-              <div class="flex max-w-[10rem] items-center gap-1.5">
-                <Badge
-                  v-if="recordOwnerLabel(record)"
-                  :variant="record.owner === 'manual' ? 'outline' : 'secondary'"
-                  class="shrink-0 text-[11px] font-normal"
-                  :title="recordOwnerHint(record)"
-                >
-                  {{ recordOwnerLabel(record) }}
-                </Badge>
-                <div
-                  class="text-muted-foreground min-w-0 flex-1 truncate text-sm"
-                  :title="String(record.remark || record.comment || '')"
-                >
-                  {{ record.remark || record.comment || '—' }}
-                </div>
+              <div
+                class="text-muted-foreground max-w-[10rem] truncate text-sm"
+                :title="String(record.remark || record.comment || '')"
+              >
+                {{ record.remark || record.comment || '—' }}
               </div>
             </TableCell>
             <TableCell>
@@ -337,21 +326,11 @@ function onCopyClick(record: DnsRecord) {
               ><template v-else>{{ row.record.line || '默认' }}</template></TableCell
             >
             <TableCell>
-              <div class="flex max-w-[10rem] items-center gap-1.5">
-                <Badge
-                  v-if="recordOwnerLabel(row.record)"
-                  :variant="row.record.owner === 'manual' ? 'outline' : 'secondary'"
-                  class="shrink-0 text-[11px] font-normal"
-                  :title="recordOwnerHint(row.record)"
-                >
-                  {{ recordOwnerLabel(row.record) }}
-                </Badge>
-                <div
-                  class="text-muted-foreground min-w-0 flex-1 truncate text-sm"
-                  :title="String(row.record.remark || row.record.comment || '')"
-                >
-                  {{ row.record.remark || row.record.comment || '—' }}
-                </div>
+              <div
+                class="text-muted-foreground max-w-[10rem] truncate text-sm"
+                :title="String(row.record.remark || row.record.comment || '')"
+              >
+                {{ row.record.remark || row.record.comment || '—' }}
               </div>
             </TableCell>
             <TableCell>

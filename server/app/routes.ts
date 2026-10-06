@@ -12,7 +12,6 @@ import { routes as edgeoneRoutes } from '../modules/edge-one/edge-one.routes.js'
 import { routes as edgeOneDnsSyncRoutes } from '../workflows/edge-one-dns-sync/edge-one-dns-sync.routes.js'
 import { routes as cloudflaredRoutes } from '../modules/cloudflare/tunnel/tunnel.routes.js'
 import { routes as auditRoutes } from '../modules/system/audit/audit.routes.js'
-import { routes as reconcileRoutes } from '../workflows/derived-records/reconcile.routes.js'
 
 /**
  * API 路由目录。
@@ -38,7 +37,5 @@ export async function registerApiRoutes(app: FastifyInstance): Promise<void> {
     await scope.register(edgeoneRoutes, { prefix: '/edgeone/providers/:providerId' })
     await scope.register(edgeOneDnsSyncRoutes, { prefix: '/edgeone/providers/:providerId' })
     await scope.register(cloudflaredRoutes, { prefix: '/cloudflared/providers/:providerId' })
-    // F1/F2：同步健康视图 + 统一对账入口（检测只读 / 执行经 DnsWriter）
-    await scope.register(reconcileRoutes, { prefix: '/reconcile' })
   })
 }

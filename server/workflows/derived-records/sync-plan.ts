@@ -56,7 +56,7 @@ function recordLine(value: DnsRecordValue): string {
   return String(value.line ?? '').trim() || String(value.lineId ?? '').trim()
 }
 
-/** 记录身份：类型 + 主机名 + 线路（同身份视为同一槽位；planner 与对账引擎共用，避免第二份判据） */
+/** 记录身份：类型 + 主机名 + 线路（同身份视为同一槽位；写入与 repair 共用，避免第二份判据） */
 export function recordIdentity(value: DnsRecordValue): string {
   const name = String(value.name ?? '')
     .toLowerCase()

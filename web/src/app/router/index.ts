@@ -8,7 +8,6 @@ import AppLayout from '@/app/layouts/AppLayout.vue'
 import LoginPage from '@/pages/login/LoginPage.vue'
 import DashboardPage from '@/pages/dashboard/DashboardPage.vue'
 import ProvidersPage from '@/pages/providers/ProvidersPage.vue'
-import SyncPage from '@/pages/sync/SyncPage.vue'
 import ProviderEntryPage from '@/pages/provider-entry/ProviderEntryPage.vue'
 
 // 与后端保留字（server/core/providers/provider-normalizer.ts 的 RESERVED_PROVIDER_IDS = home/login/providers/user）
@@ -29,9 +28,8 @@ export const routes: RouteRecordRaw[] = [
     children: [
       { path: '', component: DashboardPage },
       { path: 'providers', component: ProvidersPage },
-      { path: 'sync', component: SyncPage },
-      // 服务商页面统一加 /p 前缀：后端只保留 home/login/providers/user，任何其它 ID（含 sync）都可以创建，
-      // 前缀让服务商 ID 与 /sync、/providers 等系统路由彻底错开，否则同名服务商页面永远不可达。
+      // 服务商页面统一加 /p 前缀：后端只保留 home/login/providers/user，任何其它 ID 都可以创建，
+      // 前缀让服务商 ID 与 /providers 等系统路由彻底错开，否则同名服务商页面永远不可达。
       { path: 'p', redirect: '/' },
       { path: 'p/:provider', component: ProviderEntryPage },
       { path: 'p/:provider/:second', component: ProviderEntryPage, props: { child: true } },

@@ -2,7 +2,7 @@
  * SaaS 同步目标解析（§4.2 planner 的目标侧）。
  *
  * DNSPod 与 Cloudflare DNS 两条目标的解析规则集中在此：预检/同步/清理等写入路径与
- * 对账扫描共用同一判据。对外仍经 saas.planner 再导出，调用方不感知。
+ * repair 共用同一判据。对外仍经 saas.planner 再导出，调用方不感知。
  */
 import { ApiError } from '../../../core/http/api-error.js'
 import type { CloudflareZonePort } from '../../../core/contracts/cloudflare-zone.port.js'
@@ -43,8 +43,8 @@ export interface SaaSSyncTargetDeps {
   cloudflareZones: CloudflareZonePort
 }
 
-/** 对账 planner 依赖：两条目标解析路径 + 服务商仓库 */
-export type SaaSDerivedPlannerDeps = SaaSDnsPodTargetDeps & SaaSSyncTargetDeps & { providers: ProviderRepository }
+/** 目标解析的完整依赖：两条解析路径 + 服务商仓库 */
+export type SaaSPlannerDeps = SaaSDnsPodTargetDeps & SaaSSyncTargetDeps & { providers: ProviderRepository }
 
 /** 业务回源：主机名自定义回源优先，否则站点默认回源 */
 export async function resolveEffectiveOrigin(
@@ -194,7 +194,7 @@ export async function resolveCloudflareSaasTarget(
   }
 }
 
-/** 按主机名生效配置解析写入目标（对账与写入共用） */
+/** 按主机名生效配置解析写入目标（写入与 repair 共用） */
 export async function resolveSaaSSyncTarget(
   deps: SaaSDnsPodTargetDeps & SaaSSyncTargetDeps,
   providerId: string,
