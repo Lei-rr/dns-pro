@@ -54,12 +54,23 @@ service="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service
 if [ -n "$workdir" ] && [ -d "$workdir" ]; then
   log "compose 项目: $workdir（service=${service:-未标注}）"
   cd "$workdir"
-  [ -f compose.yaml ] || [ -f docker-compose.yml ] || [ -f docker-compose.yaml ] \
-    || fail "$workdir 下未找到 compose 文件"
-  # shellcheck disable=SC2086
-  docker compose pull ${service:-}
-  # shellcheck disable=SC2086
-  docker compose up -d ${service:-}
+  if [ -f compose.yaml ]; then
+    override=compose.override.yaml
+  elif [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+    override=docker-compose.override.yml
+  else
+    fail "$workdir 下未找到 compose 文件"
+  fi
+
+  # 原 compose 文件里的 image 可能钉在旧版本（如 :1.2.3），那样 pull 拉不到新镜像。
+  # 用 override 文件指定本次要部署的镜像，不动原文件，回滚只需删掉 override。
+  svc="${service:-$(docker compose config --services 2>/dev/null | head -1)}"
+  [ -n "$svc" ] || fail "无法确定 compose service 名称"
+  printf 'services:\n  %s:\n    image: %s\n' "$svc" "$IMAGE" > "$override"
+  log "写入 $override：service=$svc → $IMAGE"
+
+  docker compose pull "$svc"
+  docker compose up -d "$svc"
 else
   log "非 compose 部署，按现有容器配置重建"
   name="$(docker inspect -f '{{.Name}}' "$cid" | sed 's|^/||')"
