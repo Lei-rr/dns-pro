@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EdgeOneAccelerationDomain } from './types'
-import { edgeOneDomainFormValues, edgeOneDomainSubmitValues } from './domain-command'
+import { edgeOneDomainFormValues, edgeOneDomainFullName, edgeOneDomainSubmitValues } from './domain-command'
 
 /**
  * features/edge-one 表单纯函数：前缀解析（'@' / 子域 / 异 zone）与 host_header 条件提交。
@@ -127,5 +127,31 @@ describe('EdgeOne 域名提交值（host_header 条件提交）', () => {
       host_header_mode: 'custom',
     })
     expect('host_header' in payload).toBe(false)
+  })
+})
+
+describe('edgeOneDomainFullName 完整域名补全', () => {
+  it('子域前缀补全 zone', () => {
+    expect(edgeOneDomainFullName('www', 'example.com')).toBe('www.example.com')
+    expect(edgeOneDomainFullName('*', 'example.com')).toBe('*.example.com')
+  })
+
+  it('根域：@ 与空串都还原为 zone 本身', () => {
+    expect(edgeOneDomainFullName('@', 'example.com')).toBe('example.com')
+    expect(edgeOneDomainFullName('', 'example.com')).toBe('example.com')
+  })
+
+  it('幂等：已是完整域名（含站点本身）不再二次拼接 zone', () => {
+    expect(edgeOneDomainFullName('m.guolei.cc', 'guolei.cc')).toBe('m.guolei.cc')
+    expect(edgeOneDomainFullName('guolei.cc', 'guolei.cc')).toBe('guolei.cc')
+    expect(edgeOneDomainFullName('M.Guolei.CC.', 'guolei.cc')).toBe('M.Guolei.CC')
+  })
+
+  it('站点为空时原样返回前缀，不产生悬空点', () => {
+    expect(edgeOneDomainFullName('www', '')).toBe('www')
+  })
+
+  it('异 zone 前缀原样保留（不吞掉用户输入）', () => {
+    expect(edgeOneDomainFullName('other.example.net', 'example.com')).toBe('other.example.net')
   })
 })

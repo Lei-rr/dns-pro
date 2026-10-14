@@ -61,6 +61,27 @@ export function edgeOneDomainFormValues(
   }
 }
 
+/**
+ * 表单前缀 → 完整加速域名。幂等：用户可能直接粘贴完整域名（或编辑既有域名回读出的带 zone 前缀），
+ * 此时不再重复拼接 zone，避免产生 m.guolei.cc.guolei.cc 这类二次拼接域名；
+ * 含点但不属于本站点的输入按完整域名原样交出（异 zone 由上游校验拒绝，好过拼成 xxx.example.com.example.com）。
+ */
+export function edgeOneDomainFullName(prefix: string, zoneName: string): string {
+  const zone = String(zoneName || '')
+    .trim()
+    .replace(/\.$/, '')
+  const raw = String(prefix || '')
+    .trim()
+    .replace(/\.$/, '')
+  if (!raw || raw === '@') return zone
+  if (!zone) return raw
+  const lower = raw.toLowerCase()
+  const lowerZone = zone.toLowerCase()
+  if (lower === lowerZone || lower.endsWith(`.${lowerZone}`)) return raw
+  if (raw.includes('.')) return raw
+  return `${raw}.${zone}`
+}
+
 /** 提交给后端的字段：IP/域名源站总带 host_header（自定义填值、加速域名模式显式空串以清空旧值） */
 interface EdgeOneDomainSubmitValues {
   origin_type: string

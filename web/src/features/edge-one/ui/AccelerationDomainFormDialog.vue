@@ -8,6 +8,7 @@ import { Switch } from '@/shared/ui/switch'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 import {
   edgeOneDomainFormValues,
+  edgeOneDomainFullName,
   edgeOneDomainSubmitValues,
   type EdgeOneDomainSubmitPayload,
 } from '@/features/edge-one/model/domain-command'
@@ -41,11 +42,7 @@ const form = reactive({
   autoSync: false,
 })
 
-const fullDomain = computed(() => {
-  const prefix = form.prefix.trim() || '@'
-  if (prefix === '@' || !props.zoneName) return props.zoneName
-  return `${prefix}.${props.zoneName}`
-})
+const fullDomain = computed(() => edgeOneDomainFullName(form.prefix, props.zoneName))
 
 const showHttpPort = computed(() => ['FOLLOW', 'HTTP'].includes(form.origin_protocol))
 const showHttpsPort = computed(() => ['FOLLOW', 'HTTPS'].includes(form.origin_protocol))
@@ -92,7 +89,7 @@ function submit() {
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field>
           <FieldLabel>前缀</FieldLabel>
-          <Input v-model="form.prefix" :disabled="editing" placeholder="www / * / @" />
+          <Input v-model="form.prefix" :disabled="editing" placeholder="www / * / @（也可直接粘贴完整域名）" />
         </Field>
         <Field>
           <FieldLabel>完整域名</FieldLabel>

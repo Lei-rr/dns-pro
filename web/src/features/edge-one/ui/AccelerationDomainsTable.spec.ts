@@ -148,3 +148,22 @@ describe('AccelerationDomainsTable 行内操作', () => {
     expect(menuItems()).toEqual([])
   })
 })
+
+describe('AccelerationDomainsTable 源站列', () => {
+  it('展示「源站地址:回源端口」', async () => {
+    const record: EdgeOneAccelerationDomain = {
+      ...domain('online'),
+      origin: { value: '150.40.181.85' },
+      origin_protocol: 'HTTP',
+      http_origin_port: 80,
+      https_origin_port: 443,
+    }
+    const wrapper = await mountTable([record])
+    expect(wrapper.text()).toContain('150.40.181.85:80')
+  })
+
+  it('无源站地址时退回源站类型', async () => {
+    const wrapper = await mountTable([domain('online')])
+    expect(wrapper.text()).toContain('IP')
+  })
+})

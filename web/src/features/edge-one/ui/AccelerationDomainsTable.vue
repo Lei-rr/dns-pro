@@ -20,6 +20,7 @@ import {
   edgeOneStatusVariant,
 } from '@/features/edge-one/lib/status'
 import { edgeOneDomainStatusActions } from '@/features/edge-one/model/domain-status-actions'
+import { edgeOneOriginDisplay } from '@/features/edge-one/model/origin-display'
 import { displayDomainStatus } from '@/features/edge-one/model/status-transitions'
 import type { EdgeOneAccelerationDomain } from '@/features/edge-one/model/types'
 import { selectableRowKeys } from '@/shared/lib/row-selection'
@@ -137,7 +138,7 @@ function toggleAll(value: boolean | 'indeterminate') {
             }}</StatusBadge></TableCell
           >
           <TableCell class="max-w-[220px] truncate">{{ record.cname || '-' }}</TableCell>
-          <TableCell class="max-w-[180px] truncate">{{ record.origin?.value || record.origin_type || '-' }}</TableCell>
+          <TableCell class="max-w-[180px] truncate">{{ edgeOneOriginDisplay(record) }}</TableCell>
           <TableCell>
             <DropdownMenu>
               <DropdownMenuTrigger as-child>

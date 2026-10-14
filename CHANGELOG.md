@@ -3,6 +3,16 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.3] - 2026-10-14
+
+EdgeOne 加速域名两处体验修正：列表源站列显示回源端口，表单前缀补全对完整域名幂等。
+
+### 变更
+
+- 加速域名列表「源站」列显示 `源站地址:回源端口`（如 `150.40.181.85:80`）。端口按回源协议取：HTTPS 用 `https_origin_port`，HTTP / FOLLOW / 缺省用 `http_origin_port`；上游未回传端口时退到协议默认（HTTP 80 / HTTPS 443）。新增 `web/src/features/edge-one/model/origin-display.ts` 承接该映射（表格改为调用 `edgeOneOriginDisplay(record)`），并对已含端口或 IPv6 字面量的地址加保护：前者原样展示不重复拼接，后者补方括号（`[240e::1]:80`），避免出现 `1.2.3.4:80:80` 这类结果。无源站地址时保持旧行为，退回源站类型（如 `IP_DOMAIN`）。
+- 加速域名表单：前缀 → 完整域名的补全抽为 `edgeOneDomainFullName`（`domain-command.ts`），对已含站点后缀的输入幂等——直接粘贴 `m.guolei.cc`、或编辑既有域名时回读出的带 zone 前缀，不再拼成 `m.guolei.cc.guolei.cc`；`@` 与空串还原为站点本身；异 zone 前缀（含点但不属于本站点）原样交出，由上游校验拒绝，好过拼成 `xxx.example.com.example.com`。输入框占位文案补「也可直接粘贴完整域名」。
+- 测试：新增 `origin-display.test.ts`（7 例，覆盖按协议取端口、默认端口回退、IPv6 补括号、已含端口原样展示、无源站地址退回类型），`domain-command.test.ts` 补 5 例，`AccelerationDomainsTable.spec.ts` 补 2 例（源站列展示 `150.40.181.85:80` 与无地址退回类型）。
+
 ## [1.2.2] - 2026-10-07
 
 跨模块小标签外观统一：徽章只用灰/黑三档，状态语义改由文案承担。
