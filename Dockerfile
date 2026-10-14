@@ -59,7 +59,11 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-RUN rm -rf \
+# 基础镜像自带的 perl / pcre2 等系统包会落后于 Debian 安全更新。
+# 这里做一次安全升级，让 security.yml 的 Trivy 门禁（只阻断「已有修复版本」的漏洞）保持绿色。
+RUN apt-get update \
+  && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y \
+  && rm -rf \
       /usr/local/lib/node_modules \
       /usr/local/bin/npm \
       /usr/local/bin/npx \
