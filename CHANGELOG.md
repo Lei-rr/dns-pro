@@ -5,11 +5,10 @@
 
 ## [1.2.5] - 2026-10-14
 
-基础镜像 CVE 修复与目标机自更新脚本。
+基础镜像 CVE 修复与镜像扫描链修复。
 
 ### 变更
 
-- 新增 `scripts/auto-update.sh`：目标机自拉取更新方案。由目标机定时执行 `docker compose pull && up -d`，跟随 `ghcr.io/lei-rr/dns-pro:latest`。更新方向为「单向拉取」，GitHub Actions 仅负责在 `v*` 标签发布时构建并推送公共镜像，不向外发起 SSH，仓库内无需配置任何主机凭据。
 - `Dockerfile` 的 runtime 阶段补一次 `apt-get upgrade`：基础镜像自带的 `perl-base` / `pcre2` 等系统包落后于 Debian 安全更新，`security.yml` 的 Trivy 门禁（只阻断「已有修复版本」的漏洞）因此判定失败。
 - 修复 `security.yml` 从未真正执行到扫描阶段的问题：`aquasecurity/trivy-action` 的 tag 带 `v` 前缀，`@0.28.0` 会直接 `Unable to find version` 失败；改为 `@v0.36.0`（inputs 与旧版兼容）。另补 `mkdir -p sbom`（Syft 输出目录不存在导致 SBOM 步骤 `ENOENT`）与 `workflow_dispatch`（便于手动重扫）。
 - 测试：无新增用例；`vitest` 119 文件 / 880 用例、`arch:final` rules=35/35、`routes:check` routes=92 均无回归。
