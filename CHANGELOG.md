@@ -3,6 +3,17 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.5] - 2026-10-14
+
+发布链补齐与镜像安全修复：`v*` 标签发布后自动更新华为云容器，runtime 镜像清零可修复的系统包 CVE。
+
+### 变更
+
+- 新增 `.github/workflows/deploy.yml` 与 `scripts/deploy-remote.sh`：`verify` 在 `v*` 标签上成功后，自动把华为云香港节点升级到刚发布的镜像。远端脚本优先识别 compose 项目（读容器的 `com.docker.compose.project.working_dir` 标签后 `pull && up -d`），非 compose 部署则用 `docker inspect` 复刻端口/卷/env/网络重建；健康检查走容器内 `node` 请求 `/api/health`（不依赖宿主 curl，与部署契约一致），60 秒未通过则打印日志并判失败。依赖仓库 secrets：`DEPLOY_HOST` / `DEPLOY_USER` / `DEPLOY_PASSWORD`（可选 `DEPLOY_PORT`）。
+- `Dockerfile` 的 runtime 阶段补一次 `apt-get upgrade`：基础镜像自带的 `perl-base` / `pcre2` 等系统包落后于 Debian 安全更新，`security.yml` 的 Trivy 门禁（只阻断「已有修复版本」的漏洞）因此判定失败。
+- 修复 `security.yml` 从未真正执行到扫描阶段的问题：`aquasecurity/trivy-action` 的 tag 带 `v` 前缀，`@0.28.0` 会直接 `Unable to find version` 失败；改为 `@v0.36.0`（inputs 与旧版兼容）。另补 `mkdir -p sbom`（Syft 输出目录不存在导致 SBOM 步骤 `ENOENT`）与 `workflow_dispatch`（便于手动重扫）。
+- 测试：无新增用例；`vitest` 119 文件 / 880 用例、`arch:final` rules=35/35、`routes:check` routes=92 均无回归。
+
 ## [1.2.4] - 2026-10-14
 
 默认端口由 2022 改为 2001；EdgeOne 加速域名表单与列表三处体验修正。
