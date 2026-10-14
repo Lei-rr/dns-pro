@@ -76,6 +76,9 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
 
+      - name: 准备 SBOM 输出目录
+        run: mkdir -p sbom
+
       - name: Generate SPDX SBOM (Syft)
         uses: anchore/sbom-action@v0
         with:
