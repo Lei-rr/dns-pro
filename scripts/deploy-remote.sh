@@ -3,7 +3,7 @@
 # 由 .github/workflows/deploy.yml 通过 `ssh ... "IMAGE=... bash -s" < 本文件` 送入执行。
 #
 # 必需环境变量：
-#   IMAGE   形如 ghcr.io/lei-rr/dns-pro:v1.2.4
+#   IMAGE   形如 ghcr.io/lei-rr/dns-pro:latest（生产跟随 latest 标签）
 # 可选环境变量：
 #   CONTAINER_MATCH  现有容器名/镜像的匹配片段，默认 dns-pro
 #   HEALTH_PORT      健康检查端口，默认 2001（与 server/app/config.ts 的默认端口一致）
@@ -55,19 +55,29 @@ if [ -n "$workdir" ] && [ -d "$workdir" ]; then
   log "compose 项目: $workdir（service=${service:-未标注}）"
   cd "$workdir"
   if [ -f compose.yaml ]; then
+    composefile=compose.yaml
     override=compose.override.yaml
-  elif [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+  elif [ -f docker-compose.yml ]; then
+    composefile=docker-compose.yml
+    override=docker-compose.override.yml
+  elif [ -f docker-compose.yaml ]; then
+    composefile=docker-compose.yaml
     override=docker-compose.override.yml
   else
     fail "$workdir 下未找到 compose 文件"
   fi
 
-  # 原 compose 文件里的 image 可能钉在旧版本（如 :1.2.3），那样 pull 拉不到新镜像。
-  # 用 override 文件指定本次要部署的镜像，不动原文件，回滚只需删掉 override。
   svc="${service:-$(docker compose config --services 2>/dev/null | head -1)}"
   [ -n "$svc" ] || fail "无法确定 compose service 名称"
-  printf 'services:\n  %s:\n    image: %s\n' "$svc" "$IMAGE" > "$override"
-  log "写入 $override：service=$svc → $IMAGE"
+
+  # 生产跟随 :latest。原文件已声明 :latest 就直接拉取；若钉了旧版本（如 :1.2.3），
+  # 写 override 指向 $IMAGE —— 不动原文件，回滚删掉 override 即可。
+  if grep -qE '^[[:space:]]*image:[[:space:]]*[^[:space:]]*:latest[[:space:]]*$' "$composefile"; then
+    log "原 compose 已声明 :latest，直接拉取"
+  else
+    printf 'services:\n  %s:\n    image: %s\n' "$svc" "$IMAGE" > "$override"
+    log "原 compose 未用 :latest，写入 $override：service=$svc → $IMAGE"
+  fi
 
   docker compose pull "$svc"
   docker compose up -d "$svc"
