@@ -79,7 +79,7 @@ npm start
 浏览器访问：
 
 ```text
-http://127.0.0.1:2022
+http://127.0.0.1:2001
 ```
 
 首次运行且 `data/config.json` 不存在时，系统会自动生成默认登录：
@@ -110,7 +110,7 @@ docker pull ghcr.io/lei-rr/dns-pro:latest
 docker run -d \
   --name dns-pro \
   --restart unless-stopped \
-  -p 2022:2022 \
+  -p 2001:2001 \
   -v "$PWD/data:/app/data" \
   ghcr.io/lei-rr/dns-pro:latest
 ```
@@ -119,7 +119,7 @@ docker run -d \
 
 | 服务          | 地址                    |
 | ------------- | ----------------------- |
-| Docker / 生产 | `http://127.0.0.1:2022` |
+| Docker / 生产 | `http://127.0.0.1:2001` |
 | 本地后端开发  | `http://127.0.0.1:3022` |
 | 本地前端 Vite | `http://127.0.0.1:5173` |
 
@@ -183,7 +183,7 @@ web/src/
 
 | 环境变量          | 默认值         | 说明                                                                                                     |
 | ----------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
-| `HOST` / `PORT`   | `0.0.0.0:2022` | 监听地址（命令行 `--port` 可覆盖）                                                                       |
+| `HOST` / `PORT`   | `0.0.0.0:2001` | 监听地址（命令行 `--port` 可覆盖）                                                                       |
 | `DATA_DIR`        | `./data`       | 数据目录（权限 0700，文件 0600）                                                                         |
 | `LOG_LEVEL`       | `info`         | `fatal`/`error`/`warn`/`info`/`debug`/`trace`/`silent`（命令行 `--log-level`）；Cookie、凭据字段自动脱敏 |
 | `SESSION_SECRET`  | 自动生成       | ≥32 位；未设置时持久化在 `data/session-secret`                                                           |
@@ -193,7 +193,7 @@ web/src/
 | `HTTP_TIMEOUT_MS` | `30000`        | 服务商 API 超时                                                                                          |
 
 ```bash
-SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=127.0.0.1 node dist/server.js --port 2022
+SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=127.0.0.1 node dist/server.js --port 2001
 ```
 
 ## 常用命令
@@ -213,7 +213,7 @@ SESSION_SECRET='至少 32 位随机字符串' COOKIE_SECURE=true TRUST_PROXY=127
 - 首次启动请从日志中获取随机初始密码；修改密码后所有已登录会话立即失效（当前设备保持登录）
 - 若仍在使用旧的 `admin/admin`：登录后会被强制要求修改密码，在此之前其它接口不可用
 - 忘记密码时：在 `data/config.json` 写入 `"auth": { "username": "admin", "password": "新密码" }` 后重启，启动时会自动转换为哈希
-- 生产环境放在 HTTPS 反向代理之后，并设置 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（改为可信代理的 IP/CIDR，勿用跳数）；`compose.yaml` 默认监听 `0.0.0.0:2022`，有反向代理时建议改为 `127.0.0.1:2022:2022`
+- 生产环境放在 HTTPS 反向代理之后，并设置 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（改为可信代理的 IP/CIDR，勿用跳数）；`compose.yaml` 默认监听 `0.0.0.0:2001`，有反向代理时建议改为 `127.0.0.1:2001:2001`
 - 容器以非 root（UID 1000）、只读根文件系统、无 capability 运行；宿主机数据目录需 `chown -R 1000:1000 data`
 - 不要把 `data/`、Provider Token、Session Secret 或生产日志提交到公开仓库
 

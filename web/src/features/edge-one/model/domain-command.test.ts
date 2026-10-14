@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { EdgeOneAccelerationDomain } from './types'
-import { edgeOneDomainFormValues, edgeOneDomainFullName, edgeOneDomainSubmitValues } from './domain-command'
+import {
+  edgeOneDomainFormValues,
+  edgeOneDomainFullName,
+  edgeOneDomainSubmitValues,
+  normalizeEdgeOneDomainPrefix,
+} from './domain-command'
 
 /**
  * features/edge-one 表单纯函数：前缀解析（'@' / 子域 / 异 zone）与 host_header 条件提交。
@@ -19,7 +24,8 @@ describe('EdgeOne 加速域名表单值', () => {
       host_header: '',
       host_header_mode: 'accelerate',
       ipv6_status: 'follow',
-      autoSync: false,
+      // 新建默认开启「自动同步 DNSPod」
+      autoSync: true,
     })
   })
 
@@ -153,5 +159,42 @@ describe('edgeOneDomainFullName 完整域名补全', () => {
 
   it('异 zone 前缀原样保留（不吞掉用户输入）', () => {
     expect(edgeOneDomainFullName('other.example.net', 'example.com')).toBe('other.example.net')
+  })
+})
+
+describe('normalizeEdgeOneDomainPrefix 前缀收敛', () => {
+  it('粘贴本站点的完整域名：剥成前缀，不让整串落到 domain_name', () => {
+    expect(normalizeEdgeOneDomainPrefix('www.example.com', 'example.com')).toEqual({
+      prefix: 'www',
+      error: null,
+    })
+    // 大小写与尾点归一到前缀，前缀本身保留用户输入的大小写
+    expect(normalizeEdgeOneDomainPrefix('M.Guolei.CC.', 'guolei.cc')).toEqual({
+      prefix: 'M',
+      error: null,
+    })
+  })
+
+  it('粘贴站点本身归一为 @；通配前缀原样保留', () => {
+    expect(normalizeEdgeOneDomainPrefix('example.com', 'example.com').prefix).toBe('@')
+    expect(normalizeEdgeOneDomainPrefix('*.example.com', 'example.com').prefix).toBe('*')
+    expect(normalizeEdgeOneDomainPrefix('*', 'example.com').prefix).toBe('*')
+    expect(normalizeEdgeOneDomainPrefix('@', 'example.com').prefix).toBe('@')
+  })
+
+  it('从地址栏粘贴：剥协议头、路径与端口，只留主机名', () => {
+    expect(normalizeEdgeOneDomainPrefix('https://www.example.com/path?a=1', 'example.com').prefix).toBe('www')
+    expect(normalizeEdgeOneDomainPrefix('www.example.com:8080', 'example.com').prefix).toBe('www')
+  })
+
+  it('纯前缀与空输入原样通过', () => {
+    expect(normalizeEdgeOneDomainPrefix('www', 'example.com')).toEqual({ prefix: 'www', error: null })
+    expect(normalizeEdgeOneDomainPrefix('  ', 'example.com')).toEqual({ prefix: '', error: null })
+  })
+
+  it('异 zone 域名：保留输入并报错，不得静默拼成 other.example.net.example.com', () => {
+    const result = normalizeEdgeOneDomainPrefix('other.example.net', 'example.com')
+    expect(result.prefix).toBe('other.example.net')
+    expect(result.error).toContain('example.com')
   })
 })

@@ -41,10 +41,14 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
    * 必须浅拷贝数组：TanStack 的 query.data 是深 readonly 代理，把代理数组直接当镜像，
    * 下面的 `hostnames.value[idx] = row` 会静默失效（Vue 只打警告，行不更新）。
    */
-  const hostnames = ref<SaaSHostname[]>([])
-  watch(hostnamesQuery.data, (data) => {
-    if (data) hostnames.value = data.slice()
-  })
+  const hostnames = ref<SaaSHostname[]>(hostnamesQuery.data.value?.slice() ?? [])
+  watch(
+    hostnamesQuery.data,
+    (data) => {
+      if (data) hostnames.value = data.slice()
+    },
+    { immediate: true }
+  )
   const keyword = ref('')
   const detailOpen = ref(false)
   const detailLoading = ref(false)
@@ -486,7 +490,12 @@ export function useSaasHostsPanel(props: SaasHostsPanelProps) {
       hostTotal,
       pagedHostnames,
       keyword,
-      onRefresh: () => hostnamesQuery.refresh(),
+      onRefresh: async () => {
+        await hostnamesQuery.refresh()
+        if (hostnamesQuery.data.value) {
+          hostnames.value = hostnamesQuery.data.value.slice()
+        }
+      },
       onPageChange,
       onPageSizeChange,
       onSearch,

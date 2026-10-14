@@ -1,6 +1,6 @@
 {
   "name": "dns-pro",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "DNSPod / Cloudflare / Cloudflare for SaaS / Cloudflare Tunnel / 腾讯云 EdgeOne 一体的 DNS 与隧道管理面板（Node.js 版）",
   "type": "module",
   "workspaces": [
@@ -23,7 +23,7 @@
     "dev:server:debug": "tsx watch server/main.ts --port 3022 --log-level info | pino-pretty",
     "dev:web": "npm --workspace dns-pro-web run dev",
     "start": "node dist/server.js",
-    "start:prod": "node dist/server.js --port 2022",
+    "start:prod": "node dist/server.js --port 2001",
     "build": "npm run build:server && npm run build:web",
     "build:server": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && esbuild server/main.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=dist/server.js && node --check dist/server.js",
     "build:web": "npm --workspace dns-pro-web run build",

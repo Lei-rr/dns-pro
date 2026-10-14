@@ -244,7 +244,7 @@ npm run test:static                             # 构建产物契约（需先 np
 docker run -d \
   --name dns-pro \
   --restart unless-stopped \
-  -p 2022:2022 \
+  -p 2001:2001 \
   -v "$PWD/data:/app/data" \
   ghcr.io/lei-rr/dns-pro:latest
 ```
@@ -252,10 +252,10 @@ docker run -d \
 `compose.yaml` 已内置加固：`read_only: true`、`cap_drop: ALL`、`no-new-privileges`、`tmpfs: /tmp`、数据卷 `./data:/app/data`。
 
 - 容器以非 root（UID 1000）运行，宿主数据目录必须 `chown -R 1000:1000 data`；`docker/entrypoint.sh` 在启动时检查 `/app/data` 可写，不可写直接退出并给出提示。
-- 容器 healthcheck 内置于镜像（Dockerfile `HEALTHCHECK`）：`fetch('http://127.0.0.1:2022/api/health')`，间隔 30s、超时 5s、重试 3 次、启动宽限 5s。镜像内**没有** `curl` / `wget`，不要用它们写探针（`scripts/maintenance-contract.test.ts` 守卫该契约）。
+- 容器 healthcheck 内置于镜像（Dockerfile `HEALTHCHECK`）：`fetch('http://127.0.0.1:2001/api/health')`，间隔 30s、超时 5s、重试 3 次、启动宽限 5s。镜像内**没有** `curl` / `wget`，不要用它们写探针（`scripts/maintenance-contract.test.ts` 守卫该契约）。
 - 排查容器状态：`docker inspect --format '{{json .State.Health}}' dns-pro` 查看最近几次 healthcheck 结果与退出码；`unhealthy` 时先看应用日志（配置错误、数据目录不可写、迁移失败都会导致进程退出）。
 - 升级实例：保留 `data/` 卷 → 拉新镜像 → 重建容器 → 检查日志、`/api/health`、登录会话与静态资源。
-- 反向代理后推荐 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（填可信代理的 IP/CIDR），并把端口映射收紧为 `127.0.0.1:2022:2022`。
+- 反向代理后推荐 `COOKIE_SECURE=true`、`TRUST_PROXY=127.0.0.1`（填可信代理的 IP/CIDR），并把端口映射收紧为 `127.0.0.1:2001:2001`。
 - 当前只有匿名 `GET /api/health`（仅返回 `status`）；`healthz` / `readyz` 分离与 `/api/metrics` 属于蓝图 §5 的待落地项，尚未实现。
 
 ---
@@ -325,12 +325,12 @@ chown -R 1000:1000 data && chmod 700 data
 ### 7.2 端口占用（EADDRINUSE）
 
 ```bash
-ss -lntp | grep 2022          # Linux
-lsof -i :2022                 # macOS
-netstat -ano | findstr :2022  # Windows（配合 tasklist 查 PID）
+ss -lntp | grep 2001          # Linux
+lsof -i :2001                 # macOS
+netstat -ano | findstr :2001  # Windows（配合 tasklist 查 PID）
 ```
 
-处置：停掉占用进程，或用 `--port` / `PORT` 换端口；容器场景改 `ports` 映射。注意本地后端开发默认 3022，Vite 开发默认 5173，不要与生产 2022 混淆。
+处置：停掉占用进程，或用 `--port` / `PORT` 换端口；容器场景改 `ports` 映射。注意本地后端开发默认 3022，Vite 开发默认 5173，不要与生产 2001 混淆。
 
 ### 7.3 数据目录不可写
 

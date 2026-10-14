@@ -577,3 +577,46 @@ describe('AccelerationDomainsPanel 轮询编排 · 卸载清理', () => {
     for (const listener of registered) expect(removed).toContain(listener)
   })
 })
+
+describe('AccelerationDomainsPanel 缓存复用与重新挂载', () => {
+  it('组件卸载后重新挂载（命中 TanStack 缓存）时，数据立即展示，页面不为空白', async () => {
+    createFakeServer()
+    mockPageVisibility()
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { staleTime: Infinity, gcTime: Infinity, retry: false },
+      },
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: { render: () => null } }],
+    })
+    const wrapper1 = mount(AccelerationDomainsPanel, {
+      attachTo: document.body,
+      props: { providerId: 'provider-1', zoneId: ZONE_ID, dnspodLinked: false },
+      global: { plugins: [router, [VueQueryPlugin, { queryClient }]] },
+    })
+    mountedWrappers.push(wrapper1)
+    await flush()
+    expect(wrapper1.findComponent(AccelerationDomainsTable).props('domains')).toHaveLength(1)
+
+    unmountPanel(wrapper1)
+    await flush()
+
+    const wrapper2 = mount(AccelerationDomainsPanel, {
+      attachTo: document.body,
+      props: { providerId: 'provider-1', zoneId: ZONE_ID, dnspodLinked: false },
+      global: { plugins: [router, [VueQueryPlugin, { queryClient }]] },
+    })
+    mountedWrappers.push(wrapper2)
+    await flush()
+
+    expect(wrapper2.findComponent(AccelerationDomainsTable).props('domains')).toHaveLength(1)
+    expect(wrapper2.findComponent(AccelerationDomainsTable).props('domains')[0]?.domain_name).toBe(DOMAIN_NAME)
+
+    // 点击刷新：即使服务端数据未变（TanStack structuralSharing 维持原引用），列表依然正常保留
+    await wrapper2.get('button[disabled="false"], button:not([disabled])').trigger('click')
+    await flush()
+    expect(wrapper2.findComponent(AccelerationDomainsTable).props('domains')).toHaveLength(1)
+  })
+})

@@ -10,6 +10,7 @@ import {
   edgeOneDomainFormValues,
   edgeOneDomainFullName,
   edgeOneDomainSubmitValues,
+  normalizeEdgeOneDomainPrefix,
   type EdgeOneDomainSubmitPayload,
 } from '@/features/edge-one/model/domain-command'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/ui/select'
@@ -29,29 +30,43 @@ const emit = defineEmits<{
 
 const localErrors = ref<Record<string, string>>({})
 const errors = computed(() => ({ ...(props.errors || {}), ...localErrors.value }))
-const form = reactive({
-  prefix: '',
-  origin_type: 'IP_DOMAIN',
-  origin: '',
-  origin_protocol: 'HTTP',
-  http_origin_port: 80,
-  https_origin_port: 443,
-  host_header: '',
-  host_header_mode: 'accelerate',
-  ipv6_status: 'follow',
-  autoSync: false,
-})
+// 初值取 domain-command 的默认值，避免两处硬编码漂移（含「自动同步 DNSPod」的默认开关状态）
+const form = reactive(edgeOneDomainFormValues(null, ''))
 
 const fullDomain = computed(() => edgeOneDomainFullName(form.prefix, props.zoneName))
+
+/**
+ * 「前缀」框失焦时收敛输入：粘贴完整域名会被剥成前缀，落在别的域名上就地报错。
+ * 编辑态前缀框只读、且提交的是既有域名本身（不经 fullDomain），不参与收敛。
+ */
+function commitPrefix() {
+  if (props.editing) return
+  const { prefix, error } = normalizeEdgeOneDomainPrefix(form.prefix, props.zoneName)
+  form.prefix = prefix
+  const next = { ...localErrors.value }
+  if (error) next.prefix = error
+  else delete next.prefix
+  localErrors.value = next
+}
 
 const showHttpPort = computed(() => ['FOLLOW', 'HTTP'].includes(form.origin_protocol))
 const showHttpsPort = computed(() => ['FOLLOW', 'HTTPS'].includes(form.origin_protocol))
 const showHostHeader = computed(() => form.origin_type === 'IP_DOMAIN')
 
-watch(open, (value) => {
-  if (value) localErrors.value = {}
-  if (value) Object.assign(form, edgeOneDomainFormValues(props.domain, props.zoneName))
-})
+watch(
+  open,
+  (value) => {
+    if (!value) return
+    localErrors.value = {}
+    Object.assign(form, edgeOneDomainFormValues(props.domain, props.zoneName))
+    // 新建默认开启自动同步；未关联 DNSPod 时开关不渲染，必须回落关闭——
+    // 否则后端 resolveDnsTarget 的 requireLinkedProviderId 会直接拒绝创建，
+    // 而用户在界面上找不到任何可关闭的入口。
+    if (!props.dnspodLinked) form.autoSync = false
+  },
+  // immediate：对话框以 open=true 挂载（父组件懒挂载）时也要走同一条初始化路径
+  { immediate: true }
+)
 
 function isValidPort(value: unknown) {
   const port = Number(value)
@@ -61,6 +76,12 @@ function isValidPort(value: unknown) {
 function submit() {
   if (props.saving) return
   localErrors.value = {}
+  // 未失焦直接点保存也要收敛：粘贴完整域名后紧接着保存，不能把整串当 domain_name 提交
+  if (!props.editing) {
+    const prefixCheck = normalizeEdgeOneDomainPrefix(form.prefix, props.zoneName)
+    if (prefixCheck.error) localErrors.value.prefix = prefixCheck.error
+    else form.prefix = prefixCheck.prefix
+  }
   if (!form.origin.trim()) localErrors.value.origin = '请填写源站地址'
   // 端口显式校验：空值/越界此前会被静默丢弃并回退默认端口
   if (showHttpPort.value && !isValidPort(form.http_origin_port)) {
@@ -73,7 +94,8 @@ function submit() {
   emit('save', {
     ...edgeOneDomainSubmitValues(form),
     fullDomain: fullDomain.value,
-    autoSync: form.autoSync,
+    // 最终门控：未关联 DNSPod 时无论表单状态如何都不下发 auto_sync（后端会拒绝创建）
+    autoSync: props.dnspodLinked ? form.autoSync : false,
   })
 }
 </script>
@@ -87,9 +109,10 @@ function submit() {
   >
     <FieldGroup>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field>
+        <Field :data-invalid="!!errors.prefix">
           <FieldLabel>前缀</FieldLabel>
-          <Input v-model="form.prefix" :disabled="editing" placeholder="www / * / @（也可直接粘贴完整域名）" />
+          <Input v-model="form.prefix" :disabled="editing" placeholder="www / * / @" @blur="commitPrefix" />
+          <FieldError :errors="errors.prefix ? [errors.prefix] : []" />
         </Field>
         <Field>
           <FieldLabel>完整域名</FieldLabel>

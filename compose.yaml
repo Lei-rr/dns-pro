@@ -4,8 +4,8 @@ services:
     container_name: dns-pro
     restart: unless-stopped
     ports:
-      # 默认对外监听；若前置 HTTPS 反向代理，可改为 "127.0.0.1:2022:2022" 仅本机访问
-      - '2022:2022'
+      # 默认对外监听；若前置 HTTPS 反向代理，可改为 "127.0.0.1:2001:2001" 仅本机访问
+      - '2001:2001'
     environment:
       # 反向代理启用 HTTPS 后打开：
       # COOKIE_SECURE: "true"

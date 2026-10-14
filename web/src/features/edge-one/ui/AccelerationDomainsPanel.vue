@@ -53,29 +53,14 @@ const jobProgress = useJobProgress()
 const { isBusy: isRowBusy, runBusy, reset: resetRowOperations } = useRowBusy()
 
 const saving = ref(false)
-/** 视图镜像：保留面板内 patch/remove 的即时反馈，写后统一由 invalidate 收敛 */
-const domains = ref<EdgeOneAccelerationDomain[]>([])
-const zoneMeta = ref<EdgeOneZone | null>(null)
 const keyword = ref('')
 const dialogOpen = ref(false)
 const certDialogOpen = ref(false)
 const editingDomain = ref<EdgeOneAccelerationDomain | null>(null)
 const formErrors = ref<FieldErrors>({})
 const certErrors = ref<FieldErrors>({})
-
-const filtered = computed(() => {
-  const q = keyword.value.trim().toLowerCase()
-  if (!q) return domains.value
-  return domains.value.filter((item) => {
-    const name = domainName(item).toLowerCase()
-    const cname = String(item.cname || '').toLowerCase()
-    return name.includes(q) || cname.includes(q)
-  })
-})
-// route 参数已由 vue-router 解码（畸形编码会回退原值），这里不再二次解码，避免含 '%' 的站点名抛 URIError
-const pageTitle = computed(() => zoneMeta.value?.name || props.zoneId)
-/** 站点元数据是否就绪：未就绪时不允许新增（否则会拿 zoneId 当域名拼出错误的主机名） */
-const zoneMetaReady = computed(() => Boolean(zoneMeta.value?.name))
+const pendingStatusTransitions = ref<PendingStatusTransitions>(new Map())
+const transitioningKeysList = computed(() => transitioningKeys(pendingStatusTransitions.value))
 
 type EdgeOneDomainsData = { domains: EdgeOneAccelerationDomain[]; zoneMeta: EdgeOneZone | null }
 
@@ -94,13 +79,46 @@ const loading = domainsQuery.loading
 const refreshing = domainsQuery.refreshing
 const pageSize = domainsQuery.pageSize
 const runLoad = () => domainsQuery.invalidate()
-watch(domainsQuery.data, (data) => {
-  if (!data) return
-  // 浅拷贝切断 TanStack 的深 readonly 代理：镜像数组要能承接行内就地替换，否则替换会静默失效
-  domains.value = data.domains.slice()
-  if (data.zoneMeta) zoneMeta.value = data.zoneMeta
-  settleStatusTransitions(data.domains)
+
+/** 视图镜像：保留面板内 patch/remove 的即时反馈，写后统一由 invalidate 收敛 */
+const domains = ref<EdgeOneAccelerationDomain[]>(domainsQuery.data.value?.domains?.slice() ?? [])
+const zoneMeta = ref<EdgeOneZone | null>(domainsQuery.data.value?.zoneMeta ?? null)
+
+watch(
+  domainsQuery.data,
+  (data) => {
+    if (!data) return
+    // 浅拷贝切断 TanStack 的深 readonly 代理：镜像数组要能承接行内就地替换，否则替换会静默失效
+    domains.value = data.domains.slice()
+    if (data.zoneMeta) zoneMeta.value = data.zoneMeta
+    settleStatusTransitions(data.domains)
+  },
+  { immediate: true }
+)
+
+async function onRefresh() {
+  await domainsQuery.refresh()
+  if (domainsQuery.data.value) {
+    domains.value = domainsQuery.data.value.domains.slice()
+    if (domainsQuery.data.value.zoneMeta) {
+      zoneMeta.value = domainsQuery.data.value.zoneMeta
+    }
+  }
+}
+
+const filtered = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  if (!q) return domains.value
+  return domains.value.filter((item) => {
+    const name = domainName(item).toLowerCase()
+    const cname = String(item.cname || '').toLowerCase()
+    return name.includes(q) || cname.includes(q)
+  })
 })
+// route 参数已由 vue-router 解码（畸形编码会回退原值），这里不再二次解码，避免含 '%' 的站点名抛 URIError
+const pageTitle = computed(() => zoneMeta.value?.name || props.zoneId)
+/** 站点元数据是否就绪：未就绪时不允许新增（否则会拿 zoneId 当域名拼出错误的主机名） */
+const zoneMetaReady = computed(() => Boolean(zoneMeta.value?.name))
 const { page, total, pagedItems: pagedDomains, resetPage } = useLocalPagination(filtered, pageSize)
 const selection = useRowSelection(pagedDomains, domainName)
 const selectedCount = computed(() => selection.selected.value.length)
@@ -248,14 +266,11 @@ async function saveCertificate(payload: Record<string, unknown>) {
  *  - 顶部「刷新」按钮保留，用户想手动刷新随时可用。 */
 
 /**
- * 待落定的上下线指令（行键 = domainName）。过渡态只存在于这里，不写回列表数据：
+ * 待落定的上下线指令（行键 = domainName）。过渡态只存在于 pendingStatusTransitions，不写回列表数据：
  * 列表始终是服务端真相，若把 process 写进行数据，静默刷新拿到的旧状态会把过渡态抹掉，
  * 「停止加速/删除」入口在指令在途时重新出现（本地写与刷新互相覆盖）。
  * 展示层由 transitioningKeys 派生「配置中」，落定后自动摘除。
  */
-const pendingStatusTransitions = ref<PendingStatusTransitions>(new Map())
-/** 过渡中的行：传给表格锁住状态操作并显示「配置中」 */
-const transitioningKeysList = computed(() => transitioningKeys(pendingStatusTransitions.value))
 
 /** 轮询间隔与限流退避的取值依据（腾讯云 20 次/秒、Cloudflare 1200 次/5 分钟、
  *  本仓 base-http.client.ts 的 MAX_RETRY_AFTER_MS）集中在 model/status-poll-policy.ts：
@@ -584,7 +599,7 @@ onMounted(() => {
         size="sm"
         :loading="refreshing"
         :disabled="loading && !refreshing"
-        @click="domainsQuery.refresh()"
+        @click="onRefresh"
       >
         <RefreshCw class="size-4" />
         刷新

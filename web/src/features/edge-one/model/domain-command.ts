@@ -23,7 +23,12 @@ const defaults: EdgeOneDomainFormValues = {
   host_header: '',
   host_header_mode: 'accelerate',
   ipv6_status: 'follow',
-  autoSync: false,
+  /**
+   * 新建加速域名默认开启「自动同步 DNSPod」：CNAME 落 DNS 是这条流程的主要目的，
+   * 让用户为「忘记勾选」补一次修复解析是更差的默认。
+   * 未关联 DNSPod 的站点由对话框强制回落 false（开关此时不渲染，不能悄悄下发 auto_sync）。
+   */
+  autoSync: true,
 }
 
 export function edgeOneDomainFormValues(
@@ -57,6 +62,7 @@ export function edgeOneDomainFormValues(
     host_header: hostHeader,
     host_header_mode: hostHeader && !hostHeaderIsDomainItself ? 'custom' : 'accelerate',
     ipv6_status: String(domain.ipv6_status || defaults.ipv6_status),
+    // 编辑既有域名不得默认勾选自动同步：不能靠「打开对话框」把用户的解析写一遍
     autoSync: false,
   }
 }
@@ -80,6 +86,47 @@ export function edgeOneDomainFullName(prefix: string, zoneName: string): string 
   if (lower === lowerZone || lower.endsWith(`.${lowerZone}`)) return raw
   if (raw.includes('.')) return raw
   return `${raw}.${zone}`
+}
+
+/**
+ * 「前缀」输入框只接受前缀。用户从地址栏或别处粘贴完整域名时在这里收敛：
+ * 属于当前站点的（子）域剥成前缀、站点本身归一为 '@'，落在别的域名上报错——
+ * 让整串当 domain_name 提交会创建出站点之外的加速域名，交给上游只会换来一句更难懂的拒绝。
+ */
+export interface EdgeOnePrefixNormalization {
+  /** 收敛后的前缀：'@' 表示站点本身，其余为相对前缀 */
+  prefix: string
+  /** 输入落在当前站点之外时的错误提示，可收敛时为 null */
+  error: string | null
+}
+
+export function normalizeEdgeOneDomainPrefix(raw: string, zoneName: string): EdgeOnePrefixNormalization {
+  const zone = String(zoneName || '')
+    .trim()
+    .replace(/\.$/, '')
+    .toLowerCase()
+  const original = String(raw || '').trim()
+  if (!original) return { prefix: '', error: null }
+
+  // 从浏览器地址栏粘贴：剥协议头、路径与端口，只留主机名
+  let host = original.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+  host = host.split(/[/?#]/, 1)[0] || ''
+  host = host.replace(/:\d+$/, '').replace(/\.$/, '')
+  if (!host) return { prefix: '', error: null }
+  if (host === '@' || host === '*') return { prefix: host, error: null }
+
+  const lower = host.toLowerCase()
+  if (zone && (lower === zone || lower.endsWith(`.${zone}`))) {
+    const stripped = host.slice(0, host.length - zone.length).replace(/\.$/, '')
+    return { prefix: stripped || '@', error: null }
+  }
+  if (host.includes('.')) {
+    return {
+      prefix: original,
+      error: `只填 ${zone || '站点'} 的子域前缀（如 www）；「${host}」不属于该站点`,
+    }
+  }
+  return { prefix: host, error: null }
 }
 
 /** 提交给后端的字段：IP/域名源站总带 host_header（自定义填值、加速域名模式显式空串以清空旧值） */

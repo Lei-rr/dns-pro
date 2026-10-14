@@ -3,6 +3,18 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.4] - 2026-10-14
+
+默认端口由 2022 改为 2001；EdgeOne 加速域名表单与列表三处体验修正。
+
+### 变更
+
+- 默认端口改为 `2001`：`server/app/config.ts` 的 `DEFAULT_CONFIG.port`、`npm run start:prod`、Dockerfile 的 `EXPOSE` 与内置 healthcheck、`compose.yaml` 端口映射，以及 README 与 `docs/operations.md` 的示例一并更新。本地开发端口不变（后端 `3022`、Vite `5173`）。
+- EdgeOne 添加加速域名弹窗：「自动同步DNSPOD」开关默认由关改开。默认值收敛在 `domain-command.ts` 的 `defaults.autoSync`，组件表单初值由它派生；未关联 DNSPod 时开关不渲染，且提交回落 `autoSync: false`，避免后端 `resolveDnsTarget` 拒绝创建。
+- EdgeOne 加速域名表单：前缀输入框只收前缀。粘贴完整域名、带协议或路径的 URL 时，失焦与提交前都会就地收敛为前缀（新增 `normalizeEdgeOneDomainPrefix`），落在别的域名上报错并拦住提交；编辑既有域名时不参与收敛。输入框占位文案去掉「（也可直接粘贴完整域名）」。`edgeOneDomainFullName` 的幂等与异 zone 原样返回行为不变。
+- 修复 EdgeOne 加速域名列表「返回 → 重新进入」空白：面板本地镜像初值直读查询数据并加 `immediate` 监听，刷新时强制同步镜像（TanStack `staleTime: 30_000` 命中缓存只发 `batch/active`、`structuralSharing` 复用旧对象引用，两者叠加导致 `watch` 不触发）。
+- 测试：`domain-command.test.ts` 补 5 例（前缀收敛）、新增 `AccelerationDomainFormDialog.spec.ts`（7 例，覆盖开关默认态与三种门控、前缀收敛与拦截提交）、`AccelerationDomainsPanel.spec.ts` 补重挂载缓存用例。
+
 ## [1.2.3] - 2026-10-14
 
 EdgeOne 加速域名两处体验修正：列表源站列显示回源端口，表单前缀补全对完整域名幂等。

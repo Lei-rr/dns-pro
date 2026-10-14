@@ -19,7 +19,7 @@ export interface AppConfig {
 
 const DEFAULT_CONFIG: AppConfig = {
   host: '0.0.0.0',
-  port: 2022,
+  port: 2001,
   logLevel: 'info',
   dataDir: path.resolve('data'),
   webDistDir: path.resolve('web/dist'),
