@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { installMemoryCache, MemoryCache } from '../../../core/cache/memory-cache.js'
 import { installProviderCacheState } from '../../../core/cache/provider-cache.js'
 import { SaaSCustomHostnameClient } from './saas-custom-hostname.client.js'
@@ -92,5 +92,49 @@ describe('SaaS 主机名索引快照：一次拉取、多次匹配', () => {
 
     expect(await client.idByHostname('cf-1', 'zone-1', 'www.example.com')).toBe('h-1')
     expect(calls.length).toBe(1)
+  })
+})
+
+/** 写路径的 payload 构造：这两处曾经把上游 400 的成因留给用户去猜 */
+const createdHostname = { result: { id: 'h-1', hostname: 'a.example.com', ssl: { status: 'pending_validation' } } }
+
+function postSpy() {
+  return vi.fn(async (_path: string, _body: Record<string, unknown>) => createdHostname)
+}
+
+function clientWithPost(post: ReturnType<typeof postSpy>): SaaSCustomHostnameClient {
+  return new SaaSCustomHostnameClient({
+    forProvider: async () => ({ client: { post } }),
+  } as never)
+}
+
+describe('自定义主机名写路径的 payload', () => {
+  it('缺 method 时兜底 http，避免上游 1434 The SSL attribute is invalid', async () => {
+    const post = postSpy()
+    await clientWithPost(post).create('cf-1', 'zone-1', { hostname: 'a.example.com' })
+    expect(post.mock.calls[0]?.[1]).toMatchObject({ ssl: { type: 'dv', method: 'http' } })
+  })
+
+  it('显式 method 覆盖兜底值', async () => {
+    const post = postSpy()
+    await clientWithPost(post).create('cf-1', 'zone-1', { hostname: 'a.example.com', method: 'txt' })
+    expect(post.mock.calls[0]?.[1]).toMatchObject({ ssl: { type: 'dv', method: 'txt' } })
+  })
+
+  it('自定义回源削平协议、端口与路径后再送上游', async () => {
+    const post = postSpy()
+    await clientWithPost(post).create('cf-1', 'zone-1', {
+      hostname: 'a.example.com',
+      custom_origin_server: 'https://origin.example.com:8443/app',
+    })
+    expect(post.mock.calls[0]?.[1]).toMatchObject({ custom_origin_server: 'origin.example.com' })
+  })
+
+  it('自定义回源不是合法主机名时报明确错误，不打上游', async () => {
+    const post = postSpy()
+    await expect(
+      clientWithPost(post).create('cf-1', 'zone-1', { hostname: 'a.example.com', custom_origin_server: '1.2.3.4' })
+    ).rejects.toMatchObject({ code: 'saas_invalid_origin_server', statusCode: 400 })
+    expect(post).not.toHaveBeenCalled()
   })
 })

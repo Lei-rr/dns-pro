@@ -206,8 +206,14 @@ export function useSaasHostEditor(options: {
     const hostname = (usesGuidedHostname.value ? hostnamePreview.value : form.hostname).trim()
     const errors: FieldErrors = {}
     if (!hostname) errors.hostname = usesGuidedHostname.value ? '请选择同步域名' : '请填写主机名'
-    if (form.use_custom_origin_server && !form.custom_origin_server.trim()) {
-      errors.custom_origin_server = '请填写自定义源服务器，或关闭该开关'
+    if (form.use_custom_origin_server) {
+      const origin = form.custom_origin_server.trim()
+      if (!origin) {
+        errors.custom_origin_server = '请填写自定义源服务器，或关闭该开关'
+      } else if (!/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(origin)) {
+        // Cloudflare 只认纯主机名，带协议/端口/路径会直接 400（1415）
+        errors.custom_origin_server = '只填主机名，如 origin.example.com（不要带 https://、端口或路径）'
+      }
     }
     if (form.auto_preferred && (!form.preferred_domain || form.preferred_domain === '__none')) {
       errors.preferred_domain = '开启自动优选时请选择优选域名'

@@ -133,4 +133,20 @@ describe('上游路径守卫与上游错误映射', () => {
     expect(error.code).not.toBe('invalid_upstream_path')
     expect(error.details as Record<string, unknown>).toMatchObject({ upstream_status: 404 })
   })
+
+  it('4xx 把上游 errors[].message 提到 details.upstream_error', async () => {
+    withFetch([
+      { status: 400, body: '{"success":false,"errors":[{"code":1434,"message":"The SSL attribute is invalid"}]}' },
+    ])
+    const error = (await captured(() => new PathProbeClient().callWith('resource'))) as ApiError
+    expect(error.details as Record<string, unknown>).toMatchObject({
+      upstream_error: 'The SSL attribute is invalid',
+    })
+  })
+
+  it('上游 body 取不到原因时 details.upstream_error 缺省', async () => {
+    withFetch([{ status: 400, body: '{"success":false,"errors":[]}' }])
+    const error = (await captured(() => new PathProbeClient().callWith('resource'))) as ApiError
+    expect((error.details as Record<string, unknown>).upstream_error).toBeUndefined()
+  })
 })

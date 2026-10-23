@@ -209,7 +209,13 @@ export class BaseHttpClient {
       }
 
       if (!response.ok) {
-        const details = { upstream_status: response.status, upstream_body: data }
+        // upstream_error 是唯一对外可见的上游原因（error-handler 白名单放行），
+        // 否则 4xx 只剩一句「请求失败」，参数错误无从定位
+        const details = {
+          upstream_status: response.status,
+          upstream_body: data,
+          upstream_error: upstreamErrorMessage(data),
+        }
         if (response.status === 429) {
           throw new ApiError('provider_rate_limited', '服务商接口限流，请稍后重试', 429, {
             ...details,
@@ -245,4 +251,24 @@ export class BaseHttpClient {
       clearTimeout(timer)
     }
   }
+}
+
+/**
+ * 从上游错误体里抠出一句人类可读的原因，供 4xx 回显。
+ * Cloudflare 是 errors[0].message，通用网关多为 message / error.message；都取不到就返回 undefined。
+ * 截断到 200 字符：错误文本可能回显整段请求体。
+ */
+function upstreamErrorMessage(data: unknown): string | undefined {
+  if (!data || typeof data !== 'object') return undefined
+  const body = data as { errors?: unknown; message?: unknown; error?: unknown }
+  const first = Array.isArray(body.errors) ? body.errors[0] : null
+  const fromErrors =
+    first && typeof first === 'object' && 'message' in first ? String((first as { message?: unknown }).message) : ''
+  const fromMessage = typeof body.message === 'string' ? body.message : ''
+  const fromError =
+    body.error && typeof body.error === 'object' && 'message' in body.error
+      ? String((body.error as { message?: unknown }).message)
+      : ''
+  const picked = (fromErrors || fromMessage || fromError).trim()
+  return picked ? picked.slice(0, 200) : undefined
 }

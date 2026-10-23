@@ -27,15 +27,29 @@ export function errorMessage(error: unknown, fallback = '请求失败'): string 
   const message = fieldText(error, 'message').trim()
   const status = Number(fieldText(error, 'status') || 0)
 
-  const hint: string = isTransportErrorCode(code) ? TRANSPORT_ERROR_HINTS[code] : ''
-  if (hint) return hint
-  if (message && /[\u4e00-\u9fff]/.test(message)) return message
+  const transportHint: string = isTransportErrorCode(code) ? TRANSPORT_ERROR_HINTS[code] : ''
+  // 上游原因拼在本地化文案之后：后端 message 是统一话术（http_error →「请求失败」），
+  // 不带上这一句，4xx 参数错误在前端等于没有任何信息
+  const upstream = upstreamHint(error)
+  const withUpstream = (text: string) => (upstream ? `${text}：${upstream}` : text)
+
+  if (transportHint) return withUpstream(transportHint)
+  if (message && /[\u4e00-\u9fff]/.test(message)) return withUpstream(message)
 
   if (status === 401) return '登录已失效，请重新登录'
   if (status === 403) return '没有权限执行该操作'
   if (status === 404) return '资源不存在'
   if (status >= 500) return '服务暂时异常，请稍后重试'
-  if (message) return message
+  if (message) return withUpstream(message)
 
-  return fallback
+  return withUpstream(fallback)
+}
+
+/** 后端白名单里唯一放行的上游原因（details.upstream_error），只取字符串，缺失当没有 */
+function upstreamHint(error: unknown): string {
+  if (typeof error !== 'object' || error === null) return ''
+  const details = Reflect.get(error, 'details')
+  if (typeof details !== 'object' || details === null) return ''
+  const value: unknown = Reflect.get(details, 'upstream_error')
+  return typeof value === 'string' ? value.trim() : ''
 }

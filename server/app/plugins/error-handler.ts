@@ -22,6 +22,9 @@ const PUBLIC_DETAIL_KEYS = new Set([
   'sync_zone',
   'code',
   'upstream_status',
+  // 上游一句人话的原因（如 Cloudflare 的 "The SSL attribute is invalid"）；
+  // 只放这一句、不放 upstream_body，避免把整段上游响应透给前端
+  'upstream_error',
 ])
 
 function publicDetails(details: unknown): Record<string, unknown> | undefined {

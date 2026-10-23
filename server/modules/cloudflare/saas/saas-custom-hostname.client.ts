@@ -158,9 +158,11 @@ export class SaaSCustomHostnameClient {
   async create(cloudflareProviderId: string, zoneId: string, data: Record<string, unknown>) {
     const payload: Record<string, unknown> = {
       hostname: String(data.hostname ?? '').trim(),
-      ssl: { type: 'dv', ...sslPatch(data) },
+      // method 缺失时 Cloudflare 直接 400（1434 The SSL attribute is invalid），
+      // 而 store 接口只把 hostname 列为必填，这里兜底成官方默认的 http
+      ssl: { type: 'dv', method: 'http', ...sslPatch(data) },
     }
-    const customOrigin = String(data.custom_origin_server ?? '').trim()
+    const customOrigin = normalizeOriginServer(data.custom_origin_server)
     if (customOrigin) payload.custom_origin_server = customOrigin
 
     const response = await this.call(cloudflareProviderId, 'create', { zone: zoneId }, (client) =>
@@ -173,7 +175,7 @@ export class SaaSCustomHostnameClient {
     const payload: Record<string, unknown> = {}
     if (Object.hasOwn(data, 'custom_origin_server')) {
       // 空串表示清除自定义回源
-      payload.custom_origin_server = String(data.custom_origin_server ?? '').trim() || null
+      payload.custom_origin_server = normalizeOriginServer(data.custom_origin_server) || null
     }
     const ssl = sslPatch(data)
     if (Object.keys(ssl).length > 0) payload.ssl = { type: 'dv', ...ssl }
@@ -261,6 +263,34 @@ function sslPatch(data: Record<string, unknown>): Record<string, unknown> {
   if (data.method) ssl.method = String(data.method)
   if (data.min_tls_version) ssl.settings = { min_tls_version: String(data.min_tls_version) }
   return ssl
+}
+
+/** 纯主机名（不含协议/端口/路径/通配符），Cloudflare custom_origin_server 只认这个形态 */
+const ORIGIN_HOSTNAME_PATTERN = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/
+
+/**
+ * 自定义回源只接受纯主机名。用户习惯把整段控制台地址粘进来（https://、:443、/path），
+ * Cloudflare 一律 1415 Invalid custom origin hostname——本地先削平再送，别让脏输入打到上游。
+ * 削完仍不合法就报中文原因，而不是把 400 折叠成「请求失败」。
+ */
+function normalizeOriginServer(raw: unknown): string {
+  const text = String(raw ?? '').trim()
+  if (!text) return ''
+  const stripped = text
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//i, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/:\d+$/, '')
+    .replace(/\.+$/, '')
+    .toLowerCase()
+  if (!stripped) return ''
+  if (!ORIGIN_HOSTNAME_PATTERN.test(stripped)) {
+    throw new ApiError(
+      'saas_invalid_origin_server',
+      `自定义源服务器只能填纯主机名，如 origin.example.com（收到的「${text}」含协议、端口、路径或非法字符）`,
+      400
+    )
+  }
+  return stripped
 }
 
 function presentHostname(hostname: unknown): CloudflareCustomHostname {
