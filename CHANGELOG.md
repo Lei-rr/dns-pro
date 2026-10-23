@@ -3,6 +3,22 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.6] - 2026-10-23
+
+自定义主机名创建 400 的两个成因，以及上游错误在前端完全不可见。
+
+### 修复
+
+- `ssl.method` 缺失时兜底 `http`：`POST /saas/zones/:zoneId/hostnames` 的入参 schema 只把 `hostname` 列为必填，漏传 `method` 会拼出 `ssl: { type: 'dv' }`，Cloudflare 直接 `400` / `1434 The SSL attribute is invalid`。创建路径现在显式兜底为 Cloudflare 默认的 `http`，显式传入的 `method` 仍优先。
+- `custom_origin_server` 先规范化再送上游：用户习惯把控制台地址整段粘进来（`https://origin.example.com:8443/app`），Cloudflare 对协议、端口、路径一律 `1415 Invalid custom origin hostname`。现在削平为纯主机名后再请求；规范化后仍不是合法主机名（如裸 IP）则本地报 `saas_invalid_origin_server`，不再把脏输入丢给上游。
+- 4xx 透出上游原因：`BaseHttpClient` 把上游 `errors[].message` 提取到 `details.upstream_error`，`error-handler` 白名单放行，前端 `errorMessage()` 拼在本地化文案之后。此前 `http_error` 被统一翻译成「请求失败」、`upstream_body` 又被白名单剥掉，用户拿不到任何可定位的信息。
+
+### 测试
+
+- 新增 `saas-custom-hostname.client.test.ts` 写路径 4 例：method 兜底、显式覆盖、回源规范化、非法回源不打上游。
+- `base-http.client.test.ts` 补 2 例：`upstream_error` 提取与缺省。
+- `vitest` 119 文件 / 885 用例、`arch:final` rules=35/35 均无回归。
+
 ## [1.2.5] - 2026-10-14
 
 基础镜像 CVE 修复与镜像扫描链修复。
