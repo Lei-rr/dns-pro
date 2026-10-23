@@ -104,6 +104,7 @@ const ERROR_MESSAGE_MAP: Record<string, string> = {
   saas_dnspod_zone_not_found: 'DNSPod 中找不到与该主机名匹配的域名',
   saas_fqdn_missing: '主机名 FQDN 缺失',
   saas_fqdn_empty: '主机名 FQDN 不能为空',
+  saas_invalid_origin_server: '自定义源服务器需为纯主机名，不能带协议、端口或路径',
   saas_not_active: '该主机名当前未激活',
   saas_hostname_not_found: 'SaaS 主机名不存在',
   saas_hostname_list_failed: 'SaaS 主机名列表获取失败',
