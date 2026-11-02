@@ -8,7 +8,6 @@
 ### 优化
 
 - **前端构建优化**：Vite 代码分割配置，vendor 独立缓存（vue/ui/query/utils 共 341KB + 业务代码 316KB），业务更新时用户仅需下载 316KB，浏览器缓存命中率提升 60%+
-- **前端代码复用**：提取 `useBatchOperations` 和 `useStatusPolling` 通用 Composables，消除 DNS/SaaS/EdgeOne 模块间约 850 行重复逻辑
 - **多架构 Docker 支持**：GitHub Actions 构建同时支持 `linux/amd64` 和 `linux/arm64`，ARM 设备（Apple Silicon / 树莓派）可直接拉取原生镜像
 
 ### 修复
@@ -17,9 +16,9 @@
 
 ### 测试
 
-- `vitest` 119 文件 / 886 用例通过
+- `vitest` 119 文件 / 885 用例通过
 - `vue-tsc` 类型检查通过，零 `any` 类型
-- 构建产物验证通过（740KB 总大小，5 个独立 chunk）
+- 构建产物验证通过（5 个独立 chunk，vendor 与业务代码分离）
 
 ## [1.2.6] - 2026-10-23
 
