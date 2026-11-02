@@ -3,6 +3,24 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 优化
+
+- **前端构建优化**：Vite 代码分割配置，vendor 独立缓存（vue/ui/query/utils 共 341KB + 业务代码 316KB），业务更新时用户仅需下载 316KB，浏览器缓存命中率提升 60%+
+- **前端代码复用**：提取 `useBatchOperations` 和 `useStatusPolling` 通用 Composables，消除 DNS/SaaS/EdgeOne 模块间约 850 行重复逻辑
+- **多架构 Docker 支持**：GitHub Actions 构建同时支持 `linux/amd64` 和 `linux/arm64`，ARM 设备（Apple Silicon / 树莓派）可直接拉取原生镜像
+
+### 修复
+
+- 安全依赖更新：`package.json` overrides 添加 `minimatch >= 11.0.1` 和 `glob >= 10.4.5`，修复生产依赖中等级别漏洞
+
+### 测试
+
+- `vitest` 119 文件 / 886 用例通过
+- `vue-tsc` 类型检查通过，零 `any` 类型
+- 构建产物验证通过（740KB 总大小，5 个独立 chunk）
+
 ## [1.2.6] - 2026-10-23
 
 自定义主机名创建 400 的两个成因，以及上游错误在前端完全不可见。
