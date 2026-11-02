@@ -43,7 +43,7 @@ export function useStatusPolling<T>(config: StatusPollingConfig<T>) {
   let timer: ReturnType<typeof setTimeout> | null = null
   let delayMs = initialDelayMs
   let rateLimitDelayMs = 0
-  let lastError = ref<unknown>(null)
+  const lastError = ref<unknown>(null)
 
   function clearTimer() {
     if (timer !== null) {
