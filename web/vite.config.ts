@@ -32,6 +32,16 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-    chunkSizeWarningLimit: 1500,
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router', 'pinia'],
+          'vendor-ui': ['reka-ui', '@lucide/vue', 'class-variance-authority', 'clsx', 'tailwind-merge'],
+          'vendor-query': ['@tanstack/vue-query'],
+          'vendor-utils': ['@vueuse/core'],
+        },
+      },
+    },
   },
 })

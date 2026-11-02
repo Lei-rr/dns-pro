@@ -15,7 +15,9 @@
     "ip-address": ">=10.7.3",
     "fast-uri": ">=4.2.1",
     "image-size": ">=1.2.1",
-    "less": ">=4.8.1"
+    "less": ">=4.8.1",
+    "minimatch": ">=11.0.1",
+    "glob": ">=10.4.5"
   },
   "scripts": {
     "dev": "npm run dev:server",
