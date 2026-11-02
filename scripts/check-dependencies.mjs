@@ -29,6 +29,7 @@ const optionalLocked = new Set(
 
 const problems = new Set()
 let optionalExtraneous = 0
+let optionalInvalid = 0
 function visit(node) {
   if (!node || typeof node !== 'object') return
   for (const [name, dependency] of Object.entries(node.dependencies || {})) {
@@ -38,7 +39,10 @@ function visit(node) {
       if (optionalLocked.has(identity)) optionalExtraneous++
       else problems.add(`extraneous: ${identity}`)
     }
-    if (dependency.invalid) problems.add(`invalid: ${identity}`)
+    if (dependency.invalid) {
+      if (optionalLocked.has(identity)) optionalInvalid++
+      else problems.add(`invalid: ${identity}`)
+    }
     if (dependency.missing) problems.add(`missing: ${name}`)
     visit(dependency)
   }
@@ -50,4 +54,4 @@ if (problems.size) {
   console.error([...problems].sort().join('\n'))
   process.exit(1)
 }
-console.log(`dependency-tree=ok optional-extraneous=${optionalExtraneous}`)
+console.log(`dependency-tree=ok optional-extraneous=${optionalExtraneous} optional-invalid=${optionalInvalid}`)

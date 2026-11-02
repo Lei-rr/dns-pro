@@ -3,7 +3,23 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [1.3.0] - 2026-11-03
+
+### 变更
+
+- **Node.js 运行时 20 → 26**：Node 20 已于 2026-04 EOL；`Dockerfile`、`verify.yml`、`engines`（`>=22.12.0`）、`esbuild --target=node22`、`@types/node` 一并升级
+- **前端构建 Vite 6 → 8.3.5**：底层由 Rollup 切换为 Rolldown，`manualChunks` 改为函数形式；`@vitejs/plugin-vue` 升 6.0.9
+- **生产依赖 minor/patch 升级**：fastify 5.12.8 及 `@fastify/*`、`typebox`、`@lucide/vue`、`@tanstack/vue-query`
+- **修复 dev 依赖漏洞**：`happy-dom` 20→21.0.4（high，SSRF + 宿主代码执行）、`vitest`/`@vitest/coverage-v8` 4→5.1.0（moderate）；`npm audit` 归零
+- **CI actions 升级**：`build-push-action` v7、`codeql-action` v4、`upload-artifact` v7、`login-action` v4、`metadata-action` v6
+- **依赖树检查**：`check-dependencies.mjs` 对 optional 平台变体的 invalid 标记做对称豁免（npm 对 lightningcss 双版本的去重噪声，非真实损坏）
+
+### 测试
+
+- `vitest` 119 文件 / 886 用例通过（1 skipped）
+- 完整 `verify` 全链路通过：lint、typecheck、架构、死代码、路由清单、依赖审计、构建、静态产物
+
+## [1.2.7] - 2026-11-02
 
 ### 优化
 

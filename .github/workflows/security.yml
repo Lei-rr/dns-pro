@@ -36,7 +36,7 @@ jobs:
 
       # 只构建到本地 daemon（不推送）；扫描对象与发布镜像共用 Dockerfile
       - name: Build image for scanning
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -61,7 +61,7 @@ jobs:
       - name: Upload SARIF to GitHub Security
         # fork PR 的 GITHUB_TOKEN 为只读，无法写 Security 面板；硬门禁仍由下一步保证
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy-image
@@ -91,7 +91,7 @@ jobs:
           dependency-snapshot: false
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dns-pro-sbom-spdx
           path: sbom/dns-pro-image.spdx.json

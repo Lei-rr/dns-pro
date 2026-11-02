@@ -348,7 +348,7 @@ netstat -ano | findstr :2001  # Windows（配合 tasklist 查 PID）
 
 `security.yml` 只扫描**镜像**，分两类来源：
 
-- OS 包 / 基础镜像：等待 `node:20-bookworm-slim` 上游更新，或由 Dependabot 的 `docker` 生态 PR 提示升级；紧急时可评估切换基础镜像版本。
+- OS 包 / 基础镜像：等待 `node:26-bookworm-slim` 上游更新，或由 Dependabot 的 `docker` 生态 PR 提示升级；紧急时可评估切换基础镜像版本。
 - npm 生产依赖：优先升级依赖，其次用根 `package.json` 的 `overrides` 提升传递依赖；`npm run deps:check` 同步把关。
 
 判定与豁免：

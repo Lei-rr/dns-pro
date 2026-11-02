@@ -35,11 +35,13 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-vue': ['vue', 'vue-router', 'pinia'],
-          'vendor-ui': ['reka-ui', '@lucide/vue', 'class-variance-authority', 'clsx', 'tailwind-merge'],
-          'vendor-query': ['@tanstack/vue-query'],
-          'vendor-utils': ['@vueuse/core'],
+        // vite 8 底层切换为 rolldown，manualChunks 仅支持函数形式
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) return
+          if (/node_modules\/(vue|vue-router|pinia)\//.test(id)) return 'vendor-vue'
+          if (/node_modules\/(reka-ui|@lucide\/vue|class-variance-authority|clsx|tailwind-merge)\//.test(id)) return 'vendor-ui'
+          if (/node_modules\/@tanstack\//.test(id)) return 'vendor-query'
+          if (/node_modules\/@vueuse\//.test(id)) return 'vendor-utils'
         },
       },
     },
