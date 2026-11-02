@@ -3,6 +3,12 @@
 本文件记录 dns-pro 的重要变更。
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.1] - 2026-11-03
+
+### 变更
+
+- **CI actions 升级**：`actions/checkout` v4→v7、`actions/setup-node` v4→v7、`docker/setup-buildx-action` v3→v4，消除 GitHub Actions 的 Node.js 20 runtime 弃用警告
+
 ## [1.3.0] - 2026-11-03
 
 ### 变更
